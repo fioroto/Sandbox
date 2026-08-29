@@ -35,6 +35,7 @@ from shelf_monitor.normalize import (
 from shelf_monitor.report.aggregate import build_dashboard_data
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest, render_markdown
+from shelf_monitor.report.mailer import build_subject, send_digest
 from shelf_monitor.storage import latest_shelf_snapshot, save_shelf_snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -306,6 +307,55 @@ class TestStorage(unittest.TestCase):
 
         baseline = latest_shelf_snapshot(self.config, "btg", before=datetime.now().date())
         self.assertEqual(len(baseline.funds), 1)
+
+
+class TestMailer(unittest.TestCase):
+    def setUp(self):
+        self.config, self.tmp = temp_config()
+        self.now = datetime.now()
+        self.yesterday = self.now - timedelta(days=1)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _report(self, diffs, cvm_diff=None, snapshots=None):
+        return RunReport(
+            generated_at=self.now,
+            snapshots=snapshots if snapshots is not None else [],
+            shelf_diffs=diffs,
+            cvm_diff=cvm_diff,
+        )
+
+    def test_subject_leads_with_the_news(self):
+        previous = snapshot_for("btg", [
+            offer("btg", "Fundo A", "11111111000191", min_initial=1000.0),
+            offer("btg", "Fundo B", "22222222000192"),
+        ], self.yesterday)
+        current = snapshot_for("btg", [
+            offer("btg", "Fundo A", "11111111000191", min_initial=500.0),
+            offer("btg", "Fundo C", "33333333000193"),
+        ], self.now)
+
+        subject = build_subject(self._report([diff_shelf(current, previous)]))
+        self.assertIn("1 entradas / 1 saidas", subject)
+        self.assertIn("1 alteracoes", subject)
+
+    def test_subject_says_when_nothing_changed(self):
+        snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
+        subject = build_subject(self._report([diff_shelf(snapshot, snapshot)]))
+        self.assertIn("sem mudancas", subject)
+
+    def test_subject_distinguishes_total_source_failure(self):
+        broken = snapshot_for("nu", [], self.now, status=SnapshotStatus.UNAVAILABLE)
+        subject = build_subject(
+            self._report([diff_shelf(broken, None)], snapshots=[broken])
+        )
+        self.assertIn("nenhuma fonte acessivel", subject)
+
+    def test_send_is_a_noop_without_smtp_config(self):
+        snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
+        result = send_digest(self.config, self._report([diff_shelf(snapshot, None)]))
+        self.assertIn("SMTP nao configurado", result)
 
 
 class TestReports(unittest.TestCase):

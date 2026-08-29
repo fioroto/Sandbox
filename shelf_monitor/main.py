@@ -41,6 +41,7 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
+from shelf_monitor.report.mailer import build_subject, send_digest
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
     latest_shelf_snapshot,
@@ -119,7 +120,9 @@ def build_report(
     return report
 
 
-def render_outputs(config: Config, report: RunReport) -> None:
+def render_outputs(
+    config: Config, report: RunReport, send_email: bool = False
+) -> None:
     md_path, html_path = render_digest(config, report)
     dashboard_path = render_dashboard(config, report)
     console.print()
@@ -127,6 +130,13 @@ def render_outputs(config: Config, report: RunReport) -> None:
     console.print(f"  digest markdown: {md_path}")
     console.print(f"  digest e-mail:   {html_path}")
     console.print(f"  dashboard:       {dashboard_path}")
+    console.print(f"  assunto sugerido: {build_subject(report)}")
+
+    if send_email:
+        try:
+            console.print(f"[bold]E-mail:[/] {send_digest(config, report)}")
+        except Exception as exc:  # noqa: BLE001 - envio nao derruba a execucao
+            console.print(f"[red]Falha no envio do digest:[/] {_short(str(exc))}")
 
 
 def print_summary(report: RunReport) -> None:
@@ -190,7 +200,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
 
     report = build_report(config, snapshots, cvm_snapshot)
     print_summary(report)
-    render_outputs(config, report)
+    render_outputs(config, report, send_email=args.send_email)
 
     if args.git_commit:
         git_commit(config)
@@ -256,7 +266,7 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
 
     report = build_report(config, snapshots, latest_cvm_snapshot(config))
     print_summary(report)
-    render_outputs(config, report)
+    render_outputs(config, report, send_email=getattr(args, "send_email", False))
 
 
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
@@ -351,6 +361,11 @@ def main() -> None:
     run_parser.add_argument(
         "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
     )
+    run_parser.add_argument(
+        "--send-email",
+        action="store_true",
+        help="Enviar o digest por SMTP (requer SMTP_HOST, SMTP_FROM e SMTP_TO)",
+    )
     run_parser.set_defaults(func=cmd_run)
 
     collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras")
@@ -366,6 +381,9 @@ def main() -> None:
     diff_parser.set_defaults(func=cmd_diff)
 
     report_parser = subparsers.add_parser("report", help="Re-renderizar os relatorios")
+    report_parser.add_argument(
+        "--send-email", action="store_true", help="Enviar o digest por SMTP"
+    )
     report_parser.set_defaults(func=cmd_report)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes")

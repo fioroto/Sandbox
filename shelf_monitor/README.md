@@ -42,7 +42,18 @@ python -m shelf_monitor diff                      # recompara os snapshots exist
 python -m shelf_monitor report                    # re-renderiza os relatorios
 python -m shelf_monitor watchlist-discover "BTG"  # refina a watchlist de gestoras
 python -m shelf_monitor run --git-commit          # commita snapshots e relatorios
+python -m shelf_monitor run --send-email          # envia o digest por SMTP
 ```
+
+### Digest por e-mail
+
+Por padrao o monitor so grava os arquivos - o `digest-<data>.html` tem CSS inline
+e nenhum JS, entao pode ser colado num e-mail, enviado por um conector ou aberto
+direto. Para envio automatico, configure `SMTP_HOST`, `SMTP_FROM` e `SMTP_TO` no
+`.env` e rode com `--send-email`; sem essas variaveis a flag apenas avisa e segue.
+
+O assunto ja carrega a novidade, para ser lido sem abrir:
+`[Monitor de fundos] 29/08 - 2 fundo(s) em operacao, 5 entradas / 1 saidas`.
 
 ## Pre-requisito de rede
 
