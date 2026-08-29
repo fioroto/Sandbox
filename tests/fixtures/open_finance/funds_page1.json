@@ -1,0 +1,248 @@
+{
+  "data": [
+    {
+      "brand": {
+        "name": "BTG Pactual"
+      },
+      "companies": [
+        {
+          "name": "BTG PACTUAL SERVICOS FINANCEIROS S.A. DTVM",
+          "cnpjNumber": "59281253000123",
+          "funds": [
+            {
+              "name": "BTG PACTUAL DIGITAL RENDA FIXA CP FIC FIF",
+              "cnpjNumber": "12345678000191",
+              "isinCode": "BRTEST123456CTF",
+              "anbimaCategory": "Renda Fixa Credito Livre",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "BTG PACTUAL ASSET MANAGEMENT S.A. DTVM",
+                "cnpjNumber": "29650082000100"
+              },
+              "fees": {
+                "maxAdminFee": "0.50",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "100.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 1,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "KINEA IPCA DINAMICO FIF RENDA FIXA LP",
+              "cnpjNumber": "42345678000194",
+              "isinCode": "BRTEST423456CTF",
+              "anbimaCategory": "Renda Fixa Indexados",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "KINEA INVESTIMENTOS LTDA",
+                "cnpjNumber": "08604187000144"
+              },
+              "fees": {
+                "maxAdminFee": "0.60",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "5000.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 3,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "VERDE AM SCENA FIC FIF MULTIMERCADO",
+              "cnpjNumber": "20345678000120",
+              "isinCode": "BRTEST203456CTF",
+              "anbimaCategory": "Multimercado Livre",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "VERDE ASSET MANAGEMENT S.A.",
+                "cnpjNumber": "16478810000160"
+              },
+              "fees": {
+                "maxAdminFee": "1.90",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "5000.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 30,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "SPX NIMITZ FIC FIF MULTIMERCADO",
+              "cnpjNumber": "21345678000121",
+              "isinCode": "BRTEST213456CTF",
+              "anbimaCategory": "Multimercado Macro",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "SPX GESTAO DE RECURSOS LTDA",
+                "cnpjNumber": "12345098000155"
+              },
+              "fees": {
+                "maxAdminFee": "2.00",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "25000.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 30,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "BTG PACTUAL ACOES SMALL CAPS FIC FIF",
+              "cnpjNumber": "30345678000130",
+              "isinCode": "BRTEST303456CTF",
+              "anbimaCategory": "Acoes Small Caps",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "BTG PACTUAL ASSET MANAGEMENT S.A. DTVM",
+                "cnpjNumber": "29650082000100"
+              },
+              "fees": {
+                "maxAdminFee": "2.00",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "1000.00",
+                "redemption": {
+                  "quotationDays": 5,
+                  "paymentDays": 30,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "ABSOLUTE VERTEX FIC FIF MULTIMERCADO",
+              "cnpjNumber": "31345678000131",
+              "isinCode": "BRTEST313456CTF",
+              "anbimaCategory": "Multimercado Livre",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "ABSOLUTE GESTAO DE INVESTIMENTOS LTDA",
+                "cnpjNumber": "17632972000180"
+              },
+              "fees": {
+                "maxAdminFee": "2.00",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "10000.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 30,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            },
+            {
+              "name": "BTG PACTUAL GLOBAL BONDS FIC FIF IE",
+              "cnpjNumber": "32345678000132",
+              "isinCode": "BRTEST323456CTF",
+              "anbimaCategory": "Renda Fixa Investimento no Exterior",
+              "admin": {
+                "name": "BEM DTVM LTDA",
+                "cnpjNumber": "59281253000123"
+              },
+              "fundManager": {
+                "name": "BTG PACTUAL ASSET MANAGEMENT S.A. DTVM",
+                "cnpjNumber": "29650082000100"
+              },
+              "fees": {
+                "maxAdminFee": "0.80",
+                "performanceFee": {
+                  "method": "ABSOLUTE",
+                  "benchmark": "CDI",
+                  "amount": "20.00"
+                }
+              },
+              "generalConditions": {
+                "minimumAmount": "500.00",
+                "redemption": {
+                  "quotationDays": 1,
+                  "paymentDays": 4,
+                  "graceDays": 0
+                },
+                "fundQuotaType": "OPEN"
+              },
+              "taxation": "LONGO_PRAZO"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "links": {
+    "self": "https://example.test/open-banking/opendata-investments/v1/funds"
+  },
+  "meta": {
+    "totalRecords": 7,
+    "totalPages": 1
+  }
+}

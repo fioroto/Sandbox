@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# shelf_monitor: downloads brutos da CVM (dezenas de MB) e caches - so o
+# extrato filtrado pela watchlist e versionado.
+data/cvm/raw/
+data/cache/
+data/sessions/
