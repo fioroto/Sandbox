@@ -27,6 +27,7 @@ Saidas de cada execucao:
 
 | Arquivo | O que e |
 |---|---|
+| `data/reports/prateleiras-<data>.xlsx` | Planilha com todos os fundos (via `export`) |
 | `data/reports/dashboard.html` | Dashboard comparativo (abre no navegador, sem dependencia externa) |
 | `data/reports/digest-<data>.md` | Digest de mudancas para leitura no repo |
 | `data/reports/digest-<data>.html` | Mesmo digest com CSS inline, pronto para e-mail |
@@ -36,6 +37,8 @@ Saidas de cada execucao:
 Outros subcomandos:
 
 ```bash
+python -m shelf_monitor export                    # planilha a partir dos snapshots salvos
+python -m shelf_monitor export --collect          # coleta agora e ja exporta
 python -m shelf_monitor collect --platform btg --platform inter
 python -m shelf_monitor cvm                       # so o radar CVM
 python -m shelf_monitor diff                      # recompara os snapshots existentes
@@ -44,6 +47,22 @@ python -m shelf_monitor watchlist-discover "BTG"  # refina a watchlist de gestor
 python -m shelf_monitor run --git-commit          # commita snapshots e relatorios
 python -m shelf_monitor run --send-email          # envia o digest por SMTP
 ```
+
+### Planilha
+
+`export` gera um .xlsx com:
+
+| Aba | Conteudo |
+|---|---|
+| **Resumo** | Contagem por plataforma x classe, exclusivos, gestoras - tudo em formulas sobre o Consolidado |
+| **Consolidado** | Todos os fundos de todas as casas, uma linha por fundo, com filtro ativado |
+| **Uma por plataforma** | So a prateleira daquela casa |
+| **Radar CVM** | Fundos da watchlist, pre-operacionais em destaque no topo |
+| **Coleta** | Status e estrategia de cada fonte - onde conferir se um numero baixo e prateleira enxuta ou fonte parcial |
+
+A coluna `Fonte` diz de onde veio cada linha (`open-finance`, `html-scrape`, `playwright`),
+porque a riqueza dos campos depende disso: o Open Finance entrega CNPJ, taxas e prazos
+padronizados; o scraping entrega o que a pagina publica, as vezes sem CNPJ.
 
 ### Digest por e-mail
 

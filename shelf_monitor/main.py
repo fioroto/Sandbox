@@ -42,6 +42,7 @@ from shelf_monitor.models import (
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.mailer import build_subject, send_digest
+from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
     latest_shelf_snapshot,
@@ -286,6 +287,41 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
     render_outputs(config, report, send_email=getattr(args, "send_email", False))
 
 
+def cmd_export(config: Config, args: argparse.Namespace) -> None:
+    """Exporta as prateleiras coletadas para uma planilha."""
+    config.ensure_dirs()
+
+    platform_ids = args.platforms or list(PLATFORMS)
+    if args.collect:
+        snapshots = collect_platforms(config, platform_ids)
+        cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
+    else:
+        snapshots = []
+        for platform_id in platform_ids:
+            snapshot = latest_shelf_snapshot(config, platform_id)
+            if snapshot:
+                snapshots.append(snapshot)
+        cvm_snapshot = None if args.skip_cvm else latest_cvm_snapshot(config)
+
+        if not snapshots:
+            console.print(
+                "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes, ou use "
+                "`export --collect` para coletar agora."
+            )
+            return
+
+    path = render_spreadsheet(
+        config, snapshots, cvm_snapshot, path=Path(args.output) if args.output else None
+    )
+    total = sum(len(s.funds) for s in snapshots)
+    console.print()
+    console.print(
+        f"[green]Planilha gerada:[/] {path}\n"
+        f"  {total} fundos de {len(snapshots)} plataforma(s)"
+        + (f", {len(cvm_snapshot.funds)} registros da CVM" if cvm_snapshot else "")
+    )
+
+
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     """Testa o acesso a cada fonte - o gate antes da primeira execucao real."""
     sources: list[tuple[str, str]] = [
@@ -412,6 +448,19 @@ def main() -> None:
         "--send-email", action="store_true", help="Enviar o digest por SMTP"
     )
     report_parser.set_defaults(func=cmd_report)
+
+    export_parser = subparsers.add_parser(
+        "export", help="Exportar as prateleiras para planilha (.xlsx)", parents=[common]
+    )
+    add_platform_arg(export_parser)
+    export_parser.add_argument(
+        "--collect",
+        action="store_true",
+        help="Coletar agora em vez de usar os ultimos snapshots salvos",
+    )
+    export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
+    export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
+    export_parser.set_defaults(func=cmd_export)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)

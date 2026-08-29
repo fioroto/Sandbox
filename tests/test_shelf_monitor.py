@@ -617,6 +617,33 @@ class TestReports(unittest.TestCase):
         self.assertNotIn("<script", digest)
         self.assertNotIn("<img", digest)
 
+    def test_spreadsheet_has_a_tab_per_platform_and_working_formulas(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        path = render_spreadsheet(self.config, [self.xp, self.btg, self.nu])
+        workbook = load_workbook(path)
+
+        # Resumo primeiro, consolidado, uma aba por plataforma coletada, saude
+        self.assertIn("Resumo", workbook.sheetnames)
+        self.assertIn("Consolidado", workbook.sheetnames)
+        self.assertIn("XP Investimentos", workbook.sheetnames)
+        self.assertIn("BTG Pactual", workbook.sheetnames)
+        self.assertIn("Coleta", workbook.sheetnames)
+        # Nu falhou: nao ganha aba, mas aparece na saude da coleta
+        self.assertNotIn("Nu (Nubank)", workbook.sheetnames)
+
+        consolidated = workbook["Consolidado"]
+        self.assertEqual(consolidated.max_row, 1 + len(self.xp.funds) + len(self.btg.funds))
+
+        # A exclusividade e formula, com intervalo limitado aos dados: uma
+        # referencia a coluna inteira torna a planilha lenta demais para abrir.
+        formula = consolidated.cell(row=2, column=20).value
+        self.assertTrue(formula.startswith("=IF("))
+        self.assertIn("COUNTIF($C$2:$C$", formula)
+        self.assertNotIn("$C:$C", formula)
+
     def test_digest_files_are_written(self):
         md_path, html_path = render_digest(self.config, self.report)
         self.assertTrue(md_path.exists() and html_path.exists())
