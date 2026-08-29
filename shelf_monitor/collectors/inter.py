@@ -7,7 +7,6 @@ a via mais estavel para enumerar a prateleira - nao depende de renderizacao JS.
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -26,6 +25,7 @@ _SITEMAP_URLS = [
     "https://inter.co/sitemap-0.xml",
 ]
 _SHELF_PREFIX = "/pra-voce/investimentos/fundos-de-investimento/"
+_HUB_URL = f"https://inter.co{_SHELF_PREFIX}"
 _CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
 _MAX_FUNDS = 400
 
@@ -64,9 +64,7 @@ class InterCollector(PlatformCollector):
                     continue
                 if url.endswith(".xml") and "sitemap" in url:
                     found.extend(self._urls_from_sitemap(url))
-                elif _SHELF_PREFIX in url and url.rstrip("/") != urljoin(
-                    url, _SHELF_PREFIX
-                ).rstrip("/"):
+                elif _SHELF_PREFIX in url:
                     found.append(url)
 
             if found:
@@ -75,9 +73,9 @@ class InterCollector(PlatformCollector):
         if not found and last_error:
             raise SourceUnavailable(f"sitemap do Inter inacessivel: {last_error}")
 
-        # Remove o hub e duplicatas preservando a ordem
-        hub = f"https://inter.co{_SHELF_PREFIX}"
-        unique = dict.fromkeys(u for u in found if u.rstrip("/") != hub.rstrip("/"))
+        # O hub e a pagina de listagem, nao um fundo: fica de fora.
+        hub = _HUB_URL.rstrip("/")
+        unique = dict.fromkeys(u for u in found if u.rstrip("/") != hub)
         return list(unique)
 
     def _urls_from_sitemap(self, url: str) -> list[str]:

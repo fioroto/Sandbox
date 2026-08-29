@@ -207,7 +207,9 @@ def collect_via_browser(
     except SourceUnavailable:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise SourceUnavailable(f"navegacao falhou em {url}: {exc}") from exc
+        # As excecoes do Playwright trazem varias linhas de contexto do browser.
+        detail = " ".join(str(exc).split())[:160]
+        raise SourceUnavailable(f"navegacao falhou em {url}: {detail}") from exc
 
     if not captured:
         captured = _from_embedded_state(html)

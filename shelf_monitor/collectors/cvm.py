@@ -17,8 +17,6 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import requests
-
 from shelf_monitor.config import (
     CVM_CAD_FI_URL,
     CVM_REGISTRO_ZIP_URL,
@@ -301,7 +299,3 @@ def load_registro_rows(config: Config, local_zip: Path | None = None) -> list[di
         if not fundo_name:
             raise SourceUnavailable("registro_fundo.csv ausente no zip")
         return _decode_rows(archive.read(fundo_name))
-
-
-def build_session_for(config: Config) -> requests.Session:
-    return build_session(config)
