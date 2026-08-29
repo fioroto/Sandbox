@@ -113,7 +113,11 @@ def _parse_min_initial(raw: Any) -> float | None:
     return parse_number(raw)
 
 
-def to_offer(platform_id: str, item: dict, source: str) -> FundOffer | None:
+def to_offer(platform_id: str, item: dict) -> FundOffer | None:
+    """Mapeia um dict de fundo vindo de JSON arbitrario para FundOffer.
+
+    A origem nao entra aqui: quem sabe de que fonte veio e o merge, que a
+    registra em `sources` ao unir os resultados."""
     name = _as_text(_pick(item, _NAME_KEYS))
     if not name:
         return None
@@ -137,7 +141,6 @@ def to_offer(platform_id: str, item: dict, source: str) -> FundOffer | None:
         redemption_quotation_days=parse_int(_pick(item, _QUOTATION_KEYS)),
         redemption_payment_days=parse_int(_pick(item, _PAYMENT_KEYS)),
         closed_for_investment=closed,
-        extra={"source": source},
     )
 
 
@@ -229,7 +232,7 @@ def collect_via_browser(
     offers: list[FundOffer] = []
     seen_identities: set[str] = set()
     for item in captured:
-        offer = to_offer(platform_id, item, "playwright")
+        offer = to_offer(platform_id, item)
         if offer and offer.identity not in seen_identities:
             seen_identities.add(offer.identity)
             offers.append(offer)

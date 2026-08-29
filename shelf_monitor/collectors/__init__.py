@@ -19,13 +19,17 @@ COLLECTORS: dict[str, type[PlatformCollector]] = {
 }
 
 
-def build_collector(config: Config, platform_id: str) -> BaseCollector:
+def build_collector(
+    config: Config, platform_id: str, stop_at_first_source: bool = False
+) -> BaseCollector:
     if platform_id not in COLLECTORS:
         raise KeyError(
             f"plataforma desconhecida: {platform_id} "
             f"(disponiveis: {', '.join(sorted(COLLECTORS))})"
         )
-    return COLLECTORS[platform_id](config, config.platform(platform_id))
+    return COLLECTORS[platform_id](
+        config, config.platform(platform_id), stop_at_first_source=stop_at_first_source
+    )
 
 
 __all__ = [

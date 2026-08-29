@@ -24,6 +24,7 @@ from shelf_monitor.collectors.open_finance import _brand_matches, _flatten_funds
 from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import Config
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.merge import merge_offers, source_summary
 from shelf_monitor.models import (
     AssetClass,
     CollectorStrategy,
@@ -184,6 +185,76 @@ class TestOpenFinanceMapping(unittest.TestCase):
         self.assertTrue(_brand_matches("INTER", normalize_text("Banco Inter S.A.")))
 
 
+class TestSourceMerge(unittest.TestCase):
+    def test_union_keeps_funds_that_only_one_source_has(self):
+        """A prateleira final e a uniao: o que so o site publica nao some."""
+        merged = merge_offers({
+            "open-finance": [offer("btg", "Fundo A", "11111111000191")],
+            "html-scrape": [
+                offer("btg", "Fundo A", "11111111000191"),
+                offer("btg", "Fundo B", "22222222000192"),
+            ],
+        })
+
+        by_cnpj = {f.cnpj: f for f in merged}
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(by_cnpj["11111111000191"].sources, ["open-finance", "html-scrape"])
+        self.assertEqual(by_cnpj["22222222000192"].sources, ["html-scrape"])
+
+    def test_open_finance_wins_a_field_conflict(self):
+        """Fonte padronizada por regulacao vence o que a pagina resolveu exibir."""
+        merged = merge_offers({
+            "html-scrape": [offer("btg", "Fundo A", "11111111000191", min_initial=1000.0)],
+            "open-finance": [offer("btg", "Fundo A", "11111111000191", min_initial=500.0)],
+        })
+        self.assertEqual(merged[0].min_initial, 500.0)
+
+    def test_lower_precedence_source_fills_gaps(self):
+        """Onde a fonte melhor nao tem valor, a outra preenche em vez de perder."""
+        merged = merge_offers({
+            "open-finance": [offer("btg", "Fundo A", "11111111000191", min_initial=500.0)],
+            "html-scrape": [
+                offer("btg", "Fundo A", "11111111000191",
+                      min_initial=1000.0, manager_name="Kinea",
+                      detail_url="https://exemplo.test/fundo"),
+            ],
+        })
+        self.assertEqual(merged[0].min_initial, 500.0)
+        self.assertEqual(merged[0].manager_name, "Kinea")
+        self.assertEqual(merged[0].detail_url, "https://exemplo.test/fundo")
+
+    def test_name_variants_are_preserved(self):
+        merged = merge_offers({
+            "open-finance": [offer("btg", "BTG PACTUAL RF CP FIC FIF", "11111111000191")],
+            "html-scrape": [offer("btg", "BTG Renda Fixa Credito Privado", "11111111000191")],
+        })
+        self.assertEqual(merged[0].name, "BTG PACTUAL RF CP FIC FIF")
+        self.assertIn("BTG Renda Fixa Credito Privado", merged[0].extra["name_variants"])
+
+    def test_concrete_class_beats_outros(self):
+        merged = merge_offers({
+            "open-finance": [offer("btg", "Fundo A", "11111111000191")],
+            "html-scrape": [
+                offer("btg", "Fundo A", "11111111000191", asset_class=AssetClass.ACOES),
+            ],
+        })
+        self.assertEqual(merged[0].asset_class, AssetClass.ACOES)
+
+    def test_summary_counts_what_each_source_alone_saw(self):
+        groups = {
+            "open-finance": [offer("btg", "A", "11111111000191")],
+            "html-scrape": [
+                offer("btg", "A", "11111111000191"),
+                offer("btg", "B", "22222222000192"),
+            ],
+        }
+        summary = source_summary(groups, merge_offers(groups))
+        self.assertEqual(summary["counts"], {"open-finance": 1, "html-scrape": 2})
+        self.assertEqual(summary["exclusive"]["html-scrape"], 1)
+        self.assertEqual(summary["exclusive"]["open-finance"], 0)
+        self.assertEqual(summary["merged_total"], 2)
+
+
 class TestStrategyCascade(unittest.TestCase):
     def setUp(self):
         self.config, self.tmp = temp_config()
@@ -192,9 +263,8 @@ class TestStrategyCascade(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_unexpected_error_does_not_cancel_remaining_strategies(self):
-        """Payload malformado de terceiro nao pode cancelar o fallback."""
-        platform = self.config.platform("xp")
-        collector = XpCollector(self.config, platform)
+        """Payload malformado de terceiro nao pode cancelar as outras fontes."""
+        collector = XpCollector(self.config, self.config.platform("xp"))
 
         def exploding_open_finance():
             raise AttributeError("'list' object has no attribute 'get'")
@@ -206,6 +276,42 @@ class TestStrategyCascade(unittest.TestCase):
         self.assertEqual(snapshot.status, SnapshotStatus.OK)
         self.assertEqual([f.name for f in snapshot.funds], ["Fundo Salvo"])
         self.assertEqual(snapshot.strategy, CollectorStrategy.PLAYWRIGHT)
+        # A fonte que caiu vira observacao, nao erro: explica um numero baixo.
+        self.assertIn("open-finance", snapshot.error)
+
+    def test_all_sources_are_consulted_and_united(self):
+        """Por padrao a coleta nao para na primeira fonte que responde."""
+        collector = XpCollector(self.config, self.config.platform("xp"))
+        collector._collect_open_finance = lambda: [
+            offer("xp", "Fundo A", "11111111000191"),
+        ]
+        collector._collect_playwright = lambda: [
+            offer("xp", "Fundo A", "11111111000191"),
+            offer("xp", "Fundo B", "22222222000192"),
+        ]
+
+        snapshot = collector.collect()
+        self.assertEqual(len(snapshot.funds), 2)
+        self.assertEqual(snapshot.strategies, ["open-finance", "playwright"])
+        self.assertEqual(
+            snapshot.source_counts, {"open-finance": 1, "playwright": 2}
+        )
+        shared = next(f for f in snapshot.funds if f.cnpj == "11111111000191")
+        self.assertEqual(shared.sources, ["open-finance", "playwright"])
+
+    def test_stop_at_first_source_keeps_the_fast_path(self):
+        collector = XpCollector(
+            self.config, self.config.platform("xp"), stop_at_first_source=True
+        )
+        collector._collect_open_finance = lambda: [
+            offer("xp", f"Fundo {i}", f"{i:014d}") for i in range(10)
+        ]
+        called = []
+        collector._collect_playwright = lambda: called.append(True) or []
+
+        snapshot = collector.collect()
+        self.assertEqual(len(snapshot.funds), 10)
+        self.assertEqual(called, [], "a segunda fonte nao deve ser consultada")
 
 
 def offer(platform: str, name: str, cnpj: str | None = None, **kwargs) -> FundOffer:
@@ -639,7 +745,9 @@ class TestReports(unittest.TestCase):
 
         # A exclusividade e formula, com intervalo limitado aos dados: uma
         # referencia a coluna inteira torna a planilha lenta demais para abrir.
-        formula = consolidated.cell(row=2, column=20).value
+        from shelf_monitor.report.spreadsheet import _COL_EXCLUSIVE
+
+        formula = consolidated.cell(row=2, column=_COL_EXCLUSIVE).value
         self.assertTrue(formula.startswith("=IF("))
         self.assertIn("COUNTIF($C$2:$C$", formula)
         self.assertNotIn("$C:$C", formula)

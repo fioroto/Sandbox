@@ -69,11 +69,13 @@ def _short(message: str, limit: int = 220) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
-def collect_platforms(config: Config, platform_ids: list[str]) -> list[ShelfSnapshot]:
+def collect_platforms(
+    config: Config, platform_ids: list[str], stop_at_first_source: bool = False
+) -> list[ShelfSnapshot]:
     snapshots: list[ShelfSnapshot] = []
     for platform_id in platform_ids:
         console.print(f"[bold]Coletando prateleira:[/] {PLATFORMS[platform_id].label}")
-        collector = build_collector(config, platform_id)
+        collector = build_collector(config, platform_id, stop_at_first_source)
         snapshot = collector.collect()
 
         # A qualidade e avaliada contra a ultima coleta confiavel antes de
@@ -85,7 +87,15 @@ def collect_platforms(config: Config, platform_ids: list[str]) -> list[ShelfSnap
         assess_quality(snapshot, baseline)
         stored = save_shelf_snapshot(config, snapshot)
 
-        detail = f"{len(snapshot.funds)} fundos via {snapshot.strategy.value}"
+        sources = snapshot.source_counts or {}
+        detail = f"{len(snapshot.funds)} fundos"
+        if len(sources) > 1:
+            # Uniao de varias fontes: mostrar o que cada uma trouxe explica por
+            # que o total nao e a soma.
+            parts = ", ".join(f"{name} {count}" for name, count in sources.items())
+            detail += f" (uniao de {parts})"
+        else:
+            detail += f" via {snapshot.strategy.value}"
         console.print(f"  {_status_text(snapshot.status)} - {detail}")
         if snapshot.error:
             console.print(f"  [dim]{_short(snapshot.error)}[/]")
@@ -213,7 +223,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
 
-    snapshots = collect_platforms(config, platform_ids)
+    snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
 
     report = build_report(config, snapshots, cvm_snapshot)
@@ -227,7 +237,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
 def cmd_collect(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
-    snapshots = collect_platforms(config, platform_ids)
+    snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     report = build_report(config, snapshots, None)
     print_summary(report)
 
@@ -293,7 +303,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
 
     platform_ids = args.platforms or list(PLATFORMS)
     if args.collect:
-        snapshots = collect_platforms(config, platform_ids)
+        snapshots = collect_platforms(config, platform_ids, args.first_source_only)
         cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
     else:
         snapshots = []
@@ -409,6 +419,17 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    def add_collect_args(sub: argparse.ArgumentParser) -> None:
+        """Opcoes de quem coleta: por padrao consulta todas as fontes da casa."""
+        sub.add_argument(
+            "--first-source-only",
+            action="store_true",
+            help=(
+                "Parar na primeira fonte util de cada casa, em vez de unir todas "
+                "(mais rapido, cobertura menor)"
+            ),
+        )
+
     def add_platform_arg(sub: argparse.ArgumentParser) -> None:
         sub.add_argument(
             "--platform",
@@ -420,6 +441,7 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="Coleta completa + relatorios", parents=[common])
     add_platform_arg(run_parser)
+    add_collect_args(run_parser)
     run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
     run_parser.add_argument(
         "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
@@ -433,6 +455,7 @@ def main() -> None:
 
     collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras", parents=[common])
     add_platform_arg(collect_parser)
+    add_collect_args(collect_parser)
     collect_parser.set_defaults(func=cmd_collect)
 
     cvm_parser = subparsers.add_parser("cvm", help="Coletar o radar CVM", parents=[common])
@@ -453,6 +476,7 @@ def main() -> None:
         "export", help="Exportar as prateleiras para planilha (.xlsx)", parents=[common]
     )
     add_platform_arg(export_parser)
+    add_collect_args(export_parser)
     export_parser.add_argument(
         "--collect",
         action="store_true",

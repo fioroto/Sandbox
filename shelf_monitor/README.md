@@ -58,11 +58,15 @@ python -m shelf_monitor run --send-email          # envia o digest por SMTP
 | **Consolidado** | Todos os fundos de todas as casas, uma linha por fundo, com filtro ativado |
 | **Uma por plataforma** | So a prateleira daquela casa |
 | **Radar CVM** | Fundos da watchlist, pre-operacionais em destaque no topo |
-| **Coleta** | Status e estrategia de cada fonte - onde conferir se um numero baixo e prateleira enxuta ou fonte parcial |
+| **Fontes** | Quanto cada fonte trouxe por casa e quantos fundos so ela enxergou |
+| **Coleta** | Status de cada casa - onde conferir se um numero baixo e prateleira enxuta ou fonte parcial |
 
-A coluna `Fonte` diz de onde veio cada linha (`open-finance`, `html-scrape`, `playwright`),
-porque a riqueza dos campos depende disso: o Open Finance entrega CNPJ, taxas e prazos
-padronizados; o scraping entrega o que a pagina publica, as vezes sem CNPJ.
+No Consolidado, cada fundo traz `Fontes` (todas em que apareceu), `Nº de fontes` e uma
+coluna Sim/Nao por fonte (`Open Finance`, `Prateleira (site)`, `Area logada`). Da para
+filtrar "so no site" ou cruzar plataforma x fonte numa tabela dinamica.
+
+A aba **Fontes** e a que responde se vale manter o scraping de uma casa: se o site nao
+traz nada que o Open Finance ja nao tenha, ele so custa tempo de coleta.
 
 ### Digest por e-mail
 
@@ -91,8 +95,20 @@ nubank.com.br
 
 ## Fontes e estrategias
 
-Cada plataforma tem uma ordem de estrategias; a primeira que devolver uma prateleira
-util vence. Uma fonte que falha vira snapshot `unavailable` e a execucao continua.
+**Cada casa e consultada por todas as fontes que ela declara, e a prateleira final e a
+uniao.** Nao e a primeira fonte que responde: um fundo que so o site publica ficaria
+invisivel, e saber em quais fontes cada fundo aparece e informacao competitiva por si so -
+fundo no site e ausente do Open Finance costuma ser oferta nova ainda nao refletida no
+dado regulatorio.
+
+Quando duas fontes discordam de um campo, vence a de maior confianca (Open Finance >
+area logada > API interna > navegador > HTML), e as demais preenchem so o que faltar.
+Uma fonte que falha nao impede as outras; se todas falharem, o snapshot sai `unavailable`
+com o motivo de cada uma.
+
+Para uma coleta mais rapida, `--first-source-only` volta ao comportamento de parar na
+primeira fonte util - util quando o Playwright, que leva dezenas de segundos por site,
+nao compensa.
 
 | Casa | Estrategia | Fonte |
 |---|---|---|

@@ -48,7 +48,7 @@ class ItauCollector(PlatformCollector):
             except ValueError:
                 continue
             for item in extract_fund_dicts(payload):
-                offer = to_offer(self.platform_id, item, "html-scrape")
+                offer = to_offer(self.platform_id, item)
                 if offer and offer.identity not in seen:
                     seen.add(offer.identity)
                     offers.append(offer)
@@ -83,7 +83,6 @@ class ItauCollector(PlatformCollector):
                 raw_category=cells[1] if len(cells) > 1 else None,
                 min_initial=_first_currency(cells[2:]),
                 detail_url=detail_url,
-                extra={"source": "html-scrape"},
             )
             if offer.identity not in seen:
                 seen.add(offer.identity)
