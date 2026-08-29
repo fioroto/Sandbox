@@ -6,6 +6,7 @@ Uso:
     python -m shelf_monitor cvm                    # so o radar CVM
     python -m shelf_monitor diff
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
+    python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
 """
@@ -39,6 +40,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.mailer import build_subject, send_digest
@@ -332,6 +334,60 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     )
 
 
+def cmd_market(config: Config, args: argparse.Namespace) -> None:
+    """Importa a base geral do mercado a partir dos dados abertos da CVM."""
+    config.ensure_dirs()
+    local_dir = Path(args.local_dir) if args.local_dir else None
+
+    console.print("[bold]Importando a base de mercado (CVM)...[/]")
+    if not local_dir and not args.skip_fees:
+        console.print(
+            "  [dim]o extrato de informacoes tem ~100 MB; use --skip-fees para pular[/]"
+        )
+
+    database, paths = run_import(
+        config, local_dir=local_dir, force=args.force, skip_fees=args.skip_fees
+    )
+
+    for note in database.notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+
+    if not paths:
+        console.print("[red]Nenhuma fonte respondeu - a base nao foi gerada.[/]")
+        console.print("Rode `python -m shelf_monitor doctor` para ver o que esta bloqueado.")
+        return
+
+    counts = database.counts()
+    table = Table(title="Base de mercado", title_style="bold")
+    table.add_column("Entidade")
+    table.add_column("Registros", justify="right")
+    for label, key in (
+        ("Fundos", "fundos"),
+        ("  adaptados a RCVM 175", "fundos_adaptados"),
+        ("  nao adaptados", "fundos_nao_adaptados"),
+        ("Classes", "classes"),
+        ("Subclasses", "subclasses"),
+        ("Classes com taxa", "classes_com_taxa"),
+    ):
+        table.add_row(label, f"{counts[key]:,}".replace(",", "."))
+    console.print()
+    console.print(table)
+
+    if database.unknown_columns:
+        # Coluna nova no arquivo da CVM: a importacao seguiu, mas o dado esta
+        # sendo descartado ate alguem mapea-lo.
+        console.print()
+        console.print("[yellow]Colunas novas na origem, ainda nao mapeadas:[/]")
+        for table_name, columns in database.unknown_columns.items():
+            console.print(f"  {table_name}: {', '.join(columns)}")
+
+    console.print()
+    console.print("[bold]Tabelas geradas[/]")
+    for key in ("mercado", "fundos", "classes", "subclasses", "taxas", "manifest"):
+        if key in paths:
+            console.print(f"  {key:10} {paths[key]}")
+
+
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     """Testa o acesso a cada fonte - o gate antes da primeira execucao real."""
     sources: list[tuple[str, str]] = [
@@ -485,6 +541,24 @@ def main() -> None:
     export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
     export_parser.set_defaults(func=cmd_export)
+
+    market_parser = subparsers.add_parser(
+        "market",
+        help="Importar a base geral do mercado (CVM) para tabelas CSV",
+        parents=[common],
+    )
+    market_parser.add_argument(
+        "--skip-fees",
+        action="store_true",
+        help="Nao baixar o extrato de informacoes (~100 MB) - base sem taxas",
+    )
+    market_parser.add_argument(
+        "--force", action="store_true", help="Rebaixar mesmo sem mudanca na origem"
+    )
+    market_parser.add_argument(
+        "--local-dir", help="Usar arquivos ja baixados neste diretorio"
+    )
+    market_parser.set_defaults(func=cmd_market)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)
