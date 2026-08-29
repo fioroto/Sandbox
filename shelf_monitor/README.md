@@ -160,11 +160,28 @@ fundo        envelope juridico, responsabilidade limitada por classe
 O grao da base e a **classe**, nao o fundo: e o CNPJ de classe que distribuidores e o informe
 diario reportam. Um fundo com duas classes aparece como duas linhas em `mercado.csv`.
 
+Para descer ate o ultimo nivel, use `hierarquia.csv`: uma linha por subclasse, com as colunas
+de fundo, classe e subclasse lado a lado (prefixadas `fundo_`, `classe_` e `subclasse_`). E na
+subclasse que moram publico-alvo e condicoes comerciais distintas - duas subclasses da mesma
+classe partilham carteira e CNPJ e ainda assim sao produtos diferentes na prateleira.
+
+A coluna `nivel` diz o que cada linha e:
+
+| `nivel` | Quando |
+|---|---|
+| `subclasse` | a classe tem subclasses; uma linha para cada |
+| `classe` | a classe nao tem subclasse - a propria classe e a unidade |
+| `fundo_legado` | fundo nao adaptado, que nao tem classe nem subclasse |
+
+Assim a tabela cobre o mercado inteiro sem exigir um union de quem consome. As taxas sao as da
+classe: subclasses partilham CNPJ e carteira, entao herdam a mesma taxa.
+
 ### Tabelas geradas em `data/market/` (gitignored)
 
 | Arquivo | Grao |
 |---|---|
 | `mercado.csv` | **o consolidado** - uma linha por classe, mais os fundos legados. E o que se abre direto |
+| `hierarquia.csv` | a visao normalizada completa - uma linha por **subclasse**, com fundo, classe e subclasse lado a lado |
 | `fundos.csv` | 1 fundo |
 | `classes.csv` | 1 classe |
 | `subclasses.csv` | 1 subclasse |

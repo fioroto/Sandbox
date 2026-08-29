@@ -256,6 +256,135 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
     return rows
 
 
+def _hierarchy_rows(database: MarketDatabase) -> list[dict]:
+    """Uma linha por subclasse, descendo a hierarquia inteira.
+
+    O consolidado para na classe, mas e na subclasse que moram publico-alvo e
+    condicoes comerciais distintas - duas subclasses da mesma classe partilham
+    carteira e CNPJ e ainda assim sao produtos diferentes na prateleira.
+
+    Onde a classe nao tem subclasse, a linha e a propria classe (a coluna
+    `nivel` diz qual e o caso), para que a tabela cubra o mercado inteiro sem
+    exigir um union do lado de quem consome.
+    """
+    funds = {f.registro_id: f for f in database.funds}
+    subclasses = database.subclasses_by_class()
+    rows: list[dict] = []
+
+    def base_row(fund: MarketFund | None, item: MarketClass | None) -> dict:
+        fees = database.fees.get(item.cnpj) if item and item.cnpj else None
+        return {
+            "nivel": "",
+            "cnpj_negociado": format_cnpj(item.cnpj) if item and item.cnpj else "",
+            "denominacao": "",
+            "fundo_id": fund.registro_id if fund else "",
+            "fundo_cnpj": format_cnpj(fund.cnpj) if fund and fund.cnpj else "",
+            "fundo_denominacao": fund.name if fund else "",
+            "fundo_tipo": (fund.fund_type if fund else "") or "",
+            "fundo_situacao": (fund.situation if fund else "") or "",
+            "fundo_data_registro": _cell(fund.registered_at if fund else None),
+            "fundo_adaptado_rcvm175": _cell(
+                fund.adapted_at if fund and fund.adapted_at else None
+            ),
+            "gestor": (fund.manager_name if fund else "") or "",
+            "gestor_cnpj": (fund.manager_cnpj if fund else "") or "",
+            "administrador": (fund.admin_name if fund else "") or "",
+            "classe_id": item.classe_id if item else "",
+            "classe_cnpj": format_cnpj(item.cnpj) if item and item.cnpj else "",
+            "classe_denominacao": item.name if item else "",
+            "classe_tipo": (item.class_type if item else "") or "",
+            "classe_situacao": (item.situation if item else "") or "",
+            "classificacao_cvm": (item.cvm_classification if item else "") or "",
+            "classificacao_anbima": (item.anbima_classification if item else "") or "",
+            "indicador_desempenho": (item.benchmark if item else "") or "",
+            "classe_publico_alvo": (item.target_audience if item else "") or "",
+            "classe_exclusivo": (item.exclusive if item else "") or "",
+            "classe_condominio": (item.condominium if item else "") or "",
+            "classe_tributacao_longo_prazo": (item.long_term_taxation if item else "") or "",
+            "classe_esg": (item.esg if item else "") or "",
+            "classe_patrimonio_liquido": _cell(item.net_worth if item else None),
+            "custodiante": (item.custodian_name if item else "") or "",
+            "subclasse_id": "",
+            "subclasse_denominacao": "",
+            "subclasse_situacao": "",
+            "subclasse_publico_alvo": "",
+            "subclasse_exclusivo": "",
+            "subclasse_condominio": "",
+            "subclasse_previdenciario": "",
+            "subclasse_exclusivo_inr": "",
+            "subclasse_exclusivo_previdencia": "",
+            "taxa_adm": _cell(fees.admin_fee if fees else None),
+            "taxa_adm_unidade": _cell(fees.admin_fee_unit if fees else None),
+            "taxa_performance": _cell(fees.performance_fee if fees else None),
+            "aplicacao_inicial_minima": _cell(fees.min_initial if fees else None),
+            "dias_cotizacao_resgate": _cell(
+                fees.redemption_quotation_days if fees else None
+            ),
+            "dias_pagamento_resgate": _cell(
+                fees.redemption_payment_days if fees else None
+            ),
+        }
+
+    for item in database.classes:
+        fund = funds.get(item.fundo_id)
+        children = subclasses.get(item.classe_id, [])
+
+        if not children:
+            row = base_row(fund, item)
+            row["nivel"] = "classe"
+            row["denominacao"] = item.name
+            rows.append(row)
+            continue
+
+        for child in children:
+            row = base_row(fund, item)
+            row.update(
+                {
+                    "nivel": "subclasse",
+                    "denominacao": child.name,
+                    "subclasse_id": child.subclasse_id,
+                    "subclasse_denominacao": child.name,
+                    "subclasse_situacao": child.situation or "",
+                    # A subclasse pode restringir o publico da classe; quando
+                    # nao diz nada, vale o da classe.
+                    "subclasse_publico_alvo": child.target_audience or "",
+                    "subclasse_exclusivo": child.exclusive or "",
+                    "subclasse_condominio": child.condominium or "",
+                    "subclasse_previdenciario": child.pension or "",
+                    "subclasse_exclusivo_inr": child.foreign_investor_only or "",
+                    "subclasse_exclusivo_previdencia": child.pension_plan_only or "",
+                }
+            )
+            rows.append(row)
+
+    # Fundos legados nao tem classe nem subclasse: a unidade e o proprio fundo.
+    for fund in database.funds:
+        if fund.origin != Origin.LEGACY:
+            continue
+        extra = fund.legacy_fields or {}
+        legacy_fee, legacy_unit, _ = resolve_admin_fee(extra.get("admin_fee"))
+        row = base_row(fund, None)
+        row.update(
+            {
+                "nivel": "fundo_legado",
+                "cnpj_negociado": format_cnpj(fund.cnpj) if fund.cnpj else "",
+                "denominacao": fund.name,
+                "classificacao_cvm": extra.get("cvm_classification") or "",
+                "classificacao_anbima": extra.get("anbima_classification") or "",
+                "classe_condominio": extra.get("condominium") or "",
+                "classe_exclusivo": extra.get("exclusive") or "",
+                "classe_patrimonio_liquido": _cell(fund.net_worth),
+                "custodiante": extra.get("custodian_name") or "",
+                "taxa_adm": _cell(legacy_fee),
+                "taxa_adm_unidade": _cell(legacy_unit),
+                "taxa_performance": _cell(parse_number(extra.get("performance_fee"))),
+            }
+        )
+        rows.append(row)
+
+    return rows
+
+
 def write_database(config: Config, database: MarketDatabase) -> dict[str, Path]:
     """Grava as cinco tabelas e o manifesto. Devolve os caminhos por chave."""
     target = config.market_dir
@@ -285,6 +414,19 @@ def write_database(config: Config, database: MarketDatabase) -> dict[str, Path]:
         writer.writerows(consolidated)
     written["mercado"] = path
     counts["mercado"] = len(consolidated)
+
+    hierarchy = _hierarchy_rows(database)
+    path = target / "hierarquia.csv"
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(hierarchy[0]) if hierarchy else ["nivel"],
+            delimiter=";",
+        )
+        writer.writeheader()
+        writer.writerows(hierarchy)
+    written["hierarquia"] = path
+    counts["hierarquia"] = len(hierarchy)
 
     manifest = {
         "imported_at": database.imported_at.isoformat(),

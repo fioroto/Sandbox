@@ -210,7 +210,7 @@ class TestExport(unittest.TestCase):
             return list(csv.DictReader(handle, delimiter=";"))
 
     def test_writes_one_table_per_entity(self):
-        for key in ("fundos", "classes", "subclasses", "taxas", "mercado"):
+        for key in ("fundos", "classes", "subclasses", "taxas", "mercado", "hierarquia"):
             self.assertTrue(self.paths[key].exists(), key)
 
     def test_consolidated_has_one_row_per_class_plus_legacy_funds(self):
@@ -243,6 +243,47 @@ class TestExport(unittest.TestCase):
         for row in rows.values():
             if row["taxa_adm"]:
                 float(row["taxa_adm"])  # a coluna inteira precisa ser numerica
+
+    def test_hierarchy_descends_to_the_subclass(self):
+        """A classe unica do BTG tem duas subclasses - sao produtos distintos."""
+        rows = self._read("hierarquia")
+        btg = [r for r in rows if r["classe_id"] == "2001"]
+        self.assertEqual(len(btg), 2)
+        self.assertEqual({r["nivel"] for r in btg}, {"subclasse"})
+        self.assertEqual(
+            {r["subclasse_denominacao"] for r in btg},
+            {"BTG DIGITAL RF - VAREJO", "BTG DIGITAL RF - PREVIDENCIA"},
+        )
+
+    def test_subclass_discriminators_are_visible(self):
+        rows = {r["subclasse_denominacao"]: r for r in self._read("hierarquia")}
+        self.assertEqual(rows["BTG DIGITAL RF - PREVIDENCIA"]["subclasse_previdenciario"], "S")
+        self.assertEqual(rows["KINEA IPCA - INR"]["subclasse_exclusivo_inr"], "S")
+
+    def test_class_without_subclass_is_its_own_row(self):
+        """A tabela cobre o mercado todo: nao exige union de quem consome."""
+        rows = {r["classe_id"]: r for r in self._read("hierarquia") if r["classe_id"]}
+        self.assertEqual(rows["2003"]["nivel"], "classe")
+        self.assertEqual(rows["2003"]["subclasse_id"], "")
+
+    def test_legacy_fund_appears_at_its_own_level(self):
+        rows = [r for r in self._read("hierarquia") if r["nivel"] == "fundo_legado"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["classe_id"], "")
+
+    def test_hierarchy_inherits_the_class_fee(self):
+        """Subclasses partilham CNPJ e carteira - e a mesma taxa da classe."""
+        rows = [r for r in self._read("hierarquia") if r["classe_id"] == "2001"]
+        self.assertEqual({r["taxa_adm"] for r in rows}, {"0.45"})
+
+    def test_every_class_is_represented_exactly_once_per_subclass(self):
+        rows = self._read("hierarquia")
+        expected = sum(
+            max(1, len(self.db.subclasses_by_class().get(c.classe_id, [])))
+            for c in self.db.classes
+        )
+        legacy = sum(1 for f in self.db.funds if f.origin.value == "nao_adaptado")
+        self.assertEqual(len(rows), expected + legacy)
 
     def test_manifest_records_counts_and_schema_drift(self):
         manifest = json.loads(self.paths["manifest"].read_text(encoding="utf-8"))

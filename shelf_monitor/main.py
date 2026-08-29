@@ -383,7 +383,9 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
 
     console.print()
     console.print("[bold]Tabelas geradas[/]")
-    for key in ("mercado", "fundos", "classes", "subclasses", "taxas", "manifest"):
+    for key in (
+        "mercado", "hierarquia", "fundos", "classes", "subclasses", "taxas", "manifest",
+    ):
         if key in paths:
             console.print(f"  {key:10} {paths[key]}")
 
