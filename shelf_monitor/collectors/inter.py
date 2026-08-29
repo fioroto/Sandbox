@@ -129,7 +129,6 @@ class InterCollector(PlatformCollector):
                 facts.get("liquidacao do resgate") or facts.get("pagamento do resgate")
             ),
             detail_url=url,
-            extra={"source": "html-scrape"},
         )
 
 

@@ -58,11 +58,15 @@ python -m shelf_monitor run --send-email          # envia o digest por SMTP
 | **Consolidado** | Todos os fundos de todas as casas, uma linha por fundo, com filtro ativado |
 | **Uma por plataforma** | So a prateleira daquela casa |
 | **Radar CVM** | Fundos da watchlist, pre-operacionais em destaque no topo |
-| **Coleta** | Status e estrategia de cada fonte - onde conferir se um numero baixo e prateleira enxuta ou fonte parcial |
+| **Fontes** | Quanto cada fonte trouxe por casa e quantos fundos so ela enxergou |
+| **Coleta** | Status de cada casa - onde conferir se um numero baixo e prateleira enxuta ou fonte parcial |
 
-A coluna `Fonte` diz de onde veio cada linha (`open-finance`, `html-scrape`, `playwright`),
-porque a riqueza dos campos depende disso: o Open Finance entrega CNPJ, taxas e prazos
-padronizados; o scraping entrega o que a pagina publica, as vezes sem CNPJ.
+No Consolidado, cada fundo traz `Fontes` (todas em que apareceu), `Nº de fontes` e uma
+coluna Sim/Nao por fonte (`Open Finance`, `Prateleira (site)`, `Area logada`). Da para
+filtrar "so no site" ou cruzar plataforma x fonte numa tabela dinamica.
+
+A aba **Fontes** e a que responde se vale manter o scraping de uma casa: se o site nao
+traz nada que o Open Finance ja nao tenha, ele so custa tempo de coleta.
 
 ### Digest por e-mail
 
@@ -91,8 +95,20 @@ nubank.com.br
 
 ## Fontes e estrategias
 
-Cada plataforma tem uma ordem de estrategias; a primeira que devolver uma prateleira
-util vence. Uma fonte que falha vira snapshot `unavailable` e a execucao continua.
+**Cada casa e consultada por todas as fontes que ela declara, e a prateleira final e a
+uniao.** Nao e a primeira fonte que responde: um fundo que so o site publica ficaria
+invisivel, e saber em quais fontes cada fundo aparece e informacao competitiva por si so -
+fundo no site e ausente do Open Finance costuma ser oferta nova ainda nao refletida no
+dado regulatorio.
+
+Quando duas fontes discordam de um campo, vence a de maior confianca (Open Finance >
+area logada > API interna > navegador > HTML), e as demais preenchem so o que faltar.
+Uma fonte que falha nao impede as outras; se todas falharem, o snapshot sai `unavailable`
+com o motivo de cada uma.
+
+Para uma coleta mais rapida, `--first-source-only` volta ao comportamento de parar na
+primeira fonte util - util quando o Playwright, que leva dezenas de segundos por site,
+nao compensa.
 
 | Casa | Estrategia | Fonte |
 |---|---|---|
@@ -111,6 +127,84 @@ completude varia por instituicao, entao o scraping continua como reconciliacao.
 **CVM**: `registro_fundo_classe.zip` (pos-CVM 175) como fonte primaria, com
 `cad_fi.csv` como fallback. O download bruto nao e versionado; so o extrato filtrado
 pela watchlist de gestoras.
+
+> Ressalva conhecida: desde out/2024 o `cad_fi.csv` cobre apenas fundos **nao adaptados** a
+> RCVM 175, entao usa-lo como fallback (e nao como complemento) deixa esses fundos fora do
+> radar quando a fonte primaria funciona. Na pratica o impacto e pequeno - as gestoras da
+> watchlist ja migraram - mas a base de mercado (`market`, abaixo) trata os dois arquivos
+> como complementares, que e o correto.
+
+## Base geral do mercado (`market`)
+
+Enquanto o radar CVM acima filtra pela watchlist das casas monitoradas, este modulo faz o
+oposto: importa o **mercado inteiro** a partir dos dados abertos da CVM, com a hierarquia da
+Resolucao CVM 175 preservada.
+
+```bash
+python -m shelf_monitor market                 # importa e escreve as tabelas
+python -m shelf_monitor market --skip-fees     # pula o extrato (~100 MB) - base sem taxas
+python -m shelf_monitor market --force         # rebaixa mesmo sem mudanca na origem
+```
+
+Idempotente: sem mudanca na origem, a segunda execucao nao rebaixa nada (requisicao
+condicional por ETag/Last-Modified) e reescreve as mesmas tabelas.
+
+### A hierarquia que a RCVM 175 criou
+
+```
+fundo        envelope juridico, responsabilidade limitada por classe
+  +-- classe        CNPJ proprio, PL, politica, cota  <- o grao central
+        +-- subclasse   publico-alvo e condicoes distintas, mesma carteira
+```
+
+O grao da base e a **classe**, nao o fundo: e o CNPJ de classe que distribuidores e o informe
+diario reportam. Um fundo com duas classes aparece como duas linhas em `mercado.csv`.
+
+### Tabelas geradas em `data/market/` (gitignored)
+
+| Arquivo | Grao |
+|---|---|
+| `mercado.csv` | **o consolidado** - uma linha por classe, mais os fundos legados. E o que se abre direto |
+| `fundos.csv` | 1 fundo |
+| `classes.csv` | 1 classe |
+| `subclasses.csv` | 1 subclasse |
+| `taxas.csv` | 1 classe (entrega mais recente do extrato) |
+| `_manifest.json` | contagens, fontes, e as colunas novas da CVM ainda nao mapeadas |
+
+### Tres coisas que a base resolve e que quebram pipelines ingenuos
+
+**`cad_fi.csv` nao e mais "o cadastro".** Desde out/2024 ele cobre apenas os fundos que ainda
+**nao** migraram para a RCVM 175 - os adaptados sairam dele. Os dois arquivos sao
+complementares: a base une os dois e marca a origem em `mercado.csv`.
+
+**A taxa de administracao e polimorfica.** O campo `TAXA_ADM` da CVM carrega ora percentual ao
+ano, ora um valor fixo em reais (o regulamento admite texto livre para investidor qualificado),
+sem nada que distinga. A base grava a unidade em `taxa_adm_unidade` (`percentual` / `reais` /
+`texto`) e preserva o valor original ao lado. Sem isso, um fundo que cobra "R$ 30.000 por ano"
+aparece num ranking de custo como se cobrasse 30.000%.
+
+**O CNPJ vem com mascara no extrato e sem no cadastro.** Tudo e normalizado para 14 digitos na
+ingestao - e a causa numero um de join vazio nesses dados.
+
+### Classificacao ANBIMA sem pagar por ela
+
+A API de dados da ANBIMA e produto comercial (sandbox devolve dados ficticios; producao exige
+contrato). Mas a classificacao de tres niveis - a parte que realmente vale, `Renda Fixa Duracao
+Baixa Soberano` em vez do generico `Renda Fixa` da CVM - vem publicada dentro do proprio
+cadastro da CVM, na coluna `Classificacao_Anbima` do `registro_classe.csv`. E de la que a base
+a le, sem credencial nenhuma.
+
+### Quando a CVM mexer no schema
+
+As colunas sao lidas por nome, nunca por posicao, e o que aparece no arquivo sem estar mapeado
+vai para `unknown_columns` no manifesto (e para um aviso no console). A importacao nao quebra -
+mas voce fica sabendo que ha dado novo sendo descartado.
+
+### Fora de escopo
+
+Informe diario, composicao de carteira (CDA), lamina e balancete estao mapeados em
+`market/datasets.py` mas nao sao baixados: sao series temporais de dezenas de GB, e o uso hoje
+pede so cadastro e taxas.
 
 ## Area logada
 

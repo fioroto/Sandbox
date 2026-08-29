@@ -218,7 +218,6 @@ class OpenFinanceFunds:
             grace_days=parse_int(redemption.get("graceDays")),
             taxation=_as_text(item.get("taxation")),
             detail_url=None,
-            extra={"source": "open-finance"},
         )
 
 

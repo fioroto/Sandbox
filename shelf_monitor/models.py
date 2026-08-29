@@ -82,7 +82,13 @@ class FundOffer:
     taxation: str | None = None
     closed_for_investment: bool | None = None
     detail_url: str | None = None
+    # Todas as fontes em que este fundo apareceu. Um fundo presente no site mas
+    # ausente do Open Finance (ou o inverso) e informacao competitiva, nao ruido.
+    sources: list[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
+
+    def in_source(self, source: str) -> bool:
+        return source in self.sources
 
     @property
     def identity(self) -> str:
@@ -115,6 +121,7 @@ class FundOffer:
             "taxation": self.taxation,
             "closed_for_investment": self.closed_for_investment,
             "detail_url": self.detail_url,
+            "sources": self.sources,
             "extra": self.extra,
         }
 
@@ -139,6 +146,10 @@ class FundOffer:
             taxation=data.get("taxation"),
             closed_for_investment=data.get("closed_for_investment"),
             detail_url=data.get("detail_url"),
+            # Snapshots anteriores a coleta multi-fonte gravavam a origem em
+            # extra["source"]; le-los aqui mantem o historico comparavel.
+            sources=data.get("sources")
+            or ([data["extra"]["source"]] if (data.get("extra") or {}).get("source") else []),
             extra=data.get("extra") or {},
         )
 
@@ -157,11 +168,21 @@ class ShelfSnapshot:
     funds: list[FundOffer] = field(default_factory=list)
     source_urls: list[str] = field(default_factory=list)
     error: str | None = None
+    # Todas as estrategias que trouxeram fundos nesta coleta. `strategy` guarda
+    # a principal (a de maior confianca), para leitura rapida e compatibilidade.
+    strategies: list[str] = field(default_factory=list)
+    # Quantos fundos cada estrategia trouxe, antes da uniao - mede a cobertura
+    # real de cada fonte para aquela casa.
+    source_counts: dict[str, int] = field(default_factory=dict)
     schema_version: int = SNAPSHOT_SCHEMA_VERSION
 
     @property
     def snapshot_date(self) -> date:
         return self.collected_at.date()
+
+    @property
+    def sources_used(self) -> list[str]:
+        return self.strategies or ([self.strategy.value] if self.funds else [])
 
     def to_dict(self) -> dict:
         return {
@@ -169,6 +190,8 @@ class ShelfSnapshot:
             "platform": self.platform,
             "collected_at": self.collected_at.isoformat(),
             "strategy": self.strategy.value,
+            "strategies": self.strategies,
+            "source_counts": self.source_counts,
             "status": self.status.value,
             "source_urls": self.source_urls,
             "error": self.error,
@@ -187,6 +210,8 @@ class ShelfSnapshot:
             funds=[FundOffer.from_dict(f) for f in data.get("funds", [])],
             source_urls=data.get("source_urls", []),
             error=data.get("error"),
+            strategies=data.get("strategies", []),
+            source_counts=data.get("source_counts", {}),
             schema_version=data.get("schema_version", SNAPSHOT_SCHEMA_VERSION),
         )
 

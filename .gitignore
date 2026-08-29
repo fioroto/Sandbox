@@ -9,3 +9,6 @@ venv/
 data/cvm/raw/
 data/cache/
 data/sessions/
+
+# shelf_monitor: base geral do mercado (centenas de MB de CSV)
+data/market/

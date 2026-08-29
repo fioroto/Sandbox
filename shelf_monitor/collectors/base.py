@@ -28,9 +28,13 @@ class BaseCollector(ABC):
         self.platform = platform
         self.session = build_session(config)
         self.source_urls: list[str] = []
-        # Estrategia efetivamente usada - definida durante a coleta, ja que os
-        # coletores tentam Open Finance antes de cair para scraping.
+        # Estrategia principal - definida durante a coleta, ja que a fonte de
+        # maior confianca que respondeu so se sabe no fim.
         self.strategy_used: CollectorStrategy = platform.strategies[0]
+        # Preenchidos pelos coletores que consultam varias fontes.
+        self.strategies_used: list[str] = []
+        self.source_counts: dict[str, int] = {}
+        self.partial_reason: str | None = None
 
     @property
     def platform_id(self) -> str:
@@ -59,6 +63,11 @@ class BaseCollector(ABC):
             status=SnapshotStatus.OK,
             funds=funds,
             source_urls=list(self.source_urls),
+            strategies=list(self.strategies_used),
+            source_counts=dict(self.source_counts),
+            # Uma fonte que caiu nao invalida a coleta, mas explica um numero
+            # menor do que o esperado - fica registrada como observacao.
+            error=self.partial_reason,
         )
 
     def _unavailable(self, started: datetime, error: str) -> ShelfSnapshot:

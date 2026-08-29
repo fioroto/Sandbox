@@ -6,6 +6,7 @@ Uso:
     python -m shelf_monitor cvm                    # so o radar CVM
     python -m shelf_monitor diff
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
+    python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
 """
@@ -39,6 +40,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.mailer import build_subject, send_digest
@@ -69,11 +71,13 @@ def _short(message: str, limit: int = 220) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
-def collect_platforms(config: Config, platform_ids: list[str]) -> list[ShelfSnapshot]:
+def collect_platforms(
+    config: Config, platform_ids: list[str], stop_at_first_source: bool = False
+) -> list[ShelfSnapshot]:
     snapshots: list[ShelfSnapshot] = []
     for platform_id in platform_ids:
         console.print(f"[bold]Coletando prateleira:[/] {PLATFORMS[platform_id].label}")
-        collector = build_collector(config, platform_id)
+        collector = build_collector(config, platform_id, stop_at_first_source)
         snapshot = collector.collect()
 
         # A qualidade e avaliada contra a ultima coleta confiavel antes de
@@ -85,7 +89,15 @@ def collect_platforms(config: Config, platform_ids: list[str]) -> list[ShelfSnap
         assess_quality(snapshot, baseline)
         stored = save_shelf_snapshot(config, snapshot)
 
-        detail = f"{len(snapshot.funds)} fundos via {snapshot.strategy.value}"
+        sources = snapshot.source_counts or {}
+        detail = f"{len(snapshot.funds)} fundos"
+        if len(sources) > 1:
+            # Uniao de varias fontes: mostrar o que cada uma trouxe explica por
+            # que o total nao e a soma.
+            parts = ", ".join(f"{name} {count}" for name, count in sources.items())
+            detail += f" (uniao de {parts})"
+        else:
+            detail += f" via {snapshot.strategy.value}"
         console.print(f"  {_status_text(snapshot.status)} - {detail}")
         if snapshot.error:
             console.print(f"  [dim]{_short(snapshot.error)}[/]")
@@ -213,7 +225,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
 
-    snapshots = collect_platforms(config, platform_ids)
+    snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
 
     report = build_report(config, snapshots, cvm_snapshot)
@@ -227,7 +239,7 @@ def cmd_run(config: Config, args: argparse.Namespace) -> None:
 def cmd_collect(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
-    snapshots = collect_platforms(config, platform_ids)
+    snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     report = build_report(config, snapshots, None)
     print_summary(report)
 
@@ -293,7 +305,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
 
     platform_ids = args.platforms or list(PLATFORMS)
     if args.collect:
-        snapshots = collect_platforms(config, platform_ids)
+        snapshots = collect_platforms(config, platform_ids, args.first_source_only)
         cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
     else:
         snapshots = []
@@ -320,6 +332,60 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         f"  {total} fundos de {len(snapshots)} plataforma(s)"
         + (f", {len(cvm_snapshot.funds)} registros da CVM" if cvm_snapshot else "")
     )
+
+
+def cmd_market(config: Config, args: argparse.Namespace) -> None:
+    """Importa a base geral do mercado a partir dos dados abertos da CVM."""
+    config.ensure_dirs()
+    local_dir = Path(args.local_dir) if args.local_dir else None
+
+    console.print("[bold]Importando a base de mercado (CVM)...[/]")
+    if not local_dir and not args.skip_fees:
+        console.print(
+            "  [dim]o extrato de informacoes tem ~100 MB; use --skip-fees para pular[/]"
+        )
+
+    database, paths = run_import(
+        config, local_dir=local_dir, force=args.force, skip_fees=args.skip_fees
+    )
+
+    for note in database.notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+
+    if not paths:
+        console.print("[red]Nenhuma fonte respondeu - a base nao foi gerada.[/]")
+        console.print("Rode `python -m shelf_monitor doctor` para ver o que esta bloqueado.")
+        return
+
+    counts = database.counts()
+    table = Table(title="Base de mercado", title_style="bold")
+    table.add_column("Entidade")
+    table.add_column("Registros", justify="right")
+    for label, key in (
+        ("Fundos", "fundos"),
+        ("  adaptados a RCVM 175", "fundos_adaptados"),
+        ("  nao adaptados", "fundos_nao_adaptados"),
+        ("Classes", "classes"),
+        ("Subclasses", "subclasses"),
+        ("Classes com taxa", "classes_com_taxa"),
+    ):
+        table.add_row(label, f"{counts[key]:,}".replace(",", "."))
+    console.print()
+    console.print(table)
+
+    if database.unknown_columns:
+        # Coluna nova no arquivo da CVM: a importacao seguiu, mas o dado esta
+        # sendo descartado ate alguem mapea-lo.
+        console.print()
+        console.print("[yellow]Colunas novas na origem, ainda nao mapeadas:[/]")
+        for table_name, columns in database.unknown_columns.items():
+            console.print(f"  {table_name}: {', '.join(columns)}")
+
+    console.print()
+    console.print("[bold]Tabelas geradas[/]")
+    for key in ("mercado", "fundos", "classes", "subclasses", "taxas", "manifest"):
+        if key in paths:
+            console.print(f"  {key:10} {paths[key]}")
 
 
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
@@ -409,6 +475,17 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    def add_collect_args(sub: argparse.ArgumentParser) -> None:
+        """Opcoes de quem coleta: por padrao consulta todas as fontes da casa."""
+        sub.add_argument(
+            "--first-source-only",
+            action="store_true",
+            help=(
+                "Parar na primeira fonte util de cada casa, em vez de unir todas "
+                "(mais rapido, cobertura menor)"
+            ),
+        )
+
     def add_platform_arg(sub: argparse.ArgumentParser) -> None:
         sub.add_argument(
             "--platform",
@@ -420,6 +497,7 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="Coleta completa + relatorios", parents=[common])
     add_platform_arg(run_parser)
+    add_collect_args(run_parser)
     run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
     run_parser.add_argument(
         "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
@@ -433,6 +511,7 @@ def main() -> None:
 
     collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras", parents=[common])
     add_platform_arg(collect_parser)
+    add_collect_args(collect_parser)
     collect_parser.set_defaults(func=cmd_collect)
 
     cvm_parser = subparsers.add_parser("cvm", help="Coletar o radar CVM", parents=[common])
@@ -453,6 +532,7 @@ def main() -> None:
         "export", help="Exportar as prateleiras para planilha (.xlsx)", parents=[common]
     )
     add_platform_arg(export_parser)
+    add_collect_args(export_parser)
     export_parser.add_argument(
         "--collect",
         action="store_true",
@@ -461,6 +541,24 @@ def main() -> None:
     export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
     export_parser.set_defaults(func=cmd_export)
+
+    market_parser = subparsers.add_parser(
+        "market",
+        help="Importar a base geral do mercado (CVM) para tabelas CSV",
+        parents=[common],
+    )
+    market_parser.add_argument(
+        "--skip-fees",
+        action="store_true",
+        help="Nao baixar o extrato de informacoes (~100 MB) - base sem taxas",
+    )
+    market_parser.add_argument(
+        "--force", action="store_true", help="Rebaixar mesmo sem mudanca na origem"
+    )
+    market_parser.add_argument(
+        "--local-dir", help="Usar arquivos ja baixados neste diretorio"
+    )
+    market_parser.set_defaults(func=cmd_market)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)

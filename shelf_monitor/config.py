@@ -210,6 +210,16 @@ class Config:
         return self.data_dir / "cvm" / "extract"
 
     @property
+    def market_dir(self) -> Path:
+        """Base geral do mercado - tabelas CSV, gitignored (centenas de MB)."""
+        return self.data_dir / "market"
+
+    @property
+    def market_raw_dir(self) -> Path:
+        """Downloads brutos da CVM para a base de mercado - gitignored."""
+        return self.market_dir / "raw"
+
+    @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
 
@@ -227,6 +237,7 @@ class Config:
             self.cvm_extract_dir,
             self.cache_dir,
             self.reports_dir,
+            self.market_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 
