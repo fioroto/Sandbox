@@ -1,3 +1,10 @@
 azure-devops>=7.1.0b4
 rich>=13.0
 python-dotenv>=1.0
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+openpyxl>=3.1
+# Opcional: necessario apenas para as prateleiras renderizadas no cliente
+# (XP e BTG). Sem ele, essas casas coletam somente via Open Finance.
+# playwright>=1.44
