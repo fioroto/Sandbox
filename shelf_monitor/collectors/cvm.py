@@ -33,11 +33,20 @@ from shelf_monitor.normalize import (
     parse_number,
 )
 
-# Arquivos da CVM sao ISO-8859-1 com separador ';'. utf-8 fica como rede de
-# seguranca caso o portal mude a exportacao.
-_ENCODINGS = ("iso-8859-1", "utf-8-sig", "utf-8")
+# Arquivos da CVM sao ISO-8859-1 com separador ';'. A ordem aqui importa e nao
+# e a intuitiva: latin-1 decodifica *qualquer* byte sem erro, entao tentar
+# utf-8 depois dele seria codigo morto. Com utf-8 primeiro, um arquivo latin-1
+# falha de verdade e cai para latin-1; um arquivo utf-8 e lido corretamente em
+# vez de virar mojibake silencioso (que zeraria o sinal pre-operacional).
+_ENCODINGS = ("utf-8-sig", "iso-8859-1")
 _DELIMITER = ";"
 _CHUNK = 1 << 20
+
+
+def _describe(exc: BaseException) -> str:
+    if isinstance(exc, SourceUnavailable):
+        return str(exc)
+    return f"{type(exc).__name__}: {exc}"
 
 
 class WatchlistMatcher:
@@ -133,26 +142,22 @@ class CvmCollector:
         started = datetime.now()
         try:
             funds = self._collect_registro(local_zip)
-        except SourceUnavailable as primary_error:
+        except Exception as primary_error:  # noqa: BLE001
+            # Qualquer falha na fonte primaria tenta o cadastro legado - o modo
+            # de falha mais provavel e um download corrompido (BadZipFile), que
+            # nao chega aqui como SourceUnavailable.
             try:
                 funds = self._collect_cad_fi()
-            except SourceUnavailable as fallback_error:
+            except Exception as fallback_error:  # noqa: BLE001
                 return CvmSnapshot(
                     collected_at=started,
                     status=SnapshotStatus.UNAVAILABLE,
                     source_urls=list(self.source_urls),
                     error=(
-                        f"registro_fundo_classe: {primary_error} | "
-                        f"cad_fi: {fallback_error}"
+                        f"registro_fundo_classe: {_describe(primary_error)} | "
+                        f"cad_fi: {_describe(fallback_error)}"
                     ),
                 )
-        except Exception as exc:  # noqa: BLE001
-            return CvmSnapshot(
-                collected_at=started,
-                status=SnapshotStatus.UNAVAILABLE,
-                source_urls=list(self.source_urls),
-                error=f"{type(exc).__name__}: {exc}",
-            )
 
         return CvmSnapshot(
             collected_at=started,
@@ -165,12 +170,24 @@ class CvmCollector:
     # --- fonte primaria: registro_fundo_classe.zip ---------------------------
 
     def _collect_registro(self, local_zip: Path | None = None) -> list[CvmFund]:
+        downloaded = local_zip is None
         if local_zip is not None:
             path = local_zip
         else:
             path = self.config.cvm_raw_dir / "registro_fundo_classe.zip"
             download(self.config, CVM_REGISTRO_ZIP_URL, path)
             self.source_urls.append(CVM_REGISTRO_ZIP_URL)
+
+        if not zipfile.is_zipfile(path):
+            if downloaded:
+                # Um portal que devolve HTTP 200 com pagina de bloqueio grava um
+                # "zip" que nao e zip; guarda-lo faria a proxima execucao reusar
+                # o lixo em vez de baixar de novo.
+                path.unlink(missing_ok=True)
+            raise SourceUnavailable(
+                f"{path.name} nao e um zip valido (download corrompido ou "
+                "resposta de bloqueio)"
+            )
 
         with zipfile.ZipFile(path) as archive:
             names = {n.lower(): n for n in archive.namelist()}

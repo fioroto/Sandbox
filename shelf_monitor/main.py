@@ -31,7 +31,7 @@ from shelf_monitor.config import (
     PLATFORMS,
     Config,
 )
-from shelf_monitor.diff import diff_cvm, diff_shelf
+from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
 from shelf_monitor.http import check_reachable
 from shelf_monitor.models import (
     CvmSnapshot,
@@ -74,12 +74,24 @@ def collect_platforms(config: Config, platform_ids: list[str]) -> list[ShelfSnap
         console.print(f"[bold]Coletando prateleira:[/] {PLATFORMS[platform_id].label}")
         collector = build_collector(config, platform_id)
         snapshot = collector.collect()
-        save_shelf_snapshot(config, snapshot)
+
+        # A qualidade e avaliada contra a ultima coleta confiavel antes de
+        # salvar: um snapshot truncado gravado como OK viraria a baseline do
+        # dia seguinte e faria a prateleira reaparecer inteira como novidade.
+        baseline = latest_shelf_snapshot(
+            config, platform_id, before=snapshot.snapshot_date, trusted_only=True
+        )
+        assess_quality(snapshot, baseline)
+        stored = save_shelf_snapshot(config, snapshot)
 
         detail = f"{len(snapshot.funds)} fundos via {snapshot.strategy.value}"
         console.print(f"  {_status_text(snapshot.status)} - {detail}")
         if snapshot.error:
             console.print(f"  [dim]{_short(snapshot.error)}[/]")
+        if stored is None:
+            console.print(
+                "  [dim]snapshot do dia preservado: a coleta anterior era melhor[/]"
+            )
         snapshots.append(snapshot)
     return snapshots
 
@@ -108,7 +120,7 @@ def build_report(
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
-            config, snapshot.platform, before=snapshot.snapshot_date
+            config, snapshot.platform, before=snapshot.snapshot_date, trusted_only=True
         )
         report.shelf_diffs.append(diff_shelf(snapshot, previous))
 
@@ -174,18 +186,23 @@ def git_commit(config: Config) -> None:
         str(config.reports_dir),
     ]
     try:
-        subprocess.run(["git", "add", *paths], check=True, capture_output=True)
+        subprocess.run(["git", "add", *paths], check=True, capture_output=True, text=True)
         status = subprocess.run(
-            ["git", "status", "--porcelain", *paths], check=True, capture_output=True, text=True
+            ["git", "status", "--porcelain", *paths],
+            check=True,
+            capture_output=True,
+            text=True,
         )
         if not status.stdout.strip():
             console.print("[dim]Nada novo para commitar.[/]")
             return
         message = f"data: snapshot do monitor de prateleiras ({datetime.now():%Y-%m-%d})"
-        subprocess.run(["git", "commit", "-m", message], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", message], check=True, capture_output=True, text=True
+        )
         console.print(f"[green]Commit criado:[/] {message}")
     except subprocess.CalledProcessError as exc:
-        console.print(f"[red]Falha no commit:[/] {exc.stderr.decode(errors='replace')[:300]}")
+        console.print(f"[red]Falha no commit:[/] {_short(exc.stderr or str(exc), 300)}")
 
 
 # --- subcomandos -------------------------------------------------------------
@@ -340,10 +357,20 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Monitor de prateleiras de fundos dos concorrentes da XP"
+    # --data-dir vale antes ou depois do subcomando: exigir uma das duas ordens
+    # e uma pegadinha desnecessaria na linha de comando. O SUPPRESS e o que
+    # impede o subparser de sobrescrever com None o valor dado antes dele.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--data-dir",
+        default=argparse.SUPPRESS,
+        help="Diretorio de dados (default: ./data)",
     )
-    parser.add_argument("--data-dir", help="Diretorio de dados (default: ./data)")
+
+    parser = argparse.ArgumentParser(
+        description="Monitor de prateleiras de fundos dos concorrentes da XP",
+        parents=[common],
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     def add_platform_arg(sub: argparse.ArgumentParser) -> None:
@@ -355,7 +382,7 @@ def main() -> None:
             help="Plataforma a processar (repetivel; default: todas)",
         )
 
-    run_parser = subparsers.add_parser("run", help="Coleta completa + relatorios")
+    run_parser = subparsers.add_parser("run", help="Coleta completa + relatorios", parents=[common])
     add_platform_arg(run_parser)
     run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
     run_parser.add_argument(
@@ -368,30 +395,28 @@ def main() -> None:
     )
     run_parser.set_defaults(func=cmd_run)
 
-    collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras")
+    collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras", parents=[common])
     add_platform_arg(collect_parser)
     collect_parser.set_defaults(func=cmd_collect)
 
-    cvm_parser = subparsers.add_parser("cvm", help="Coletar o radar CVM")
+    cvm_parser = subparsers.add_parser("cvm", help="Coletar o radar CVM", parents=[common])
     cvm_parser.add_argument("--local-zip", help="Usar um zip local em vez de baixar")
     cvm_parser.set_defaults(func=cmd_cvm)
 
-    diff_parser = subparsers.add_parser("diff", help="Comparar os snapshots existentes")
+    diff_parser = subparsers.add_parser("diff", help="Comparar os snapshots existentes", parents=[common])
     add_platform_arg(diff_parser)
     diff_parser.set_defaults(func=cmd_diff)
 
-    report_parser = subparsers.add_parser("report", help="Re-renderizar os relatorios")
+    report_parser = subparsers.add_parser("report", help="Re-renderizar os relatorios", parents=[common])
     report_parser.add_argument(
         "--send-email", action="store_true", help="Enviar o digest por SMTP"
     )
     report_parser.set_defaults(func=cmd_report)
 
-    doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes")
+    doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)
 
-    discover_parser = subparsers.add_parser(
-        "watchlist-discover", help="Listar gestores da CVM que casam com um termo"
-    )
+    discover_parser = subparsers.add_parser("watchlist-discover", help="Listar gestores da CVM que casam com um termo", parents=[common])
     discover_parser.add_argument("query", help="Termo a procurar no campo Gestor")
     discover_parser.add_argument("--limit", type=int, default=30)
     discover_parser.add_argument("--local-zip", help="Usar um zip local em vez de baixar")
@@ -402,7 +427,7 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
-    config = Config(data_dir=args.data_dir)
+    config = Config(data_dir=getattr(args, "data_dir", None))
     errors = config.validate()
     if errors:
         console.print("[red]Erros de configuracao:[/]")

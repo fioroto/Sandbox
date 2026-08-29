@@ -7,6 +7,7 @@ bastar; se vier vazia, o PlatformCollector ja tera tentado o Open Finance antes.
 from __future__ import annotations
 
 import re
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -14,7 +15,7 @@ from shelf_monitor.collectors.browser import extract_fund_dicts, to_offer
 from shelf_monitor.collectors.platform import PlatformCollector
 from shelf_monitor.http import SourceUnavailable, get
 from shelf_monitor.models import FundOffer
-from shelf_monitor.normalize import classify_asset_class, normalize_cnpj, parse_number
+from shelf_monitor.normalize import classify_asset_class, normalize_cnpj, parse_money
 
 _CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
 _EMBEDDED_JSON_RE = re.compile(
@@ -68,6 +69,11 @@ class ItauCollector(PlatformCollector):
             row_text = " ".join(cells)
             cnpj_match = _CNPJ_RE.search(row_text)
             link = row.find("a", href=True)
+            # O catalogo usa caminhos relativos; guardar o href cru deixaria o
+            # link quebrado no dashboard.
+            detail_url = (
+                urljoin(self.platform.shelf_url, link["href"]) if link else None
+            )
 
             offer = FundOffer(
                 platform=self.platform_id,
@@ -76,7 +82,7 @@ class ItauCollector(PlatformCollector):
                 asset_class=classify_asset_class(cells[1] if len(cells) > 1 else None, name),
                 raw_category=cells[1] if len(cells) > 1 else None,
                 min_initial=_first_currency(cells[2:]),
-                detail_url=link["href"] if link else None,
+                detail_url=detail_url,
                 extra={"source": "html-scrape"},
             )
             if offer.identity not in seen:
@@ -94,7 +100,7 @@ class ItauCollector(PlatformCollector):
 def _first_currency(cells: list[str]) -> float | None:
     for cell in cells:
         if "R$" in cell:
-            value = parse_number(cell)
+            value = parse_money(cell)
             if value is not None:
                 return value
     return None

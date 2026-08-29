@@ -13,6 +13,8 @@ para a estrategia seguinte da plataforma.
 from __future__ import annotations
 
 import json
+import re
+import time
 
 import requests
 
@@ -33,6 +35,31 @@ from shelf_monitor.normalize import (
 
 _PAGE_SIZE = 500
 _MAX_PAGES = 200  # trava de seguranca contra paginacao mal comportada
+_DIRECTORY_CACHE_TTL = 24 * 60 * 60  # o diretorio muda devagar, mas muda
+
+
+def _brand_matches(brand: str, org_name: str) -> bool:
+    """Casa a marca respeitando fronteira de palavra.
+
+    Sem isso "XP" casaria dentro de "BANCO EXPRESSO" e o coletor da XP adotaria
+    o endpoint de outra instituicao - com status OK e a prateleira errada.
+    """
+    if not brand or not org_name:
+        return False
+    return re.search(rf"(?<!\w){re.escape(brand)}(?!\w)", org_name) is not None
+
+
+def _as_mapping(value: object) -> dict:
+    """Devolve o dict, ou um vazio quando a fonte mandou outra coisa."""
+    return value if isinstance(value, dict) else {}
+
+
+def _as_text(value: object) -> str | None:
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return None
 
 
 class OpenFinanceFunds:
@@ -52,13 +79,19 @@ class OpenFinanceFunds:
     # --- descoberta de host ---------------------------------------------------
 
     def _load_directory(self) -> list[dict]:
-        """Diretorio oficial de participantes, cacheado em disco."""
+        """Diretorio oficial de participantes, cacheado em disco.
+
+        O cache expira: uma instituicao que troca de host deixaria o coletor
+        preso num endpoint morto ate alguem apagar o arquivo a mao.
+        """
         cache_path = self.config.cache_dir / "participants.json"
         if cache_path.exists():
-            try:
-                return json.loads(cache_path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                pass  # cache corrompido: rebaixa para download
+            age = time.time() - cache_path.stat().st_mtime
+            if age < _DIRECTORY_CACHE_TTL:
+                try:
+                    return json.loads(cache_path.read_text(encoding="utf-8"))
+                except (ValueError, OSError):
+                    pass  # cache corrompido: rebaixa para download
 
         data = get_json(self.session, self.config.directory_url, self.config)
         if not isinstance(data, list):
@@ -74,6 +107,7 @@ class OpenFinanceFunds:
             return self.platform.open_finance_base_url.rstrip("/")
 
         brands = [normalize_text(b) for b in self.platform.open_finance_brands]
+        brands = [b for b in brands if b]
         if not brands:
             raise SourceUnavailable(
                 f"{self.platform.platform_id} nao tem marca Open Finance configurada"
@@ -88,7 +122,7 @@ class OpenFinanceFunds:
                 or participant.get("RegisteredName")
                 or ""
             )
-            if not any(brand.strip() and brand.strip() in org_name for brand in brands):
+            if not any(_brand_matches(brand, org_name) for brand in brands):
                 continue
 
             for server in participant.get("AuthorisationServers", []) or []:
@@ -132,43 +166,49 @@ class OpenFinanceFunds:
                 if offer:
                     offers.append(offer)
 
-            total_pages = ((payload.get("meta") or {}).get("totalPages")) or 1
-            if page >= int(total_pages) or not items:
+            meta = payload.get("meta")
+            total_pages = parse_int((meta or {}).get("totalPages")) or 1
+            if page >= total_pages or not items:
                 break
             page += 1
 
         return offers
 
     def _to_offer(self, item: dict) -> FundOffer | None:
-        name = (item.get("name") or "").strip()
+        name = _as_text(item.get("name"))
         if not name:
             return None
 
-        fees = item.get("fees") or {}
-        conditions = item.get("generalConditions") or {}
-        redemption = conditions.get("redemption") or {}
-        manager = item.get("fundManager") or {}
-        admin = item.get("admin") or {}
-        category = item.get("anbimaCategory") or item.get("category")
+        # A spec define objetos aqui, mas implementacoes divergem (listas,
+        # strings, null). Um campo fora do formato vira campo ausente, nunca
+        # uma excecao que derruba a coleta inteira da plataforma.
+        fees = _as_mapping(item.get("fees"))
+        conditions = _as_mapping(item.get("generalConditions"))
+        redemption = _as_mapping(conditions.get("redemption"))
+        manager = _as_mapping(item.get("fundManager"))
+        admin = _as_mapping(item.get("admin"))
+        category = _as_text(item.get("anbimaCategory")) or _as_text(item.get("category"))
 
-        perf_raw = fees.get("performanceFee") or {}
+        perf_raw = _as_mapping(fees.get("performanceFee"))
         performance_fee = None
         if perf_raw:
             performance_fee = PerformanceFee(
                 amount_pct=parse_number(perf_raw.get("amount")),
-                benchmark=perf_raw.get("benchmark"),
-                method=perf_raw.get("method"),
+                benchmark=_as_text(perf_raw.get("benchmark")),
+                method=_as_text(perf_raw.get("method")),
             )
 
         return FundOffer(
             platform=self.platform.platform_id,
             name=name,
-            cnpj=normalize_cnpj(item.get("cnpjNumber")),
-            isin=item.get("isinCode"),
-            manager_name=manager.get("name"),
-            manager_cnpj=normalize_cnpj(manager.get("cnpjNumber")),
-            admin_name=admin.get("name"),
-            asset_class=classify_asset_class(category, item.get("fundType"), name),
+            cnpj=normalize_cnpj(_as_text(item.get("cnpjNumber"))),
+            isin=_as_text(item.get("isinCode")),
+            manager_name=_as_text(manager.get("name")),
+            manager_cnpj=normalize_cnpj(_as_text(manager.get("cnpjNumber"))),
+            admin_name=_as_text(admin.get("name")),
+            asset_class=classify_asset_class(
+                category, _as_text(item.get("fundType")), name
+            ),
             raw_category=category,
             min_initial=parse_number(conditions.get("minimumAmount")),
             admin_fee_pct=parse_number(fees.get("maxAdminFee")),
@@ -176,7 +216,7 @@ class OpenFinanceFunds:
             redemption_quotation_days=parse_int(redemption.get("quotationDays")),
             redemption_payment_days=parse_int(redemption.get("paymentDays")),
             grace_days=parse_int(redemption.get("graceDays")),
-            taxation=item.get("taxation"),
+            taxation=_as_text(item.get("taxation")),
             detail_url=None,
             extra={"source": "open-finance"},
         )

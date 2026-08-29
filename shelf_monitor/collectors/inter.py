@@ -17,6 +17,7 @@ from shelf_monitor.normalize import (
     classify_asset_class,
     normalize_cnpj,
     parse_int,
+    parse_money,
     parse_number,
 )
 
@@ -119,7 +120,7 @@ class InterCollector(PlatformCollector):
                 facts.get("classe"), facts.get("categoria"), name
             ),
             raw_category=facts.get("classe") or facts.get("categoria"),
-            min_initial=parse_number(
+            min_initial=parse_money(
                 facts.get("aplicacao minima") or facts.get("investimento minimo")
             ),
             admin_fee_pct=parse_number(facts.get("taxa de administracao")),

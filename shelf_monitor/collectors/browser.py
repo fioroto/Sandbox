@@ -19,6 +19,7 @@ from shelf_monitor.normalize import (
     normalize_cnpj,
     normalize_text,
     parse_int,
+    parse_money,
     parse_number,
 )
 
@@ -105,6 +106,13 @@ def extract_fund_dicts(payload: object, depth: int = 0) -> list[dict]:
     return found
 
 
+def _parse_min_initial(raw: Any) -> float | None:
+    """Escolhe o parser pelo formato: texto em reais tem ponto de milhar."""
+    if isinstance(raw, str) and ("R$" in raw or "," in raw):
+        return parse_money(raw)
+    return parse_number(raw)
+
+
 def to_offer(platform_id: str, item: dict, source: str) -> FundOffer | None:
     name = _as_text(_pick(item, _NAME_KEYS))
     if not name:
@@ -122,7 +130,9 @@ def to_offer(platform_id: str, item: dict, source: str) -> FundOffer | None:
         admin_name=_as_text(_pick(item, _ADMIN_KEYS)),
         asset_class=classify_asset_class(category, name),
         raw_category=category,
-        min_initial=parse_number(_pick(item, _MIN_KEYS)),
+        # APIs internas as vezes devolvem o minimo ja formatado ("R$ 25.000"):
+        # numero nativo e parse_number; texto em reais e parse_money.
+        min_initial=_parse_min_initial(_pick(item, _MIN_KEYS)),
         admin_fee_pct=parse_number(_pick(item, _ADMIN_FEE_KEYS)),
         redemption_quotation_days=parse_int(_pick(item, _QUOTATION_KEYS)),
         redemption_payment_days=parse_int(_pick(item, _PAYMENT_KEYS)),

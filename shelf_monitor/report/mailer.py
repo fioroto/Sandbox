@@ -20,8 +20,12 @@ def build_subject(report: RunReport) -> str:
     date_label = report.generated_at.strftime("%d/%m")
 
     launches = len(report.cvm_diff.launches) if report.cvm_diff else 0
+    # Na primeira execucao new_registrations traz todos os pre-operacionais que
+    # ja existiam: isso e baseline, nao novidade, e nao pode virar manchete.
     new_registrations = (
-        len(report.cvm_diff.new_registrations) if report.cvm_diff else 0
+        len(report.cvm_diff.new_registrations)
+        if report.cvm_diff and not report.cvm_diff.is_first_run
+        else 0
     )
     added = sum(len(d.added) for d in report.shelf_diffs if not d.is_first_run)
     removed = sum(len(d.removed) for d in report.shelf_diffs if not d.is_first_run)

@@ -129,9 +129,11 @@ _SCRIPT = r"""
 const DATA = JSON.parse(document.getElementById("dashboard-data").textContent);
 const SERIES_VARS = ["--s1", "--s2", "--s3", "--s4", "--s5"];
 const platformColor = {};
-DATA.platforms.forEach((p, i) => {
-  // Cor segue a plataforma, fixada na ordem em que ela aparece nos dados.
-  platformColor[p.platform_id] = `var(${SERIES_VARS[i % SERIES_VARS.length]})`;
+// A cor segue a casa, ancorada na ordem canonica - nao na ordem em que ela
+// aparece nesta execucao. Assim uma casa mantem sua cor entre execucoes, e as
+// casas que so aparecem no radar CVM tambem recebem a sua.
+(DATA.house_order || DATA.platforms.map(p => p.platform_id)).forEach((id, i) => {
+  platformColor[id] = `var(${SERIES_VARS[i % SERIES_VARS.length]})`;
 });
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -437,7 +439,8 @@ if (cvm.available && cvm.houses && cvm.houses.length) {
 } else {
   document.getElementById("cvm-section").innerHTML =
     `<h2>Radar CVM</h2><p class="card-sub">Fundos registrados por gestoras ligadas as casas monitoradas.</p>
-     <div class="note-box">Extrato da CVM indisponivel nesta execucao: ${cvm.error || "fonte nao coletada"}.</div>`;
+     <div class="note-box">Extrato da CVM indisponivel nesta execucao: ` +
+    `${escapeHtml(cvm.error || "fonte nao coletada")}.</div>`;
 }
 
 // --- Saude da coleta --------------------------------------------------------

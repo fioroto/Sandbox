@@ -13,13 +13,21 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from shelf_monitor.collectors.cvm import CvmCollector, WatchlistMatcher, discover_managers, load_registro_rows
-from shelf_monitor.collectors.open_finance import _flatten_funds
+from shelf_monitor.collectors.cvm import (
+    CvmCollector,
+    WatchlistMatcher,
+    _decode_rows,
+    discover_managers,
+    load_registro_rows,
+)
+from shelf_monitor.collectors.open_finance import _brand_matches, _flatten_funds
+from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import Config
-from shelf_monitor.diff import diff_cvm, diff_shelf
+from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
 from shelf_monitor.models import (
     AssetClass,
     CollectorStrategy,
+    CvmSnapshot,
     FundOffer,
     RunReport,
     ShelfSnapshot,
@@ -30,6 +38,8 @@ from shelf_monitor.normalize import (
     format_cnpj,
     name_slug,
     normalize_cnpj,
+    normalize_text,
+    parse_money,
     parse_number,
 )
 from shelf_monitor.report.aggregate import build_dashboard_data
@@ -78,7 +88,18 @@ class TestNormalize(unittest.TestCase):
         self.assertEqual(parse_number("R$ 1.234,56"), 1234.56)
         self.assertEqual(parse_number("1234.56"), 1234.56)
         self.assertEqual(parse_number("0,50"), 0.5)
+        self.assertEqual(parse_number("1.000.000"), 1_000_000.0)
         self.assertIsNone(parse_number(""))
+
+    def test_money_parsing_reads_dot_as_thousands(self):
+        """"R$ 1.000" e mil reais; le-lo como 1.0 erra por 1000x em silencio."""
+        self.assertEqual(parse_money("R$ 1.000"), 1000.0)
+        self.assertEqual(parse_money("R$ 25.000"), 25_000.0)
+        self.assertEqual(parse_money("1.000.000"), 1_000_000.0)
+        self.assertEqual(parse_money("R$ 1.234,56"), 1234.56)
+        # Sem grupos de tres digitos, o ponto continua sendo decimal.
+        self.assertEqual(parse_money("100.00"), 100.0)
+        self.assertIsNone(parse_money(None))
 
 
 class TestCvmCollector(unittest.TestCase):
@@ -116,6 +137,26 @@ class TestCvmCollector(unittest.TestCase):
         self.assertEqual(house, "inter")
         self.assertTrue(reason.startswith("cnpj_root:"))
 
+    def test_utf8_csv_is_not_read_as_latin1_mojibake(self):
+        """latin-1 decodifica qualquer byte: se vier primeiro, utf-8 nunca roda
+        e "FASE PRE-OPERACIONAL" vira mojibake que nao casa - o radar zera em
+        silencio, com status OK."""
+        header = "CNPJ_Fundo;Denominacao_Social;Situacao;Gestor"
+        row = "12345678000191;FUNDO ACOES UNICO;FASE PRÉ-OPERACIONAL;KINEA INVESTIMENTOS"
+        for encoding in ("utf-8", "iso-8859-1"):
+            with self.subTest(encoding=encoding):
+                rows = _decode_rows(f"{header}\n{row}".encode(encoding))
+                self.assertEqual(rows[0]["Situacao"], "FASE PRÉ-OPERACIONAL")
+
+    def test_corrupted_download_falls_through_to_the_legacy_source(self):
+        """Um zip corrompido levanta BadZipFile, nao SourceUnavailable."""
+        bad_zip = Path(self.tmp.name) / "corrompido.zip"
+        bad_zip.write_text("<html>403 Forbidden</html>", encoding="utf-8")
+
+        snapshot = CvmCollector(self.config).collect(local_zip=bad_zip)
+        self.assertEqual(snapshot.status, SnapshotStatus.UNAVAILABLE)
+        self.assertIn("cad_fi", snapshot.error, "o fallback legado deve ser tentado")
+
     def test_discover_managers_ranks_by_fund_count(self):
         rows = load_registro_rows(self.config, local_zip=CVM_ZIP)
         results = discover_managers(rows, "BTG PACTUAL")
@@ -132,6 +173,39 @@ class TestOpenFinanceMapping(unittest.TestCase):
         items = _flatten_funds(payload["data"])
         self.assertEqual(len(items), 7)
         self.assertTrue(all("cnpjNumber" in item for item in items))
+
+    def test_brand_match_respects_word_boundaries(self):
+        """Sem fronteira, "XP" casaria "BANCO EXPRESSO" e adotaria o host errado."""
+        self.assertFalse(_brand_matches("XP", normalize_text("Banco Expresso S.A.")))
+        self.assertTrue(
+            _brand_matches("XP", normalize_text("XP Investimentos CCTVM S.A."))
+        )
+        self.assertFalse(_brand_matches("INTER", normalize_text("Intermedium Capital")))
+        self.assertTrue(_brand_matches("INTER", normalize_text("Banco Inter S.A.")))
+
+
+class TestStrategyCascade(unittest.TestCase):
+    def setUp(self):
+        self.config, self.tmp = temp_config()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_unexpected_error_does_not_cancel_remaining_strategies(self):
+        """Payload malformado de terceiro nao pode cancelar o fallback."""
+        platform = self.config.platform("xp")
+        collector = XpCollector(self.config, platform)
+
+        def exploding_open_finance():
+            raise AttributeError("'list' object has no attribute 'get'")
+
+        collector._collect_open_finance = exploding_open_finance
+        collector._collect_playwright = lambda: [offer("xp", "Fundo Salvo", "11111111000191")]
+
+        snapshot = collector.collect()
+        self.assertEqual(snapshot.status, SnapshotStatus.OK)
+        self.assertEqual([f.name for f in snapshot.funds], ["Fundo Salvo"])
+        self.assertEqual(snapshot.strategy, CollectorStrategy.PLAYWRIGHT)
 
 
 def offer(platform: str, name: str, cnpj: str | None = None, **kwargs) -> FundOffer:
@@ -223,6 +297,49 @@ class TestShelfDiff(unittest.TestCase):
         self.assertEqual(len(diff.changed), 1)
         self.assertEqual(diff.changed[0].changes[0].field, "name")
 
+    def test_numbered_mandates_are_not_merged_as_a_rename(self):
+        """"Selection 30" e "Selection 60" sao 93% parecidos e fundos distintos."""
+        previous = snapshot_for("xp", [
+            offer("xp", "XP Selection Multimercado 30"),
+        ], self.yesterday)
+        current = snapshot_for("xp", [
+            offer("xp", "XP Selection Multimercado 60"),
+        ], self.today)
+
+        diff = diff_shelf(current, previous)
+        self.assertEqual([f.name for f in diff.added], ["XP Selection Multimercado 60"])
+        self.assertEqual([f.name for f in diff.removed], ["XP Selection Multimercado 30"])
+        self.assertEqual(diff.changed, [])
+
+    def test_colliding_slugs_do_not_hide_a_real_removal(self):
+        """Dois fundos com o mesmo slug nao podem se sobrescrever no indice."""
+        previous = snapshot_for("inter", [
+            offer("inter", "Inter Conservador Renda Fixa FIF"),
+            offer("inter", "Inter Conservador Renda Fixa FIC FIF"),
+            offer("inter", "Outro Fundo X"),
+        ], self.yesterday)
+        current = snapshot_for("inter", [
+            offer("inter", "Inter Conservador Renda Fixa FIF"),
+            offer("inter", "Outro Fundo X"),
+        ], self.today)
+
+        diff = diff_shelf(current, previous)
+        self.assertEqual(len(diff.removed), 1)
+
+    def test_shrunk_collection_is_downgraded_so_it_cannot_become_baseline(self):
+        previous = snapshot_for(
+            "inter", [offer("inter", f"F{i}", f"{i:014d}") for i in range(400)],
+            self.yesterday,
+        )
+        current = snapshot_for(
+            "inter", [offer("inter", f"F{i}", f"{i:014d}") for i in range(150)],
+            self.today,
+        )
+
+        assess_quality(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.PARTIAL)
+        self.assertIn("tratada como parcial", current.error)
+
     def test_different_funds_are_not_merged_as_a_rename(self):
         previous = snapshot_for("btg", [offer("btg", "Verde AM Scena")], self.yesterday)
         current = snapshot_for("btg", [offer("btg", "SPX Nimitz")], self.today)
@@ -269,6 +386,21 @@ class TestCvmDiff(unittest.TestCase):
         diff = diff_cvm(self.snapshot, previous)
         self.assertEqual(len(diff.launches), 1)
         self.assertEqual(diff.launches[0].fund.cnpj, "22345678000192")
+
+    def test_collapsed_extract_does_not_report_mass_cancellation(self):
+        """Se a CVM renomear uma coluna, a watchlist casa com nada - isso nao
+        pode virar "800 fundos sairam do cadastro" no digest."""
+        previous = CvmCollector(self.config).collect(local_zip=CVM_ZIP)
+        empty = CvmSnapshot(
+            collected_at=datetime.now(),
+            status=SnapshotStatus.PARTIAL,
+            funds=[],
+            error="nenhum fundo casou com a watchlist",
+        )
+
+        diff = diff_cvm(empty, previous)
+        self.assertTrue(diff.suspect)
+        self.assertEqual(diff.cancelled, [])
 
     def test_new_registration_detected_against_baseline(self):
         previous = CvmCollector(self.config).collect(local_zip=CVM_ZIP)

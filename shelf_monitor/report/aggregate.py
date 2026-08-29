@@ -225,7 +225,24 @@ def build_dashboard_data(report: RunReport) -> dict:
         "generated_at": report.generated_at.isoformat(),
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],
+        # Ordem canonica das casas: fixa a cor de cada uma nos graficos, mesmo
+        # quando a execucao cobre so parte delas (o radar CVM traz casas que
+        # nao tem prateleira coletada).
+        "house_order": list(PLATFORMS),
         "platforms": [s.to_dict() for s in summaries],
-        "diffs": [d.to_dict() for d in report.shelf_diffs],
+        # O resumo por plataforma ja carrega o que o dashboard desenha; os
+        # diffs completos ficam no digest, para nao embutir a prateleira
+        # inteira duas vezes no HTML.
+        "diff_summary": [
+            {
+                "platform": d.platform,
+                "added": len(d.added),
+                "removed": len(d.removed),
+                "changed": len(d.changed),
+                "suspect": d.suspect,
+                "is_first_run": d.is_first_run,
+            }
+            for d in report.shelf_diffs
+        ],
         "cvm": cvm_payload,
     }

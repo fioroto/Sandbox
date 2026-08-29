@@ -6,6 +6,7 @@ confia na coleta atual (ver `SUSPECT_SHRINK_RATIO`).
 """
 from __future__ import annotations
 
+import re
 from difflib import SequenceMatcher
 
 from shelf_monitor.config import (
@@ -41,8 +42,45 @@ _TRACKED = (
 )
 
 
+def assess_quality(
+    current: ShelfSnapshot, previous: ShelfSnapshot | None
+) -> ShelfSnapshot:
+    """Rebaixa para PARTIAL uma coleta que encolheu demais.
+
+    A marcacao precisa viver no snapshot, nao so no diff: um snapshot truncado
+    salvo como OK vira a baseline confiavel do dia seguinte, e a prateleira
+    inteira reaparece como "entradas" quando a coleta volta ao normal.
+    """
+    if current.status != SnapshotStatus.OK or previous is None or not previous.funds:
+        return current
+
+    ratio = len(current.funds) / len(previous.funds)
+    if ratio < SUSPECT_SHRINK_RATIO:
+        current.status = SnapshotStatus.PARTIAL
+        current.error = (
+            f"coleta trouxe {len(current.funds)} fundos contra {len(previous.funds)} "
+            f"da anterior ({ratio:.0%}) - tratada como parcial"
+        )
+    return current
+
+
 def _index(funds: list[FundOffer]) -> dict[str, FundOffer]:
-    return {fund.identity: fund for fund in funds}
+    """Indexa por identidade, desambiguando colisoes.
+
+    Dois fundos sem CNPJ podem colapsar no mesmo slug (formas juridicas
+    diferentes da mesma familia). Sem sufixo, um sobrescreveria o outro e uma
+    saida real ficaria invisivel no diff.
+    """
+    index: dict[str, FundOffer] = {}
+    for fund in funds:
+        identity = fund.identity
+        if identity in index:
+            suffix = 2
+            while f"{identity}#{suffix}" in index:
+                suffix += 1
+            identity = f"{identity}#{suffix}"
+        index[identity] = fund
+    return index
 
 
 def _field_changes(old: FundOffer, new: FundOffer) -> list[FieldChange]:
@@ -63,6 +101,22 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _digits(text: str) -> list[str]:
+    return re.findall(r"\d+", text)
+
+
+def _may_be_rename(old_slug: str, new_slug: str) -> bool:
+    """Decide se dois nomes parecidos sao o mesmo fundo renomeado.
+
+    Similaridade textual sozinha nao basta: na industria o numero e justamente
+    o que distingue mandatos ("Selection 30" e "Selection 60" sao 93% iguais e
+    fundos diferentes). Numeros divergentes vetam a reconciliacao.
+    """
+    if _digits(old_slug) != _digits(new_slug):
+        return False
+    return _similarity(old_slug, new_slug) >= FUZZY_RENAME_THRESHOLD
+
+
 def _reconcile_renames(
     added: list[FundOffer], removed: list[FundOffer]
 ) -> tuple[list[FundOffer], list[FundOffer], list[FundChange]]:
@@ -78,16 +132,20 @@ def _reconcile_renames(
     candidates_removed = [f for f in still_removed if not f.cnpj]
 
     for new_fund in candidates_added:
+        new_slug = name_slug(new_fund.name)
         best: FundOffer | None = None
         best_score = 0.0
         for old_fund in candidates_removed:
             if old_fund not in still_removed:
                 continue
-            score = _similarity(name_slug(old_fund.name), name_slug(new_fund.name))
+            old_slug = name_slug(old_fund.name)
+            if not _may_be_rename(old_slug, new_slug):
+                continue
+            score = _similarity(old_slug, new_slug)
             if score > best_score:
                 best, best_score = old_fund, score
 
-        if best is not None and best_score >= FUZZY_RENAME_THRESHOLD:
+        if best is not None:
             still_added.remove(new_fund)
             still_removed.remove(best)
             changes = [FieldChange(field="name", old=best.name, new=new_fund.name)]
@@ -168,7 +226,24 @@ def diff_cvm(current: CvmSnapshot, previous: CvmSnapshot | None) -> CvmDiff:
     )
 
     if current.status == SnapshotStatus.UNAVAILABLE:
+        diff.suspect = True
+        diff.suspect_reason = current.error or "extrato indisponivel"
         return diff
+
+    # Uma coluna renomeada pela CVM faz a watchlist casar com nada e o extrato
+    # despencar - sem esta guarda, o digest anunciaria a watchlist inteira como
+    # "saiu do cadastro".
+    if current.status == SnapshotStatus.PARTIAL:
+        diff.suspect = True
+        diff.suspect_reason = current.error or "extrato parcial"
+    elif previous and previous.funds:
+        ratio = len(current.funds) / len(previous.funds)
+        if ratio < SUSPECT_SHRINK_RATIO:
+            diff.suspect = True
+            diff.suspect_reason = (
+                f"extrato atual tem {len(current.funds)} fundos contra "
+                f"{len(previous.funds)} do anterior ({ratio:.0%})"
+            )
 
     if previous is None:
         # Sem baseline, o unico sinal confiavel sao os pre-operacionais abertos.
@@ -187,9 +262,14 @@ def diff_cvm(current: CvmSnapshot, previous: CvmSnapshot | None) -> CvmDiff:
         key=lambda f: f.registered_at or "",
         reverse=True,
     )
-    diff.cancelled = sorted(
-        [f for cnpj, f in previous_index.items() if cnpj not in current_index],
-        key=lambda f: f.name,
+    # Como no diff de prateleira: extrato suspeito nao reporta desaparecimentos.
+    diff.cancelled = (
+        []
+        if diff.suspect
+        else sorted(
+            [f for cnpj, f in previous_index.items() if cnpj not in current_index],
+            key=lambda f: f.name,
+        )
     )
 
     changes: list[CvmSituationChange] = []

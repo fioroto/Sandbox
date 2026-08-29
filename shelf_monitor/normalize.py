@@ -143,22 +143,38 @@ def classify_asset_class(*hints: str | None) -> AssetClass:
     return AssetClass.OUTROS
 
 
-def parse_number(raw: object) -> float | None:
-    """Converte valores monetarios/percentuais de fontes BR ou EN para float.
+_THOUSAND_GROUPS_RE = re.compile(r"^\d{1,3}(\.\d{3})+$")
 
-    Aceita "1.234,56" (BR), "1234.56" (EN), "R$ 1.000,00" e numeros nativos.
-    """
+
+def _clean_numeric(raw: object) -> str | None:
     if raw is None:
         return None
-    if isinstance(raw, (int, float)):
-        return float(raw)
+    text = re.sub(r"[^\d,.\-]", "", str(raw).strip())
+    if not text or text in {"-", ".", ","}:
+        return None
+    return text
 
-    text = str(raw).strip()
-    if not text:
+
+def _to_float(text: str) -> float | None:
+    try:
+        return float(text)
+    except ValueError:
         return None
 
-    text = re.sub(r"[^\d,.\-]", "", text)
-    if not text or text in {"-", ".", ","}:
+
+def parse_number(raw: object) -> float | None:
+    """Converte um numero de fonte BR ou EN para float.
+
+    Onde o formato e ambiguo ("1.500"), assume ponto decimal - a convencao de
+    payloads JSON, que e de onde a maior parte dos numeros vem. Para valores em
+    reais escritos em texto, use `parse_money`, que resolve a ambiguidade ao
+    contrario.
+    """
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+
+    text = _clean_numeric(raw)
+    if text is None:
         return None
 
     if "," in text and "." in text:
@@ -169,11 +185,43 @@ def parse_number(raw: object) -> float | None:
             text = text.replace(",", "")
     elif "," in text:
         text = text.replace(",", ".")
+    elif text.count(".") > 1:
+        # Nenhum formato tem dois separadores decimais: sao milhares.
+        text = text.replace(".", "")
 
-    try:
-        return float(text)
-    except ValueError:
+    return _to_float(text)
+
+
+def parse_money(raw: object) -> float | None:
+    """Converte um valor monetario escrito em portugues.
+
+    Aqui "R$ 1.000" e mil reais, nao um real - o inverso da suposicao de
+    `parse_number`. A desambiguacao usa a forma dos grupos: pontos que separam
+    blocos de exatamente tres digitos sao milhar.
+    """
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+
+    text = _clean_numeric(raw)
+    if text is None:
         return None
+
+    negative = text.startswith("-")
+    digits = text.lstrip("-")
+
+    if "," in digits:
+        # Com virgula presente, ela e o decimal e o ponto e milhar.
+        digits = digits.replace(".", "").replace(",", ".")
+    elif _THOUSAND_GROUPS_RE.match(digits):
+        # "1.000", "25.000", "1.000.000" - grupos de tres, sem decimais.
+        digits = digits.replace(".", "")
+    elif digits.count(".") > 1:
+        digits = digits.replace(".", "")
+
+    value = _to_float(digits)
+    if value is None:
+        return None
+    return -value if negative else value
 
 
 def parse_int(raw: object) -> int | None:

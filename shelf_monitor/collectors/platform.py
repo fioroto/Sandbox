@@ -32,6 +32,11 @@ class PlatformCollector(BaseCollector):
             except NotImplementedError as exc:
                 errors.append(f"{strategy.value}: {exc}")
                 continue
+            except Exception as exc:  # noqa: BLE001
+                # Um payload malformado de terceiro nao pode cancelar as demais
+                # estrategias: e exatamente para isso que a cascata existe.
+                errors.append(f"{strategy.value}: {type(exc).__name__}: {exc}")
+                continue
 
             if funds and len(funds) >= self._min_funds_for(strategy):
                 self.strategy_used = strategy

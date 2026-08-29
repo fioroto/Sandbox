@@ -388,6 +388,8 @@ class CvmDiff:
     new_registrations: list[CvmFund] = field(default_factory=list)
     situation_changes: list[CvmSituationChange] = field(default_factory=list)
     cancelled: list[CvmFund] = field(default_factory=list)
+    suspect: bool = False
+    suspect_reason: str | None = None
 
     @property
     def is_first_run(self) -> bool:
@@ -405,6 +407,8 @@ class CvmDiff:
         return {
             "prev_date": self.prev_date.isoformat() if self.prev_date else None,
             "curr_date": self.curr_date.isoformat(),
+            "suspect": self.suspect,
+            "suspect_reason": self.suspect_reason,
             "new_registrations": [f.to_dict() for f in self.new_registrations],
             "situation_changes": [c.to_dict() for c in self.situation_changes],
             "cancelled": [f.to_dict() for f in self.cancelled],

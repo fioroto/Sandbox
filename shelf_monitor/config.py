@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -133,16 +133,9 @@ WATCHLIST: dict[str, Watch] = {
 }
 
 
-# Campos do FundOffer cuja mudanca e competitivamente relevante e entra no digest.
-MONITORED_FIELDS = [
-    "min_initial",
-    "admin_fee_pct",
-    "performance_fee_pct",
-    "closed_for_investment",
-    "redemption_quotation_days",
-    "redemption_payment_days",
-    "grace_days",
-]
+# Os campos do FundOffer acompanhados pelo diff estao em diff._TRACKED, junto da
+# funcao que extrai cada um. Uma segunda lista aqui seria uma fonte de verdade
+# paralela, livre para divergir sem que nada quebre.
 
 # Se a coleta atual tiver menos que esta fracao do snapshot anterior, o diff e
 # marcado como suspeito e as saidas nao viram churn no relatorio.
@@ -240,14 +233,19 @@ class Config:
     # --- plataformas ---------------------------------------------------------
 
     def platform(self, platform_id: str) -> PlatformConfig:
-        cfg = PLATFORMS[platform_id]
+        """PlatformConfig com os overrides de ambiente aplicados.
+
+        Devolve uma copia: PLATFORMS e estado de modulo, e escrever nele faria
+        um override vazar para outras instancias de Config.
+        """
+        overrides: dict[str, object] = {}
         env_base = os.getenv(f"OPEN_FINANCE_BASE_URL_{platform_id.upper()}")
         if env_base:
-            cfg.open_finance_base_url = env_base
+            overrides["open_finance_base_url"] = env_base
         env_state = os.getenv(f"SHELF_AUTH_STATE_{platform_id.upper()}")
         if env_state:
-            cfg.auth_storage_state = env_state
-        return cfg
+            overrides["auth_storage_state"] = env_state
+        return replace(PLATFORMS[platform_id], **overrides)
 
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from and self.smtp_to)
