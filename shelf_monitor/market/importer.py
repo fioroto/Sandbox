@@ -13,7 +13,7 @@ from shelf_monitor.http import SourceUnavailable
 from shelf_monitor.market.datasets import CAD_FI, EXTRATO, REGISTRO, Dataset
 from shelf_monitor.market.export import write_database
 from shelf_monitor.market.fees import parse_fees
-from shelf_monitor.market.fetch import fetch, read_member
+from shelf_monitor.market.fetch import CacheReason, fetch, read_member
 from shelf_monitor.market.parse import (
     legacy_class_fields,
     parse_classes,
@@ -48,7 +48,14 @@ def _resolve(
 
     database.sources[dataset.key] = dataset.url
     if result.from_cache:
-        database.notes.append(f"{dataset.key}: sem mudanca na origem, reusado do disco")
+        # A distincao importa: "sem mudanca" quer dizer que a base esta atual,
+        # "origem indisponivel" quer dizer que voce esta lendo dados de ontem.
+        note = f"{dataset.key}: {result.reason.value}, reusado do disco"
+        if result.detail:
+            note += f" ({result.detail})"
+        database.notes.append(note)
+        if result.reason is CacheReason.SOURCE_DOWN:
+            database.stale_sources.append(dataset.key)
     return result.path
 
 
