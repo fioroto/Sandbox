@@ -352,6 +352,28 @@ class TestMailer(unittest.TestCase):
         )
         self.assertIn("nenhuma fonte acessivel", subject)
 
+    def test_digest_summary_distinguishes_the_three_silences(self):
+        """Coleta falha, primeira coleta e prateleira estavel nao sao a mesma coisa."""
+        funds = [offer("btg", "Fundo A", "11111111000191")]
+        stable_prev = snapshot_for("btg", funds, self.yesterday)
+        stable_curr = snapshot_for("btg", funds, self.now)
+        broken = snapshot_for("btg", [], self.now, status=SnapshotStatus.UNAVAILABLE)
+
+        all_broken = render_markdown(
+            self._report([diff_shelf(broken, None)], snapshots=[broken])
+        )
+        self.assertIn("Nenhuma fonte foi acessivel", all_broken)
+
+        first = render_markdown(
+            self._report([diff_shelf(stable_curr, None)], snapshots=[stable_curr])
+        )
+        self.assertIn("Primeira coleta", first)
+
+        stable = render_markdown(
+            self._report([diff_shelf(stable_curr, stable_prev)], snapshots=[stable_curr])
+        )
+        self.assertIn("Nenhuma mudanca", stable)
+
     def test_send_is_a_noop_without_smtp_config(self):
         snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
         result = send_digest(self.config, self._report([diff_shelf(snapshot, None)]))

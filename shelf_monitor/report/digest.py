@@ -57,6 +57,42 @@ def _summary_counts(report: RunReport) -> tuple[int, int, int]:
     return added, removed, changed
 
 
+def _summary_sentence(report: RunReport) -> tuple[str, bool]:
+    """Frase de abertura do digest, e se ela e um alerta.
+
+    Distingue tres silencios que se parecem no numero mas nao no significado:
+    coleta que falhou inteira, primeira coleta, e prateleira estavel.
+    """
+    added, removed, changed = _summary_counts(report)
+    collected = [s for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE]
+
+    if report.snapshots and not collected:
+        return (
+            "Nenhuma fonte foi acessivel nesta execucao: nada foi coletado e nenhuma "
+            "comparacao pode ser feita. Cheque o acesso as fontes com "
+            "`python -m shelf_monitor doctor`.",
+            True,
+        )
+
+    first_run = all(d.is_first_run for d in report.shelf_diffs) if report.shelf_diffs else True
+    if first_run:
+        total = sum(len(s.funds) for s in collected)
+        return (
+            f"Primeira coleta: {total} fundos em {len(collected)} plataforma(s) viram "
+            "a linha de base. As comparacoes comecam na proxima execucao.",
+            False,
+        )
+
+    if not (added or removed or changed):
+        return ("Nenhuma mudanca nas prateleiras monitoradas desde a ultima coleta.", False)
+
+    return (
+        f"{added} fundos entraram, {removed} sairam e {changed} tiveram condicoes "
+        "alteradas nas prateleiras monitoradas.",
+        False,
+    )
+
+
 # --- markdown ----------------------------------------------------------------
 
 
@@ -213,7 +249,6 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
 
 
 def render_markdown(report: RunReport) -> str:
-    added, removed, changed = _summary_counts(report)
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
     lines = [
@@ -225,17 +260,8 @@ def render_markdown(report: RunReport) -> str:
         "",
     ]
 
-    first_run = all(d.is_first_run for d in report.shelf_diffs) if report.shelf_diffs else True
-    if first_run:
-        lines.append(
-            "Primeira execucao: os snapshots desta rodada viram a linha de base. "
-            "As comparacoes comecam na proxima coleta."
-        )
-    else:
-        lines.append(
-            f"{added} fundos entraram, {removed} sairam e {changed} tiveram condicoes "
-            "alteradas nas prateleiras monitoradas."
-        )
+    sentence, is_alert = _summary_sentence(report)
+    lines.append(f"**{sentence}**" if is_alert else sentence)
     lines.append("")
 
     lines.append("| Plataforma | Fundos | Status | Entradas | Saidas | Alteracoes |")
@@ -435,19 +461,9 @@ def _html_cvm_section(report: RunReport) -> str:
 
 
 def render_html(report: RunReport) -> str:
-    added, removed, changed = _summary_counts(report)
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
-    first_run = all(d.is_first_run for d in report.shelf_diffs) if report.shelf_diffs else True
-
-    summary = (
-        "Primeira execucao: os snapshots desta rodada viram a linha de base e as "
-        "comparacoes comecam na proxima coleta."
-        if first_run
-        else (
-            f"<strong>{added}</strong> fundos entraram, <strong>{removed}</strong> sairam e "
-            f"<strong>{changed}</strong> tiveram condicoes alteradas nas prateleiras monitoradas."
-        )
-    )
+    sentence, is_alert = _summary_sentence(report)
+    summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
 
     rows = ""
     for snapshot in report.snapshots:
