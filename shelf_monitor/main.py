@@ -8,6 +8,7 @@ Uso:
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
+    python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
 """
 from __future__ import annotations
@@ -390,6 +391,47 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
             console.print(f"  {key:10} {paths[key]}")
 
 
+def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
+    """Sonda cada fonte de prateleira e grava a resposta bruta em disco."""
+    from shelf_monitor import diagnose
+
+    platform_ids = args.platforms or list(PLATFORMS)
+    console.print(
+        "[bold]Diagnosticando as fontes de prateleira...[/]\n"
+        "  [dim]cada resposta e gravada em data/cache/debug/ para inspecao[/]"
+    )
+
+    probes = diagnose.run(config, platform_ids)
+
+    table = Table(title="Sondagem das fontes", title_style="bold")
+    table.add_column("Fonte")
+    table.add_column("OK")
+    table.add_column("O que veio", overflow="fold")
+    for probe in probes:
+        table.add_row(
+            probe.source,
+            "[green]sim[/]" if probe.ok else "[red]nao[/]",
+            _short(probe.detail, 110),
+        )
+    console.print()
+    console.print(table)
+
+    failing = [p for p in probes if not p.ok]
+    console.print()
+    if failing:
+        console.print(
+            f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado util.[/]"
+        )
+    console.print(
+        f"Evidencias em [bold]{config.cache_dir / 'debug'}[/] - "
+        "o relatorio consolidado esta em diagnostico.json."
+    )
+    console.print(
+        "[dim]Uma pagina que responde 200 mas nao traz CNPJ nem tabela e casca de "
+        "SPA: os dados chegam por JavaScript e so o Playwright os alcanca.[/]"
+    )
+
+
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     """Testa o acesso a cada fonte - o gate antes da primeira execucao real."""
     sources: list[tuple[str, str]] = [
@@ -561,6 +603,14 @@ def main() -> None:
         "--local-dir", help="Usar arquivos ja baixados neste diretorio"
     )
     market_parser.set_defaults(func=cmd_market)
+
+    diagnose_parser = subparsers.add_parser(
+        "diagnose",
+        help="Sondar as fontes de prateleira e gravar as respostas para analise",
+        parents=[common],
+    )
+    add_platform_arg(diagnose_parser)
+    diagnose_parser.set_defaults(func=cmd_diagnose)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)

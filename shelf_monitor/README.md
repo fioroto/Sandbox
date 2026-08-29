@@ -235,6 +235,31 @@ registre a classe em `collectors/__init__.py` e aponte
 O Nu e o caso que mais se beneficia disso: sem app web deslogado, e a unica via para
 ver sua prateleira.
 
+## Quando uma prateleira nao traz nada
+
+Os coletores de prateleira foram escritos a partir de documentacao publica, nao de
+observacao dos sites. A mecanica e testada (parsing, uniao, diff), mas os seletores e URLs
+podem nao corresponder ao que cada site publica hoje - e sites de banco mudam com frequencia.
+
+Quando uma casa vem vazia, `diagnose` responde por que:
+
+```bash
+python -m shelf_monitor diagnose --platform inter
+```
+
+Ele sonda cada fonte daquela casa e **grava a resposta bruta** em `data/cache/debug/`:
+
+| Sinal na sondagem | O que significa |
+|---|---|
+| `bloqueado pela network policy` | firewall ou proxy corporativo barrando o dominio |
+| pagina responde 200 mas sem CNPJ, sem `<tr>` e sem bloco JSON | casca de SPA: os dados chegam por JavaScript, so o Playwright alcanca |
+| diretorio Open Finance: `0 casaram` | a instituicao usa outra razao social; ajuste `open_finance_brands` em `config.py` |
+| `/funds` responde mas `0 fundos extraidos` | o envelope tem formato diferente do previsto - o JSON salvo mostra qual |
+| sitemap sem o prefixo de fundos | o site reorganizou as URLs; o sitemap salvo mostra a estrutura atual |
+
+Os arquivos em `data/cache/debug/` sao a evidencia que permite corrigir o coletor com o dado
+na mao, em vez de por tentativa. `diagnostico.json` consolida tudo num arquivo so.
+
 ## Como o monitor evita falso alarme
 
 Um monitor de prateleira erra de dois jeitos: reportando mudanca que nao houve, ou
