@@ -31,7 +31,12 @@ from shelf_monitor.normalize import (
 _PERCENT_CEILING = 20.0
 
 _CURRENCY_HINTS = ("R$", "REAIS", "REAL")
-_TEXT_HINTS = ("REGULAMENTO", "CONFORME", "NAO HA", "ISENTO", "VARIAVEL")
+_TEXT_HINTS = ("REGULAMENTO", "CONFORME", "NAO HA", "ISENTO", "VARIAVEL", "SEM TAXA")
+
+# Um numero com seus separadores, como aparece no meio de texto livre.
+# Precisa aceitar qualquer quantidade de digitos antes do primeiro separador,
+# senao "30000" e truncado em "300".
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
 
 
 def resolve_admin_fee(raw: str | None) -> tuple[float | None, FeeUnit, str | None]:
@@ -48,22 +53,47 @@ def resolve_admin_fee(raw: str | None) -> tuple[float | None, FeeUnit, str | Non
         return None, FeeUnit.UNKNOWN, None
 
     upper = normalize_text(text)
+    has_currency = "R$" in text or any(hint in upper for hint in _CURRENCY_HINTS)
 
-    # Texto explicando a taxa em vez de um numero.
-    if any(hint in upper for hint in _TEXT_HINTS) and not re.search(r"\d", text):
+    # Frase explicativa. O teste vem antes de qualquer parsing porque textos
+    # como "NAO HA TAXA ATE 31/12/2026" contem digitos que, extraidos as cegas,
+    # viram uma taxa de trinta e um milhoes.
+    if any(hint in upper for hint in _TEXT_HINTS) and not has_currency:
         return None, FeeUnit.TEXT, text
 
-    has_currency = any(hint in upper for hint in _CURRENCY_HINTS) or "R$" in text
-    value = parse_money(text) if has_currency else parse_number(text)
+    number = _first_number(text)
+    if number is None:
+        return None, FeeUnit.TEXT, text
 
+    if has_currency:
+        return parse_money(number) , FeeUnit.CURRENCY, text
+
+    value = parse_number(number)
     if value is None:
         return None, FeeUnit.TEXT, text
-    if has_currency:
-        return value, FeeUnit.CURRENCY, text
+
     if value > _PERCENT_CEILING:
-        # Sem simbolo, mas grande demais para ser percentual ao ano.
-        return value, FeeUnit.CURRENCY, text
+        # Sem simbolo, mas grande demais para ser percentual ao ano. Se o texto
+        # tem grupos de milhar ("30.000"), o ponto era separador e nao decimal -
+        # reinterpretar evita transformar R$ 30.000 em R$ 30.
+        currency_value = parse_money(number)
+        return (
+            currency_value if currency_value is not None else value,
+            FeeUnit.CURRENCY,
+            text,
+        )
     return value, FeeUnit.PERCENT, text
+
+
+def _first_number(text: str) -> str | None:
+    """Extrai o primeiro numero do texto, com seus separadores.
+
+    Necessario porque a coluna aceita texto livre: "0,5% a.a." tem um
+    percentual perfeitamente legivel que um parser aplicado ao texto inteiro
+    descartaria.
+    """
+    match = _NUMBER_RE.search(text)
+    return match.group(0) if match else None
 
 
 def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
@@ -74,6 +104,7 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
     resultado e nao no do arquivo.
     """
     latest: dict[str, ClassFees] = {}
+    undated: set[str] = set()
 
     for row in iter_rows(source):
         cnpj = normalize_cnpj(
@@ -84,8 +115,15 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
 
         reference = parse_date(_get(row, "DT_COMPTC", "Data_Competencia"))
         existing = latest.get(cnpj)
-        if existing is not None and not _is_newer(reference, existing.reference_date):
-            continue
+        if existing is not None:
+            if reference is None and existing.reference_date is None:
+                # Sem data em nenhum dos dois - provavelmente a CVM renomeou a
+                # coluna. O arquivo vem em ordem cronologica, entao a ultima
+                # linha e a entrega mais recente; manter a primeira travaria a
+                # base na entrega mais antiga, em silencio.
+                undated.add(cnpj)
+            elif not _is_newer(reference, existing.reference_date):
+                continue
 
         admin_fee, unit, admin_raw = resolve_admin_fee(_get(row, "TAXA_ADM"))
 

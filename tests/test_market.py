@@ -70,6 +70,28 @@ class TestAdminFeeUnit(unittest.TestCase):
         self.assertEqual(resolve_admin_fee("")[1], FeeUnit.UNKNOWN)
         self.assertEqual(resolve_admin_fee(None)[1], FeeUnit.UNKNOWN)
 
+    def test_text_hint_wins_even_when_the_sentence_has_digits(self):
+        """"NAO HA TAXA ATE 31/12/2026" nao pode virar R$ 31 milhoes."""
+        value, unit, raw = resolve_admin_fee("NAO HA TAXA DE ADMINISTRACAO ATE 31/12/2026")
+        self.assertIsNone(value)
+        self.assertEqual(unit, FeeUnit.TEXT)
+        self.assertIn("31/12/2026", raw)
+
+    def test_percentage_inside_free_text_is_not_thrown_away(self):
+        value, unit, _ = resolve_admin_fee("0,5% a.a.")
+        self.assertEqual((value, unit), (0.5, FeeUnit.PERCENT))
+
+    def test_thousands_separator_is_reinterpreted_when_reclassified(self):
+        """"30.000" como reais vale 30 mil, nao 30."""
+        self.assertEqual(resolve_admin_fee("30.000")[0], 30000.0)
+        self.assertEqual(resolve_admin_fee("30000")[0], 30000.0)
+
+    def test_three_decimal_places_stay_a_percentage(self):
+        """"1.500" e 1,5% - o arquivo usa ponto decimal."""
+        value, unit, _ = resolve_admin_fee("1.500")
+        self.assertEqual((value, unit), (1.5, FeeUnit.PERCENT))
+
+
 
 class TestFeesFromExtrato(unittest.TestCase):
     def setUp(self):
@@ -96,6 +118,25 @@ class TestFeesFromExtrato(unittest.TestCase):
         self.assertEqual(fee.redemption_payment_days, 3)
         self.assertEqual(fee.performance_fee, 20.0)
         self.assertEqual(fee.performance_fee_benchmark, "IPCA + 5%")
+
+    def test_without_a_date_column_the_last_delivery_wins(self):
+        """Se a CVM renomear DT_COMPTC, travar na primeira linha congelaria a
+        base na entrega mais antiga, em silencio."""
+        raw = (
+            "CNPJ_FUNDO_CLASSE;DATA_BASE_NOVA;TAXA_ADM\n"
+            "12.345.678/0001-91;2026-06-30;0.50\n"
+            "12.345.678/0001-91;2026-08-25;0.45\n"
+        ).encode("iso-8859-1")
+        self.assertEqual(parse_fees(raw)["12345678000191"].admin_fee, 0.45)
+
+    def test_newest_wins_regardless_of_file_order(self):
+        raw = (
+            "CNPJ_FUNDO_CLASSE;DT_COMPTC;TAXA_ADM\n"
+            "12.345.678/0001-91;2026-08-25;0.45\n"
+            "12.345.678/0001-91;2026-06-30;0.50\n"
+        ).encode("iso-8859-1")
+        self.assertEqual(parse_fees(raw)["12345678000191"].admin_fee, 0.45)
+
 
 
 class TestImport(unittest.TestCase):
@@ -193,6 +234,16 @@ class TestExport(unittest.TestCase):
         rows = {r["cnpj"]: r for r in self._read("mercado")}
         self.assertEqual(rows["12.345.678/0001-91"]["subclasses"], "2")
 
+    def test_legacy_fee_is_resolved_like_the_others(self):
+        """A coluna nao pode misturar float parseado com texto cru do cad_fi."""
+        rows = {r["cnpj"]: r for r in self._read("mercado")}
+        legacy = rows["70.345.678/0001-70"]
+        self.assertEqual(legacy["taxa_adm"], "1.9")
+        self.assertEqual(legacy["taxa_adm_unidade"], "percentual")
+        for row in rows.values():
+            if row["taxa_adm"]:
+                float(row["taxa_adm"])  # a coluna inteira precisa ser numerica
+
     def test_manifest_records_counts_and_schema_drift(self):
         manifest = json.loads(self.paths["manifest"].read_text(encoding="utf-8"))
         self.assertEqual(manifest["counts"]["classes"], 4)
@@ -224,37 +275,51 @@ class TestUnknownColumns(unittest.TestCase):
 class TestStreaming(unittest.TestCase):
     """O extrato real tem ~100 MB; carrega-lo inteiro custa ~10x isso em RAM."""
 
-    def test_memory_follows_the_result_not_the_file(self):
+    def _write_extract(self, path: Path, classes: int, deliveries: int) -> float:
         import csv as csv_module
+
+        with path.open("w", encoding="iso-8859-1", newline="") as handle:
+            writer = csv_module.writer(handle, delimiter=";")
+            writer.writerow(["CNPJ_FUNDO_CLASSE", "DT_COMPTC", "TAXA_ADM", "POLIT_INVEST"])
+            for delivery in range(deliveries):
+                for index in range(classes):
+                    writer.writerow([
+                        f"{index:012d}{index % 90:02d}",
+                        f"202{delivery % 5 + 1}-08-25",
+                        "1.50",
+                        "Politica de investimento com um texto razoavelmente longo",
+                    ])
+        return path.stat().st_size / (1024 * 1024)
+
+    def _peak_mb(self, path: Path) -> tuple[int, float]:
         import tracemalloc
 
-        classes, deliveries = 2_000, 10
+        tracemalloc.start()
+        fees = parse_fees(path)
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        return len(fees), peak / (1024 * 1024)
+
+    def test_memory_follows_the_result_not_the_file(self):
+        """Quintuplicar o arquivo, mantendo o resultado, nao muda o pico.
+
+        E a propriedade que separa streaming de leitura em bloco: materializar
+        o CSV custa cerca de dez vezes o tamanho dele, entao o pico subiria
+        junto com o arquivo.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "extrato_fi.csv"
-            with path.open("w", encoding="iso-8859-1", newline="") as handle:
-                writer = csv_module.writer(handle, delimiter=";")
-                writer.writerow(
-                    ["CNPJ_FUNDO_CLASSE", "DT_COMPTC", "TAXA_ADM", "POLIT_INVEST"]
-                )
-                for delivery in range(deliveries):
-                    for index in range(classes):
-                        writer.writerow([
-                            f"{index:012d}{index % 90:02d}",
-                            f"202{delivery % 5 + 1}-08-25",
-                            "1.50",
-                            "Politica de investimento com um texto razoavelmente longo",
-                        ])
+            small = Path(tmp) / "small.csv"
+            large = Path(tmp) / "large.csv"
+            small_mb = self._write_extract(small, classes=400, deliveries=40)
+            large_mb = self._write_extract(large, classes=400, deliveries=200)
 
-            size_mb = path.stat().st_size / (1024 * 1024)
-            tracemalloc.start()
-            fees = parse_fees(path)
-            _, peak_mb = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            peak_mb /= 1024 * 1024
+            small_count, small_peak = self._peak_mb(small)
+            large_count, large_peak = self._peak_mb(large)
 
-        self.assertEqual(len(fees), classes)
-        # Uma leitura que materializasse o arquivo passaria de longe deste teto.
-        self.assertLess(peak_mb, size_mb)
+        self.assertEqual(small_count, large_count, "mesmo resultado nos dois")
+        self.assertGreater(large_mb, small_mb * 4, "o arquivo grande e 5x maior")
+        # Em leitura por blocos, o pico do grande seria ~5x o do pequeno.
+        self.assertLess(large_peak, small_peak * 1.5)
 
     def test_streaming_detects_encoding_like_the_batch_reader(self):
         from shelf_monitor.market.parse import detect_encoding, iter_rows

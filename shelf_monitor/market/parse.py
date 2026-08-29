@@ -7,11 +7,14 @@ que se precisa num schema que a CVM altera em producao.
 """
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
+
+_READ_CHUNK = 1 << 20
 
 from shelf_monitor.collectors.cvm import _decode_rows, _get
 from shelf_monitor.market.datasets import (
@@ -53,39 +56,52 @@ def parse_date(raw: str | None) -> date | None:
     return None
 
 
-def detect_encoding(sample: bytes) -> str:
-    """Descobre o encoding olhando so um pedaco do arquivo.
+def detect_encoding(source: Path | bytes) -> str:
+    """Descobre o encoding validando o arquivo INTEIRO, nao uma amostra.
 
     Mesma ordem de `_decode_rows`, e pelo mesmo motivo: latin-1 decodifica
-    qualquer byte sem erro, entao utf-8 tem de ser tentado primeiro, senao um
-    arquivo utf-8 vira mojibake silencioso.
+    qualquer byte sem erro, entao utf-8 tem de ser tentado primeiro.
+
+    A validacao percorre tudo porque uma amostra erra nos dois sentidos: um
+    arquivo utf-8 cortado no meio de um caractere multibyte parece latin-1, e
+    um arquivo latin-1 cujo inicio e ASCII puro parece utf-8. Os dois casos
+    produzem mojibake em silencio. A passada extra custa I/O, nao memoria.
     """
-    for encoding in ("utf-8-sig", "utf-8"):
+    if isinstance(source, bytes):
         try:
-            sample.decode(encoding)
+            source.decode("utf-8-sig")
         except UnicodeDecodeError:
-            continue
-        return encoding
-    return "iso-8859-1"
+            return "iso-8859-1"
+        return "utf-8-sig"
+
+    decoder = codecs.getincrementaldecoder("utf-8-sig")()
+    try:
+        with open(source, "rb") as handle:
+            while chunk := handle.read(_READ_CHUNK):
+                decoder.decode(chunk)
+            decoder.decode(b"", final=True)
+    except UnicodeDecodeError:
+        return "iso-8859-1"
+    return "utf-8-sig"
 
 
-def iter_rows(source: Path | bytes, sample_size: int = 1 << 16) -> Iterator[dict]:
+def iter_rows(source: Path | bytes) -> Iterator[dict]:
     """Percorre um CSV da CVM sem materializar o arquivo inteiro.
 
     O extrato de informacoes tem ~100 MB; carrega-lo como lista de dicts custa
     cerca de dez vezes isso em RAM. Como o consumo e linha a linha, o streaming
     mantem o uso constante.
     """
+    encoding = detect_encoding(source)
+
     if isinstance(source, bytes):
-        encoding = detect_encoding(source[:sample_size])
-        handle = io.StringIO(source.decode(encoding, errors="replace"))
+        handle = io.StringIO(source.decode(encoding))
         yield from csv.DictReader(handle, delimiter=";")
         return
 
-    with open(source, "rb") as raw_handle:
-        encoding = detect_encoding(raw_handle.read(sample_size))
-
-    with open(source, encoding=encoding, errors="replace", newline="") as handle:
+    # Sem errors="replace": o encoding ja foi validado contra o arquivo todo,
+    # entao um erro aqui e sinal de problema real, nao algo a mascarar.
+    with open(source, encoding=encoding, newline="") as handle:
         yield from csv.DictReader(handle, delimiter=";")
 
 

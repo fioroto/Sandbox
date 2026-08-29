@@ -21,7 +21,8 @@ from shelf_monitor.market.models import (
     MarketSubclass,
     Origin,
 )
-from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.market.fees import resolve_admin_fee
+from shelf_monitor.normalize import format_cnpj, parse_number
 
 # Cabecalhos em portugues: a planilha e lida por gente, nao so por codigo.
 _FUND_HEADERS = {
@@ -202,6 +203,7 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
             continue
         fees = database.fees.get(fund.cnpj) if fund.cnpj else None
         extra = fund.legacy_fields or {}
+        legacy_fee, legacy_unit, _ = resolve_admin_fee(extra.get("admin_fee"))
         rows.append(
             {
                 "origem": Origin.LEGACY.value,
@@ -228,10 +230,17 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "id_fundo": fund.registro_id,
                 "id_classe": "",
                 "subclasses": 0,
-                "taxa_adm": _cell(fees.admin_fee if fees else extra.get("admin_fee")),
-                "taxa_adm_unidade": _cell(fees.admin_fee_unit if fees else None),
+                # O legado nunca passa pelo extrato, entao a taxa dele tambem
+                # precisa ser resolvida aqui - senao a coluna mistura float com
+                # texto cru e nao da nem para ordenar.
+                "taxa_adm": _cell(legacy_fee if fees is None else fees.admin_fee),
+                "taxa_adm_unidade": _cell(
+                    legacy_unit if fees is None else fees.admin_fee_unit
+                ),
                 "taxa_performance": _cell(
-                    fees.performance_fee if fees else extra.get("performance_fee")
+                    fees.performance_fee
+                    if fees
+                    else parse_number(extra.get("performance_fee"))
                 ),
                 "aplicacao_inicial_minima": _cell(fees.min_initial if fees else None),
                 "dias_cotizacao_resgate": _cell(

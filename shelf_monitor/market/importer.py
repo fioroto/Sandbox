@@ -70,27 +70,24 @@ def import_market(
 
     # --- hierarquia RCVM 175 -------------------------------------------------
     registro_path = _resolve(config, REGISTRO, local_dir, force, database)
+    registro_ok = False
     if registro_path is not None:
-        funds, unknown = parse_funds(read_member(registro_path, "registro_fundo"))
-        database.funds.extend(funds)
-        if unknown:
-            database.unknown_columns["fundos"] = unknown
-
-        classes, unknown = parse_classes(read_member(registro_path, "registro_classe"))
-        database.classes.extend(classes)
-        if unknown:
-            database.unknown_columns["classes"] = unknown
-
-        try:
-            raw = read_member(registro_path, "registro_subclasse")
-        except SourceUnavailable as exc:
-            # Nem todo zip traz subclasse; a base continua util sem ela.
-            database.notes.append(f"subclasses: {exc}")
-        else:
-            subclasses, unknown = parse_subclasses(raw)
-            database.subclasses.extend(subclasses)
+        for key, member, parser, target in (
+            ("fundos", "registro_fundo", parse_funds, database.funds),
+            ("classes", "registro_classe", parse_classes, database.classes),
+            ("subclasses", "registro_subclasse", parse_subclasses, database.subclasses),
+        ):
+            try:
+                parsed, unknown = parser(read_member(registro_path, member))
+            except SourceUnavailable as exc:
+                # Membro ausente ou so com cabecalho (entrega em que nada foi
+                # registrado). A base segue util sem aquela tabela.
+                database.notes.append(f"{key}: {exc}")
+                continue
+            target.extend(parsed)
             if unknown:
-                database.unknown_columns["subclasses"] = unknown
+                database.unknown_columns[key] = unknown
+        registro_ok = bool(database.funds or database.classes)
 
     # --- fundos ainda nao adaptados ------------------------------------------
     # Uniao, nao fallback: desde out/2024 os adaptados sairam do cad_fi, entao
@@ -119,10 +116,14 @@ def import_market(
     else:
         database.notes.append("extrato: pulado por --skip-fees")
 
-    if not database.funds and not database.classes:
+    if not registro_ok:
+        # Sem o cadastro principal a base fica sem classes e todo fundo legado
+        # seria marcado como nao adaptado - uma foto errada do mercado, pior do
+        # que a base da execucao anterior.
         database.notes.append(
-            "nenhuma fonte respondeu - a base nao foi gerada"
+            "cadastro principal indisponivel - a base anterior foi preservada"
         )
+        database.incomplete = True
 
     return database
 
@@ -135,6 +136,6 @@ def run_import(
 ) -> tuple[MarketDatabase, dict[str, Path]]:
     """Importa e grava. Devolve (base, caminhos escritos)."""
     database = import_market(config, local_dir, force, skip_fees)
-    if not database.funds and not database.classes:
+    if database.incomplete:
         return database, {}
     return database, write_database(config, database)

@@ -172,6 +172,9 @@ class MarketDatabase:
     # Fontes cujo arquivo veio do disco porque a origem estava fora do ar - o
     # dado existe, mas nao e o de hoje.
     stale_sources: list[str] = field(default_factory=list)
+    # Cadastro principal nao veio: gravar essa base sobrescreveria a anterior,
+    # que e melhor.
+    incomplete: bool = False
     notes: list[str] = field(default_factory=list)
 
     def classes_by_fund(self) -> dict[str, list[MarketClass]]:
