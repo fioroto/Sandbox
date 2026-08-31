@@ -55,7 +55,7 @@ def render_deck(config: Config, report: RunReport) -> Path:
 
     matrix = listing.get("matrix") or []
     # Matriz so de "sem classificacao" nao e matriz - e a ausencia da base.
-    if len(matrix) == 1 and matrix[0].get("category") == "Sem classificacao ANBIMA":
+    if len(matrix) == 1 and matrix[0].get("category") == "Sem classificacao":
         matrix = []
 
     _cover(prs, report)

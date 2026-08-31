@@ -392,7 +392,7 @@ function renderVitrine(listing) {
   let matrix = listing.matrix || [];
   const mount = document.getElementById("matrix-vitrine");
   // Matriz so de "sem classificacao" nao e matriz - e a ausencia da base.
-  if (matrix.length === 1 && matrix[0].category === "Sem classificacao ANBIMA") {
+  if (matrix.length === 1 && matrix[0].category === "Sem classificacao") {
     matrix = [];
   }
   if (matrix.length) {

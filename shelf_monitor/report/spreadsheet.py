@@ -19,6 +19,7 @@ from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.enrich import (
     EnrichmentStats,
     KEY_ANBIMA,
+    KEY_CVM,
     KEY_GESTOR_OFICIAL,
     KEY_SITUACAO,
 )
@@ -483,7 +484,7 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
     sheet = workbook.create_sheet("Vitrine varejo")
     headers = [
         ("Plataforma", 20), ("Fundo", 52), ("CNPJ", 20),
-        ("Classe ANBIMA (oficial)", 34), ("Categoria na origem", 26),
+        ("Classe oficial (ANBIMA ou CVM)", 34), ("Categoria na origem", 26),
         ("Gestora", 34), ("Produto", 12), ("Taxa adm (%)", 13),
         ("Aplicacao minima (R$)", 20), ("Liquidacao resgate (D+)", 21),
         ("Situacao CVM", 26), ("Exclusivo na vitrine", 18), ("Fontes", 26),
@@ -505,7 +506,7 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
                 label,
                 fund.name,
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
-                fund.extra.get(KEY_ANBIMA) or "",
+                fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
                 fund.raw_category or "",
                 fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
                 _OWN_LABELS[own],

@@ -915,3 +915,68 @@ class TestDeck(unittest.TestCase):
             config = Config(data_dir=tmp)
             path = render_deck(config, self._report(with_listing=False))
             self.assertGreaterEqual(len(Presentation(path).slides), 4)
+
+
+class TestFundEnvelopeJoin(TestEnrichment):
+    """Prateleira anuncia o CNPJ do envelope; o registro tem os das classes.
+
+    Foi o sintoma da primeira rodada real: fundo multi-classes anunciado pelo
+    CNPJ do fundo saia "sem gestora e sem classificacao" porque o indice so
+    conhecia CNPJ de classe.
+    """
+
+    def test_envelope_cnpj_reaches_the_fund_record(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="Fundo Multi", cnpj="66666666000166")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(stats.matched, 1)
+        self.assertEqual(fund.extra["gestor_oficial"], "GESTORA MULTI LTDA")
+        # As duas classes concordam em Multimercados Livre - o envelope herda.
+        self.assertEqual(fund.extra["classificacao_anbima"], "Multimercados Livre")
+
+    def test_divergent_classes_do_not_invent_a_classification(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="Fundo Diverge", cnpj="20202020000120")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        # RF numa classe, Acoes na outra: atribuir qualquer uma seria inventar.
+        self.assertNotIn("classificacao_anbima", fund.extra)
+        self.assertNotIn("classificacao_cvm", fund.extra)
+        # Mas o gestor e do envelope - vale sempre.
+        self.assertEqual(fund.extra["gestor_oficial"], "GESTORA DIVERGE")
+
+    def test_class_cnpj_still_wins_over_fund_index(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="Multi A", cnpj="77777777000177")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(fund.extra["publico_alvo_cvm"], "Investidores em geral")
+        self.assertEqual(fund.extra["pl_cvm"], 5000000.0)
+
+
+class TestCategoryFallback(unittest.TestCase):
+    """Classe em tres camadas: ANBIMA -> CVM -> heuristica -> sem classe."""
+
+    def test_tiers(self):
+        from shelf_monitor.models import AssetClass, FundOffer
+        from shelf_monitor.report.aggregate import anbima_category
+
+        with_anbima = FundOffer(platform="x", name="A", extra={
+            "classificacao_anbima": "RF referenciado DI", "classificacao_cvm": "Renda Fixa",
+        })
+        self.assertEqual(anbima_category(with_anbima), "RF referenciado DI")
+
+        cvm_only = FundOffer(platform="x", name="B", extra={"classificacao_cvm": "Renda Fixa"})
+        self.assertEqual(anbima_category(cvm_only), "Renda Fixa")
+
+        heuristic = FundOffer(platform="x", name="C", asset_class=AssetClass.MULTIMERCADO)
+        self.assertEqual(anbima_category(heuristic), "Multimercado")
+
+        nothing = FundOffer(platform="x", name="D")
+        self.assertEqual(anbima_category(nothing), "Sem classificacao")

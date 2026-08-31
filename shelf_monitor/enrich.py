@@ -68,10 +68,30 @@ class EnrichmentStats:
 
 
 class MarketLookup:
-    """Indice por CNPJ do mercado.csv gerado pelo modulo market."""
+    """Indice por CNPJ do mercado.csv gerado pelo modulo market.
 
-    def __init__(self, records: dict[str, MarketRecord], source: Path):
+    Dois indices, porque as prateleiras anunciam dois CNPJs diferentes:
+
+    - o da **classe** (e o que o informe e a distribuicao usam) - indice direto;
+    - o do **fundo** (o envelope; e o que o Open Finance publica em cnpjNumber).
+      Num fundo multi-classes o envelope tem CNPJ proprio que nao e o de
+      nenhuma classe - sem este segundo indice, todo fundo anunciado pelo
+      envelope saia "sem gestora e sem classificacao", que foi exatamente o
+      sintoma observado na primeira rodada real.
+
+    No indice por fundo, gestor e situacao valem sempre (sao do envelope);
+    classificacao so quando as classes do fundo concordam - atribuir ao
+    envelope a classe de uma unica filha seria inventar dado.
+    """
+
+    def __init__(
+        self,
+        records: dict[str, MarketRecord],
+        fund_records: dict[str, MarketRecord],
+        source: Path,
+    ):
         self._records = records
+        self._fund_records = fund_records
         self.source = source
 
     def __len__(self) -> int:
@@ -80,7 +100,7 @@ class MarketLookup:
     def get(self, cnpj: str | None) -> MarketRecord | None:
         if not cnpj:
             return None
-        return self._records.get(cnpj)
+        return self._records.get(cnpj) or self._fund_records.get(cnpj)
 
     @classmethod
     def load(cls, config: Config) -> "MarketLookup | None":
@@ -90,6 +110,7 @@ class MarketLookup:
             return None
 
         records: dict[str, MarketRecord] = {}
+        by_fund: dict[str, list[dict]] = {}
         with path.open(encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle, delimiter=";"):
                 cnpj = normalize_cnpj(row.get("cnpj"))
@@ -108,7 +129,36 @@ class MarketLookup:
                     pl=parse_number(row.get("patrimonio_liquido")),
                     publico_alvo=row.get("publico_alvo") or None,
                 )
-        return cls(records, path)
+                fund_cnpj = normalize_cnpj(row.get("cnpj_fundo"))
+                if fund_cnpj:
+                    by_fund.setdefault(fund_cnpj, []).append(row)
+
+        fund_records: dict[str, MarketRecord] = {}
+        for fund_cnpj, rows in by_fund.items():
+            if fund_cnpj in records:
+                continue  # envelope com CNPJ de classe ja resolve pelo direto
+            fund_records[fund_cnpj] = _fund_level_record(fund_cnpj, rows)
+        return cls(records, fund_records, path)
+
+
+def _unanimous(values: list[str]) -> str | None:
+    distinct = {v for v in values if v}
+    return distinct.pop() if len(distinct) == 1 else None
+
+
+def _fund_level_record(fund_cnpj: str, rows: list[dict]) -> MarketRecord:
+    """Consolida as classes de um fundo num registro do envelope."""
+    return MarketRecord(
+        cnpj=fund_cnpj,
+        origem=(rows[0].get("origem") or "") + "_fundo",
+        anbima=_unanimous([r.get("classificacao_anbima") or "" for r in rows]),
+        cvm=_unanimous([r.get("classificacao_cvm") or "" for r in rows]),
+        gestor=rows[0].get("gestor") or None,
+        cnpj_gestor=normalize_cnpj(rows[0].get("cnpj_gestor")),
+        situacao=_unanimous([r.get("situacao") or "" for r in rows]),
+        pl=None,  # PL e por classe; somar aqui inventaria um numero
+        publico_alvo=_unanimous([r.get("publico_alvo") or "" for r in rows]),
+    )
 
 
 def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:

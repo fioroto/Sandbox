@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from shelf_monitor.config import PLATFORMS, WATCHLIST
-from shelf_monitor.enrich import KEY_ANBIMA, KEY_GESTOR_OFICIAL
+from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
 from shelf_monitor.normalize import normalize_text
 from shelf_monitor.models import (
     AssetClass,
@@ -131,8 +131,21 @@ def is_own_product(platform_id: str, fund: FundOffer) -> bool | None:
 
 
 def anbima_category(fund: FundOffer) -> str:
-    """Categoria oficial quando o join com a base CVM aconteceu."""
-    return fund.extra.get(KEY_ANBIMA) or "Sem classificacao ANBIMA"
+    """Categoria do fundo, na melhor fonte disponivel, em tres camadas.
+
+    1. Classificacao ANBIMA oficial - so existe para fundo aderente a ANBIMA;
+    2. Classificacao CVM oficial (Renda Fixa/Acoes/Multimercado/Cambial) - o
+       registro sempre a tem, entao um fundo casado nunca fica "sem classe";
+    3. a heuristica sobre nome/categoria da casa, quando nem o join houve.
+    Rotulos ficam como estao (a granularidade diferente e visivel por si), e o
+    "Sem classificacao" sobra so para quem nao tem CNPJ casado nem nome legivel.
+    """
+    official = fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM)
+    if official:
+        return official
+    if fund.asset_class != AssetClass.OUTROS:
+        return ASSET_CLASS_LABELS[fund.asset_class]
+    return "Sem classificacao"
 
 
 def _listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
