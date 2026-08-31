@@ -34,6 +34,7 @@ from shelf_monitor.config import (
     Config,
 )
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.enrich import enrich_snapshots
 from shelf_monitor.http import check_reachable
 from shelf_monitor.models import (
     CvmSnapshot,
@@ -132,6 +133,12 @@ def build_report(
 ) -> RunReport:
     report = RunReport(generated_at=datetime.now(), snapshots=snapshots)
 
+    # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
+    # "classe ANBIMA" significar a mesma coisa nas cinco casas.
+    stats = enrich_snapshots(config, snapshots)
+    if stats is not None:
+        report.enrichment = stats.to_dict()
+
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
             config, snapshot.platform, before=snapshot.snapshot_date, trusted_only=True
@@ -151,11 +158,24 @@ def render_outputs(
 ) -> None:
     md_path, html_path = render_digest(config, report)
     dashboard_path = render_dashboard(config, report)
+    deck_path = None
+    try:
+        from shelf_monitor.report.deck import render_deck
+
+        deck_path = render_deck(config, report)
+    except ImportError:
+        deck_note = "instale python-pptx para gerar o deck executivo"
+    except Exception as exc:  # noqa: BLE001 - o deck nunca derruba o relatorio
+        deck_note = f"falha ao gerar o deck: {_short(str(exc))}"
     console.print()
     console.print("[bold]Relatorios gerados[/]")
     console.print(f"  digest markdown: {md_path}")
     console.print(f"  digest e-mail:   {html_path}")
     console.print(f"  dashboard:       {dashboard_path}")
+    if deck_path:
+        console.print(f"  deck executivo:  {deck_path}")
+    else:
+        console.print(f"  deck executivo:  [yellow]{deck_note}[/]")
     console.print(f"  assunto sugerido: {build_subject(report)}")
 
     if send_email:
@@ -323,8 +343,24 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
             )
             return
 
+    enrichment = enrich_snapshots(config, snapshots)
+    diffs = [
+        diff_shelf(
+            snapshot,
+            latest_shelf_snapshot(
+                config, snapshot.platform, before=snapshot.snapshot_date,
+                trusted_only=True,
+            ),
+        )
+        for snapshot in snapshots
+    ]
     path = render_spreadsheet(
-        config, snapshots, cvm_snapshot, path=Path(args.output) if args.output else None
+        config,
+        snapshots,
+        cvm_snapshot,
+        path=Path(args.output) if args.output else None,
+        diffs=diffs,
+        enrichment=enrichment,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()

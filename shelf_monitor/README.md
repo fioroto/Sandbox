@@ -358,6 +358,38 @@ DOM"), que e o que diz onde mexer. E lenta - cerca de um minuto por site.
 
 Para gravar essa mesma evidencia durante uma coleta normal, `SHELF_BROWSER_DEBUG=1`.
 
+## Comparacao profissional: vitrine, normalizacao e as quatro superficies
+
+A comparacao competitiva se apoia em dois conceitos e sai por quatro superficies.
+
+**Vitrine vs. catalogo.** Vitrine e o que o cliente ve no canal da propria casa
+(site, API do portal, area logada) - e a resposta a "o que esta disponivel para o
+varejo". Catalogo e o que o Open Finance publica: tudo que a casa administra,
+incluindo o que nunca aparece para o cliente. Todo relatorio separa os dois; um
+filtro por minimo sobre o catalogo nao aproxima a vitrine (no BTG marcaria 5.415
+fundos "varejo" quando a vitrine tem 693; na XP deixaria 9).
+
+**Normalizacao ANBIMA.** Cada casa descreve categoria do seu jeito ("Credito Pos"
+no BTG, "baixo risco" no Itau). Com a base de mercado importada
+(`python -m shelf_monitor market`), todo fundo com CNPJ e carimbado com a
+classificacao ANBIMA e CVM oficial, gestor, situacao e PL do registro - e a
+comparacao por classe passa a significar a mesma coisa nas cinco casas. A
+classificacao publicada pela casa, quando diverge, e preservada
+(`classificacao_anbima_casa`): a divergencia em si e informacao. A cobertura do
+join sai no rodape de cada superficie.
+
+| Superficie | Comando | Para quem |
+|---|---|---|
+| Dashboard (`dashboard.html`) | `report` / `run` | explorar - matriz casa x classe ANBIMA, arquitetura aberta, custo/ticket por quartis, exclusivos |
+| Deck executivo (`prateleiras-<data>.pptx`) | `report` / `run` | decidir - 8 slides para forum/comite, gerados a cada coleta |
+| Planilha (`prateleiras-<data>.xlsx`) | `export` | trabalhar - abas Vitrine varejo (tabela-dinamica-ready), Movimentos e Metodologia |
+| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo do dia por e-mail |
+
+Regras de leitura que valem nas quatro: quartis em vez de media (a media esconde a
+forma da prateleira), "gestora da casa" definida pela mesma watchlist do radar CVM,
+coleta suspeita nunca vira churn, e todo numero carrega proveniencia (fonte, data,
+cobertura) no rodape.
+
 ## Como o monitor evita falso alarme
 
 Um monitor de prateleira erra de dois jeitos: reportando mudanca que nao houve, ou

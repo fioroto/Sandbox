@@ -706,3 +706,212 @@ def offer(platform: str, name: str, cnpj: str | None = None, **kwargs):
     from shelf_monitor.models import FundOffer
 
     return FundOffer(platform=platform, name=name, cnpj=cnpj, **kwargs)
+
+
+class TestEnrichment(unittest.TestCase):
+    """Join das prateleiras com a base oficial - a taxonomia unica."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config = Config(data_dir=self.tmp.name)
+        self.config.market_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(
+            Path(__file__).parent / "fixtures" / "enrich" / "mercado.csv",
+            self.config.market_dir / "mercado.csv",
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _snapshot(self, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import CollectorStrategy, ShelfSnapshot, SnapshotStatus
+
+        return ShelfSnapshot(
+            platform="btg", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def test_official_classification_lands_on_the_offer(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="A1 D30 FICFIRF", cnpj="63446494000152")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.extra["classificacao_anbima"], "RF duração livre crédito livre")
+        self.assertEqual(fund.extra["gestor_oficial"], "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["situacao_cvm"], "EM FUNCIONAMENTO NORMAL")
+        self.assertEqual(fund.extra["pl_cvm"], 11584330.36)
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(stats.matched, 1)
+        self.assertEqual(stats.anbima_filled, 1)
+
+    def test_house_value_survives_divergence(self):
+        """A classificacao que a casa publica nao se perde - divergencia e dado."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="btg", name="A1 D30", cnpj="63446494000152",
+            extra={"classificacao_anbima": "Renda Fixa Duração Livre"},
+        )
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(fund.extra["classificacao_anbima"], "RF duração livre crédito livre")
+        self.assertEqual(fund.extra["classificacao_anbima_casa"], "Renda Fixa Duração Livre")
+
+    def test_legacy_fund_matches_and_fixes_asset_class(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import AssetClass, FundOffer
+
+        fund = FundOffer(platform="btg", name="Fundo Legado", cnpj="99999999000199")
+        self.assertEqual(fund.asset_class, AssetClass.OUTROS)
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(fund.asset_class, AssetClass.ACOES)
+        self.assertEqual(fund.extra["base_cvm"], "nao_adaptado")
+
+    def test_no_market_base_degrades_to_none(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        (self.config.market_dir / "mercado.csv").unlink()
+        fund = FundOffer(platform="btg", name="Qualquer", cnpj="63446494000152")
+        self.assertIsNone(enrich_snapshots(self.config, [self._snapshot([fund])]))
+        self.assertNotIn("classificacao_anbima", fund.extra)
+
+    def test_unmatched_cnpj_is_counted_not_invented(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="Desconhecido", cnpj="55555555000155")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(stats.with_cnpj, 1)
+        self.assertEqual(stats.matched, 0)
+        self.assertNotIn("classificacao_anbima", fund.extra)
+
+
+class TestListingBlock(unittest.TestCase):
+    """A visao de vitrine nao pode se misturar com o catalogo do Open Finance."""
+
+    def _report(self):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy, FundOffer, RunReport, ShelfSnapshot, SnapshotStatus,
+        )
+
+        def fund(platform, name, cnpj, sources, manager=None, fee=None):
+            f = FundOffer(platform=platform, name=name, cnpj=cnpj,
+                          manager_name=manager, admin_fee_pct=fee)
+            f.sources = sources
+            return f
+
+        btg = ShelfSnapshot(
+            platform="btg", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=[
+                fund("btg", "BTG Vitrine A", "11111111000111",
+                     ["open-finance", "api-json"], manager="BTG PACTUAL ASSET"),
+                fund("btg", "BTG Vitrine B", "22222222000122",
+                     ["api-json"], manager="KAPITALO GESTAO"),
+                fund("btg", "BTG So Catalogo", "33333333000133", ["open-finance"]),
+            ],
+        )
+        itau = ShelfSnapshot(
+            platform="itau", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=[
+                fund("itau", "Compartilhado", "22222222000122", ["playwright"]),
+            ],
+        )
+        return RunReport(generated_at=datetime(2026, 8, 31), snapshots=[btg, itau])
+
+    def test_catalog_only_funds_stay_out_of_the_listing(self):
+        from shelf_monitor.report.aggregate import build_listing_block
+
+        block = build_listing_block(self._report())
+        btg = next(p for p in block["platforms"] if p["platform_id"] == "btg")
+        self.assertEqual(btg["total"], 2)
+        self.assertEqual(btg["catalog_total"], 3)
+
+    def test_own_vs_third_party_uses_the_watchlist(self):
+        from shelf_monitor.report.aggregate import build_listing_block
+
+        btg = next(
+            p for p in build_listing_block(self._report())["platforms"]
+            if p["platform_id"] == "btg"
+        )
+        self.assertEqual(btg["own_product"], 1)     # BTG PACTUAL ASSET
+        self.assertEqual(btg["third_party"], 1)     # KAPITALO
+
+    def test_exclusives_count_only_listing_presence(self):
+        from shelf_monitor.report.aggregate import build_listing_block
+
+        block = build_listing_block(self._report())
+        btg = next(p for p in block["platforms"] if p["platform_id"] == "btg")
+        itau = next(p for p in block["platforms"] if p["platform_id"] == "itau")
+        # "BTG Vitrine A" so esta na vitrine do BTG; "Compartilhado" esta nas duas.
+        self.assertEqual(btg["exclusive"], 1)
+        self.assertEqual(itau["exclusive"], 0)
+        self.assertEqual(block["shared_all"], 1)
+
+
+class TestDeck(unittest.TestCase):
+    """O deck abre e tem os slides que os dados pedem - nem mais, nem menos."""
+
+    def _report(self, with_listing=True):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy, FundOffer, RunReport, ShelfSnapshot, SnapshotStatus,
+        )
+
+        funds = []
+        if with_listing:
+            for i in range(6):
+                f = FundOffer(
+                    platform="btg", name=f"Fundo {i} FIC FIM", cnpj=f"{i:014d}",
+                    admin_fee_pct=1.0 + i * 0.1, min_initial=1000.0,
+                    manager_name="BTG PACTUAL ASSET" if i % 2 else "TERCEIRA GESTORA",
+                )
+                f.sources = ["api-json"]
+                funds.append(f)
+        snapshot = ShelfSnapshot(
+            platform="btg", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.API_JSON, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+        return RunReport(generated_at=datetime(2026, 8, 31), snapshots=[snapshot])
+
+    def test_deck_renders_and_reopens(self):
+        import tempfile
+
+        from pptx import Presentation
+
+        from shelf_monitor.report.deck import render_deck
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(data_dir=tmp)
+            path = render_deck(config, self._report())
+            deck = Presentation(path)
+            # capa, numeros, arquitetura, custo, movimentos, metodologia
+            # (sem matriz - nao ha base ANBIMA; sem radar - nao ha CVM)
+            self.assertEqual(len(deck.slides), 6)
+
+    def test_deck_survives_an_empty_run(self):
+        import tempfile
+
+        from pptx import Presentation
+
+        from shelf_monitor.report.deck import render_deck
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(data_dir=tmp)
+            path = render_deck(config, self._report(with_listing=False))
+            self.assertGreaterEqual(len(Presentation(path).slides), 4)
