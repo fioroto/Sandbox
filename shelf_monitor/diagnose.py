@@ -235,6 +235,8 @@ def probe_browser(config: Config, platform: PlatformConfig) -> Probe:
             executable_path=config.chromium_path,
             screenshot=True,
             block_assets=False,
+            headed=config.browser_headed,
+            channel=config.browser_channel,
         )
     except SourceUnavailable as exc:
         return Probe(

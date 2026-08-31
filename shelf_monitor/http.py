@@ -6,7 +6,12 @@ o primeiro se resolve liberando a allowlist, o segundo nao.
 """
 from __future__ import annotations
 
+import os
+import ssl
+from pathlib import Path
+
 import requests
+from requests.adapters import HTTPAdapter
 
 from shelf_monitor.config import Config
 
@@ -51,6 +56,58 @@ def describe_error(exc: BaseException) -> str:
     return text[:160] + ("..." if len(text) > 160 else "")
 
 
+def _trust_context() -> ssl.SSLContext | None:
+    """Contexto TLS que soma o trust store do sistema ao bundle do certifi.
+
+    O requests confia so no certifi, e ha servidor cuja cadeia valida pelo
+    trust store do sistema mas nao pelo certifi - o Open Finance do Inter e o
+    caso medido: o `diagnose` verificou o handshake OK via sistema na mesma
+    maquina em que o requests falhava. Somar os dois stores e estritamente mais
+    permissivo em CAs *confiaveis* e nao desliga verificacao nenhuma: hostname
+    e cadeia continuam checados.
+    """
+    try:
+        context = ssl.create_default_context()  # carrega o store do sistema
+    except Exception:  # noqa: BLE001
+        return None
+
+    try:
+        import certifi
+
+        context.load_verify_locations(certifi.where())
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Respeita bundles apontados por env (proxies corporativos fazem isso).
+    for env in ("REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"):
+        bundle = os.getenv(env)
+        if bundle and Path(bundle).is_file():
+            try:
+                context.load_verify_locations(bundle)
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not context.cert_store_stats().get("x509_ca"):
+        return None  # sem CA nenhuma o contexto so quebraria tudo
+    return context
+
+
+class _TrustAdapter(HTTPAdapter):
+    """Adapter que injeta o contexto de confianca em pool e proxy."""
+
+    def __init__(self, context: ssl.SSLContext, **kwargs):
+        self._context = context
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._context
+        return super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._context
+        return super().proxy_manager_for(*args, **kwargs)
+
+
 def build_session(config: Config) -> requests.Session:
     session = requests.Session()
     session.headers.update(
@@ -59,6 +116,9 @@ def build_session(config: Config) -> requests.Session:
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         }
     )
+    context = _trust_context()
+    if context is not None:
+        session.mount("https://", _TrustAdapter(context))
     return session
 
 

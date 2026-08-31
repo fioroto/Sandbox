@@ -607,12 +607,21 @@ def render_page(
     screenshot: bool = False,
     block_assets: bool = True,
     nav_timeout_ms: int = _NAV_TIMEOUT_MS,
+    headed: bool = False,
+    channel: str | None = None,
+    on_page=None,
 ) -> BrowserCapture:
     """Abre a pagina num Chromium real e devolve o que ele viu.
 
     A espera segue o conteudo, nao o relogio: apos `networkidle`, faz poll ate a
     lista aparecer (CNPJs ou linhas de tabela) e so entao rola a pagina, parando
     quando o texto para de crescer.
+
+    `headed`/`channel` abrem um navegador com janela (ex.: o Chrome instalado do
+    usuario, channel="chrome") - a via legitima para paginas que barram o
+    Chromium headless. `on_page(page)` roda apos a rolagem, com a pagina viva:
+    serve para paginar uma API interna com os cookies da sessao; o que devolver
+    (lista de (url, payload)) entra em capture.payloads.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -661,8 +670,12 @@ def render_page(
 
     try:
         with sync_playwright() as playwright:
-            launch_args: dict[str, Any] = {"headless": True}
-            if executable_path:
+            launch_args: dict[str, Any] = {"headless": not headed}
+            if channel:
+                # channel usa o navegador instalado na maquina (ex.: chrome);
+                # nesse caso o executable_path do Chromium empacotado nao vale.
+                launch_args["channel"] = channel
+            elif executable_path:
                 launch_args["executable_path"] = executable_path
             try:
                 browser = playwright.chromium.launch(**launch_args)
@@ -718,6 +731,25 @@ def render_page(
 
             stats = _wait_for_content(page)
             stats = _scroll_until_stable(page, stats)
+
+            if on_page is not None:
+                try:
+                    extra = on_page(page)
+                    if extra:
+                        payloads.extend(extra)
+                except Exception as exc:  # noqa: BLE001
+                    # O gancho e um extra: a captura da pagina em si continua
+                    # valendo mesmo que a paginacao por dentro falhe.
+                    responses.append(
+                        CapturedResponse(
+                            url=f"on_page: {type(exc).__name__}: {exc}"[:200],
+                            status=0,
+                            content_type="",
+                            size=0,
+                            resource_type="hook",
+                            is_json=False,
+                        )
+                    )
 
             html = page.content()
             final_url = page.url
@@ -792,8 +824,16 @@ def collect_via_browser(
     storage_state: str | None = None,
     executable_path: str | None = None,
     debug_dir: Path | None = None,
+    headed: bool = False,
+    channel: str | None = None,
+    on_page=None,
+    payload_mapper=None,
 ) -> tuple[list[FundOffer], list[str]]:
     """Renderiza a pagina e extrai os fundos por JSON, estado embutido e DOM.
+
+    `payload_mapper(url, payload)` e a primeira chance de um coletor especifico
+    mapear um payload cujo formato ele conhece (devolvendo a lista de offers);
+    devolvendo None, o payload segue pelo extrator generico.
 
     Devolve (fundos, urls_de_origem). Lanca SourceUnavailable se o Playwright
     nao estiver instalado, a navegacao falhar ou nada for reconhecido.
@@ -803,6 +843,9 @@ def collect_via_browser(
         user_agent=user_agent,
         storage_state=storage_state,
         executable_path=executable_path,
+        headed=headed,
+        channel=channel,
+        on_page=on_page,
     )
 
     if debug_dir is not None:
@@ -812,10 +855,9 @@ def collect_via_browser(
     seen: set[str] = set()
     source_urls: list[str] = []
 
-    def absorb(items: list[dict], origin: str) -> None:
+    def add_offers(found: list[FundOffer], origin: str) -> None:
         added = 0
-        for item in items:
-            offer = to_offer(platform_id, item, capture.final_url)
+        for offer in found:
             if offer and offer.identity not in seen:
                 seen.add(offer.identity)
                 offers.append(offer)
@@ -823,7 +865,17 @@ def collect_via_browser(
         if added:
             source_urls.append(origin)
 
+    def absorb(items: list[dict], origin: str) -> None:
+        add_offers(
+            [to_offer(platform_id, item, capture.final_url) for item in items], origin
+        )
+
     for response_url, payload in capture.payloads:
+        if payload_mapper is not None:
+            mapped = payload_mapper(response_url, payload)
+            if mapped is not None:
+                add_offers(mapped, response_url)
+                continue
         absorb(extract_fund_dicts(payload), response_url)
 
     if not offers:

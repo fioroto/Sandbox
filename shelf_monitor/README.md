@@ -110,31 +110,61 @@ Para uma coleta mais rapida, `--first-source-only` volta ao comportamento de par
 primeira fonte util - util quando o Playwright, que leva dezenas de segundos por site,
 nao compensa.
 
-| Casa | Estrategia | Lista publica | Fundos no Open Finance |
+| Casa | Estrategia | Lista publica | Open Finance |
 |---|---|---|---|
-| XP | Open Finance -> navegador | `/investimentos/fundos-de-investimento/lista/` | ~624 |
-| BTG | Open Finance -> navegador | `/fundos-de-investimento/produtos` | ~9.950 |
-| Itau | Open Finance -> navegador | `/investimentos/fundos/rentabilidade` | ~1.751 |
-| Inter | scraping -> Open Finance | paginas estaticas por fundo, via sitemap.xml (574 URLs) | falha de TLS (abaixo) |
-| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada | ~478 |
+| XP | Open Finance (pagina bloqueada por CDN) | `/investimentos/fundos-de-investimento/lista/` -> 403 ate para Chromium | **624** |
+| BTG | Open Finance -> **API publica** -> navegador | API `funds/list/v2` da pagina `/produtos`: **693 fundos** na prateleira comercial | **9.950** |
+| Itau | Open Finance (pagina bloqueada por CDN) | `/investimentos/fundos/rentabilidade` -> 403 Akamai ate para Chromium | **1.751** |
+| Inter | scraping (sitemap, **574** fundos) -> Open Finance | paginas estaticas por fundo + `page-data.json` (Gatsby) | via trust store do sistema |
+| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada | **478** |
 
-As contagens sao as medidas pelo `diagnose` numa maquina com acesso liberado
-(2026-08-31), nao estimativas.
+Os numeros sao os medidos pelo `diagnose --browser` na maquina do usuario em
+2026-08-31 - nao estimativas.
 
-**As tres listas so existem depois do JavaScript, e duas delas devolvem 403 a
-cliente HTTP simples.** Por isso XP, BTG e Itau usam navegador, nao `requests`:
-insistir com HTTP simples ali e gastar tempo num erro previsivel. A captura pelo
-navegador le a pagina por tres vias ao mesmo tempo - o trafego JSON que alimenta a
-listagem, o estado embutido (`__NEXT_DATA__` e afins) e o DOM renderizado (linhas de
-tabela, cartoes repetidos, CNPJ no texto). O DOM entra sempre, nao so como plano B:
-um fundo em destaque na tela e ausente do XHR e justamente o que separa a prateleira
-comercial da lista bruta da API.
+### O que a evidencia real mostrou, casa a casa
+
+**BTG - o melhor resultado.** O navegador passa (HTTP 200) e a pagina `/produtos` e
+alimentada por uma API publica e paginada:
+`/services/api/funds-public/public/funds/list/v2?page=N&size=K`. Ela devolve a
+**prateleira comercial** (693 fundos na medicao) com taxa (e a unidade dela),
+minimo, D+ de cotizacao e liquidacao, gestor, administrador, classificacao ANBIMA,
+PL, publico-alvo e ate flag de destaque. E um dado diferente - e complementar -
+dos ~9.950 do Open Finance, que listam tudo que a casa administra. O coletor chama
+a API direto (`api-json`); se um WAF barrar cliente HTTP simples, o caminho
+`playwright` pagina a mesma API por dentro do navegador, com os cookies dele.
+
+**XP e Itau - bloqueio de CDN no proprio documento.** As duas listas devolvem 403
+ate para o Chromium do Playwright (XP com pagina de bloqueio propria, que indica o
+e-mail `bloqueio-cdn@xpi.com.br` para pedir liberacao; Itau com Access Denied da
+Akamai). Nao ha o que raspar num 403 - e este monitor nao tenta burlar
+fingerprinting. As opcoes legitimas: o Open Finance (que ja entrega 624 e 1.751
+fundos com dados ricos), a liberacao junto a CDN, ou abrir a lista com o navegador
+de verdade do usuario (`SHELF_BROWSER_HEADED=1` + `SHELF_BROWSER_CHANNEL=chrome`) -
+que e uma pessoa abrindo uma pagina publica no proprio Chrome; a CDN decide o que
+faz com isso.
+
+**Inter - duas correcoes.** (1) A "falha de TLS" do Open Finance nao era do
+servidor: o `diagnose` verificou o handshake OK usando o trust store do sistema na
+mesma maquina em que o `requests` (que confia so no bundle do certifi) falhava. A
+sessao HTTP agora soma os dois stores - verificacao integral mantida, `verify=False`
+continua nao existindo aqui. (2) O coletor parava em 400 fundos por um teto
+silencioso, com 574 no sitemap; o teto subiu e, se for atingido, vira aviso e
+snapshot `partial`. De quebra, cada pagina de fundo tem um `page-data.json`
+estatico (o site e Gatsby) que o coletor agora le para completar taxa, minimo e
+gestor que o HTML nao entrega.
 
 > **Correcao de rota (2026-08-31).** Duas URLs estavam erradas: a do BTG apontava
 > para a raiz institucional (que nao lista nada) em vez de `/produtos`, e a do Itau
-> para a area Personnalite, que exige contexto de cliente e responde 403. O
-> diagnostico na maquina do usuario mostrou "SPA vazia" e "403" - o que parecia
-> anti-bot era, em boa parte, endereco errado.
+> para a area Personnalite, que exige contexto de cliente. O diagnostico na maquina
+> do usuario mostrou "SPA vazia" e "403" - parte do que parecia anti-bot era
+> endereco errado. A parte que era anti-bot de verdade (XP e Itau) esta documentada
+> acima.
+
+A captura pelo navegador le a pagina por tres vias ao mesmo tempo - o trafego JSON
+que alimenta a listagem, o estado embutido (`__NEXT_DATA__` e afins) e o DOM
+renderizado (linhas de tabela, cartoes repetidos, CNPJ no texto). O DOM entra
+sempre, nao so como plano B: um fundo em destaque na tela e ausente do XHR e
+justamente o que separa a prateleira comercial da lista bruta da API.
 
 **Open Finance Brasil** e a estrategia preferida onde disponivel: a API de Dados
 Abertos de Investimentos (`/open-banking/opendata-investments/v1/funds`) e publica,
@@ -149,12 +179,11 @@ completude varia por instituicao, entao o scraping continua como reconciliacao.
 > em vez de truncar em silencio. Meia prateleira saindo como `ok` seria pior que
 > nenhuma: viraria a baseline do dia seguinte e o diff leria a diferenca como churn.
 
-> **Inter: falha de TLS.** `api.openbanking.bancointer.com.br` nao passa na
-> verificacao de certificado. O `diagnose` classifica a causa (cadeia incompleta no
-> servidor, host errado, certificado vencido, proxy interceptador) em vez de so dizer
-> "falha de TLS". O que ele **nao** faz e oferecer um `verify=False`: desligar a
-> verificacao faria a coleta passar escondendo qual dos casos e, e o Inter tem o
-> sitemap como via alternativa que funciona.
+> **Inter: falha de TLS - resolvida sem baixar a guarda.** O `diagnose` provou que
+> `api.openbanking.bancointer.com.br` valida pelo trust store do sistema e falha so
+> pelo bundle do certifi que o requests usa. A sessao HTTP soma os dois stores
+> (mais o `REQUESTS_CA_BUNDLE`, se houver) num unico contexto verificado - hostname
+> e cadeia continuam checados, e `verify=False` continua nao existindo aqui.
 
 **CVM**: `registro_fundo_classe.zip` (pos-CVM 175) como fonte primaria, com
 `cad_fi.csv` como fallback. O download bruto nao e versionado; so o extrato filtrado

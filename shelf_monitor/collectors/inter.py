@@ -28,7 +28,10 @@ _SITEMAP_URLS = ["https://inter.co/sitemap.xml"]
 _SHELF_PREFIX = "/pra-voce/investimentos/fundos-de-investimento/"
 _HUB_URL = f"https://inter.co{_SHELF_PREFIX}"
 _CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
-_MAX_FUNDS = 400
+# O sitemap trazia 574 fundos em 2026-08-31; o teto antigo (400) cortava 174
+# deles em silencio. O teto existe so contra um sitemap desgovernado - e quando
+# for atingido a coleta avisa e o snapshot sai PARTIAL.
+_MAX_FUNDS = 1_000
 
 
 class InterCollector(PlatformCollector):
@@ -36,6 +39,12 @@ class InterCollector(PlatformCollector):
         urls = self._discover_fund_urls()
         if not urls:
             raise SourceUnavailable("nenhuma pagina de fundo encontrada no sitemap")
+
+        if len(urls) > _MAX_FUNDS:
+            self.warnings.append(
+                f"sitemap com {len(urls)} fundos, coletados so {_MAX_FUNDS} "
+                "(teto de seguranca) - prateleira incompleta"
+            )
 
         offers: list[FundOffer] = []
         for url in urls[:_MAX_FUNDS]:
@@ -97,7 +106,42 @@ class InterCollector(PlatformCollector):
         except SourceUnavailable:
             return None
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        offer = self._offer_from_html(url, response.text)
+        if offer is None:
+            return None
+
+        # O site e Gatsby: cada pagina tem um JSON estatico em
+        # /page-data/<caminho>/page-data.json (evidencia de 2026-08-31). A
+        # coleta por HTML trazia nome e CNPJ mas nenhum fato (taxa, minimo,
+        # gestor nao ficam em tabela/dl); o JSON e a chance de recupera-los.
+        enriched = self._offer_from_page_data(url)
+        if enriched is not None:
+            offer = _fill_missing(offer, enriched)
+        return offer
+
+    def _offer_from_page_data(self, url: str) -> FundOffer | None:
+        from urllib.parse import urlsplit
+
+        from shelf_monitor.collectors.browser import extract_fund_dicts, to_offer
+
+        path = urlsplit(url).path.rstrip("/")
+        if not path:
+            return None
+        page_data_url = f"https://inter.co/page-data{path}/page-data.json"
+        try:
+            response = get(self.session, page_data_url, self.config)
+            payload = response.json()
+        except (SourceUnavailable, ValueError):
+            return None
+
+        for item in extract_fund_dicts(payload):
+            offer = to_offer(self.platform_id, item, url)
+            if offer:
+                return offer
+        return None
+
+    def _offer_from_html(self, url: str, html: str) -> FundOffer | None:
+        soup = BeautifulSoup(html, "html.parser")
         heading = soup.find("h1")
         name = heading.get_text(strip=True) if heading else None
         if not name:
@@ -130,6 +174,28 @@ class InterCollector(PlatformCollector):
             ),
             detail_url=url,
         )
+
+
+def _fill_missing(base: FundOffer, other: FundOffer) -> FundOffer:
+    """Completa os campos vazios de `base` com o que `other` tiver.
+
+    O HTML manda no nome e no CNPJ (comprovados na coleta real); o page-data
+    so preenche o que faltou - se o formato dele mudar, nada piora.
+    """
+    from dataclasses import fields, replace
+
+    updates = {}
+    for f in fields(FundOffer):
+        if f.name in ("platform", "name", "cnpj", "sources", "extra"):
+            continue
+        if getattr(base, f.name) is None and getattr(other, f.name) is not None:
+            updates[f.name] = getattr(other, f.name)
+    # asset_class nao e None-avel: OUTROS conta como "vazio".
+    from shelf_monitor.models import AssetClass
+
+    if base.asset_class == AssetClass.OUTROS and other.asset_class != AssetClass.OUTROS:
+        updates["asset_class"] = other.asset_class
+    return replace(base, **updates) if updates else base
 
 
 def _extract_facts(soup: BeautifulSoup) -> dict[str, str]:

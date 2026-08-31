@@ -12,6 +12,10 @@ from shelf_monitor.models import CollectorStrategy
 load_dotenv()
 
 
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "sim", "yes")
+
+
 # --- Fontes de dados publicas ------------------------------------------------
 
 CVM_REGISTRO_ZIP_URL = (
@@ -58,12 +62,17 @@ PLATFORMS: dict[str, PlatformConfig] = {
     "btg": PlatformConfig(
         platform_id="btg",
         label="BTG Pactual",
-        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
+        strategies=[
+            CollectorStrategy.OPEN_FINANCE,
+            CollectorStrategy.API_JSON,
+            CollectorStrategy.PLAYWRIGHT,
+        ],
         shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento/produtos",
         open_finance_brands=["BTG PACTUAL"],
         notes=(
-            "A pagina /produtos e a listagem; a raiz e institucional e nao lista nada. "
-            "Open Finance publica ~9.950 fundos desta casa."
+            "A pagina /produtos e alimentada pela API publica funds/list/v2 "
+            "(~693 fundos na prateleira comercial, medido em 2026-08-31). "
+            "Open Finance publica ~9.950 - tudo que a casa administra."
         ),
     ),
     "itau": PlatformConfig(
@@ -195,12 +204,13 @@ class Config:
         # Com isso ligado, toda renderizacao grava HTML, XHRs e payloads em
         # data/cache/debug/ - e o que permite escrever o parser com a evidencia
         # na mao quando uma listagem muda de layout.
-        self.browser_debug = os.getenv("SHELF_BROWSER_DEBUG", "").strip().lower() in (
-            "1",
-            "true",
-            "sim",
-            "yes",
-        )
+        self.browser_debug = _env_flag("SHELF_BROWSER_DEBUG")
+        # Navegador com janela, usando o Chrome instalado do usuario
+        # (SHELF_BROWSER_CHANNEL=chrome). E a via legitima para paginas que
+        # barram o Chromium headless: e o navegador real da pessoa abrindo uma
+        # pagina publica - a CDN decide o que faz com isso.
+        self.browser_headed = _env_flag("SHELF_BROWSER_HEADED")
+        self.browser_channel = os.getenv("SHELF_BROWSER_CHANNEL", "").strip() or None
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "")
         self.smtp_port = int(smtp_port or os.getenv("SMTP_PORT", "587"))
         self.smtp_user = smtp_user or os.getenv("SMTP_USER", "")

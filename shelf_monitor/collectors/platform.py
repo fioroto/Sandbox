@@ -127,6 +127,8 @@ class PlatformCollector(BaseCollector):
             user_agent=self.config.user_agent,
             executable_path=self.config.chromium_path,
             debug_dir=self.config.debug_dir if self.config.browser_debug else None,
+            headed=self.config.browser_headed,
+            channel=self.config.browser_channel,
         )
         self.source_urls.extend(urls)
         return offers

@@ -436,3 +436,148 @@ class TestTlsDiagnosis(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBtgApi(unittest.TestCase):
+    """O funds/list/v2 mapeado contra a resposta real capturada pelo diagnose.
+
+    A fixture e um recorte literal do payload que a pagina /produtos recebeu na
+    maquina do usuario (2026-08-31) - nao um exemplo inventado.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        from pathlib import Path
+
+        fixture = Path(__file__).parent / "fixtures" / "btg" / "funds_list_v2.json"
+        cls.payload = json.loads(fixture.read_text(encoding="utf-8"))
+
+    def test_maps_the_rich_fields(self):
+        from shelf_monitor.collectors.btg import offer_from_btg_item
+
+        offer = offer_from_btg_item(self.payload["items"][0])
+        self.assertEqual(offer.name, "A1 D30 FICFIRF LP CrPr RL")
+        self.assertEqual(offer.cnpj, "63446494000152")
+        self.assertEqual(offer.raw_category, "Renda Fixa")
+        self.assertEqual(offer.asset_class, AssetClass.RENDA_FIXA)
+        self.assertEqual(offer.min_initial, 1000.0)
+        self.assertEqual(offer.admin_fee_pct, 0.9)
+        self.assertEqual(offer.performance_fee.amount_pct, 20.0)
+        self.assertEqual(offer.performance_fee.benchmark, "CDI")
+        self.assertEqual(offer.redemption_quotation_days, 30)   # rescueQuota D+30
+        self.assertEqual(offer.redemption_payment_days, 31)     # D+31
+        self.assertEqual(offer.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(offer.taxation, "Longo Prazo")
+        self.assertIs(offer.closed_for_investment, False)       # applyOpenPortal=True
+        self.assertEqual(offer.extra["classificacao_anbima"], "RF duração livre crédito livre")
+
+    def test_dplus_parsing(self):
+        from shelf_monitor.collectors.btg import parse_dplus
+
+        self.assertEqual(parse_dplus("D+30"), 30)
+        self.assertEqual(parse_dplus("D+0"), 0)
+        self.assertEqual(parse_dplus("d + 1"), 1)
+        self.assertIsNone(parse_dplus(None))
+        self.assertIsNone(parse_dplus("no ato"))
+
+    def test_fee_in_reais_is_not_reported_as_percent(self):
+        """administrationFeeType e o discriminador; fora de PERCENTAGE, nada."""
+        import copy
+
+        from shelf_monitor.collectors.btg import offer_from_btg_item
+
+        item = copy.deepcopy(self.payload["items"][0])
+        item["Detail"]["detail"]["administrationFeeType"] = "NOMINAL"
+        item["Detail"]["detail"]["administrationFee"] = 5000
+        self.assertIsNone(offer_from_btg_item(item).admin_fee_pct)
+
+    def test_paginates_until_total_pages(self):
+        from shelf_monitor.collectors.btg import paginate_btg_api
+
+        pages: list[str] = []
+
+        def fetch(url):
+            pages.append(url)
+            page = int(url.split("page=")[1].split("&")[0])
+            items = [
+                {"Name": f"Fundo {page}-{i} FIC FIM", "CNPJ": f"{page:07d}{i:07d}"}
+                for i in range(3)
+            ]
+            return {"items": items, "total": 9, "page": page, "total_pages": 3}
+
+        offers, urls = paginate_btg_api(fetch, "https://exemplo.invalido")
+        self.assertEqual(len(pages), 3)
+        self.assertEqual(len(offers), 9)
+        self.assertEqual(len(urls), 1)
+        self.assertIn("funds/list/v2", urls[0])
+
+    def test_unexpected_envelope_fails_loud(self):
+        from shelf_monitor.collectors.btg import paginate_btg_api
+        from shelf_monitor.http import SourceUnavailable
+
+        with self.assertRaises(SourceUnavailable):
+            paginate_btg_api(
+                lambda url: {"error": "maintenance"}, "https://exemplo.invalido"
+            )
+
+
+class TestInterCollector(unittest.TestCase):
+    def test_cap_overflow_becomes_a_warning_not_silence(self):
+        """574 fundos no sitemap com teto menor: avisa e o snapshot sai PARTIAL."""
+        from unittest import mock
+
+        from shelf_monitor.collectors import inter as inter_mod
+        from shelf_monitor.collectors.inter import InterCollector
+
+        config = Config(data_dir="/tmp/nao-usado")
+        collector = InterCollector(config, config.platform("inter"))
+        urls = [f"https://inter.co/pra-voce/investimentos/fundos-de-investimento/f{i}/" for i in range(5)]
+        collector._discover_fund_urls = lambda: urls
+        collector._parse_fund_page = lambda url: offer_for(url)
+        collector._collect_open_finance = lambda: []
+
+        def offer_for(url):
+            from shelf_monitor.models import FundOffer
+            return FundOffer(platform="inter", name=f"Fundo {url[-3:]} FIC FIM", detail_url=url)
+
+        with mock.patch.object(inter_mod, "_MAX_FUNDS", 3):
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 3)
+        self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
+        self.assertIn("teto", snapshot.error)
+
+    def test_fill_missing_keeps_html_identity(self):
+        """page-data completa o que falta; nome e CNPJ do HTML prevalecem."""
+        from shelf_monitor.collectors.inter import _fill_missing
+        from shelf_monitor.models import FundOffer
+
+        html = FundOffer(platform="inter", name="Inter Conservador FIRF", cnpj="11111111000111")
+        json_offer = FundOffer(
+            platform="inter", name="outro nome", cnpj="99999999000199",
+            min_initial=100.0, admin_fee_pct=0.5, manager_name="Inter Asset",
+            asset_class=AssetClass.RENDA_FIXA,
+        )
+        merged = _fill_missing(html, json_offer)
+        self.assertEqual(merged.name, "Inter Conservador FIRF")
+        self.assertEqual(merged.cnpj, "11111111000111")
+        self.assertEqual(merged.min_initial, 100.0)
+        self.assertEqual(merged.admin_fee_pct, 0.5)
+        self.assertEqual(merged.manager_name, "Inter Asset")
+        self.assertEqual(merged.asset_class, AssetClass.RENDA_FIXA)
+
+
+class TestTrustStore(unittest.TestCase):
+    def test_context_carries_cas_and_keeps_verification(self):
+        """O contexto soma stores; nunca desliga hostname nem cadeia."""
+        import ssl
+
+        from shelf_monitor.http import _trust_context
+
+        context = _trust_context()
+        if context is None:
+            self.skipTest("ambiente sem CA nenhuma")
+        self.assertTrue(context.cert_store_stats().get("x509_ca"))
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
