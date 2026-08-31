@@ -1,0 +1,233 @@
+{
+  "url": "https://investimentos.btgpactual.com/services/api/funds-public/public/funds/list/filters/v2",
+  "payload": {
+    "rescuefinancialSettlement": [
+      {
+        "label": "D+0",
+        "value": "ATE_D0"
+      },
+      {
+        "label": "Até D+1",
+        "value": "ATE_D1"
+      },
+      {
+        "label": "Até D+5",
+        "value": "ATE_D5"
+      },
+      {
+        "label": "Até D+15",
+        "value": "ATE_D15"
+      },
+      {
+        "label": "Até D+32",
+        "value": "ATE_D32"
+      },
+      {
+        "label": "Acima de D+32",
+        "value": "ACIMA_D32"
+      }
+    ],
+    "categories": [
+      {
+        "label": "Renda Fixa",
+        "value": "RENDA_FIXA"
+      },
+      {
+        "label": "Multimercado",
+        "value": "MULTIMERCADO"
+      },
+      {
+        "label": "Renda Variável",
+        "value": "RENDA_VARIAVEL"
+      },
+      {
+        "label": "Alternativos",
+        "value": "ALTERNATIVOS"
+      },
+      {
+        "label": "Cambial",
+        "value": "CAMBIAL"
+      },
+      {
+        "label": "Alocação",
+        "value": "ALOCACAO"
+      },
+      {
+        "label": "Outros",
+        "value": "OUTROS"
+      }
+    ],
+    "subCategories": [
+      {
+        "label": "Ativo",
+        "value": "ATIVO"
+      },
+      {
+        "label": "Criptoativo",
+        "value": "CRIPTOATIVO"
+      },
+      {
+        "label": "Crédito Estruturado",
+        "value": "CREDITO_ESTRUTURADO"
+      },
+      {
+        "label": "Crédito Estruturado",
+        "value": "CREDITO_ESTRUTURADO_1"
+      },
+      {
+        "label": "Crédito High Yield",
+        "value": "SPECIAL_SITS"
+      },
+      {
+        "label": "Crédito Pós",
+        "value": "CREDITO_POS"
+      },
+      {
+        "label": "Imobiliário",
+        "value": "IMOBILIARIO"
+      },
+      {
+        "label": "Inflação",
+        "value": "INFLACAO"
+      },
+      {
+        "label": "Investimento no Exterior",
+        "value": "INVESTIMENTO_EXTERIOR"
+      },
+      {
+        "label": "Investimento no Exterior",
+        "value": "INVESTIMENTO_EXTERIOR_RF"
+      },
+      {
+        "label": "Investimento no Exterior",
+        "value": "INVESTIMENTO_EXTERIOR_RV"
+      },
+      {
+        "label": "Investimentos Privados",
+        "value": "INVESTIMENTO_PRIVADO"
+      },
+      {
+        "label": "Long Biased",
+        "value": "LONG_BIASED"
+      },
+      {
+        "label": "Long Only",
+        "value": "LONG_ONLY"
+      },
+      {
+        "label": "Long Short",
+        "value": "LONG_SHORT"
+      },
+      {
+        "label": "Macro",
+        "value": "MACRO"
+      },
+      {
+        "label": "Private Equity",
+        "value": "PRIVATE_EQUITY"
+      },
+      {
+        "label": "Pré-fixado",
+        "value": "PRE_FIXADO"
+      },
+      {
+        "label": "Pós-fixado",
+        "value": "POS_FIXADO"
+      },
+      {
+        "label": "Small Caps",
+        "value": "SMALL_CAPS"
+      },
+      {
+        "label": "Temáticos",
+        "value": "TEMATICOS"
+      },
+      {
+        "label": "Valor Relativo",
+        "value": "VALOR_RELATIVO"
+      },
+      {
+        "label": "Venture Capital",
+        "value": "VENTURE_CAPITAL"
+      }
+    ],
+    "riskNames": [
+      {
+        "label": "Conservador",
+        "value": "CONSERVADOR"
+      },
+      {
+        "label": "Moderado",
+        "value": "MODERADO"
+      },
+      {
+        "label": "Sofisticado",
+        "value": "SOFISTICADO"
+      }
+    ],
+    "features": [
+      {
+        "label": "ESG",
+        "value": "ESG"
+      },
+      {
+        "label": "Hedge Cambial",
+        "value": "HEDGE_CAMBIAL"
+      },
+      {
+        "label": "Indexados",
+        "value": "INDEXADOS"
+      },
+      {
+        "label": "Internacionais",
+        "value": "INTERNACIONAIS"
+      },
+      {
+        "label": "Quantitativo",
+        "value": "QUANTITATIVO"
+      },
+      {
+        "label": "Temáticos",
+        "value": "TEMATICOS"
+      }
+    ],
+    "investorType": [
+      {
+        "label": "Investidor geral",
+        "value": "NAO_QUALIFICADO"
+      },
+      {
+        "label": "Investidor profissional",
+        "value": "PROFISSIONAL"
+      },
+      {
+        "label": "Investidor qualificado",
+        "value": "QUALIFICADO"
+      }
+    ],
+    "productStatus": [
+      {
+        "label": "Fundo aberto para captação",
+        "value": "ABERTO"
+      },
+      {
+        "label": "Fundo fechado para captação",
+        "value": "FECHADO"
+      }
+    ],
+    "orderBy": [
+      {
+        "label": "Nome do fundo",
+        "value": "NOME"
+      },
+      {
+        "label": "Rentabilidade",
+        "value": "RENTABILIDADE"
+      },
+      {
+        "label": "Aplicação mínima",
+        "value": "APLICACAO_MINIMA"
+      }
+    ]
+  }
+}

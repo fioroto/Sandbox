@@ -1,0 +1,10 @@
+{
+  "url": "https://c.amazon-adsystem.com/aat/allowlist/allowlist.json",
+  "payload": {
+    "allowlisted": [
+      "ead7b209-8f99-4bb2-89ad-e7a4d07e9e6b",
+      "61aed6d8-205f-44a4-b34e-9666d2c5ab2c",
+      "6b5de594-9d46-4b37-a058-eeaaaf58c1f7"
+    ]
+  }
+}

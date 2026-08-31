@@ -1,0 +1,22 @@
+{
+  "url": "https://ct.pinterest.com/user/?tid=2613819446648&pd=%7B%22em%22%3A%2224aba99b2defbb47ee981b4200313f61f3ae31541d8717bdac1e463c838939b0%22%7D&cb=1788178788597&dep=2%2CPAGE_LOAD",
+  "payload": {
+    "aemEnabled": true,
+    "aemFnLnEnabled": false,
+    "aemPhEnabled": false,
+    "aemGeEnabled": false,
+    "aemDbEnabled": false,
+    "aemLocEnabled": false,
+    "aemExternalIdEnabled": false,
+    "ctEpikIframeEnabled": true,
+    "chromeNewUserAgentEnabled": true,
+    "isEu": false,
+    "isUtilizingAdvertiser1pEnabled": true,
+    "aemStorageEnabled": true,
+    "isRestrictedRegion": true,
+    "gaClientIdEnabled": false,
+    "mdFrequency": 0.0,
+    "piaaEndPoint": "",
+    "noCodeCapiDomains": []
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+  "final_url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+  "status": 403,
+  "content_stats": {
+    "chars": 231,
+    "cnpjs": 0,
+    "rows": 0,
+    "links": 0
+  },
+  "responses": [
+    {
+      "url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+      "status": 403,
+      "content_type": "text/html",
+      "size": 415,
+      "resource_type": "document",
+      "is_json": false
+    }
+  ]
+}

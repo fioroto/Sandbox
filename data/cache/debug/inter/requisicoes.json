@@ -1,0 +1,2309 @@
+{
+  "url": "https://inter.co/pra-voce/investimentos/fundos-de-investimento/",
+  "final_url": "https://inter.co/pra-voce/investimentos/fundos-de-investimento/",
+  "status": 200,
+  "content_stats": {
+    "chars": 7281,
+    "cnpjs": 1,
+    "rows": 0,
+    "links": 72
+  },
+  "responses": [
+    {
+      "url": "https://inter.co/pra-voce/investimentos/fundos-de-investimento/",
+      "status": 200,
+      "content_type": "text/html",
+      "size": 0,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.privacytools.com.br/public_api/banner/autoblock/v3/G0gl312271.js?t=1",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 57374,
+      "resource_type": "script",
+      "is_json": true
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundos-de-investimento-portabilidade/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 91235,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundos-de-investimento-hero/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 112271,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundo-investimento-dobra-5-mobile/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 49784,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap",
+      "status": 200,
+      "content_type": "text/css; charset=utf-8",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap",
+      "status": 200,
+      "content_type": "text/css; charset=utf-8",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 89608,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-KKPG",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 214892,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/npm/statsig-sidecar-v2-beta/dist/index.min.js?apikey=client-SWfXPeGe86ZfkCjzHL7i1MKoujz5tEF933cewqr91Pu&autocapture=0",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 41036,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/b3-logo/image.webp",
+      "status": 200,
+      "content_type": "application/octet-stream",
+      "size": 11862,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/Anbima/image.webp",
+      "status": 200,
+      "content_type": "application/octet-stream",
+      "size": 4508,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/como-investir-logo/image.webp",
+      "status": 200,
+      "content_type": "application/octet-stream",
+      "size": 7098,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/webpack-runtime-e33c15e6e9cffdc15514.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/framework-756a83074de72a3da627.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-640e94a9-85bb40891f94ad5a4d3f.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-cfc888f5-ac8049d3348ce2754087.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/c5858c7c-2431da926fa4788cdc35.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-758c3076-4755c6d0c306b0fd7cb7.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/ea88be26-8545e1f3406e0fd24195.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b19a9cb0-1762fcc8d5583aa2e922.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-49d0a293-b6fdb5491de9df8f29d9.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-cd271a2f-51a974cd452c3bc2e84c.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-2e613547-43344c4da9844df797ef.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5c163be3-666c3e6c3c28f0865d7b.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-7e44515b-478faf1028b7e0d505f8.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/96e13367-896c9c0b073ce950adf7.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-6beab5ea-210c5c3b1de87ebdbae8.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-d7776e77-d0b1a0b43542a9c6a047.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-0ad54d4b-2c747e156749ae988372.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-2b4841d6-6e9dc84686dce5f5fa2d.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-16b6190b-88deaf1eac8d436b36e0.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-536eaa00-f1fa1febc63bf3f93ed4.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-66bb3aca-b1d723fdf46b2f34837e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-cb2d071c-ee9f46ae38505d11c0fe.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-fe3830b5-48de57e3ac7ef63f85be.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-d6319589-e504e74c37d03dcd63ff.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-26c0370b-8ed0b59203e59a7eee1e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-77ff0bac-5f43e1268707a36feaee.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-6d2a1fbe-886dae2e6073d8938fe5.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-c467f52d-73218ba48cb308b0011f.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-a03a0d74-bd66187bb6b6a7c3a540.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-3d31c3f1-ee70ce6dbc4821ced7ff.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-98e94486-a24c15b28d80c385a5ad.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-31b089be-b12ec7509bf63fd15298.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-368363d4-7c1fe9216f97ba96e986.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e8d6b309-82ff7c008c489dacc912.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5f3e8a91-e2f04f204fa2ad117bf3.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-bc6c02fc-2de167db4458b463c523.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-2f88d366-ca3ceab12f64ce55d1e2.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-9a455226-197383af9d6d5121979b.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-df47990f-a389d6a39c354c266bea.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-cc9fa7f3-28520f713131cc024a03.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-fa6f1fa2-6eb1f6799f93e6240f98.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-abd2fcc1-88e785713f0695e9da77.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-c8e7feac-36d481afb4b5d336d284.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-f94ab24f-4c104a887777694703a8.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-ce9d1113-c361471a23fbe9770579.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.bancointer.com.br/inter-assets/latest/css/citrina.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 390,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-0062e255-d0b203bc3729118f3688.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://onelinksmartscript.appsflyer.com/onelink-smart-script-latest.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.bancointer.com.br/inter-ui/4.x/latest/inter-ui.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e876efcf-5e3b3da1d41346d47cd3.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-ed50650d-1b5444d2380fa50d564e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-37d7157a-c65d7bcf4c41bc5fefd3.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-3c917411-3525ab0682a565832e78.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-6432ace0-174a29f5a6370ed05350.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-3df3cabb-f1ec12f041778bca2a31.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=3&frm=0&apvc=1&ae=g&auid=2115620781.1788178820&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He68q1v549000za200zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422&tft=1788178820185&tfd=1234&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-f19b3806-4730987c5188ff7af2c2.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e728d902-cb41d3c69ad4e12a5403.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-c50291f3-577c31e31e8effb2fad9.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-af1fc7f4-5e07282bc4a1a2b0d249.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-a0417550-a1bc66f4d215e873a55c.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b603e8f9-6e3fbfc196319c7a74a0.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-ae693e18-0c67dc664db7e54657c2.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5e1ee2c0-e8e23ebb396377fe4253.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-66cc01d6-1155eed714d71a3b559d.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e0233ca7-b6fdf7d9067e14afec45.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-03519dde-dc3eeca503a568653de0.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b9ad9edb-e08b9cd538301fb9f906.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-fc725ae8-0ab212a740543cf114bf.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-afa1ab6b-79cfab5b44cd10d2f4ac.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-56877948-3a1e5e8569d4420f93b5.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-4e7f7484-58107f457626add5864c.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b8d0f1da-340c302559162d9b6728.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-88e4ba42-ea667f8bc26853cf55fa.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-4ffc5722-f717b9e172e789536278.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-23b89ccd-1d8088e33bd41c46111e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-202aa5c3-582c72cb5b595db71386.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-7838720d-2cfadd6461a65a575f4b.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-0970e6e9-72434d41e1c3ef9e17d5.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-9010cee6-43704842bdf40d95efd9.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-50c80f45-ea8c31b238fa7c7d0efd.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-f5ecb403-a0b084157e1d67ab9c22.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 297,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-f2226e8a-6e5a2da2def414d909bd.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-38f2368f-2a4f76d51c2c2206e16e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-90295db6-10b96231c535fad45e49.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-88b8a668-4c02a882f6623fa40e97.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e0c6b94b-a2ea213f3a2ffadbe809.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-f58f8056-f802607a9b9aada03f6c.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-810db3d8-6a512741df27218c5bfb.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-d1f04fea-c69db04568c3f1586101.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-384d9715-59da82b3f425a5464a43.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5ff75147-9181de8e2c9899904d21.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-3cf2f92a-1ea1df49aa1f03642454.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b577c906-73ee21ed03a182a5a5cb.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b48beae3-c69ae1bf69009e830f5d.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-667ef46f-2244440f21c75e88cbd3.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-c4306416-5d2a9a5db7de82a8c7cb.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-7a4ee9bb-29209e5fe920411cacd1.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-781283e3-a7937aa7cb4fb82f2dcd.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-ca29c2e1-ce376b89259636b1c56a.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-7dc2b3cc-58eaa816fad10dc536ee.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-09dee275-452edfe05e9bdbb56c30.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-54c38939-f960fa56f1105dae17d6.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-4eb4d35e-d258ec8715897da6af74.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-07453711-f1ea21bf932e1a3665b7.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-d3fbcce7-f76bab88ca434935db54.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.privacytools.com.br/public_api/banner/pt/style/dq2j312271.css?t=1",
+      "status": 200,
+      "content_type": "text/css;charset=UTF-8",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-66a109f0-6a6dff4b7121bd299b47.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-fc70f967-d8adfa804929f11624e2.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-2f3edcb6-fd9c12556a9501691f69.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-75675137-45600620c4d4138c2dbb.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b9100f55-d2bc064a942d49bba432.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-0d41bb17-2f688df9fcecd8542e9e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b08eb7a4-9a48ef99cd145cd69981.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-398ef225-cd1fe3ae497b228d0577.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-b873563c-937e0dc03f3aaffe281d.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-386b9151-c294a23329f0416bceae.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-00f04d1a-e4e434a357bb9e9a43e9.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-52cbc79a-67c7c1a4add70bbda993.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-35d3f40d-b907845db95142dbdfb3.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-e8ee3528-6c6f299f3b91363dadc5.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-761c4b13-fb1f23fbc79c90ddc06f.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-866ab763-9bd9ebf2ab6000b194c4.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-13c88e89-27b66e8f583a15f59b4e.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-458a0647-e4ae85f07226b17924ed.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5397d65f-8280ec7724622552f500.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-2f53be7d-0e34578caebdc85c40e5.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-7eb1c7ad-1a0712719ffdcaff5d69.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-16c24206-44df74c5d3ca5dc43543.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-113656b8-54ac072e195256482861.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-6c7da78a-b8ec9ffb2c6a837da0da.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/vendors-5c372d76-8f10c89153d1cf9c426f.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://ad.doubleclick.net/ccm/s/collect?auid=2115620781.1788178820&gtm=45He68q1v549000za200zd549000xea&fmt=8",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://static.ads-twitter.com/uwt.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 14699,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/app-fe8971fe-685dc7be69cfc3e16848.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://connect.facebook.net/en_US/fbevents.js",
+      "status": 200,
+      "content_type": "application/x-javascript; charset=utf-8",
+      "size": 107502,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/app-e23e00be-d0c9903a14592e37bf27.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.privacytools.com.br/public_api/banner/pt/script/bottom/dq2j312271.js?t=1",
+      "status": 200,
+      "content_type": "text/plain;charset=UTF-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/bat.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 15390,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/page-data/app-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 50,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=AW-11150767356&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 162920,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=G-L8YCK56LKL&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 194950,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=D0MSUIBC77U4C7NS3B6G&lib=ttq",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 2052,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=AW-982244691&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 162181,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=C2V72T8HEMJVRV99LF7G&lib=ttq",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 2824,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://connect.facebook.net/signals/config/793483200769438?v=2.9.385&r=stable&domain=inter.co&hme=1a72ec78e057d90ba48afa55a82b063b1c9b6ab7c0155009fecc72226a622ed2&ex_m=113%2C218%2C164%2C25%2C78%2C79%2C156%2C74%2C73%2C11%2C174%2C98%2C19%2C148%2C136%2C43%2C81%2C86%2C144%2C169%2C176%2C29%2C17%2C30%2C31%2C32%2C34%2C52%2C157%2C83%2C121%2C21%2C23%2C48%2C44%2C46%2C45%2C91%2C100%2C104%2C119%2C155%2C158%2C50%2C120%2C27%2C24%2C128%2C75%2C40%2C160%2C159%2C161%2C152%2C150%2C28%2C39%2C63%2C118%2C171%2C76%2C20%2C123%2C89%2C72%2C22%2C93%2C94%2C125%2C92%2C146%2C145%2C149%2C105%2C170%2C173%2C38%2C53%2C122%2C51%2C8%2C4%2C5%2C7%2C6%2C3%2C99%2C110%2C177%2C185%2C232%2C80%2C245%2C244%2C243%2C14%2C26%2C37%2C59%2C112%2C65%2C10%2C69%2C106%2C107%2C108%2C114%2C139%2C35%2C33%2C141%2C142%2C143%2C138%2C137%2C165%2C82%2C168%2C166%2C167%2C54%2C64%2C132%2C18%2C172%2C49%2C293%2C294%2C292%2C307%2C329%2C225%2C214%2C66%2C215%2C213%2C332%2C323%2C56%2C226%2C116%2C140%2C88%2C130%2C58%2C129%2C135%2C134%2C62%2C70%2C68%2C162%2C84%2C85%2C124%2C41%2C36%2C57%2C60%2C109%2C175%2C1%2C133%2C16%2C131%2C12%2C2%2C61%2C101%2C15%2C71%2C67%2C127%2C97%2C96%2C178%2C179%2C102%2C103%2C9%2C111%2C55%2C153%2C95%2C87%2C77%2C126%2C115%2C47%2C154%2C0%2C90%2C147%2C151%2C163%2C42%2C117%2C13%2C180",
+      "status": 200,
+      "content_type": "application/x-javascript; charset=utf-8",
+      "size": 116385,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.9.0/sha256.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 2977,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=AW-10859261088&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 190650,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://t.co/i/adsct?bci=3&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=88f6b341-dd22-4b22-9c8d-68c15d6b8ca5&events=%5B%5B%22pageview%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=8a997bfb-6ab7-4543-af7e-5c297949e197&pt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tw_document_href=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&tw_document_referrer=https%3A%2F%2Finter.co%2F&tw_iframe_status=0&tw_order_quantity=0&tw_pid_src=1&tw_sale_amount=0&tw_session_count=1&tw_session_id=1788178820479-609345482&tw_session_start=1&twpid=tw.1788178820479.738327548838312776&txn_id=o4zn1&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=AW-11460485855&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 160911,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.twitter.com/i/adsct?bci=3&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=88f6b341-dd22-4b22-9c8d-68c15d6b8ca5&events=%5B%5B%22pageview%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=8a997bfb-6ab7-4543-af7e-5c297949e197&pt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tw_document_href=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&tw_document_referrer=https%3A%2F%2Finter.co%2F&tw_iframe_status=0&tw_order_quantity=0&tw_pid_src=1&tw_sale_amount=0&tw_session_count=1&tw_session_id=1788178820479-609345482&tw_session_start=1&twpid=tw.1788178820479.738327548838312776&txn_id=o4zn1&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/p/action/187265851.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=12&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-11150767356&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45be68q1v9171227110z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~120213116~120385422~120474862&tft=1788178820628&tfd=1677&tids=AW-11150767356&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/11150767356/?random=1788178820583&cv=11&fst=1788178820583&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9171227110z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~120213116~120385422~120474862&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://featureassets.org/v1/initialize?k=client-SWfXPeGe86ZfkCjzHL7i1MKoujz5tEF933cewqr91Pu&st=sidecar-v2-beta&sv=2.6.3&t=1788178820194&sid=633ca28a-cd44-4ac7-81c2-20978af44e47&se=1",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 1414,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundo-investimento-dobra-5/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 154181,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/11150767356/?random=1788178820583&cv=11&fst=1788178820583&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9171227110z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~120213116~120385422~120474862&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2722,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=7&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-11285668637&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45je68q1v874933808z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&tft=1788178820712&tfd=1761&tids=AW-11285668637&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/11285668637/?random=1788178820696&cv=11&fst=1788178820696&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45je68q1v874933808z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=7&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/11285668637/?random=1788178820696&cv=11&fst=1788178820696&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45je68q1v874933808z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=7&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2707,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.c360a.salesforce.com/beacon/c360a/c0891bd3-6f31-4f53-8a0b-59bd4d041303/scripts/c360a.min.js",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundo-investimento-dobra-6/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 389308,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/ads/ga-audiences?v=1&t=sr&slf_rd=1&_r=4&tid=G-L8YCK56LKL&cid=1449722167.1788178821&gtm=45je68q1v874933808z8549000za20gzb549000zd549000&rcb=7&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938469~118897920~118897930~120213116~120385422&z=1654879883",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-L8YCK56LKL&gtm=45je68q1v874933808z8549000za20gzb549000zd549000&_p=1788178819863&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGAC&are=1&cid=1449722167.1788178821&frm=0&pscdl=noapi&rcb=7&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=1&tag_exp=115938465~115938469~118897920~118897930~120213116~120385422&sid=1788178820&sct=1&seg=0&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&en=page_view&_fv=1&_nsi=1&_ss=1&tfd=1711",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://dynamic.criteo.com/js/ld/ld.js?a=58554",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://stats.g.doubleclick.net/g/collect?v=2&tid=G-L8YCK56LKL&cid=1449722167.1788178821&gtm=45je68q1v874933808z8549000za20gzb549000zd549000&rcb=7&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938469~118897920~118897930~120213116~120385422",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/main.MWFiZGNkNWVmMA.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 111310,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7SUc.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 10252,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQUpDg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 33652,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 48256,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/page-data/pra-voce/investimentos/fundos-de-investimento/page-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 10426,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://inter.co/1ac24a8098d5febeca336db37ea0b688bf494381-c1842ff281e6ca44cc4b.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/f33d7712a6c71d3fa87ab3015ca809f7a2662c18-e62ac3d94e595737c8b6.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/main.MWFiZGNkNWVmOQ.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 130177,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/982244691/?random=1788178820880&cv=11&fst=1788178820880&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9168234515z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~117776795~118897920~118897930~120213116~120385423~120763598&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.facebook.com/tr/?id=793483200769438&ev=PageView&dl=https%3A%2F%2Finter.co&rl=https%3A%2F%2Finter.co&if=false&ts=1788178820977&iw=false&sw=1440&sh=900&v=2.9.385&r=stable&ec=0&o=4124&aems=0%3B0&fbp=fb.1.1788178820974.100956219266846552&eid=ob3_plugin-set_e9da315fb742e13587ef90ea614edb6b087b301296ea7c74473e90cf47e5bbdc&cs_est=true&pm=1&hrl=181734&plt=1895.5999999940395&ups[pv]=%7B%7D&ups[rpv]=%7B%7D&it=1788178820557&coo=false&cs_cc=1&cas=1172791979485558%2C27476339205351827%2C27384860537875480%2C36658510970463111%2C25533256049602082%2C24921309450884521%2C8707097172733627%2C8873445436028552%2C8543535292369359%2C24489382737366141%2C7142967262492822%2C7122093794556777%2C25125373733778012%2C7259995427442895%2C7807677045932813%2C7145492168894581%2C26125920113673965%2C25390923440532202%2C8072111259475186%2C7157681854329175%2C5546340608758366%2C24286589034334153%2C5563488457001931%2C2099758603478222%2C2027200277397811&dlc=1&rlc=1&cf=1&expv2[0]=pl1&expv2[1]=el2&expv2[2]=bc1&expv2[3]=ra0&expv2[4]=rp0&expv2[5]=im0&expv2[6]=hf1&expv2[7]=sd1&expv2[8]=sp1&expv2[9]=ek1&expv2[10]=pc1&expv2[11]=gs1&expv2[12]=zs1&expv2[13]=cp1&expv2[14]=es1&expv2[15]=ac1&expv2[16]=so1&expv2[17]=wc1&expv2[18]=la1&expv2[19]=sf1&expv2[20]=da1&expv2[21]=io1&expv2[22]=ae1&expv2[23]=sx1&expv2[24]=if1&expv2[25]=fd1&expv2[26]=bg1&expv2[27]=mg1&expv2[28]=kl1&expv2[29]=sg1&expv2[30]=mk1&expv2[31]=sn1&expv2[32]=ec1&expv2[33]=mp1&expv2[34]=ps1&expv2[35]=fx1&expv2[36]=vt1&rqm=GET",
+      "status": 200,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=10&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-982244691&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45be68q1v9168234515z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~117776795~118897920~118897930~120213116~120385423~120763598&tft=1788178820928&tfd=1977&tids=AW-982244691&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/ads/ga-audiences?v=1&t=sr&slf_rd=1&_r=4&tid=G-5YDZ1F216F&cid=1449722167.1788178821&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000&rcb=12&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938469~118897920~118897930~120385422~120474864&z=940904806",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/982244691/?random=1788178820880&cv=11&fst=1788178820880&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9168234515z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~117776795~118897920~118897930~120213116~120385423~120763598&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2726,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://stats.g.doubleclick.net/g/collect?v=2&tid=G-5YDZ1F216F&cid=1449722167.1788178821&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000&rcb=12&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938469~118897920~118897930~120385422~120474864",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-5YDZ1F216F&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000&_p=1788178819863&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGAC&are=1&cid=1449722167.1788178821&frm=0&pscdl=noapi&rcb=12&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=1&tag_exp=115938465~115938469~118897920~118897930~120385422~120474864&sid=1788178821&sct=1&seg=0&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&en=page_view&_fv=1&_ss=1&tfd=2105",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=12&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-10859261088&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422~120474864&tft=1788178821103&tfd=2151&tids=AW-10859261088&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/10859261088/?random=1788178821089&cv=11&fst=1788178821089&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422~120474864&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://gum.criteo.com/syncframe?topUrl=inter.co&origin=onetag",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "size": 0,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/11150767356/?random=1788178820583&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9171227110z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~120213116~120385422~120474862&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS6wEAQM4h3FC8-M9GFWsg9gm7tYGg0WmNeQclNInSlco4g5IB2tzRMvyhYk0jEnEvutr5kHw4tVeoyUNz9nkR3RDwIu3qBr11JNPe_b-ISUmu5cd3HdZw7SJyNFo8V3QqMfE1jqcPPDmWYFAqUYKSfsUoBTAzB-c-sZlsT45kAK1YjeQW6tpZGfOrKn1aUl2HjzHkMyCILAJNoWVBROfzhfdFyNXbug_6JK1HHdInSoCeOAoBjsRYn91dKi4WmwCF2uOOAC4oWflLYy0eTvx_gK1VX7x5JiEKEgbGhTLzu--sGdtYcgmLQ4PA3WU3&random=3487267339&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/11150767356/?random=1788178820583&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9171227110z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~120213116~120385422~120474862&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS6wEAQM4h3FC8-M9GFWsg9gm7tYGg0WmNeQclNInSlco4g5IB2tzRMvyhYk0jEnEvutr5kHw4tVeoyUNz9nkR3RDwIu3qBr11JNPe_b-ISUmu5cd3HdZw7SJyNFo8V3QqMfE1jqcPPDmWYFAqUYKSfsUoBTAzB-c-sZlsT45kAK1YjeQW6tpZGfOrKn1aUl2HjzHkMyCILAJNoWVBROfzhfdFyNXbug_6JK1HHdInSoCeOAoBjsRYn91dKi4WmwCF2uOOAC4oWflLYy0eTvx_gK1VX7x5JiEKEgbGhTLzu--sGdtYcgmLQ4PA3WU3&random=3487267339&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/11285668637/?random=1788178820696&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45je68q1v874933808z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=7&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS6wEAQM4h3K895XP4VoJpwfMayxu-sYXnc8mAWtVug6uICXOx-lZx-GSzJM0T5RQaGdkvEW5o7l89ywxcMn9p7WWE8A92boLFHY6CV-HHT5QHIq9nRWwsMjdEfv1M1hjo6lMIsaOtjLuQ8fKI-y3K66hsjLWTMsTH5KrTKazQb4mzisV1JH7qwp5akX4op6jsS2fLOnJnmu0ATr_v4LaHM3C7KBU7W7aa9PvS4y-s3zIR1rN9bv3vlh408H_FiiHTGsafKjZC0PgMpfgVCZcppwreeb7WLCx_Kvdev_XucgWlGblvIhKc2FbQypor&random=1002470456&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/11285668637/?random=1788178820696&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45je68q1v874933808z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=7&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS6wEAQM4h3K895XP4VoJpwfMayxu-sYXnc8mAWtVug6uICXOx-lZx-GSzJM0T5RQaGdkvEW5o7l89ywxcMn9p7WWE8A92boLFHY6CV-HHT5QHIq9nRWwsMjdEfv1M1hjo6lMIsaOtjLuQ8fKI-y3K66hsjLWTMsTH5KrTKazQb4mzisV1JH7qwp5akX4op6jsS2fLOnJnmu0ATr_v4LaHM3C7KBU7W7aa9PvS4y-s3zIR1rN9bv3vlh408H_FiiHTGsafKjZC0PgMpfgVCZcppwreeb7WLCx_Kvdev_XucgWlGblvIhKc2FbQypor&random=1002470456&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.clarity.ms/tag/uet/187265851?conversions=1",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 1028,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/11460485855/?random=1788178821146&cv=11&fst=1788178821146&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/1016601287/?random=1788178821161&cv=11&fst=1788178821161&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=10&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-11460485855&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&tft=1788178821174&tfd=2222&tids=AW-11460485855&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=10&frm=0&apvc=0&auid=2115620781.1788178820&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-1016601287&en=page_view&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&tft=1788178821174&tfd=2223&_gsid=l4R_fj6hqBZxaAsd3-U4MmXT9EHNg-1mlQ&tids=AW-1016601287~AW-963727221&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/963727221/?random=1788178821166&cv=11&fst=1788178821166&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/identify_ea043f1c.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 39622,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/action/0?ti=187265851&tm=gtm002&Ver=2&mid=9a79e29c-447b-4b9a-93be-9b1e6a30f13b&bo=1&sid=55d14a10a53611f1bc627731dd181570&vid=55d15b40a53611f180ed6db5827bee48&vids=1&msclkid=N&gtm_tag_source=1&pi=0&lg=pt-BR&sw=1440&sh=900&sc=24&nwd=1&tl=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100,00%20-%20Inter&kw=fundos,%20investimento,%20partir,%20r10000,%20inter,%20invista,%20segurana,%20melhores,%20banco%20inter,%20conta%20digital,%20pix,%20cart%C3%A3o%20sem%20anuidade&p=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&r=https%3A%2F%2Finter.co%2F&lt=1895&evt=pageLoad&sv=2&cdb=AQAQ&rn=817503",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/10859261088/?random=1788178821089&cv=11&fst=1788178821089&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422~120474864&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2725,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/11460485855/?random=1788178821146&cv=11&fst=1788178821146&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2729,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/1016601287/?random=1788178821161&cv=11&fst=1788178821161&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2727,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/963727221/?random=1788178821166&cv=11&fst=1788178821166&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2726,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/fdee868956a5861d349d99bb23bf217eaa46bb18-dbac2b81d091fe88121d.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/destination?id=AW-1041254100&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 161008,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/ddceefddfc0c473a2927ceb241a127f66172c47f-ec23e8c2163509c3505f.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/982244691/?random=1788178820880&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9168234515z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~117776795~118897920~118897930~120213116~120385423~120763598&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3P0f4yD8CaLedUQuE60wLgplDJlhunxu7QjOhJqNQv-dZXF0vr16TGRgKp_U2qrLCpl6Nhy5FD5SpjIB1LNoOaDO2i3bR2itk1M58iL2CIfj40tJ-7qE3jevkc2NkWQYj4Bow3ZlAHxV4ni4W3d4w9QUS5wOiyRuf-BYifOgdI4pRGsk0rp1SXUNp5P98IOQYE8JqZQnMGPsvk-NcrjPTFj2Nvuu2TQOWpBeW-ZItE1JiicsBug5paqv7o0LetoruGqnDQD5eYxc0pU55sxZciH7ZlFbsLuyTFOJ38BTDHOuiDXsvdaq0SX26abt8LlxzVvuO3U&random=206605803&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/982244691/?random=1788178820880&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9168234515z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~117776795~118897920~118897930~120213116~120385423~120763598&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3P0f4yD8CaLedUQuE60wLgplDJlhunxu7QjOhJqNQv-dZXF0vr16TGRgKp_U2qrLCpl6Nhy5FD5SpjIB1LNoOaDO2i3bR2itk1M58iL2CIfj40tJ-7qE3jevkc2NkWQYj4Bow3ZlAHxV4ni4W3d4w9QUS5wOiyRuf-BYifOgdI4pRGsk0rp1SXUNp5P98IOQYE8JqZQnMGPsvk-NcrjPTFj2Nvuu2TQOWpBeW-ZItE1JiicsBug5paqv7o0LetoruGqnDQD5eYxc0pU55sxZciH7ZlFbsLuyTFOJ38BTDHOuiDXsvdaq0SX26abt8LlxzVvuO3U&random=206605803&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/10859261088/?random=1788178821089&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422~120474864&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3HTZJQL8XRsKuluEBFQdR4DsKboPVxDpFUTV0DZlLHA_Ob1x2no24PYqJc4eGRXPRBE33ZGenU8Eyw49IqULh8iEQ7YfL36Pe1HqbblAYYAWS2wZ0YvFp9Or61ZWKV29CmgWGEDEj9Ab1ghLICRj_9Jl1AmUuG-_iIhpBrkHRu_GvvkmAbfoYF-RspZKcz_uH9-qdiAs70YYW9JALxJJ7wjSUBSW2B0fVOktwrGEWqgDoekf70SnXnkjGZ1XtL58lmKXQrnbbaPj3KiDV4-8Djx_DjIDdY1Vc-TLmdDSMaNye5Rn6YHIycKbescmgTKpIux83ag&random=3335681926&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/10859261088/?random=1788178821089&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9183386096z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120385422~120474864&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=12&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3HTZJQL8XRsKuluEBFQdR4DsKboPVxDpFUTV0DZlLHA_Ob1x2no24PYqJc4eGRXPRBE33ZGenU8Eyw49IqULh8iEQ7YfL36Pe1HqbblAYYAWS2wZ0YvFp9Or61ZWKV29CmgWGEDEj9Ab1ghLICRj_9Jl1AmUuG-_iIhpBrkHRu_GvvkmAbfoYF-RspZKcz_uH9-qdiAs70YYW9JALxJJ7wjSUBSW2B0fVOktwrGEWqgDoekf70SnXnkjGZ1XtL58lmKXQrnbbaPj3KiDV4-8Djx_DjIDdY1Vc-TLmdDSMaNye5Rn6YHIycKbescmgTKpIux83ag&random=3335681926&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/963727221/?random=1788178821166&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3BEbUc2N8DDlhz0lSysR5_mhA9geqKc9ntBaBQHIKLrLbE4Suf6eZvnThPtvPiOcbWL8sksLTCpnRsurXB8vzfXYzU_eiKghwSuJUr-xUDcUHObHdPTQS7VzHBsLD9Zbal11L0ZKbksTtpQlV0QHRJzsdK251chH9JOZAkSxtIOM18zjHA06Jwtr4inUvBV-RigqlvxPHgCzvj6eQHoFkV4O294itbP9Wtn6Kk954u2_3hyfl8amzBuYk0yzWlz5Y8c0MBrTao1sFoKjtZgNADNTpnKzOeOcsJ7Gx0DN4O8ztas0vYsIM-j8xTanAXmGxZLu8Y4&random=3887518118&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/1016601287/?random=1788178821161&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3JwmB7U_h0xxkohUeD7B--LUGD9ptjvgD7XWfzFU-VSzaID6Wn5iCtXIyxqdPqaB3gQxFpiS4MCeBTP2I6hMkgdPTq28Z4Qbo4CRWWbWx23tYBfnJDjGlOqy4Ml6WkOFiy-jf4E4bYrTSf1JujfqJ5yI7Gep5jbStXk4oBD1eHOAZR-tcXWWvluQwYMnDmNUQ4vMPpW7L0assAz0oojQQffAF0NV6e9s1k4pieXcU0ePorPQ1ZSNB02QgpovcLAEGjH7Peq7YyBHMMPriKaa3BgtYbPQraCiSwH4Cp2dE-9alT6zM0TFJnOgvbvjEOvbd7yQ4RQ&random=2277613768&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://scripts.clarity.ms/0.8.69/clarity.js",
+      "status": 200,
+      "content_type": "application/javascript;charset=utf-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://gum.criteo.com/sid/json?origin=onetag&domain=inter.co&sn=ChromeSyncframe&so=undefined&topUrl=inter.co",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/1016601287/?random=1788178821161&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3JwmB7U_h0xxkohUeD7B--LUGD9ptjvgD7XWfzFU-VSzaID6Wn5iCtXIyxqdPqaB3gQxFpiS4MCeBTP2I6hMkgdPTq28Z4Qbo4CRWWbWx23tYBfnJDjGlOqy4Ml6WkOFiy-jf4E4bYrTSf1JujfqJ5yI7Gep5jbStXk4oBD1eHOAZR-tcXWWvluQwYMnDmNUQ4vMPpW7L0assAz0oojQQffAF0NV6e9s1k4pieXcU0ePorPQ1ZSNB02QgpovcLAEGjH7Peq7YyBHMMPriKaa3BgtYbPQraCiSwH4Cp2dE-9alT6zM0TFJnOgvbvjEOvbd7yQ4RQ&random=2277613768&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/11460485855/?random=1788178821146&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3GFCV8mg-Y2g_5BlHo3mIOdW1PE1JYDX3NbVM2985s7zE1-NocNBXhraEPr0bUOl8gIruiivUclZeN67ZpGPcqdCAXGIMjG66Ugivz6bvapxPN9cpTnSKl1G3YQmkWdqpcLj_S_tk93J_XBbzXl7uzkMYGbV1qnIdU8e5aiayrep0bekxal4sGLhA6nSovnaPPMszlRruWnJ2KfIQPx0mJ1npJ9d_mNoXy7KU10N2gTNGCSYXPORpjIZot8w9UT19zCNBDb6tfLoxd0F8gt7RH2QBLdIZl7TtyqkmObO1sggQB66UlI2_FwZf8kLdnq5huJWWfc&random=2695702256&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/963727221/?random=1788178821166&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3BEbUc2N8DDlhz0lSysR5_mhA9geqKc9ntBaBQHIKLrLbE4Suf6eZvnThPtvPiOcbWL8sksLTCpnRsurXB8vzfXYzU_eiKghwSuJUr-xUDcUHObHdPTQS7VzHBsLD9Zbal11L0ZKbksTtpQlV0QHRJzsdK251chH9JOZAkSxtIOM18zjHA06Jwtr4inUvBV-RigqlvxPHgCzvj6eQHoFkV4O294itbP9Wtn6Kk954u2_3hyfl8amzBuYk0yzWlz5Y8c0MBrTao1sFoKjtZgNADNTpnKzOeOcsJ7Gx0DN4O8ztas0vYsIM-j8xTanAXmGxZLu8Y4&random=3887518118&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/11460485855/?random=1788178821146&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be68q1v9193683353z8549000za20gzb549000zd549000xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~117776795~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=10&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=2115620781.1788178820&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&data=event%3Dgtag.config&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3GFCV8mg-Y2g_5BlHo3mIOdW1PE1JYDX3NbVM2985s7zE1-NocNBXhraEPr0bUOl8gIruiivUclZeN67ZpGPcqdCAXGIMjG66Ugivz6bvapxPN9cpTnSKl1G3YQmkWdqpcLj_S_tk93J_XBbzXl7uzkMYGbV1qnIdU8e5aiayrep0bekxal4sGLhA6nSovnaPPMszlRruWnJ2KfIQPx0mJ1npJ9d_mNoXy7KU10N2gTNGCSYXPORpjIZot8w9UT19zCNBDb6tfLoxd0F8gt7RH2QBLdIZl7TtyqkmObO1sggQB66UlI2_FwZf8kLdnq5huJWWfc&random=2695702256&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/component---src-pages-pra-voce-investimentos-fundos-de-investimento-index-tsx-42a194c13ccfc879d305.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/3a2dbad4d91a2c8b114f7eba633934c4b3bcfed1-422f30dd-38186ffeb3a6a37b4275.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=0&frm=0&apvc=0&ae=g&auid=1284999504.1788178821&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tid=AW-1041254100&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&scrsrc=www.googletagmanager.com&rnd=1467489825.1788178820&navt=n&npa=0&_tu=CA&gtm=45be68q1v9241541010z8549000za20gzb549000zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385423&tft=1788178821476&tfd=2525&tids=AW-1041254100&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/1041254100/?random=1788178821431&cv=11&fst=1788178821431&fmt=8&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9241541010z8549000za20gzb549000zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=0&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1284999504.1788178821&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics-ipv6.tiktokw.us/ipv6/enrich_ipv6",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://k6-e4e4123be8e54363900a90353991ca93.ecs.us-west-1.on.aws/events?cee=no",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel/act",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/1041254100/?random=1788178821431&cv=11&fst=1788178821431&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9241541010z8549000za20gzb549000zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=0&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1284999504.1788178821&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2699,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/1041254100/?random=1788178821431&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9241541010z8549000za20gzb549000zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=0&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1284999504.1788178821&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3PfQC3iWqge6RXjDF7o9baYe8gP3u6j1lxzazsucgV0Bdc6gTLKjGeKajBPsVyWswXigI0k13dkd4fRKqsZq7fRe95OF54qfoJ5eoEpnVuHrUGMU8Wqg9ep3hGUNky6PHKJ_i1P-1h6hoc5c-MGtQK7NTRDeGmG2A68zgEXGSgk3wEGSPAnGLjKmR3V2eUwkLEayhNUNvNZkR02C2i9Xa7_SADQ_3F9_7qOMl86GaELm4rk0d9qecdG9bOEYUOOotZfm_X3T6HDPDOk4dhTMGjBONYbl37ZI2vnAefbLMREkTBaKAOPO_G96siD-MWuDkZNA5jA&random=3507385076&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/1041254100/?random=1788178821431&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9241541010z8549000za20gzb549000zd549000xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&ref=https%3A%2F%2Finter.co%2F&rcb=0&frm=0&tiba=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1284999504.1788178821&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3PfQC3iWqge6RXjDF7o9baYe8gP3u6j1lxzazsucgV0Bdc6gTLKjGeKajBPsVyWswXigI0k13dkd4fRKqsZq7fRe95OF54qfoJ5eoEpnVuHrUGMU8Wqg9ep3hGUNky6PHKJ_i1P-1h6hoc5c-MGtQK7NTRDeGmG2A68zgEXGSgk3wEGSPAnGLjKmR3V2eUwkLEayhNUNvNZkR02C2i9Xa7_SADQ_3F9_7qOMl86GaELm4rk0d9qecdG9bOEYUOOotZfm_X3T6HDPDOk4dhTMGjBONYbl37ZI2vnAefbLMREkTBaKAOPO_G96siD-MWuDkZNA5jA&random=3507385076&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://mug.criteo.com/sid?cpp=D42T0HxBSnR6MVFrczh6aHNFMmg0TUlMckdFMjl4SWVPN1BZTXBVL3kzZ0Y2SGhlcEZJbjVaTEpPQVA1dHV1ZHZXajVMTnZ3NFZ3L3cyc2pjc2RhUzdoUHNrSGZCRTZUSlNoUGU0NU0vMDdZTXRMenF0M040MEpxejVRRVFKUlpKL1Exd1MyZ1IvczFPYk5XNWY1WmtHdWxZczhiSDVBd24wc00rdDN2U3kxWXhrQnBVRE1UcVkwamVXUS9yRFp4L3hPQXc2TXNMbEx0RUw1UW9nOVVtU0M4T0lMZk5LQy8rbGZUbUQyTUtCN2FLbWVWdzRrdE5NTTFMT2VISFNrZ2ZCTGFJdzFCSDBKNS91QnB1bXRYSm9uZExEUzQwQlM0a3NHbkpjTzZWSjhybFdyTT18&cppv=2",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 414,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel/act",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://j.clarity.ms/collect",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/3a2dbad4d91a2c8b114f7eba633934c4b3bcfed1-24464c0e-75992cd668ee86cc81ce.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/3a2dbad4d91a2c8b114f7eba633934c4b3bcfed1-e5291c56-a9c8d10b6839737a1c56.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/images-without-small-versions/fundos-de-investimento-dobra-4/image.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 110957,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.privacytools.com.br/public_api/banner/pop/dq2j312271.html?t=1&m=0&c=1,784,120,368,864",
+      "status": 200,
+      "content_type": "text/plain;charset=UTF-8",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.privacytools.com.br/assets/37aeed57-8b07-4239-adff-d608840803ac/banner/68ED12968CFC4A59DDF0907F34456D91.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 13662,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://c.clarity.ms/c.gif",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://central-imagens.bancointer.com.br/fed98a5a/ic_flag_brazil_rounded.webp",
+      "status": 200,
+      "content_type": "application/octet-stream",
+      "size": 1634,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bam.nr-data.net/1/NRBR-4fdac3e4ab0d23b0e54?a=16853315&sa=1&v=1.314.0&t=Unnamed%20Transaction&rst=3446&ck=0&s=56e9d6619cfe79e5&ref=https://inter.co/pra-voce/investimentos/fundos-de-investimento/&ptid=96a6946d34a856f7&af=err,spa,xhr,stn,ins&be=465&fe=2881&dc=1431&fsh=1&perf=%7B%22timing%22:%7B%22of%22:1788178818952,%22n%22:0,%22f%22:0,%22dn%22:5,%22dne%22:8,%22c%22:8,%22s%22:11,%22ce%22:18,%22rq%22:18,%22rp%22:466,%22rpe%22:907,%22di%22:1415,%22ds%22:1896,%22de%22:1896,%22dc%22:3311,%22l%22:3313,%22le%22:3346%7D,%22navigation%22:%7B%7D%7D&fp=1896&fcp=1896",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 196,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://c.bing.com/c.gif?ctsa=mr&CtsSyncId=7924DF5551E342B3AB957C106331319F&RedC=c.clarity.ms&MXFR=18DD041DD43D68A43B0E13DBD03D66BC",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bam.nr-data.net/events/1/NRBR-4fdac3e4ab0d23b0e54?a=16853315&sa=1&v=1.314.0&t=Unnamed%20Transaction&rst=3643&ck=0&s=56e9d6619cfe79e5&ref=https://inter.co/pra-voce/investimentos/fundos-de-investimento/&ptid=96a6946d34a856f7",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 24,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://c.clarity.ms/c.gif?ctsa=mr&CtsSyncId=7924DF5551E342B3AB957C106331319F&MUID=22C27487621465232F79634163A56416",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bam.nr-data.net/events/1/NRBR-4fdac3e4ab0d23b0e54?a=16853315&sa=1&v=1.314.0&t=Unnamed%20Transaction&rst=3646&ck=0&s=56e9d6619cfe79e5&ref=https://inter.co/pra-voce/investimentos/fundos-de-investimento/&ptid=96a6946d34a856f7",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 24,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://bam.nr-data.net/jserrors/1/NRBR-4fdac3e4ab0d23b0e54?a=16853315&sa=1&v=1.314.0&t=Unnamed%20Transaction&rst=3644&ck=0&s=56e9d6619cfe79e5&ref=https://inter.co/pra-voce/investimentos/fundos-de-investimento/&ptid=96a6946d34a856f7&pve=1",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 24,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://j.clarity.ms/collect",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-L8YCK56LKL&gtm=45je68q1v874933808za20gzb549000zd549000&_p=1788178819863&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAGQC&ae=a&are=1&cid=1449722167.1788178821&frm=0&pscdl=noapi&rcb=7&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=2&tag_exp=115938465~115938469~117776795~118897920~118897930~120213116~120385422&sid=1788178820&sct=1&seg=0&dl=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&dr=https%3A%2F%2Finter.co%2F&dt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&en=scroll&epn.percent_scrolled=90&_et=57&tfd=6772",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/page-data/index/page-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 0,
+      "resource_type": "other",
+      "is_json": true
+    },
+    {
+      "url": "https://inter.co/page-data/index/page-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 1385,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://inter.co/page-data/pra-voce/investimentos/page-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 0,
+      "resource_type": "other",
+      "is_json": true
+    },
+    {
+      "url": "https://sslwidget.criteo.com/event?a=%5B58554%5D&v=5.48.0&p0=e%3Dvpg&bundle=8gMjp19YRjFyS3ZITUNtNElDTTM2bDZkUFJWREVPSG5yYkRvNWdCMUhBNHVpSFlnNmhpelNkaEM2UHdkYnBtY2pXeGVLUVlmRkJJdzBqNEdUZnlTOWFNQWNsSzFnSEJ1MUNhekJtVEtyVnczOXdQRGU2b2tWR3RLT2hmeWRGU1FSSmYyZE9PUEhQQ3NCVG00dFUyWHJYQWJOb0ElM0QlM0Q&tld=inter.co&dy=1&fu=https%253A%252F%252Finter.co%252Fpra-voce%252Finvestimentos%252Ffundos-de-investimento%252F&pu=https%253A%252F%252Finter.co%252F&ceid=d45fadd5-945a-45cb-95dc-fd97338d291a",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://inter.co/page-data/pra-voce/investimentos/page-data.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 10877,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://t.co/i/adsct?bci=3&cv=100%261&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=2ce2b1d8-2df5-4b2e-a7de-2db1ea1ac842&events=%5B%5B%22auto_long_site_dwell%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=8a997bfb-6ab7-4543-af7e-5c297949e197&pt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tw_document_href=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&tw_document_referrer=https%3A%2F%2Finter.co%2F&tw_iframe_status=0&tw_pid_src=1&tw_session_count=1&tw_session_id=1788178820479-609345482&twpid=tw.1788178820479.738327548838312776&txn_id=o4zn1&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.twitter.com/i/adsct?bci=3&cv=100%261&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=2ce2b1d8-2df5-4b2e-a7de-2db1ea1ac842&events=%5B%5B%22auto_long_site_dwell%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=8a997bfb-6ab7-4543-af7e-5c297949e197&pt=Fundos%20de%20Investimento%20a%20partir%20de%20R%24100%2C00%20-%20Inter&tw_document_href=https%3A%2F%2Finter.co%2Fpra-voce%2Finvestimentos%2Ffundos-de-investimento%2F&tw_document_referrer=https%3A%2F%2Finter.co%2F&tw_iframe_status=0&tw_pid_src=1&tw_session_count=1&tw_session_id=1788178820479-609345482&twpid=tw.1788178820479.738327548838312776&txn_id=o4zn1&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    }
+  ]
+}

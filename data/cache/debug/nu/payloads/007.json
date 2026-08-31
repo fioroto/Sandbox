@@ -1,0 +1,9 @@
+{
+  "url": "https://cm.teads.tv/v2/advertiser?referer=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tag_version=8.14.1_bd426f7&buyer_pixel_id=3897&gtm_consent=false&has_consent=true&cht=timeout&zone=all",
+  "payload": {
+    "tracking_allowed": true,
+    "first_party_cookie_allowed": true,
+    "session_id": "e067e93a-37f7-4e28-95ed-0687475cbd03",
+    "domain": "nubank.com.br"
+  }
+}

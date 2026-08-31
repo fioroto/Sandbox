@@ -1,0 +1,14 @@
+{
+  "url": "https://websdk.appsflyersdk.com/manifest.db28d1001086e2c4d446d26b9a3bf030.json",
+  "payload": {
+    "schema_version": 1,
+    "sdk_version": "release-0.0.67",
+    "plugins": [
+      "banners",
+      "pba"
+    ],
+    "url": "/release-0-0-67/websdk.db28d1001086e2c4d446d26b9a3bf030.js",
+    "sri": "sha384-sDJg+LFM1zxjVcgWPf7Pvkvh5yfZzOaLWupsj95fAMcwPU8cnoV0oTauulQci4JH",
+    "issued_at": 1785327342
+  }
+}

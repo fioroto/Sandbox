@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de Prateleiras de Fundos</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
+header.page { margin-bottom: 32px; }
+h1 { font-size: 26px; font-weight: 620; margin: 0 0 6px; letter-spacing: -0.01em; }
+.sub { color: var(--text-secondary); margin: 0; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.card-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 20px; }
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+}
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.tile .value { font-size: 30px; font-weight: 600; line-height: 1.15; margin-top: 6px; }
+.tile .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-secondary); }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+.chart-scroll { overflow-x: auto; }
+svg { display: block; max-width: 100%; }
+svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axis-label { fill: var(--text-secondary); font-size: 12px; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--axis); stroke-width: 1; }
+.bar { transition: opacity .12s ease; }
+.bar-group:hover .bar { opacity: .45; }
+.bar-group .bar:hover { opacity: 1; }
+
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.table-scroll table { min-width: max-content; }
+.table-scroll th:first-child, .table-scroll td:first-child { padding-left: 0; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--grid); }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: none; }
+details { margin-top: 18px; }
+summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; padding: 6px 0; }
+summary:hover { color: var(--text-primary); }
+details[open] summary { margin-bottom: 10px; }
+
+.pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); }
+.pill.ok { color: var(--good); }
+.pill.partial { color: var(--warning); }
+.pill.unavailable { color: var(--critical); }
+.note-box { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: var(--text-secondary); font-size: 13px; margin-top: 14px; }
+.empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+footer { color: var(--muted); font-size: 12px; margin-top: 36px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <h1>Monitor de Prateleiras de Fundos</h1>
+    <p class="sub">Concorrentes da XP &middot; prateleiras publicas e radar de registros na CVM
+      &middot; gerado em 29/08/2026 17:16</p>
+  </header>
+
+  <div class="tiles"><div class="tile"><div class="label">Fundos mapeados</div><div class="value">13.203</div><div class="note">5 de 5 plataformas coletadas</div></div>
+<div class="tile"><div class="label">Prateleira da XP</div><div class="value">624</div><div class="note">baseline de comparacao</div></div>
+<div class="tile"><div class="label">Registrados na CVM</div><div class="value">11.763</div><div class="note">gestoras ligadas as casas monitoradas</div></div>
+<div class="tile"><div class="label">Em fase pre-operacional</div><div class="value">370</div><div class="note">registrados e ainda nao lancados</div></div></div>
+
+  <section class="card">
+    <h2>Amplitude por classe de ativo</h2>
+    <p class="card-sub">Quantos fundos cada casa oferta em cada classe - a leitura mais direta
+      de onde cada prateleira e forte.</p>
+    <div class="legend" id="legend-classes"></div>
+    <div class="chart-scroll" id="chart-classes"></div>
+    <details><summary>Ver tabela</summary><div id="table-classes"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Profundidade: gestoras representadas</h2>
+    <p class="card-sub">Numero de gestoras distintas na prateleira. Amplitude sem profundidade
+      indica concentracao em poucas casas de gestao.</p>
+    <div class="chart-scroll" id="chart-managers"></div>
+    <details><summary>Ver as maiores gestoras de cada prateleira</summary>
+      <div id="table-top-managers"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Aplicacao minima</h2>
+    <p class="card-sub">Distribuicao dos fundos por faixa de investimento minimo - separa quem
+      mira varejo de quem mira alta renda.</p>
+    <div class="legend" id="legend-bands"></div>
+    <div class="chart-scroll" id="chart-bands"></div>
+    <details><summary>Ver tabela</summary><div id="table-bands"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Exclusividade</h2>
+    <p class="card-sub">Fundos (por CNPJ) presentes em apenas uma das plataformas coletadas.
+      Considera somente casas com coleta bem-sucedida.</p>
+    <div class="chart-scroll" id="chart-exclusive"></div>
+  </section>
+
+  <section class="card" id="cvm-section">
+    <h2>Radar CVM &mdash; visao antecipada</h2>
+    <p class="card-sub">Fundos registrados na CVM por gestoras ligadas a cada casa. Um fundo em
+      fase pre-operacional foi registrado mas ainda nao lancado: e o sinal mais antecipado
+      da estrategia de produto da casa.</p>
+    <div class="legend" id="legend-cvm"></div>
+    <div class="chart-scroll" id="chart-cvm"></div>
+    <details><summary>Ver tabela por casa</summary><div id="table-cvm"></div></details>
+    <details open><summary>Fundos em fase pre-operacional</summary><div id="table-pre-op"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Saude da coleta</h2>
+    <p class="card-sub">Uma prateleira que aparece pequena pode ser fonte bloqueada, nao
+      prateleira enxuta. Confira o status antes de comparar numeros.</p>
+    <div id="table-sources"></div>
+  </section>
+
+  <footer>
+    Fontes publicas: sites das plataformas, API de Dados Abertos de Investimentos do Open
+    Finance Brasil e cadastro de fundos da CVM (dados.cvm.gov.br).
+  </footer>
+</div>
+
+<script type="application/json" id="dashboard-data">{"generated_at": "2026-08-29T17:16:52.631639", "class_order": ["Renda Fixa", "Multimercado", "Acoes", "Cambial", "Internacional", "Outros"], "band_order": ["Ate R$ 100", "R$ 100 a 1 mil", "R$ 1 mil a 5 mil", "R$ 5 mil a 25 mil", "Acima de R$ 25 mil"], "house_order": ["xp", "btg", "itau", "nu", "inter"], "platforms": [{"platform_id": "xp", "label": "XP Investimentos", "status": "ok", "strategy": "open-finance", "error": null, "total_funds": 624, "by_class": {"Renda Fixa": 217, "Multimercado": 230, "Acoes": 168, "Cambial": 4, "Outros": 5}, "distinct_managers": 182, "top_managers": [{"name": "XP Allocation Asset Management LTDA.", "count": 60}, {"name": "XP Advisory", "count": 17}, {"name": "XP VISTA ASSET MANAGMENT LTDA", "count": 14}, {"name": "FRANKLIN TEMPLETON BRASIL LTDA.", "count": 14}, {"name": "BNP Paribas Asset Management", "count": 12}, {"name": "XP Asset Management", "count": 12}, {"name": "ARX Investimentos", "count": 10}, {"name": "Mongeral Aegon Investimentos", "count": 10}, {"name": "SulAmérica Investimentos", "count": 10}, {"name": "Kinea Investimentos", "count": 10}], "min_bands": {"Acima de R$ 25 mil": 531, "R$ 5 mil a 25 mil": 90, "R$ 1 mil a 5 mil": 1, "R$ 100 a 1 mil": 2}, "lowest_min": 100.0, "median_admin_fee": 0.01415, "exclusive_count": 253, "cnpj_coverage": 1.0}, {"platform_id": "btg", "label": "BTG Pactual", "status": "ok", "strategy": "open-finance", "error": null, "total_funds": 9950, "by_class": {"Renda Fixa": 1449, "Multimercado": 6333, "Acoes": 2156, "Cambial": 12}, "distinct_managers": 787, "top_managers": [{"name": "BTG PACTUAL WM GESTAO DE RECURSOS LTDA.", "count": 2197}, {"name": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM - RJ", "count": 456}, {"name": "BTG PACTUAL ASSET MANAGEMENT S.A. DISTRIBUIDORA DE", "count": 279}, {"name": "G5 ADMINISTRADORA DE RECURSOS LTDA.", "count": 220}, {"name": "PORTOFINO GESTAO DE RECURSOS LTDA", "count": 174}, {"name": "BTG PACTUAL GESTAO E CONSULTORIA DE INVESTIMENTOS", "count": 162}, {"name": "LAKEWOOD GESTAO DE RECURSOS LTDA.", "count": 141}, {"name": "KAPITALO INVESTIMENTOS LTDA", "count": 110}, {"name": "TAG INVESTIMENTOS LTDA.", "count": 99}, {"name": "JULIUS BAER BRASIL GESTAO DE PATRIMONIO E CONSULTO", "count": 78}], "min_bands": {"Ate R$ 100": 5143, "Acima de R$ 25 mil": 4083, "R$ 100 a 1 mil": 319, "R$ 5 mil a 25 mil": 400, "R$ 1 mil a 5 mil": 5}, "lowest_min": 0.0, "median_admin_fee": 0.008, "exclusive_count": 9116, "cnpj_coverage": 1.0}, {"platform_id": "itau", "label": "Itau (Ion)", "status": "ok", "strategy": "open-finance", "error": null, "total_funds": 1751, "by_class": {"Renda Fixa": 631, "Multimercado": 746, "Acoes": 362, "Cambial": 12}, "distinct_managers": 125, "top_managers": [{"name": "ITAÚ UNIBANCO ASSET MANAGEMENT LTDA", "count": 1138}, {"name": "ITAÚ UNIBANCO S.A.", "count": 127}, {"name": "ITAÚ DISTRIBUIDORA DE TÍTULOS E VALORES MOBILIÁRIOS S.A.", "count": 76}, {"name": "KINEA INVESTIMENTOS LTDA", "count": 36}, {"name": "LEGACY CAPITAL GESTORA DE RECURSOS LTDA", "count": 15}, {"name": "Verde Asset Management S.A.", "count": 11}, {"name": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM", "count": 11}, {"name": "FRANKLIN TEMPLETON BRASIL LTDA", "count": 9}, {"name": "NEO MULTIMERCADO GESTAO DE RECURSOS LTDA.", "count": 9}, {"name": "SPX Gestão de Recursos Ltda.", "count": 9}], "min_bands": {"Acima de R$ 25 mil": 800, "R$ 100 a 1 mil": 818, "Ate R$ 100": 32, "R$ 5 mil a 25 mil": 100, "R$ 1 mil a 5 mil": 1}, "lowest_min": 0.0, "median_admin_fee": 0.0006, "exclusive_count": 1481, "cnpj_coverage": 1.0}, {"platform_id": "nu", "label": "Nu (Nubank)", "status": "ok", "strategy": "open-finance", "error": null, "total_funds": 478, "by_class": {"Renda Fixa": 138, "Multimercado": 210, "Acoes": 126, "Cambial": 4}, "distinct_managers": 155, "top_managers": [{"name": "Nu Asset Management LTDA", "count": 26}, {"name": "ABSOLUTE GESTAO DE INVESTIMENTOS LTDA", "count": 20}, {"name": "BTG PACTUAL ASSET MANAGEMENT S.A DTVM", "count": 17}, {"name": "SUL AMÉRICA INVESTIMENTOS GESTORA DE RECURSOS S.A.", "count": 15}, {"name": "Franklin Templeton Brasil Ltda", "count": 11}, {"name": "ITAÚ UNIBANCO ASSET MANAGEMENT LTDA", "count": 8}, {"name": "AZ Quest Investimentos Ltda", "count": 7}, {"name": "MAPFRE INVESTIMENTOS LTDA.", "count": 7}, {"name": "SPARTA ADMINISTRADORA DE RECURSOS LTDA", "count": 7}, {"name": "AZ QUEST MZK INVESTIMENTOS MACRO E CREDITO LTDA", "count": 7}], "min_bands": {"R$ 5 mil a 25 mil": 106, "Acima de R$ 25 mil": 361, "R$ 100 a 1 mil": 5, "Ate R$ 100": 6}, "lowest_min": 1.0, "median_admin_fee": 1.5, "exclusive_count": 64, "cnpj_coverage": 1.0}, {"platform_id": "inter", "label": "Banco Inter", "status": "ok", "strategy": "html-scrape", "error": null, "total_funds": 400, "by_class": {"Renda Fixa": 12, "Multimercado": 155, "Acoes": 122, "Cambial": 3, "Internacional": 32, "Outros": 76}, "distinct_managers": 0, "top_managers": [], "min_bands": {}, "lowest_min": null, "median_admin_fee": null, "exclusive_count": 40, "cnpj_coverage": 1.0}], "diff_summary": [{"platform": "xp", "added": 624, "removed": 0, "changed": 0, "suspect": false, "is_first_run": true}, {"platform": "btg", "added": 9950, "removed": 0, "changed": 0, "suspect": false, "is_first_run": true}, {"platform": "itau", "added": 1751, "removed": 0, "changed": 0, "suspect": false, "is_first_run": true}, {"platform": "nu", "added": 478, "removed": 0, "changed": 0, "suspect": false, "is_first_run": true}, {"platform": "inter", "added": 400, "removed": 0, "changed": 0, "suspect": false, "is_first_run": true}], "cvm": {"available": true, "status": "ok", "error": null, "collected_at": "2026-08-29T17:16:45.458322", "total": 11763, "houses": [{"house": "btg", "label": "BTG Pactual", "total": 4383, "pre_operational": 77}, {"house": "inter", "label": "Banco Inter", "total": 159, "pre_operational": 2}, {"house": "itau", "label": "Itau (Ion)", "total": 5016, "pre_operational": 220}, {"house": "nu", "label": "Nu (Nubank)", "total": 50, "pre_operational": 4}, {"house": "xp", "label": "XP Investimentos", "total": 2155, "pre_operational": 67}], "pre_operational_funds": [{"cnpj": "68855637000101", "name": "MAGLEV FUNDO DE INVESTIMENTO EM PARTICIPAÇÕES MULTIESTRATÉGIA RESPONSABILIDADE LIMITADA", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL GESTORA DE INVESTIMENTOS ALTERNATIVOS LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68843792000108", "name": "TIJUCAS FUNDO DE INVESTIMENTO FINANCEIRO EM AÇÕES RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68844144000168", "name": "TUCUNARÉ FUNDO DE INVESTIMENTO FINANCEIRO EM AÇÕES RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68850790000138", "name": "ITAÚ FLEXPREV NTN-B 2035 ESSENZA FIF CIC RENDA FIXA RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68851017000196", "name": "ITAÚ FLEXPREV NTN-B 2040 ESSENZA FIF CIC RENDA FIXA RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68851190000194", "name": "ITAÚ FLEXPREV NTN-B 2030 ESSENZA FIF CIC RENDA FIXA RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68853337000185", "name": "BARZEL FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉDITO PRIVADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68856211000164", "name": "PREA ESTRUTURADO FUNDO DE INVESTIMENTO MULTIMERCADO CRÉDITO PRIVADO", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ADVISORY GESTAO DE RECURSOS LTDA", "registered_at": "2026-08-28", "situation": "Fase Pré-Operacional"}, {"cnpj": "68830746000166", "name": "ITAÚ DEBÊNTURES INCENTIVADAS PRÉ IDKA 3A DISTRIBUIDORES FIF EM INFRA DA CIC RF LP CP RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-27", "situation": "Fase Pré-Operacional"}, {"cnpj": "68835851000198", "name": "ITAÚ VITALOS OFF PREV FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-27", "situation": "Fase Pré-Operacional"}, {"cnpj": "68799983000101", "name": "NU FTSE GLOBAL ALL CAP USD CLASSE DE ÍNDICE -  RESPONSABILIDADE LIMITADA", "house": "nu", "house_label": "Nu (Nubank)", "manager": "NU ASSET MANAGEMENT LTDA", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68800108000100", "name": "NU FTSE GLOBAL ALL CAP BRL HEDGE CLASSE DE ÍNDICE -  RESPONSABILIDADE LIMITADA", "house": "nu", "house_label": "Nu (Nubank)", "manager": "NU ASSET MANAGEMENT LTDA", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68798082000103", "name": "XP DEBÊNTURES INCENTIVADAS LOW VOL CRÉD PRIV FIF INCENT DE INVEST EM INFRAESTRUTURA RENDA FIXA - RL", "house": "xp", "house_label": "XP Investimentos", "manager": "XP VISTA ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68810896000108", "name": "ITAÚ VITALOS DISTRIBUIDORES FIF CIC EM RENDA FIXA LONGO PRAZO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68811545000111", "name": "ITAÚ VITALOS INSTITUCIONAL FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA LONGO PRAZO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68811874000162", "name": "ITAÚ VITALOS DISTRIBUIDORES FIF CIC MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68816734000187", "name": "FIAGRO BTG PACTUAL II RESPONSABILIDADE LIMITADA", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM", "registered_at": "2026-08-26", "situation": "Fase Pré-Operacional"}, {"cnpj": "68777162000174", "name": "SABESPREV ITAÚ GLOBAL FIM IE FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-25", "situation": "Fase Pré-Operacional"}, {"cnpj": "68785508000186", "name": "CRIVIRI A FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL GESTÃO E CONSULTORIA DE INVESTIMENTOS LTDA", "registered_at": "2026-08-25", "situation": "Fase Pré-Operacional"}, {"cnpj": "68785530000126", "name": "EXPERIENCE II INFRA SÊNIOR RENDA FIXA FIC FI-INFRA RESP LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-25", "situation": "Fase Pré-Operacional"}, {"cnpj": "68757717000116", "name": "ITAÚ VITALOS FLEXPREV FIF CIC RENDA FIXA LONGO PRAZO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-24", "situation": "Fase Pré-Operacional"}, {"cnpj": "68759017000160", "name": "ITAÚ FLEXPREV VITALOS FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESP LIMTADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-24", "situation": "Fase Pré-Operacional"}, {"cnpj": "68759817000181", "name": "OGGI II FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL GESTÃO E CONSULTORIA DE INVESTIMENTOS LTDA", "registered_at": "2026-08-24", "situation": "Fase Pré-Operacional"}, {"cnpj": "68760191000123", "name": "ITAÚ INSTITUCIONAL VITALOS FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-24", "situation": "Fase Pré-Operacional"}, {"cnpj": "68760900000170", "name": "ITAÚ CENTRALIZADOR 5PRÉ11 FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-24", "situation": "Fase Pré-Operacional"}, {"cnpj": "68725526000172", "name": "PORTO SEGURO FUNDO DE INVESTIMENTO EM PARTICIPAÇÕES INFRAESTRUTURA", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL GESTORA DE INVESTIMENTOS ALTERNATIVOS LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68716890000176", "name": "ITAÚ VITALOS FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68717935000127", "name": "A2M2 FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉDITO PRIVADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68725145000193", "name": "ITAÚ VITALOS FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA LONGO PRAZO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68725675000131", "name": "ITAÚ DEBÊNTURES INCENTIVADAS PRÉ IDKA 3A FIF CIC INFRA RF LP CRED PRIV RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68726418000114", "name": "ITAÚ DEBÊNTURES INCENTIVADAS PRÉ IDKA 3A FIF EM INFRAESTRUTURA RF LP CRÉDITO PRIVADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68726707000113", "name": "ITAÚ PVT DEBÊNTURES INCENTIVADAS PRÉ IDKA 3A FIF CIC EM INFRAESTRUTURA RF LP CRED PRIV RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68726992000172", "name": "XP MINERVA AGROFORTE FI NAS CADEIAS PRODUTIVAS DO AGRONEGÓCIO FIAGRO DIREITOS CREDITÓRIOS RL", "house": "xp", "house_label": "XP Investimentos", "manager": "XP VISTA ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-21", "situation": "Fase Pré-Operacional"}, {"cnpj": "68705213000152", "name": "ARCESP FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS CRÉDITO CONSIGNADO - RESPONSABILIDADE LIMITADA", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM", "registered_at": "2026-08-20", "situation": "Fase Pré-Operacional"}, {"cnpj": "68703584000103", "name": "FIAGRO BTG PACTUAL I RESPONSABILIDADE LIMITADA", "house": "btg", "house_label": "BTG Pactual", "manager": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM", "registered_at": "2026-08-20", "situation": "Fase Pré-Operacional"}, {"cnpj": "68680007000135", "name": "KINEA MULTIFAMILY ATLANTA II FI EM PARTICIPAÇÕES MULTIESTRATÉGIA RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "KINEA INVESTIMENTOS LTDA.", "registered_at": "2026-08-19", "situation": "Fase Pré-Operacional"}, {"cnpj": "68667464000190", "name": "XP LAB I CLASSE DE INVESTIMENTO MULTIMERCADO  INVESTIMENTO NO EXTERIOR - RESPONSABILIDADE LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-19", "situation": "Fase Pré-Operacional"}, {"cnpj": "68668554000103", "name": "ITAÚ FLEXPREV VITALOS FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-19", "situation": "Fase Pré-Operacional"}, {"cnpj": "68671446000181", "name": "NORBO 2 FUNDO DE INVESTIMENTO FINANCEIRO EM AÇÕES RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-19", "situation": "Fase Pré-Operacional"}, {"cnpj": "68677010000108", "name": "CAFEÍNA FUNDO DE INVESTIMENTO MULTIMERCADO", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ADVISORY GESTAO DE RECURSOS LTDA", "registered_at": "2026-08-19", "situation": "Fase Pré-Operacional"}, {"cnpj": "68650956000172", "name": "TREND INFRAESTRUTURA ESG CLASSE DE  INVESTIMENTO EM AÇÕES - RESPONSABILIDADE  LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-18", "situation": "Fase Pré-Operacional"}, {"cnpj": "68622785000178", "name": "ITAÚ DOLOMITAS VÉRTICE DEBÊNTURES INCENTIVADAS II FIIF EM INFRA RF CRÉD PRIV RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-17", "situation": "Fase Pré-Operacional"}, {"cnpj": "68629316000180", "name": "INVOLT XP FUNDO DE INVESTIMENTO MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ADVISORY GESTAO DE RECURSOS LTDA", "registered_at": "2026-08-17", "situation": "Fase Pré-Operacional"}, {"cnpj": "68633545000179", "name": "ITAÚ PRIVATE INR IMA-B FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-17", "situation": "Fase Pré-Operacional"}, {"cnpj": "68635399000110", "name": "ITAÚ PRIVATE MASTER INR IMA-B FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-17", "situation": "Fase Pré-Operacional"}, {"cnpj": "68597959000190", "name": "AXA WF FRAMLINGTON DIGITAL ECONOMY ADVISORY II CIC DE CLASSES DE AÇÕES IE RESP LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-14", "situation": "Fase Pré-Operacional"}, {"cnpj": "68598210000167", "name": "AXA WF FRAMLINGTON ROBOTECH ADVISORY II CIC DE CLASSES DE AÇÕES IE RESP LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-14", "situation": "Fase Pré-Operacional"}, {"cnpj": "68598368000137", "name": "MS GLOBAL OPPORTUNITIES DÓLAR ADVISORY II CIC DE AÇÕES INVESTIMENTO NO EXTERIOR RESP LIMITADA", "house": "xp", "house_label": "XP Investimentos", "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA", "registered_at": "2026-08-14", "situation": "Fase Pré-Operacional"}, {"cnpj": "68599952000107", "name": "KINEA CAPITAL ESTRUTURADO FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉD PRIV RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "KINEA INVESTIMENTOS LTDA.", "registered_at": "2026-08-14", "situation": "Fase Pré-Operacional"}, {"cnpj": "68576869000112", "name": "ALVORADA TEMPORÁRIO FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉDITO PRIVADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-13", "situation": "Fase Pré-Operacional"}, {"cnpj": "68576999000155", "name": "ITAÚ FLEXPREV VITALOS FIF CIC MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-13", "situation": "Fase Pré-Operacional"}, {"cnpj": "68577164000110", "name": "ITAÚ HARMONIA FIF CIC RENDA FIXA CRÉDITO PRIVADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-13", "situation": "Fase Pré-Operacional"}, {"cnpj": "68510962000124", "name": "ITAÚ ALGARVE LEGAL CLAIMS III CRÉDITO PRIVADO FIF MULTIMERCADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-11", "situation": "Fase Pré-Operacional"}, {"cnpj": "68511995000199", "name": "ITAÚ ALGARVE LEGAL CLAIMS III FEEDER FIF MULTIMERCADO CRÉDITO PRIVADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-11", "situation": "Fase Pré-Operacional"}, {"cnpj": "68523124000195", "name": "ITAÚ JASY ALPHA FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-11", "situation": "Fase Pré-Operacional"}, {"cnpj": "68452959000100", "name": "RUTA II FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉDITO PRIVADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-07", "situation": "Fase Pré-Operacional"}, {"cnpj": "68418021000165", "name": "BTG PACTUAL CRÉDITO CORPORATIVO PLUS SELEÇÃO FIIF EM INFRA DA CIC RENDA FIXA RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-06", "situation": "Fase Pré-Operacional"}, {"cnpj": "68421529000112", "name": "KINEA OP FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO CRÉDITO PRIVADO RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "KINEA INVESTIMENTOS LTDA.", "registered_at": "2026-08-06", "situation": "Fase Pré-Operacional"}, {"cnpj": "68394074000193", "name": "ITAÚ FLEXPREV FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA II RESPONSABILIDADE LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.", "registered_at": "2026-08-05", "situation": "Fase Pré-Operacional"}, {"cnpj": "68397707000117", "name": "KINEA CRÉDITO ESTRUTURADO PREV FIF MULTIMERCADO CRÉDITO PRIVADO RESP LIMITADA", "house": "itau", "house_label": "Itau (Ion)", "manager": "KINEA INVESTIMENTOS LTDA.", "registered_at": "2026-08-05", "situation": "Fase Pré-Operacional"}], "diff": {"is_first_run": true, "new_registrations": 370, "launches": 0, "cancelled": 0}}}</script>
+<script>
+const DATA = JSON.parse(document.getElementById("dashboard-data").textContent);
+const SERIES_VARS = ["--s1", "--s2", "--s3", "--s4", "--s5"];
+const platformColor = {};
+// A cor segue a casa, ancorada na ordem canonica - nao na ordem em que ela
+// aparece nesta execucao. Assim uma casa mantem sua cor entre execucoes, e as
+// casas que so aparecem no radar CVM tambem recebem a sua.
+(DATA.house_order || DATA.platforms.map(p => p.platform_id)).forEach((id, i) => {
+  platformColor[id] = `var(${SERIES_VARS[i % SERIES_VARS.length]})`;
+});
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function el(name, attrs = {}, text) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function niceMax(value) {
+  if (value <= 5) return 5;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    if (value <= step * magnitude) return step * magnitude;
+  }
+  return 10 * magnitude;
+}
+
+/* Barras agrupadas: categorias no eixo x, uma serie por plataforma.
+   Gap de 2px entre barras vizinhas (a superficie separa, nao uma borda);
+   topo arredondado em 4px ancorado na linha de base. */
+function groupedBars(mount, categories, series, opts = {}) {
+  if (!categories.length || !series.length) {
+    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
+    return;
+  }
+  const barW = opts.barWidth || 15;
+  const gap = 2;
+  const groupPad = 26;
+  const padL = 52, padR = 16, padT = 12, padB = 62;
+  const groupW = series.length * barW + (series.length - 1) * gap;
+  const plotW = categories.length * (groupW + groupPad) + groupPad;
+  const plotH = opts.height || 240;
+  const width = padL + plotW + padR;
+  const height = padT + plotH + padB;
+
+  const maxValue = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
+  const y = v => padT + plotH - (v / maxValue) * plotH;
+
+  const svg = el("svg", {
+    viewBox: `0 0 ${width} ${height}`, width, height,
+    role: "img", "aria-label": opts.ariaLabel || "grafico de barras agrupadas",
+  });
+
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const value = (maxValue / ticks) * i;
+    const yy = y(value);
+    svg.appendChild(el("line", {
+      class: i === 0 ? "baseline" : "gridline",
+      x1: padL, x2: padL + plotW, y1: yy, y2: yy,
+    }));
+    svg.appendChild(el("text", {
+      class: "tick", x: padL - 9, y: yy + 4, "text-anchor": "end",
+    }, String(Math.round(value))));
+  }
+
+  categories.forEach((category, ci) => {
+    const groupX = padL + groupPad + ci * (groupW + groupPad);
+    const group = el("g", { class: "bar-group" });
+
+    series.forEach((s, si) => {
+      const value = s.values[ci] || 0;
+      const x = groupX + si * (barW + gap);
+      const barH = Math.max(0, padT + plotH - y(value));
+      if (barH > 0) {
+        const r = Math.min(4, barW / 2, barH);
+        // Topo arredondado, base reta ancorada no eixo.
+        const path = el("path", {
+          class: "bar",
+          d: `M ${x} ${padT + plotH} L ${x} ${y(value) + r}
+              Q ${x} ${y(value)} ${x + r} ${y(value)}
+              L ${x + barW - r} ${y(value)} Q ${x + barW} ${y(value)} ${x + barW} ${y(value) + r}
+              L ${x + barW} ${padT + plotH} Z`,
+          fill: platformColor[s.id] || "var(--s1)",
+        });
+        path.appendChild(el("title", {}, `${s.label} - ${category}: ${value}`));
+        group.appendChild(path);
+      }
+      // Alvo de hover maior que a marca, cobrindo toda a altura do plot.
+      const hit = el("rect", {
+        x: x - gap / 2, y: padT, width: barW + gap, height: plotH, fill: "transparent",
+      });
+      hit.appendChild(el("title", {}, `${s.label} - ${category}: ${value}`));
+      group.appendChild(hit);
+    });
+
+    const labelX = groupX + groupW / 2;
+    wrapLabel(svg, category, labelX, padT + plotH + 18, groupW + groupPad - 6);
+    svg.appendChild(group);
+  });
+
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+}
+
+function wrapLabel(svg, text, x, y, maxWidth) {
+  const words = String(text).split(" ");
+  const perLine = maxWidth < 70 ? 1 : 2;
+  const lines = [];
+  for (let i = 0; i < words.length; i += perLine) {
+    lines.push(words.slice(i, i + perLine).join(" "));
+  }
+  lines.slice(0, 3).forEach((line, i) => {
+    svg.appendChild(el("text", {
+      class: "tick", x, y: y + i * 13, "text-anchor": "middle",
+    }, line));
+  });
+}
+
+/* Barras horizontais de serie unica: uma cor por plataforma (a entidade),
+   com o valor rotulado direto na ponta - nenhum valor fica so no tooltip. */
+function horizontalBars(mount, rows, opts = {}) {
+  if (!rows.length) {
+    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
+    return;
+  }
+  const rowH = 30, barH = 15, padL = 148, padR = 60, padT = 6, padB = 10;
+  const plotW = opts.width || 620;
+  const width = padL + plotW + padR;
+  const height = padT + rows.length * rowH + padB;
+  const maxValue = niceMax(Math.max(1, ...rows.map(r => r.value)));
+
+  const svg = el("svg", {
+    viewBox: `0 0 ${width} ${height}`, width, height,
+    role: "img", "aria-label": opts.ariaLabel || "grafico de barras",
+  });
+
+  rows.forEach((row, i) => {
+    const y = padT + i * rowH;
+    const barW = (row.value / maxValue) * plotW;
+    svg.appendChild(el("text", {
+      class: "axis-label", x: padL - 12, y: y + barH - 2, "text-anchor": "end",
+    }, row.label));
+
+    if (barW > 0) {
+      const r = Math.min(4, barW, barH / 2);
+      const path = el("path", {
+        class: "bar",
+        d: `M ${padL} ${y} L ${padL + barW - r} ${y}
+            Q ${padL + barW} ${y} ${padL + barW} ${y + r}
+            L ${padL + barW} ${y + barH - r} Q ${padL + barW} ${y + barH} ${padL + barW - r} ${y + barH}
+            L ${padL} ${y + barH} Z`,
+        fill: row.color || "var(--s1)",
+      });
+      path.appendChild(el("title", {}, `${row.label}: ${row.value}`));
+      svg.appendChild(path);
+    }
+    svg.appendChild(el("text", {
+      class: "tick", x: padL + barW + 8, y: y + barH - 2,
+    }, row.display !== undefined ? row.display : String(row.value)));
+  });
+
+  svg.appendChild(el("line", {
+    class: "baseline", x1: padL, x2: padL, y1: padT, y2: padT + rows.length * rowH - (rowH - barH),
+  }));
+
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+}
+
+function renderLegend(mount, platforms) {
+  mount.innerHTML = platforms.map(p =>
+    `<span><i class="swatch" style="background:${platformColor[p.platform_id] || "var(--s1)"}"></i>` +
+    `${escapeHtml(p.label)}</span>`
+  ).join("");
+}
+
+/* Nomes de fundo e de gestora vem de fontes externas: qualquer valor que entre
+   no innerHTML passa por aqui antes. So colunas marcadas com `raw` (montadas
+   por este proprio script) escapam da regra. */
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+}
+
+function table(mount, columns, rows) {
+  if (!rows.length) {
+    mount.innerHTML = '<p class="empty">Sem dados.</p>';
+    return;
+  }
+  const head = columns.map(c =>
+    `<th class="${c.num ? "num" : ""}">${escapeHtml(c.label)}</th>`).join("");
+  const body = rows.map(r =>
+    `<tr>${columns.map(c => {
+      const value = r[c.key] ?? "-";
+      return `<td class="${c.num ? "num" : ""}">${c.raw ? value : escapeHtml(value)}</td>`;
+    }).join("")}</tr>`).join("");
+  // Tabela larga rola dentro do proprio card; a pagina nunca rola na horizontal.
+  mount.innerHTML =
+    `<div class="table-scroll"><table><thead><tr>${head}</tr></thead>` +
+    `<tbody>${body}</tbody></table></div>`;
+}
+
+const usable = DATA.platforms.filter(p => p.status !== "unavailable" && p.total_funds > 0);
+
+// --- Matriz de classes ------------------------------------------------------
+renderLegend(document.getElementById("legend-classes"), usable);
+groupedBars(
+  document.getElementById("chart-classes"),
+  DATA.class_order,
+  usable.map(p => ({
+    id: p.platform_id, label: p.label,
+    values: DATA.class_order.map(c => p.by_class[c] || 0),
+  })),
+  { height: 250, ariaLabel: "Numero de fundos por classe de ativo em cada plataforma" }
+);
+table(
+  document.getElementById("table-classes"),
+  [{ key: "label", label: "Plataforma" },
+   ...DATA.class_order.map(c => ({ key: c, label: c, num: true })),
+   { key: "total_funds", label: "Total", num: true }],
+  usable.map(p => ({ label: p.label, total_funds: p.total_funds,
+    ...Object.fromEntries(DATA.class_order.map(c => [c, p.by_class[c] || 0])) }))
+);
+
+// --- Profundidade: gestoras representadas -----------------------------------
+horizontalBars(
+  document.getElementById("chart-managers"),
+  usable.map(p => ({
+    label: p.label, value: p.distinct_managers, color: platformColor[p.platform_id],
+  })).sort((a, b) => b.value - a.value),
+  { ariaLabel: "Gestoras distintas representadas por plataforma" }
+);
+// Quais gestoras concentram a prateleira - onde a casa realmente aposta.
+table(
+  document.getElementById("table-top-managers"),
+  [{ key: "platform", label: "Plataforma" }, { key: "manager", label: "Gestora" },
+   { key: "count", label: "Fundos", num: true }],
+  usable.flatMap(p =>
+    (p.top_managers || []).slice(0, 5).map(m => ({
+      platform: p.label, manager: m.name, count: m.count,
+    }))
+  )
+);
+
+// --- Faixas de aplicacao minima ---------------------------------------------
+const withMins = usable.filter(p => Object.keys(p.min_bands).length);
+renderLegend(document.getElementById("legend-bands"), withMins);
+groupedBars(
+  document.getElementById("chart-bands"),
+  DATA.band_order,
+  withMins.map(p => ({
+    id: p.platform_id, label: p.label,
+    values: DATA.band_order.map(b => p.min_bands[b] || 0),
+  })),
+  { height: 220, ariaLabel: "Distribuicao de aplicacao minima por plataforma" }
+);
+table(
+  document.getElementById("table-bands"),
+  [{ key: "label", label: "Plataforma" },
+   ...DATA.band_order.map(b => ({ key: b, label: b, num: true })),
+   { key: "lowest", label: "Menor minimo", num: true }],
+  withMins.map(p => ({
+    label: p.label,
+    lowest: p.lowest_min === null ? "-" : "R$ " + p.lowest_min.toLocaleString("pt-BR"),
+    ...Object.fromEntries(DATA.band_order.map(b => [b, p.min_bands[b] || 0])),
+  }))
+);
+
+// --- Exclusividade ----------------------------------------------------------
+horizontalBars(
+  document.getElementById("chart-exclusive"),
+  usable.map(p => ({
+    label: p.label, value: p.exclusive_count, color: platformColor[p.platform_id],
+  })).sort((a, b) => b.value - a.value),
+  { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
+);
+
+// --- Radar CVM --------------------------------------------------------------
+const cvm = DATA.cvm;
+if (cvm.available && cvm.houses && cvm.houses.length) {
+  // A legenda acompanha as casas do proprio grafico - uma casa sem prateleira
+  // coletada (Nu, por exemplo) ainda aparece aqui e precisa ser nomeada.
+  renderLegend(
+    document.getElementById("legend-cvm"),
+    cvm.houses.map(h => ({ platform_id: h.house, label: h.label }))
+  );
+  groupedBars(
+    document.getElementById("chart-cvm"),
+    ["Registrados na CVM", "Em fase pre-operacional"],
+    cvm.houses.map(h => ({
+      id: h.house, label: h.label,
+      values: [h.total, h.pre_operational],
+    })),
+    { height: 210, barWidth: 18, ariaLabel: "Fundos registrados na CVM por casa" }
+  );
+  table(
+    document.getElementById("table-cvm"),
+    [{ key: "label", label: "Casa" },
+     { key: "total", label: "Registrados", num: true },
+     { key: "pre_operational", label: "Pre-operacionais", num: true }],
+    cvm.houses
+  );
+  table(
+    document.getElementById("table-pre-op"),
+    [{ key: "name", label: "Fundo" }, { key: "house_label", label: "Casa" },
+     { key: "manager", label: "Gestor" }, { key: "registered_at", label: "Registro" }],
+    cvm.pre_operational_funds || []
+  );
+} else {
+  document.getElementById("cvm-section").innerHTML =
+    `<h2>Radar CVM</h2><p class="card-sub">Fundos registrados por gestoras ligadas as casas monitoradas.</p>
+     <div class="note-box">Extrato da CVM indisponivel nesta execucao: ` +
+    `${escapeHtml(cvm.error || "fonte nao coletada")}.</div>`;
+}
+
+// --- Saude da coleta --------------------------------------------------------
+table(
+  document.getElementById("table-sources"),
+  [{ key: "label", label: "Plataforma" },
+   { key: "statusPill", label: "Status", raw: true },
+   { key: "strategy", label: "Estrategia" }, { key: "total_funds", label: "Fundos", num: true },
+   { key: "coverage", label: "Com CNPJ", num: true }, { key: "detail", label: "Observacao" }],
+  DATA.platforms.map(p => ({
+    label: p.label,
+    statusPill: `<span class="pill ${p.status}">${p.status}</span>`,
+    strategy: p.strategy,
+    total_funds: p.total_funds,
+    coverage: p.total_funds ? Math.round(p.cnpj_coverage * 100) + "%" : "-",
+    detail: p.error || "-",
+  }))
+);
+</script>
+</body>
+</html>

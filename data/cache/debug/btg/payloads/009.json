@@ -1,0 +1,865 @@
+{
+  "url": "https://script.crazyegg.com/pages/data-scripts/0123/0975/site/investimentos.btgpactual.com.json?t=1",
+  "payload": {
+    "uid": 1230975,
+    "dkey": "c6f988cbf3be8433d1f01d086a7cbe6a",
+    "updated_at": 1788177819,
+    "version": "11.5.544",
+    "site_data_url_template": "https://script.crazyegg.com/pages/data-scripts/0123/0975/site/SITENAME.json",
+    "site_sampling_url_template": "https://script.crazyegg.com/pages/data-scripts/0123/0975/sampling/SITENAME.json",
+    "status_data_url": "https://script.crazyegg.com/pages/data-scripts/0123/0975/status.json",
+    "hud": {
+      "host": "https://hud.crazyegg.com",
+      "script_url": "https://script.crazyegg.com/scripts/hud",
+      "core_api_auth_key": "97b09eef09fa3684c362289bed0e8ee73bff7397806e9b2a0261b0ec5311e603",
+      "launch_origins": [
+        "https://core.crazyegg.com",
+        "https://api.crazyegg.com"
+      ]
+    },
+    "survey_preview_dest": "https://api.crazyegg.com/surveys/preview",
+    "survey_launch_origins": [
+      "https://app.crazyegg.com",
+      "https://core.crazyegg.com"
+    ],
+    "addon_preview_dest": "https://api.crazyegg.com/surveys/preview",
+    "addon_launch_origins": [
+      "https://app.crazyegg.com",
+      "https://core.crazyegg.com"
+    ],
+    "ce_app_url": "https://app.crazyegg.com",
+    "flow_preview_url": "https://api.crazyegg.com/abtests/preview",
+    "clock_url": "https://tracking.crazyegg.com/clock",
+    "common_script_url": "https://script.crazyegg.com/pages/versioned/common-scripts/449c287370a93fc8afe2a96ce70d96b3.js",
+    "status": "ok",
+    "counters_dest": "https://tracking.crazyegg.com/metrics",
+    "data_url": "https://script.crazyegg.com/pages/data-scripts/0123/0975/site/investimentos.btgpactual.com.json",
+    "sampling_data_url": "https://script.crazyegg.com/pages/data-scripts/0123/0975/sampling/investimentos.btgpactual.com.json",
+    "tracking_script_url": "https://script.crazyegg.com/pages/versioned/tracking-scripts/dcb2ac42031d2ccaa00ff51fa0fa6f89.js",
+    "trackingpagestate_script_url": "https://script.crazyegg.com/pages/versioned/trackingpagestate-scripts/23d4e0cdcf08fb67ae792ae3df0f92b0.js",
+    "thirdparty_script_url": "https://script.crazyegg.com/pages/versioned/thirdparty-scripts/6fe5101ffa32e66e4debad675c8eea66.js",
+    "remote_script_url": "https://script.crazyegg.com/pages/versioned/remote-scripts/81d1701dbc9e7f7bf421387273c9c389.js",
+    "remote_host_url": "https://script.crazyegg.com/pages/remote-host.html?common=https%3A%2F%2Fscript.crazyegg.com%2Fpages%2Fversioned%2Fcommon-scripts%2F449c287370a93fc8afe2a96ce70d96b3.js&thirdparty=https%3A%2F%2Fscript.crazyegg.com%2Fpages%2Fversioned%2Fthirdparty-scripts%2F6fe5101ffa32e66e4debad675c8eea66.js&remote=https%3A%2F%2Fscript.crazyegg.com%2Fpages%2Fversioned%2Fremote-scripts%2F81d1701dbc9e7f7bf421387273c9c389.js",
+    "sites": "%8&4!}%|%]!}$<$5$5$3$1$4$9$,!}&%%?&$%^!}$<!}%@&,%`&(%?%[&,&-%?&!$.%[&&&$!}$,!}%[&&&&%~%|%^${&&&$%?%|&%!}$<!}%@&,%`&(%?%[&,&-%?&!$.%[&&&$!}$,!}&+%^&+&+%|&&&%%.%^%[&&&*%]%|&%%`!}$<&,&*&-%^$,!}&0%^%@$^&%%?&!&2&,%|%[&+!}$<&,&*&-%^$,!}&+%^&,&,%|&%%`&+!}$<&4!}%|%`&%&&&*%^${&%&,!}$<%_%?&!&+%^$,!}%?&-&,&&%$%]%^&%&,%|%_&2!}$<&,&*&-%^$,!}&-&+%^%0%^%[&-&*%^$`&&&&%~%|%^&+!}$<%_%?&!&+%^$,!}%@&!&&%[%~%$&(%(%|&+&,!}$<&%&-&!&!$,!}%]%^%_%?&-&!&,$`&-&*&*%^&%%[&2!}$<&%&-&!&!$,!}%^&1&(&!%|%[%|&,$^%`%^&%&,!}$<%_%?&!&+%^&6$,!}&*%^%[&&&*%]%|&%%`%0%^&,&,%|&%%`&+!}$<&4!}&(%?%`%^%1%?&*%`%^&,%|&%%`$|&%%?%@&!%^%]!}$<%_%?&!&+%^$,!}&(%?%`%^%1%?&*%`%^&,%|&%%`%2&*&!&+!}$<%8%;$,!}&*&-&!%^&+!}$<%8%;$,!}&$%?&+%~$|&!%^&$%^&%&,&+!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`%0&,&*%?&,%^%`&2!}$<!}&-&%%|%_&&&*&$!}$,!}&+%?&$&(&!%|&%%`%*&-&$%.%^%[&&&*%]%|&%%`&+!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`%0&,%?&*&,${%?&,%^!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`%0&,%?&*&,${%?&,%^%2&%%|&1!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`$|&%%]${%?&,%^!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`$|&%%]${%?&,%^%2&%%|&1!}$<&%&-&!&!$,!}&+%?&$&(&!%|&%%`%2&(%]%?&,%^%]$^&,!}$<&%&-&!&!$,!}%^&%%]%0%^&+&+%|&&&%%+&%$_&!&&%[%~%^%]%2&*&!!}$<%_%?&!&+%^$,!}%@&!&&%[%~%^%]%2&*&!&+!}$<%8%;$,!}%@&!&&%[%~%^%]%.&-&!%^&+!}$<%8%;$,!}&(&*%^$`%?%[%{%^%$&$%?%`%^&+!}$<%_%?&!&+%^$,!}&*%^%[&&&*%]%$%_&*%?&$%^&+!}$<%_%?&!&+%^$,!}%{%|%]%^%$%_&*%?&$%^&+!}$<%_%?&!&+%^$,!}&+%?&$&(&!%|&%%`$`&&&$&(&!%^&,%^%]$^&,!}$<$2$8$3$1$2$2$8$8$;$8&6$,!}&0%^%@%=%?&%%?&!&2&,%|%[&+%=&*%?&,%|&&!}$<$2$7$1$,!}&*%^%[&&&*%]%|&%%`%=&*%?&,%|&&!}$<$1$,!}%]&2&%%?&$%|%[$~&&%?&!&+!}$<&,&*&-%^&6%;",
+    "segments": [],
+    "global_ip_block_list": "",
+    "is_using_ip_blocking": false,
+    "transformations_script_url": "https://script.crazyegg.com/pages/versioned/transformations-scripts/6dec16b238136a8cf06c43e53a818d86.js",
+    "page_views_limit_reached": false,
+    "v11_tracking_dest": "https://tracking.crazyegg.com/v11",
+    "features": [],
+    "page_view_metering_strategy": "legacy",
+    "dnt": false,
+    "auto_identity": true,
+    "addons": [
+      {
+        "id": "25ef7f54-6cf7-4ec9-892b-4db056b0fc9d",
+        "site": 442038,
+        "name": "Pesquisa Blog | Investimentos",
+        "type": "survey",
+        "config": {
+          "questions": [
+            {
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              },
+              "randomize": "none",
+              "options": [
+                "Conservador(a): priorizo segurança e previsibilidade",
+                "Moderado(a): busco equilíbrio entre risco e retorno",
+                "Arrojado(a): aceito mais risco em busca de maior rentabilidade",
+                "Ainda não invisto"
+              ],
+              "subtype": "single",
+              "type": "multi-choice",
+              "subtext": "",
+              "title": "Como você descreveria seu perfil como investidor(a)?",
+              "id": "24432ae9-cb02-4165-9c9d-1f16a8cc9918",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma opção",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": []
+              }
+            },
+            {
+              "dropdownSelect": {
+                "defaultText": "Selecione uma opção",
+                "multipleItemsText": "# items selected"
+              },
+              "randomize": "none",
+              "options": [
+                "Construir patrimônio",
+                "Aposentadoria",
+                "Independência financeira",
+                "Proteger meu patrimônio da inflação",
+                "Comprar um imóvel ou outro bem",
+                "Gerar renda passiva",
+                "Outro"
+              ],
+              "subtype": "single",
+              "type": "multi-choice",
+              "subtext": "",
+              "title": "Qual é o seu principal objetivo ao investir?",
+              "id": "1cc59119-e7d4-4f06-8aa1-50a2a591b792",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma opção",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": []
+              }
+            },
+            {
+              "subtype": "thank-you",
+              "nextButton": {},
+              "linkButton": {
+                "enabled": false,
+                "title": "Contact Us",
+                "url": "https://www.yoursite.com/contact"
+              },
+              "type": "static-display",
+              "subtext": "",
+              "id": "4a9a32ed-f3d5-4db4-8585-b9b8e123e543",
+              "title": "Obrigado!",
+              "logic": {
+                "version": 1,
+                "statements": []
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            }
+          ],
+          "theme": {
+            "dark": false,
+            "accent": "#114379",
+            "removeBranding": false,
+            "customBrandingText": "",
+            "adjustColors": true
+          },
+          "closable": "every_time",
+          "position": "bottomLeft",
+          "autoPosition": true,
+          "autoPositionFallbackToShow": true,
+          "mode": "SIMPLE",
+          "displayType": "popup",
+          "external": false,
+          "sampling": 100,
+          "audience": {
+            "version": 1,
+            "operator": "AND",
+            "conditions": [
+              {
+                "criteria": "device",
+                "values": [
+                  "desktop",
+                  "tablet",
+                  "phone"
+                ],
+                "comparison": "is"
+              },
+              {
+                "criteria": "visited_page",
+                "multiple_values": "or",
+                "comparison": "matches",
+                "values": [
+                  "https://content.btgpactual.com/blog/investimentos/3-investimentos-para-a-sua-reserva-de-emergencia",
+                  "https://content.btgpactual.com/blog/investimentos/7-motivos-para-investir-com-um-banco-de-investimentos",
+                  "https://content.btgpactual.com/blog/investimentos/como-receber-o-pagamento-do-fgc",
+                  "https://content.btgpactual.com/blog/renda-variavel/guia-completo-para-investir-em-renda-variavel",
+                  "https://content.btgpactual.com/blog/investimentos/investir-em-ouro-vale-a-pena",
+                  "https://content.btgpactual.com/blog/tesouro-direto/o-que-e-melhor-tesouro-selic-cdb-lci-lca-fundos-di-fundos-de-renda-fixa",
+                  "https://content.btgpactual.com/blog/investimentos/cdb-de-15-ao-ano-entenda-como-aproveitar-essa-oportunidade-de-curto-prazo",
+                  "https://content.btgpactual.com/blog/investimentos/o-que-e-cdb",
+                  "https://content.btgpactual.com/blog/investimentos/onde-investir-em-2026",
+                  "https://content.btgpactual.com/blog/investimentos/onde-investir-com-pouco-dinheiro"
+                ]
+              }
+            ]
+          },
+          "behavior": {
+            "show": "immediate",
+            "repeat": "submit"
+          }
+        },
+        "goal_id": null
+      },
+      {
+        "id": "4b33d4fd-c142-4c93-85b3-f9c40ad3f0f4",
+        "site": 442038,
+        "name": "Pesquisa PME | Evolução UX",
+        "type": "survey",
+        "config": {
+          "questions": [
+            {
+              "subtype": "normal",
+              "nextButton": {
+                "title": "Participar",
+                "enabled": true
+              },
+              "linkButton": {},
+              "type": "static-display",
+              "subtext": "",
+              "id": "d901b838-e7b4-4948-ab09-24281161bceb",
+              "title": "Participe de pesquisas que ajudam a moldar o futuro do BTG Empresas!",
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "8660b7bf-3b0c-499a-9a84-ba7a16c30508",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-submitted",
+                          "values": []
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "url": "https://t.maze.co/577377370",
+                        "action": "open-url",
+                        "target": "new-tab"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              },
+              "skipButton": {
+                "title": "Skip"
+              }
+            }
+          ],
+          "theme": {
+            "dark": false,
+            "accent": "#114379",
+            "removeBranding": false,
+            "customBrandingText": "",
+            "adjustColors": true
+          },
+          "closable": "session",
+          "position": "bottomLeft",
+          "autoPosition": true,
+          "autoPositionFallbackToShow": true,
+          "mode": "SIMPLE",
+          "displayType": "popup",
+          "external": false,
+          "sampling": 100,
+          "audience": {
+            "version": 1,
+            "operator": "AND",
+            "conditions": [
+              {
+                "criteria": "device",
+                "values": [
+                  "desktop",
+                  "tablet",
+                  "phone"
+                ],
+                "comparison": "is"
+              },
+              {
+                "criteria": "visited_page",
+                "multiple_values": "or",
+                "comparison": "matches",
+                "values": [
+                  "https://app.empresas.btgpactual.com"
+                ]
+              }
+            ]
+          },
+          "behavior": {
+            "show": "timeDelay",
+            "repeat": "submit",
+            "timeDelaySeconds": "10"
+          }
+        },
+        "goal_id": null
+      },
+      {
+        "id": "5e11b9d3-2ac3-42aa-9636-605a1e4cb580",
+        "site": 442038,
+        "name": "Pesquisa recorrente RM Admin | Tela de Oportunidades",
+        "type": "survey",
+        "config": {
+          "questions": [
+            {
+              "subtype": "normal",
+              "nextButton": {
+                "title": "Começar",
+                "enabled": true
+              },
+              "linkButton": {},
+              "type": "static-display",
+              "subtext": "",
+              "id": "1e0dcb8c-28fb-498d-90be-918396195f44",
+              "title": "Ajude a evoluir a tela de Oportunidades respondendo a 5 perguntas.",
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "3e8f1ece-82ff-4f7f-8492-a12e7a0b693b",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-submitted",
+                          "values": []
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "next"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "subtype": "numerical",
+              "max": {
+                "value": 5,
+                "label": "Concordo "
+              },
+              "min": {
+                "value": 1,
+                "label": "Discordo"
+              },
+              "type": "rating",
+              "subtext": "",
+              "title": "O quanto você concorda com a afirmativa: a tela de Oportunidades apoiou a minha tomada de decisão?",
+              "id": "fc219f8a-69ea-43a7-9aaf-4e33f06ad80b",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma resposta.",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "9770bd36-b998-4268-8600-468740da0a66",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            1
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "31677112-f578-4269-95d5-480eeed8e564",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            2
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "04a3212b-4730-46d1-892d-a881849fd994",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            3
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "70098760-e1bd-48d1-954b-6fbc96988254",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            4
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "e669dc37-1939-4e6d-92cf-76e691b72454",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            5
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "placeholder": "",
+              "subtype": "short",
+              "type": "text-entry",
+              "subtext": "",
+              "title": "Deixe um comentário sobre a sua avaliação.",
+              "id": "c48a0bed-729c-4e5b-bcd2-1de716c42ab9",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma resposta.",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "81306724-e486-4da8-9c22-3c8d533b629e",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-submitted",
+                          "values": []
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "b39193d6-d2ae-4dc7-99f8-ba330e85ada9"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              },
+              "randomize": "none",
+              "options": [
+                "Sim",
+                "Não"
+              ],
+              "subtype": "multi",
+              "type": "multi-choice",
+              "subtext": "",
+              "title": "Você executou alguma operação proposta na tela de Oportunidades?",
+              "id": "b39193d6-d2ae-4dc7-99f8-ba330e85ada9",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma resposta.",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "c4467658-edba-4236-9fef-ce065b39601d",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            "Sim"
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "0da93826-568a-4d6e-aedc-b644274e8262"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "d16dc1db-fb3b-47c8-a4ea-63124d6ebeae",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-exactly",
+                          "values": [
+                            "Não"
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "f6a84f8b-d59f-4cfe-8a6e-61588d7bd705"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "placeholder": "",
+              "subtype": "short",
+              "type": "text-entry",
+              "subtext": "",
+              "title": "Deixe um comentário sobre a sua experiência com as Oportunidades.",
+              "id": "0da93826-568a-4d6e-aedc-b644274e8262",
+              "optional": false,
+              "requiredErrorMessage": "Please enter an answer.",
+              "nextButton": {
+                "title": "Próxima"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": [
+                  {
+                    "id": "5e4d7c9b-d7ba-41e6-9e2c-f450ef77df0e",
+                    "conditional": {
+                      "operator": "AND",
+                      "conditions": [
+                        {
+                          "criteria": "answer",
+                          "comparison": "is-submitted",
+                          "values": []
+                        }
+                      ]
+                    },
+                    "actions": [
+                      {
+                        "action": "show-question",
+                        "questionId": "thank-you"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "placeholder": "",
+              "subtype": "short",
+              "type": "text-entry",
+              "subtext": "",
+              "title": "Por que você não executou nenhuma operação proposta na tela de Oportunidades? ",
+              "id": "f6a84f8b-d59f-4cfe-8a6e-61588d7bd705",
+              "optional": false,
+              "requiredErrorMessage": "Please enter an answer.",
+              "nextButton": {
+                "title": "Próxima"
+              },
+              "skipButton": {
+                "title": "Pular"
+              },
+              "logic": {
+                "version": 1,
+                "statements": []
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "placeholder": "",
+              "subtype": "short",
+              "type": "text-entry",
+              "subtext": "",
+              "title": "Deixe um comentário sobre a sua experiência geral com o RM Admin. Esta pergunta não é obrigatória.",
+              "id": "880a0882-1e43-498f-baf8-8cad13c07d12",
+              "optional": true,
+              "requiredErrorMessage": "Please enter an answer.",
+              "nextButton": {
+                "title": "Próxima"
+              },
+              "skipButton": {
+                "title": "Pular"
+              },
+              "logic": {
+                "version": 1,
+                "statements": []
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            },
+            {
+              "subtype": "thank-you",
+              "nextButton": {},
+              "linkButton": {
+                "enabled": false,
+                "title": "Contact Us",
+                "url": "https://www.yoursite.com/contact"
+              },
+              "type": "static-display",
+              "subtext": "",
+              "id": "a4b5d21c-6d35-4e16-b2cb-e597c1b3d377",
+              "title": "Obrigada pelo seu feedback.",
+              "logic": {
+                "version": 1,
+                "statements": []
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            }
+          ],
+          "theme": {
+            "dark": false,
+            "accent": "#114379",
+            "removeBranding": false,
+            "customBrandingText": "",
+            "adjustColors": true
+          },
+          "closable": false,
+          "position": "bottomRight",
+          "autoPosition": true,
+          "autoPositionFallbackToShow": true,
+          "mode": "ADVANCED",
+          "external": false,
+          "sampling": 100,
+          "audience": {
+            "version": 1,
+            "operator": "AND",
+            "conditions": [
+              {
+                "criteria": "device",
+                "values": [
+                  "desktop",
+                  "tablet",
+                  "phone"
+                ],
+                "comparison": "is"
+              }
+            ]
+          },
+          "behavior": {
+            "show": "immediate",
+            "repeat": "submit"
+          }
+        },
+        "goal_id": null
+      },
+      {
+        "id": "91e819d6-7b14-4649-b061-2112eaffa84a",
+        "site": 442038,
+        "name": "Pesquisa Blog | Organização Financeira",
+        "type": "survey",
+        "config": {
+          "questions": [
+            {
+              "dropdownSelect": {
+                "defaultText": "Selecione uma opção",
+                "multipleItemsText": "# items selected"
+              },
+              "randomize": "none",
+              "options": [
+                "Planilha própria",
+                "Aplicativo de gestão financeira",
+                "Aplicativo do banco",
+                "Consolido informações de diferentes bancos e investimentos",
+                "Faço o controle apenas consultando extratos e faturas",
+                "Não tenho um método de acompanhamento"
+              ],
+              "subtype": "single",
+              "type": "multi-choice",
+              "subtext": "",
+              "title": "Como você acompanha seu orçamento pessoal?",
+              "id": "801410c1-245c-40df-9364-a030b21d4894",
+              "optional": false,
+              "requiredErrorMessage": "Por favor, escolha uma opção",
+              "nextButton": {
+                "title": "Próximo"
+              },
+              "skipButton": {
+                "title": "Skip"
+              },
+              "logic": {
+                "version": 1,
+                "statements": []
+              }
+            },
+            {
+              "subtype": "thank-you",
+              "nextButton": {},
+              "linkButton": {
+                "enabled": false,
+                "title": "Contact Us",
+                "url": "https://www.yoursite.com/contact"
+              },
+              "type": "static-display",
+              "subtext": "",
+              "id": "4e943e9f-9c26-475b-9a6b-700fc5116353",
+              "title": "Obrigado!",
+              "logic": {
+                "version": 1,
+                "statements": []
+              },
+              "dropdownSelect": {
+                "defaultText": "Select answer...",
+                "multipleItemsText": "# items selected"
+              }
+            }
+          ],
+          "theme": {
+            "dark": false,
+            "accent": "#114379",
+            "removeBranding": false,
+            "customBrandingText": "",
+            "adjustColors": true
+          },
+          "closable": "every_time",
+          "position": "bottomLeft",
+          "autoPosition": true,
+          "autoPositionFallbackToShow": true,
+          "mode": "SIMPLE",
+          "displayType": "popup",
+          "external": false,
+          "sampling": 100,
+          "audience": {
+            "version": 1,
+            "operator": "AND",
+            "conditions": [
+              {
+                "criteria": "device",
+                "values": [
+                  "desktop",
+                  "tablet",
+                  "phone"
+                ],
+                "comparison": "is"
+              },
+              {
+                "criteria": "visited_page",
+                "multiple_values": "or",
+                "comparison": "matches",
+                "values": [
+                  "https://content.btgpactual.com/blog/financas/planilha-de-gastos-mensal-diaria-familiar-pessoal",
+                  "https://content.btgpactual.com/blog/financas/como-ficar-rico-rapido",
+                  "https://content.btgpactual.com/blog/investimentos/como-funciona-o-metodo-50-30-20-organizar-financas",
+                  "https://content.btgpactual.com/blog/financas/educacao-financeira-o-que-e-importancia-livros-e-dicas"
+                ]
+              }
+            ]
+          },
+          "behavior": {
+            "show": "immediate",
+            "repeat": "submit"
+          }
+        },
+        "goal_id": null
+      }
+    ],
+    "tracking_key": "4eaf43dad648995ce38c2c3825638350",
+    "explicit_agent": false,
+    "use_secure_cookies": false,
+    "public_tracking_api": {
+      "endpoint": "https://track.crazyegg.com"
+    }
+  }
+}

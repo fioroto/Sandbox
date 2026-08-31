@@ -1,0 +1,64 @@
+{
+  "url": "https://inter.co/page-data/index/page-data.json",
+  "payload": {
+    "componentChunkName": "component---src-pages-index-tsx",
+    "path": "/",
+    "result": {
+      "pageContext": {
+        "slug": "/",
+        "metaTitle": "Inter: o Super App da sua vida financeira",
+        "metaDescription": "O Super App da sua vida financeira. Conta digital, cartão de crédito, shopping, assistente financeira com AI, investimentos e tudo que você precisa.",
+        "hideHeaderUS": true,
+        "hideGetAppBanner": false,
+        "pageES": "/us-es/",
+        "pagePT": "/us-pt/",
+        "pageEN": "/us/",
+        "ogImageHeight": "500",
+        "ogImageWidth": "500",
+        "twitterCard": "summary_large_image",
+        "twitterSite": "bancointer",
+        "twitterCreator": "bancointer",
+        "ogTitle": "Inter. Simplifica a vida.",
+        "ogDescription": "O Inter é uma plataforma que facilita a vida. Conta digital grátis, shopping, investimentos e o que mais você precisa.",
+        "pageSlug": "/",
+        "ogImage": "https://static.bancointer.com.br/metadata/images/9af90f86157e496da6271878383f2597_2622_thumb_home-inter.webp",
+        "headerTheme": {
+          "name": "default"
+        },
+        "darkFooter": true,
+        "headerProps": {
+          "positionFixed": true,
+          "darkBackground": false
+        },
+        "hrefLang": [
+          {
+            "location": "pt-BR",
+            "link": "https://inter.co/"
+          },
+          {
+            "location": "es-AR",
+            "link": "https://ar.inter.co/"
+          },
+          {
+            "location": "en-US",
+            "link": "https://inter.co/us/"
+          },
+          {
+            "location": "es-US",
+            "link": "https://inter.co/us-es/"
+          },
+          {
+            "location": "pt-US",
+            "link": "https://inter.co/us-pt/"
+          }
+        ],
+        "noIndexOption": false,
+        "noFollowOption": false,
+        "crazyEggId": false,
+        "ogType": "website"
+      }
+    },
+    "staticQueryHashes": [],
+    "slicesMap": {}
+  }
+}

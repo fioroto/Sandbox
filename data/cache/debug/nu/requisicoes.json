@@ -1,0 +1,1277 @@
+{
+  "url": "https://nubank.com.br/nu/investimentos/fundos-de-investimento",
+  "final_url": "https://nubank.com.br/nu/investimentos/fundos-de-investimento",
+  "status": 200,
+  "content_stats": {
+    "chars": 19070,
+    "cnpjs": 1,
+    "rows": 0,
+    "links": 71
+  },
+  "responses": [
+    {
+      "url": "https://nubank.com.br/nu/investimentos/fundos-de-investimento",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "size": 0,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/css/c88e3c8f8fa88f73.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/css/c9cc41e9243186e2.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/css/3f976cabfbb0f462.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/36256e370bf6e286-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 42812,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/e455235dfac7bc28-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 38476,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/b8b463965582a7b0-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 38524,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/b14a465a3b5e3c04-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 38760,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/a6aa17f18faf179c-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 40852,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/9cb22ef70ef510b2-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 38032,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.datocms-assets.com/120597/1781633971-app-na-home-e-cartao-nubank-em-superficie-geometrica-quadrada-ptbr-hero-product-2-desktop.webp?crop=focalpoint&dpr=1&fit=crop&fm=jpg&q=60&w=2000",
+      "status": 200,
+      "content_type": "image/avif",
+      "size": 170399,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/64a06134aa18a255-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 35489,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/60a2f104238a90af-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 36561,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/media/cf499ff0f73d5de7-s.p.woff2",
+      "status": 200,
+      "content_type": "binary/octet-stream",
+      "size": 38476,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/52774a7f-971f6d93da707a26.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/main-app-ad496b0efefed08b.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/webpack-cd7bd1ced287dfd0.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/4bd1b696-354e29b8fceb5553.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/app/global-error-5cfd790667f82f2b.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/104-2a8a1cd894f3d001.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/289c6330-e96737cfd717f52e.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/app/%5B%5B...slugs%5D%5D/page-d7aa433424be8073.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 878,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/288-eaeb54f74e6476aa.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/app/layout-8823a260c6750919.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/338-3a06458ce3afb5c1.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/225f8dbd-66de3c6ab057007a.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/670-7b264f9b58f04482.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/62-45a11dd21de9ca94.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/700-6bcfb0ead5c78c34.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://static.nubank.com.br/5eadeca223a2919370c536be5df13b416a71eaf0/_next/static/chunks/890-cf63a51907925809.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2022/03/Declarar-fundos-ir-grid.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 20340,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2024/11/como-investir-em-ouro-destacada.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 34304,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2021/10/aplicacoes-financeiras-ilustracao.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 40504,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2022/01/taxa-de-administracao_destacada.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 73550,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2022/09/curso-de-financas-gratuitos-tamanna-rumee-unsplash-HEADER.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 8830,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://backend.blog.nubank.com.br/wp-content/uploads/2024/02/mulher-com-celular-e-homem-com-notebook-na-sala.jpg?quality=60",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 111216,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-KGFBFP",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 197708,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://o13389.ingest.us.sentry.io/api/4507312738402304/envelope/?sentry_version=7&sentry_key=1c0acf6335cb882c33fc9b446279e841&sentry_client=sentry.javascript.nextjs%2F10.51.0",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 2,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "blob:https://nubank.com.br/ac21a074-24b5-4a18-b83a-65b94fe575f0",
+      "status": 200,
+      "content_type": "",
+      "size": 10329,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://o13389.ingest.us.sentry.io/api/4507312738402304/envelope/?sentry_version=7&sentry_key=1c0acf6335cb882c33fc9b446279e841&sentry_client=sentry.javascript.nextjs%2F10.51.0",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 2,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://o13389.ingest.us.sentry.io/api/4507312738402304/envelope/?sentry_version=7&sentry_key=1c0acf6335cb882c33fc9b446279e841&sentry_client=sentry.javascript.nextjs%2F10.51.0",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 2,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://tracking-cdn.figpii.com/38739501377e81c62a010d8bbbc58432.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 46464,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.clarity.ms/tag/u1h4u6319z?ref=gtm",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 769,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://tracking-settings.figpii.com/38739501377e81c62a010d8bbbc58432.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 216,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://scripts.clarity.ms/0.8.69/clarity.js",
+      "status": 200,
+      "content_type": "application/javascript;charset=utf-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=18&frm=0&apvc=1&ae=g&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=page_view&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He68q1v71007391za200zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616986~115938465~115938469~118897920~118897930~120385423&tft=1788178787957&tfd=1293&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ad.doubleclick.net/ccm/s/collect?auid=614688620.1788178788&gtm=45He68q1v71007391za200zd71007391xea&fmt=8",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/bat.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 15390,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=DC-13089743&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 140737,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=G-ZL76F6HX1P&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 183432,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://tag.navdmp.com/universal.min.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 4833,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://c.clarity.ms/c.gif",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=G-LQFLJDQXD9&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 195618,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=1&frm=0&apvc=0&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&tid=DC-13089743&en=page_view&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&ep.user_data_mode=a&gtm=45fe68q1v9190372476z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616986~115938465~115938468~118897920~118897930~120385423&tft=1788178788168&tfd=1504&tids=DC-13089743&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://c.bing.com/c.gif?ctsa=mr&CtsSyncId=8A848C982AC64F678AD7E4D7A9BE48CA&RedC=c.clarity.ms&MXFR=3DEDAB6300AA69B61044BCA504AA6770",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/p/action/52003682.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-T2JHZMB&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 169200,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://visitor.figpii.com/js/?idsite=4&send_image=0&rec=1&action_name=Fundos+de+Investimento+%7C+Nubank&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&_id=aa8d45b6b7b786fb&rand=1788178788053&apiv=1&dimension1=316798&dimension2=317357&urlref=https%3A%2F%2Fnubank.com.br%2F&uid=tGURjyZYIim3bgznNtL&pf_net=19&pf_srv=6&pf_tfr=5&pf_dm1=105&pf_dm2=604&pf_onl=0",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-ZL76F6HX1P&gtm=45je68q1v888803077z871007391za20gzb71007391zd71007391&_p=1788178787700&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAACAC&_geo=1&_prs=rd&_rdi=1&are=1&cid=252690351.1788178788&frm=0&ibt=1&ngs=1&pscdl=noapi&rcb=3&ul=pt-br&_s=1&tag_exp=115938465~115938468~118897920~118897930~120385422&sid=1788178788&sct=1&seg=0&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=page_view&_fv=1&_nsi=1&_ss=2&tfd=1542",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/ads/ga-audiences?v=1&t=sr&slf_rd=1&_r=4&ngs=1&ibt=1&tid=G-ZL76F6HX1P&cid=252690351.1788178788&gtm=45je68q1v888803077z871007391za20gzb71007391zd71007391&rcb=3&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938468~118897920~118897930~120385422&z=1638538675",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.clarity.ms/tag/uet/52003682?conversions=1&insights=1",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 885,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/ads/ga-audiences?v=1&t=sr&slf_rd=1&_r=4&tid=G-LQFLJDQXD9&cid=252690351.1788178788&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&rcb=6&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&z=1832623070",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178788298&cv=11&tid=G-LQFLJDQXD9&fst=1788178788298&fmt=8&en=page_view&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-LQFLJDQXD9&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&_p=1788178787700&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGAC&_platinum_request_status=ok&are=1&cid=252690351.1788178788&frm=0&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=1&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&sid=1788178788&sct=1&seg=0&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=page_view&_fv=2&_ss=2&_c=1&ep.is_adblock_enabled=false&ep.country=br&tfd=1690",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178788298&cv=11&tid=G-LQFLJDQXD9&fst=1788178788298&fmt=8&en=session_start&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-LQFLJDQXD9&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&_p=1788178787700&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGQC&_platinum_request_status=ok&are=1&cid=252690351.1788178788&frm=0&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=2&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&dp=%2Fnu%2Finvestimentos%2Ffundos-de-investimento&sid=1788178788&sct=1&seg=1&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=page_view&_c=1&ep.is_adblock_enabled=false&ep.country=br&_et=4&tfd=1699",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://stats.g.doubleclick.net/g/collect?v=2&ngs=1&ibt=1&tid=G-ZL76F6HX1P&cid=252690351.1788178788&gtm=45je68q1v888803077z871007391za20gzb71007391zd71007391&rcb=3&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938468~118897920~118897930~120385422",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://stats.g.doubleclick.net/g/collect?v=2&tid=G-LQFLJDQXD9&cid=252690351.1788178788&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&rcb=6&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://tag.navdmp.com/u/53215",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 460,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178788298&cv=11&tid=G-LQFLJDQXD9&fst=1788178788298&fmt=8&en=first_visit&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://sessions.bugsnag.com/",
+      "status": 202,
+      "content_type": "application/json",
+      "size": 21,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://connect.facebook.net/en_US/fbevents.js",
+      "status": 200,
+      "content_type": "application/x-javascript; charset=utf-8",
+      "size": 107502,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/td?id=GTM-T2JHZMB&v=3&t=t&pid=1968129999&gtm=45He68q1v811626569za20gzb71007391zd71007391&seq=1&exp=115938465~115938469~118897920~118897930~120385422&dl=nubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tdp=GTM-T2JHZMB;11626569;1;1;0&frm=0&pcid=1007391&bt=0&ct=3&jsp=1&z=0",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://c.clarity.ms/c.gif?ctsa=mr&CtsSyncId=8A848C982AC64F678AD7E4D7A9BE48CA&MUID=14B60AB9AAA063B10EBE1D7FAB02623F",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/action/0?ti=52003682&tm=gtm002&Ver=2&mid=093af14f-d5ce-4dee-9ba6-866ca4e3c220&bo=1&sid=42446b10a53611f19f261deef9511485&vid=42448e50a53611f18e33a9bbb940dd9c&vids=1&msclkid=N&pi=0&lg=pt-BR&sw=1440&sh=900&sc=24&nwd=1&tl=Fundos%20de%20Investimento%20%7C%20Nubank&p=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&r=https%3A%2F%2Fnubank.com.br%2F&lt=741&evt=pageLoad&sv=2&cdb=AQAQ&rn=422871",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178788355&cv=11&tid=G-LQFLJDQXD9&fst=1788178788355&fmt=8&en=page_view&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://static.ads-twitter.com/uwt.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 14699,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://s.pinimg.com/ct/core.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 1940,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://p.teads.tv/teads-fellow.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 15745,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=4&frm=0&apvc=0&ae=g&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=page_view&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He68q1v811626569za20gzb71007391zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&tft=1788178788417&tfd=1753&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://connect.facebook.net/signals/config/1438448073136396?v=2.9.385&r=stable&domain=nubank.com.br&hme=1a72ec78e057d90ba48afa55a82b063b1c9b6ab7c0155009fecc72226a622ed2&ex_m=113%2C218%2C164%2C25%2C78%2C79%2C156%2C74%2C73%2C11%2C174%2C98%2C19%2C148%2C136%2C43%2C81%2C86%2C144%2C169%2C176%2C29%2C17%2C30%2C31%2C32%2C34%2C52%2C157%2C83%2C121%2C21%2C23%2C48%2C44%2C46%2C45%2C91%2C100%2C104%2C119%2C155%2C158%2C50%2C120%2C27%2C24%2C128%2C75%2C40%2C160%2C159%2C161%2C152%2C150%2C28%2C39%2C63%2C118%2C171%2C76%2C20%2C123%2C89%2C72%2C22%2C93%2C94%2C125%2C92%2C146%2C145%2C149%2C105%2C170%2C173%2C38%2C53%2C122%2C51%2C8%2C4%2C5%2C7%2C6%2C3%2C99%2C110%2C177%2C185%2C232%2C80%2C245%2C244%2C243%2C14%2C26%2C37%2C59%2C112%2C65%2C10%2C69%2C106%2C107%2C108%2C114%2C139%2C35%2C33%2C141%2C142%2C143%2C138%2C137%2C165%2C82%2C168%2C166%2C167%2C54%2C64%2C132%2C18%2C172%2C49%2C293%2C294%2C292%2C307%2C329%2C225%2C214%2C66%2C215%2C213%2C332%2C323%2C56%2C226%2C116%2C140%2C88%2C130%2C58%2C129%2C135%2C134%2C62%2C70%2C68%2C162%2C84%2C85%2C124%2C41%2C36%2C57%2C60%2C109%2C175%2C1%2C133%2C16%2C131%2C12%2C2%2C61%2C101%2C15%2C71%2C67%2C127%2C97%2C96%2C178%2C179%2C102%2C103%2C9%2C111%2C55%2C153%2C95%2C87%2C77%2C126%2C115%2C47%2C154%2C0%2C90%2C147%2C151%2C163%2C42%2C117%2C13%2C180",
+      "status": 200,
+      "content_type": "application/x-javascript; charset=utf-8",
+      "size": 73755,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://13089743.fls.doubleclick.net/activityi;src=13089743;type=disneyco;cat=disne0;rcb=1;ord=1725135590027;npa=0;auiddc=614688620.1788178788;u2=disneyco;uaa=x86;uab=64;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6;uamb=0;uam=;uap=Linux;uapv=;uaw=0;pscdl=noapi;frm=0;user_data_mode=a;_tu=KFA;gtm=45fe68q1v9190372476z8811626569za20gzb71007391zd71007391xea;gcd=13l3l3l3l1l1;dma=0;dc_fmt=2;tag_exp=115616986~115938465~115938468~118897920~118897930~120385423;epver=2;em=tv.1;dc_random=1788178788_asuu4uuYkphBhiRoPAN7rZgaauUpdQzPvQ;_dc_test=1;~oref=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento?",
+      "status": 302,
+      "content_type": "text/html; charset=UTF-8",
+      "size": 0,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://s.pinimg.com/ct/lib/main.e47a302d.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 34411,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://ad.doubleclick.net/activity;src=13089743;type=disneyco;cat=disne0;rcb=1;ord=1725135590027;npa=0;auiddc=614688620.1788178788;u2=disneyco;uaa=x86;uab=64;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6;uamb=0;uam=;uap=Linux;uapv=;uaw=0;pscdl=noapi;frm=0;user_data_mode=a;_tu=KFA;gtm=45fe68q1v9190372476z8811626569za20gzb71007391zd71007391xea;gcd=13l3l3l3l1l1;dma=0;dc_fmt=3;tag_exp=115616986~115938465~115938468~118897920~118897930~120385423;epver=2;em=tv.1;dc_random=1788178788_asuu4uuYkphBhiRoPAN7rZgaauUpdQzPvQ;~oref=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento?",
+      "status": 302,
+      "content_type": "text/html; charset=UTF-8",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://bat.bing.com/actionp/0?ti=52003682&tm=gtm002&Ver=2&mid=093af14f-d5ce-4dee-9ba6-866ca4e3c220&bo=2&sid=42446b10a53611f19f261deef9511485&vid=42448e50a53611f18e33a9bbb940dd9c&vids=1&msclkid=N&evt=dedup",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://ad.doubleclick.net/activity;dc_pre=CInd2bruypYDFakRHgAdxSkwOA;src=13089743;type=disneyco;cat=disne0;rcb=1;ord=1725135590027;npa=0;auiddc=614688620.1788178788;u2=disneyco;uaa=x86;uab=64;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6;uamb=0;uam=;uap=Linux;uapv=;uaw=0;pscdl=noapi;frm=0;user_data_mode=a;_tu=KFA;gtm=45fe68q1v9190372476z8811626569za20gzb71007391zd71007391xea;gcd=13l3l3l3l1l1;dma=0;dc_fmt=3;tag_exp=115616986~115938465~115938468~118897920~118897930~120385423;epver=2;em=tv.1;dc_random=1788178788_asuu4uuYkphBhiRoPAN7rZgaauUpdQzPvQ;~oref=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento?",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.facebook.com/tr/?id=1438448073136396&ev=PageView&dl=https%3A%2F%2Fnubank.com.br&rl=https%3A%2F%2Fnubank.com.br&if=false&ts=1788178788570&iw=false&sw=1440&sh=900&v=2.9.385&r=stable&ec=0&o=4124&aems=0%3B0&fbp=fb.2.1788178788565.9825618186006351&pm=1&hrl=c7c657&plt=136.30000001192093&ups[pv]=%7B%7D&ups[rpv]=%7B%7D&it=1788178788517&coo=false&cs_cc=1&ccs=565936535952498%2C1752835321832372&cas=27031642619759510%2C24272309329133651%2C25952956024297828%2C25537687225890128%2C8304501519662681%2C6051034971687911%2C7235344959896673%2C7789415314414465%2C8232033106823435%2C7037900069643680%2C3645280215484169%2C3078121378942182%2C3032550130192099%2C3046609475425427%2C2220694298059870%2C2271634516245713%2C2184627138316928%2C2424744907593235%2C2584488571562228%2C2978870642176503%2C2760327354038333%2C2789902597718237%2C2519030551469931&dlc=1&rlc=1&exp=s1&expv2[0]=pl0&expv2[1]=el2&expv2[2]=bc1&expv2[3]=ra0&expv2[4]=rp0&expv2[5]=ct3&expv2[6]=hf1&expv2[7]=sd1&expv2[8]=sp1&expv2[9]=ek1&expv2[10]=pc1&expv2[11]=gs1&expv2[12]=zs1&expv2[13]=cp1&expv2[14]=es1&expv2[15]=ac1&expv2[16]=so1&expv2[17]=wc1&expv2[18]=la1&expv2[19]=sf1&expv2[20]=da1&expv2[21]=io1&expv2[22]=ae1&expv2[23]=sx1&expv2[24]=if1&expv2[25]=fd1&expv2[26]=bg1&expv2[27]=mg1&expv2[28]=kl1&expv2[29]=sg1&expv2[30]=mk1&expv2[31]=sn1&expv2[32]=ec1&expv2[33]=mp1&expv2[34]=ps1&expv2[35]=fx1&expv2[36]=vt1&rqm=GET",
+      "status": 200,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/destination?id=AW-948317731&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 147665,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=C1Q5MVUHLSU5AAHCLG10&lib=ttq",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 2320,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://13089743.fls.doubleclick.net/activityi;dc_pre=CLm-3rruypYDFWcuHgAdzy4uQg;src=13089743;type=disneyco;cat=disne0;rcb=1;ord=1725135590027;npa=0;auiddc=614688620.1788178788;u2=disneyco;uaa=x86;uab=64;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6;uamb=0;uam=;uap=Linux;uapv=;uaw=0;pscdl=noapi;frm=0;user_data_mode=a;_tu=KFA;gtm=45fe68q1v9190372476z8811626569za20gzb71007391zd71007391xea;gcd=13l3l3l3l1l1;dma=0;dc_fmt=2;tag_exp=115616986~115938465~115938468~118897920~118897930~120385423;epver=2;em=tv.1;dc_random=1788178788_asuu4uuYkphBhiRoPAN7rZgaauUpdQzPvQ;_dc_test=1;~oref=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento?",
+      "status": 200,
+      "content_type": "text/html; charset=UTF-8",
+      "size": 538,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/destination?id=AW-11056514935&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 158641,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://l.clarity.ms/collect",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/destination?id=AW-963026780&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 158616,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://usr.navdmp.com/usr?v=9&acc=53215&u=1&new=1&wst=0",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 260,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.twitter.com/i/adsct?bci=3&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=1b9cd3d6-9598-4dc9-bcac-127ee6b196ac&events=%5B%5B%22pageview%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=cfb3acb4-cf90-4e1d-8cfd-63b7d5f8f69d&pt=Fundos%20de%20Investimento%20%7C%20Nubank&tw_document_href=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tw_document_referrer=https%3A%2F%2Fnubank.com.br%2F&tw_iframe_status=0&tw_order_quantity=0&tw_pid_src=1&tw_sale_amount=0&tw_session_count=1&tw_session_id=1788178788540-133745669&tw_session_start=1&twpid=tw.1788178788540.789767099805256614&txn_id=o4inn&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://t.co/i/adsct?bci=3&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=1b9cd3d6-9598-4dc9-bcac-127ee6b196ac&events=%5B%5B%22pageview%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=cfb3acb4-cf90-4e1d-8cfd-63b7d5f8f69d&pt=Fundos%20de%20Investimento%20%7C%20Nubank&tw_document_href=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tw_document_referrer=https%3A%2F%2Fnubank.com.br%2F&tw_iframe_status=0&tw_order_quantity=0&tw_pid_src=1&tw_sale_amount=0&tw_session_count=1&tw_session_id=1788178788540-133745669&tw_session_start=1&twpid=tw.1788178788540.789767099805256614&txn_id=o4inn&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/main.MWFiZGNkNWVmMQ.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 118080,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=19&frm=0&apvc=0&ae=g&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&tid=AW-948317731&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&_tu=CA&gtm=45be68q1z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~120385423&tft=1788178788667&tfd=2004&tids=AW-948317731&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/948317731/?random=1788178788623&cv=11&fst=1788178788623&fmt=8&bg=ffffff&guid=ON&async=1&gtm=45be68q1z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=19&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ct.pinterest.com/v3/?tid=2613819446648&pd=%7B%22em%22%3A%2224aba99b2defbb47ee981b4200313f61f3ae31541d8717bdac1e463c838939b0%22%7D&event=init&ad=%7B%22loc%22%3A%22https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento%22%2C%22ref%22%3A%22https%3A%2F%2Fnubank.com.br%2F%22%2C%22if%22%3Afalse%2C%22sh%22%3A900%2C%22sw%22%3A1440%2C%22mh%22%3A%22e47a302d%22%2C%22is_eu%22%3Atrue%2C%22architecture%22%3A%22x86%22%2C%22bitness%22%3A%2264%22%2C%22brands%22%3A%5B%7B%22brand%22%3A%22Not%3AA-Brand%22%2C%22version%22%3A%2299%22%7D%2C%7B%22brand%22%3A%22HeadlessChrome%22%2C%22version%22%3A%22145%22%7D%2C%7B%22brand%22%3A%22Chromium%22%2C%22version%22%3A%22145%22%7D%5D%2C%22mobile%22%3Afalse%2C%22model%22%3A%22%22%2C%22platform%22%3A%22Linux%22%2C%22platformVersion%22%3A%22%22%2C%22uaFullVersion%22%3A%22145.0.7632.6%22%7D&cb=1788178788604",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 35,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ct.pinterest.com/user/?event=pagevisit&ed=%7B%22line_items%22%3A%5B%7B%22product_id%22%3A%221414%22%7D%5D%7D&tid=2613819446648&cb=1788178788599&dep=5%2CEVENT_TAGS_ABSENT",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 403,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://ct.pinterest.com/user/?tid=2613819446648&pd=%7B%22em%22%3A%2224aba99b2defbb47ee981b4200313f61f3ae31541d8717bdac1e463c838939b0%22%7D&cb=1788178788597&dep=2%2CPAGE_LOAD",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 403,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://adservice.google.com/ddm/fls/z/dc_pre=CLm-3rruypYDFWcuHgAdzy4uQg;src=13089743;type=disneyco;cat=disne0;rcb=1;ord=1725135590027;npa=0;auiddc=*;u2=disneyco;uaa=x86;uab=64;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6;uamb=0;uam=;uap=Linux;uapv=;uaw=0;pscdl=noapi;frm=0;user_data_mode=a;_tu=KFA;gtm=45fe68q1v9190372476z8811626569za20gzb71007391zd71007391xea;gcd=13l3l3l3l1l1;dma=0;dc_fmt=2;tag_exp=115616986~115938465~115938468~118897920~118897930~120385423;epver=2;em=tv.*;dc_random=1788178788_asuu4uuYkphBhiRoPAN7rZgaauUpdQzPvQ;_dc_test=1;~oref=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=13&frm=0&apvc=0&ae=g&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&tid=AW-11056514935&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&_tu=CA&gtm=45be68q1v9193946596z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~119404698~120385422&tft=1788178788741&tfd=2078&tids=AW-11056514935&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/11056514935/?random=1788178788702&cv=11&fst=1788178788702&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9193946596z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=13&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2689,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/11056514935/?random=1788178788702&cv=11&fst=1788178788702&fmt=8&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9193946596z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=13&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ct.pinterest.com/ct.html",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "size": 326,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://cms.analytics.yahoo.com/cms?partner_id=NAVEG",
+      "status": 302,
+      "content_type": "text/html",
+      "size": 257,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://services.xg4ken.com/js/kenshoo.js?cid=51452f4a-f483-4da2-8cc6-60b2cc17008c",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/963026780/?random=1788178788781&cv=11&fst=1788178788781&fmt=8&bg=ffffff&guid=ON&async=1&gtm=45be68q1v882500677z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=15&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=68&gcp=5",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=15&frm=0&apvc=0&ae=g&auid=614688620.1788178788&dt=Fundos%20de%20Investimento%20%7C%20Nubank&tid=AW-963026780&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&scrsrc=www.googletagmanager.com&rnd=1997130476.1788178788&navt=n&npa=0&_tu=CA&gtm=45be68q1v882500677z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&tft=1788178788818&tfd=2154&tids=AW-963026780&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ct.pinterest.com/v3/?event=pagevisit&ed=%7B%22line_items%22%3A%5B%7B%22product_id%22%3A%221414%22%7D%5D%7D&tid=2613819446648&cb=1788178788762&dep=5%2CEVENT_TAGS_ABSENT&pd=%7B%22em%22%3A%2224aba99b2defbb47ee981b4200313f61f3ae31541d8717bdac1e463c838939b0%22%7D&ad=%7B%22loc%22%3A%22https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento%22%2C%22ref%22%3A%22https%3A%2F%2Fnubank.com.br%2F%22%2C%22if%22%3Afalse%2C%22sh%22%3A900%2C%22sw%22%3A1440%2C%22mh%22%3A%22e47a302d%22%2C%22is_eu%22%3Afalse%2C%22is_restricted_region%22%3Atrue%2C%22architecture%22%3A%22x86%22%2C%22bitness%22%3A%2264%22%2C%22brands%22%3A%5B%7B%22brand%22%3A%22Not%3AA-Brand%22%2C%22version%22%3A%2299%22%7D%2C%7B%22brand%22%3A%22HeadlessChrome%22%2C%22version%22%3A%22145%22%7D%2C%7B%22brand%22%3A%22Chromium%22%2C%22version%22%3A%22145%22%7D%5D%2C%22mobile%22%3Afalse%2C%22model%22%3A%22%22%2C%22platform%22%3A%22Linux%22%2C%22platformVersion%22%3A%22%22%2C%22uaFullVersion%22%3A%22145.0.7632.6%22%7D",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 35,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/identify_ea043f1c.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 39846,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/948317731/?random=1788178788623&cv=11&fst=1788178788623&bg=ffffff&guid=ON&async=1&gtm=45be68q1z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=19&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2668,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cm.g.doubleclick.net/pixel?google_nid=navegg_ddp&google_cm&id=102922590529",
+      "status": 302,
+      "content_type": "text/html; charset=UTF-8",
+      "size": 315,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/11056514935/?random=1788178788702&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9193946596z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=13&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3HMygMdZt5jlV5oCCgkue17m_SbOD5iVPETvSfiMmkAJP5bSi_G_x7h6yN0eWw4Gn4sOP8fTHs5Eh1KdAN-Ptl7fnQJRCxiuQ9Y6EYg7ERdC3Dmle9sNjiyIYTR2EdaxhKS43T8m54df35_qPeFxIDucHBTOZ6TmgbXtZNoic-W0LYIVbLsiMvFYfMgMJsCGxUc1ERtkFkQbw_qYgx9clvcKVk_FWcSw3Ew6eCJB6-O4BeNgK2DPg0-ebfZ72A6KhbIjZ-D1aKTtt2hNPyQfKUOyyChI2o4VnI4ecFdDa3QAzw_k_lGlKnLwgIJrR8sXI5F-BwQ&random=3610900674&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/948317731/?random=1788178788623&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=19&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3BL5hmOtAK5ZbPThv5rwOyTvF5avpx8Um43mpDi6jhOg2GqHQ0WK0cEcHapcc-su8pzL4ImAPFU_7-dvWWpEgZbf9y8o7vVoW5w7oLEVK45KDlRqjr-S4RTDH5XiizJngP3IGnBvkaS5oZnZZJxXi6ZbZ9TCzdoNFTPZpNWaSl3A1-RTwIVIb0GuYjmFy2eGRbFOw32Tyt_dOy8wNhV_vrVHMsR3LDQj_6tah4FmD6pY6TYen61z3LvioSXGjL7KWTzjvtEa6Ye35AZMjy_2ANeOLUoJD7VU0WVZ5O9GEApQhu2SKYKrIyTVrjb4yaPWYIVGUew&random=3565504989&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/948317731/?random=1788178788623&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~120385423&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=19&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3BL5hmOtAK5ZbPThv5rwOyTvF5avpx8Um43mpDi6jhOg2GqHQ0WK0cEcHapcc-su8pzL4ImAPFU_7-dvWWpEgZbf9y8o7vVoW5w7oLEVK45KDlRqjr-S4RTDH5XiizJngP3IGnBvkaS5oZnZZJxXi6ZbZ9TCzdoNFTPZpNWaSl3A1-RTwIVIb0GuYjmFy2eGRbFOw32Tyt_dOy8wNhV_vrVHMsR3LDQj_6tah4FmD6pY6TYen61z3LvioSXGjL7KWTzjvtEa6Ye35AZMjy_2ANeOLUoJD7VU0WVZ5O9GEApQhu2SKYKrIyTVrjb4yaPWYIVGUew&random=3565504989&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/11056514935/?random=1788178788702&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v9193946596z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616985~115938465~115938469~118897920~118897930~119404698~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=13&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3HMygMdZt5jlV5oCCgkue17m_SbOD5iVPETvSfiMmkAJP5bSi_G_x7h6yN0eWw4Gn4sOP8fTHs5Eh1KdAN-Ptl7fnQJRCxiuQ9Y6EYg7ERdC3Dmle9sNjiyIYTR2EdaxhKS43T8m54df35_qPeFxIDucHBTOZ6TmgbXtZNoic-W0LYIVbLsiMvFYfMgMJsCGxUc1ERtkFkQbw_qYgx9clvcKVk_FWcSw3Ew6eCJB6-O4BeNgK2DPg0-ebfZ72A6KhbIjZ-D1aKTtt2hNPyQfKUOyyChI2o4VnI4ecFdDa3QAzw_k_lGlKnLwgIJrR8sXI5F-BwQ&random=3610900674&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/963026780/?random=1788178788781&cv=11&fst=1788178788781&bg=ffffff&guid=ON&async=1&gtm=45be68q1v882500677z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=15&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=4",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 2667,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.navdmp.com/req?v=9&id=17f6aa1941b239b1953f974f4c10%7C0&acc=53215&tit=Fundos%2520de%2520Investimento%2520%257C%2520Nubank&url=https%253A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&upd=1&new=1&ref=https%253A%2F%2Fnubank.com.br%2F&h1=Fundos%2520de%2520Investimento",
+      "status": 200,
+      "content_type": "application/x-javascript",
+      "size": 26,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://ups.analytics.yahoo.com/ups/58727/cms?partner_id=NAVEG",
+      "status": 302,
+      "content_type": "text/html",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://cm.teads.tv/v2/advertiser?referer=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tag_version=8.14.1_bd426f7&buyer_pixel_id=3897&gtm_consent=false&has_consent=true&cht=timeout&zone=all",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 136,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/963026780/?random=1788178788781&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v882500677z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=15&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3KuK-0pTd3EPhIgot71o5OOoWTI6scdwlDqmgfmUSCn_7YmFRb48VUEIOVnlk9l0kxUJhOWbmRNgndkLPN9sUBLF1D-d1ppa1K0xNjtH0-x9nAuaD6O0df3u9fg0PVzw66jFkwc7h0GMBbe0gIQAxQtaf2I20QEYoMkh833lg0BWdvc3EaGyZZF-zMe5wucGEU-YAyBXC-RrdNVnAQM-L1Eis5nfbisI77HJyX8yfhF4qMYVbeoAll-jeJ78cPy56BuQMoZItfNh21hmd4oR353x8AqloGyFJG4mQKcZtGsY_UZ0g9IfTDfFOMw0L0b2qj7EIR4&random=3146648468&rmt_tld=0&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com.br/pagead/1p-user-list/963026780/?random=1788178788781&cv=11&fst=1788177600000&bg=ffffff&guid=ON&async=1&gtm=45be68q1v882500677z8811626569za20gzb811626569zd71007391xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938469~118897920~118897930~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&rcb=15&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&_tu=CA&ept=9&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-QEAQM4h3KuK-0pTd3EPhIgot71o5OOoWTI6scdwlDqmgfmUSCn_7YmFRb48VUEIOVnlk9l0kxUJhOWbmRNgndkLPN9sUBLF1D-d1ppa1K0xNjtH0-x9nAuaD6O0df3u9fg0PVzw66jFkwc7h0GMBbe0gIQAxQtaf2I20QEYoMkh833lg0BWdvc3EaGyZZF-zMe5wucGEU-YAyBXC-RrdNVnAQM-L1Eis5nfbisI77HJyX8yfhF4qMYVbeoAll-jeJ78cPy56BuQMoZItfNh21hmd4oR353x8AqloGyFJG4mQKcZtGsY_UZ0g9IfTDfFOMw0L0b2qj7EIR4&random=3146648468&rmt_tld=1&ipr=y",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 42,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics-ipv6.tiktokw.us/ipv6/enrich_ipv6",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://sync2.navdmp.com/sync?prtid=2&id=102922590529&google_gid=CAESEO3DenuZRESU6mBdSu4vgEI&google_cver=1",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 26,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://t.teads.tv/track?action=browser-topics&env=js-web&tag_version=8.14.1_bd426f7&provider=tag&buyer_pixel_id=3897&referer=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&user_session_id=e067e93a-37f7-4e28-95ed-0687475cbd03&hasConsent=true&cht=timeout",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 23,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://t.teads.tv/track?action=pageView&env=js-web&tag_version=8.14.1_bd426f7&provider=tag&buyer_pixel_id=3897&referer=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&user_session_id=e067e93a-37f7-4e28-95ed-0687475cbd03&hasConsent=true&cht=timeout",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 23,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://pixel.mathtag.com/sync/img?redir=https%3A//sync.navdmp.com/sync%3Fimg%3D1%26mdia%3D%5BMM_UUID%5D",
+      "status": 302,
+      "content_type": "image/gif",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://resources.xg4ken.com/js/v2/ktag.js?tid=KT-N34AB-3EA",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 3818,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://sync.navdmp.com/sync?img=1&mdia=d43a6a95-72d3-4800-bc7e-0c773497966a",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://l.clarity.ms/collect",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.twitter.com/i/adsct?bci=3&cv=100%261&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=1fa561e6-944c-49dc-9332-cfa3a71c4e20&events=%5B%5B%22auto_long_site_dwell%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=cfb3acb4-cf90-4e1d-8cfd-63b7d5f8f69d&pt=Fundos%20de%20Investimento%20%7C%20Nubank&tw_document_href=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tw_document_referrer=https%3A%2F%2Fnubank.com.br%2F&tw_iframe_status=0&tw_pid_src=1&tw_session_count=1&tw_session_id=1788178788540-133745669&twpid=tw.1788178788540.789767099805256614&txn_id=o4inn&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://t.co/i/adsct?bci=3&cv=100%261&dv=America%2FSao_Paulo%26pt-BR%26Google%20Inc.%26Win32%26255%261440%26900%2612%2624%261440%26900%260%26na&eci=2&event_id=1fa561e6-944c-49dc-9332-cfa3a71c4e20&events=%5B%5B%22auto_long_site_dwell%22%2C%7B%7D%5D%5D&integration=advertiser&p_id=Twitter&p_user_id=0&pl_id=cfb3acb4-cf90-4e1d-8cfd-63b7d5f8f69d&pt=Fundos%20de%20Investimento%20%7C%20Nubank&tw_document_href=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&tw_document_referrer=https%3A%2F%2Fnubank.com.br%2F&tw_iframe_status=0&tw_pid_src=1&tw_session_count=1&tw_session_id=1788178788540-133745669&twpid=tw.1788178788540.789767099805256614&txn_id=o4inn&type=javascript&version=2.4.3",
+      "status": 200,
+      "content_type": "image/gif;charset=utf-8",
+      "size": 43,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/monitor",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-LQFLJDQXD9&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&_p=1788178787700&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGQC&_platinum_request_status=ok&are=1&cid=252690351.1788178788&frm=0&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=3&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&dp=%2Fnu%2Finvestimentos%2Ffundos-de-investimento&sid=1788178788&sct=1&seg=1&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=scroll&_c=1&ep.is_adblock_enabled=false&ep.country=br&epn.percent_scrolled=25&_et=27486&tfd=29192",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178815848&cv=11&tid=G-LQFLJDQXD9&fst=1788178815848&fmt=8&en=scroll&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-LQFLJDQXD9&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&_p=1788178787700&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGQC&_platinum_request_status=ok&are=1&cid=252690351.1788178788&frm=0&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=4&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&dp=%2Fnu%2Finvestimentos%2Ffundos-de-investimento&sid=1788178788&sct=1&seg=1&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=scroll&_c=1&ep.is_adblock_enabled=false&ep.country=br&epn.percent_scrolled=50&_et=7&tfd=29203",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178815862&cv=11&tid=G-LQFLJDQXD9&fst=1788178815862&fmt=8&en=scroll&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://analytics.google.com/g/collect?v=2&tid=G-LQFLJDQXD9&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391&_p=1788178787700&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAGQC&_platinum_request_status=ok&are=1&cid=252690351.1788178788&frm=0&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=5&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&dp=%2Fnu%2Finvestimentos%2Ffundos-de-investimento&sid=1788178788&sct=1&seg=1&dl=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&dr=https%3A%2F%2Fnubank.com.br%2F&dt=Fundos%20de%20Investimento%20%7C%20Nubank&en=scroll&_c=1&ep.is_adblock_enabled=false&ep.country=br&epn.percent_scrolled=75&_et=6&tfd=29215",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google.com/measurement/conversion?random=1788178815873&cv=11&tid=G-LQFLJDQXD9&fst=1788178815873&fmt=8&en=scroll&gtm=45je68q1v896476121z871007391za20gzb71007391zd71007391xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118869188~118897920~118897930~120213116~120385422&u_w=1440&u_h=900&url=https%3A%2F%2Fnubank.com.br%2Fnu%2Finvestimentos%2Ffundos-de-investimento&ref=https%3A%2F%2Fnubank.com.br%2F&gacid=252690351.1788178788&frm=0&tiba=Fundos%20de%20Investimento%20%7C%20Nubank&npa=0&pscdl=noapi&auid=614688620.1788178788&uaa=x86&uab=64&uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=6&delc=br",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    }
+  ]
+}

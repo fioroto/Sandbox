@@ -1,0 +1,132 @@
+{
+  "url": "https://inter.co/page-data/pra-voce/investimentos/page-data.json",
+  "payload": {
+    "componentChunkName": "component---src-pages-pra-voce-investimentos-index-tsx",
+    "path": "/pra-voce/investimentos/",
+    "result": {
+      "pageContext": {
+        "slug": "/pra-voce/investimentos/",
+        "metaTitle": "Investimentos no Inter é simples e seguro a partir de R$ 1,00",
+        "metaDescription": "A melhor plataforma de investimentos em CDB, Tesouro Direto, Poupança, Ações no Brasil e no exterior. Invista gratuitamente pelo Super App do Inter.",
+        "isClarityScript": true,
+        "hrefLang": {
+          "location": "en-US",
+          "link": "https://us.inter.co/investments/"
+        },
+        "structuredData": {
+          "newStructureData": {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "image": "https://central-imagens.bancointer.com.br/images-without-small-versions/investimentos-app-herobanner-1/image.webp",
+            "url": "https://inter.co/pra-voce/investimentos/",
+            "sameAs": [
+              "https://www.instagram.com/interinvest/",
+              "https://www.youtube.com/@investeinter",
+              "https://x.com/investeinter"
+            ],
+            "logo": "https://static.bancointer.com.br/blog/images/0234e7aa235244759b77f4f5c444fdbd_inter-logo.jpg",
+            "name": "Investimentos no Inter é simples e seguro a partir de R$ 1,00",
+            "description": "A melhor plataforma de investimentos em CDB, Tesouro Direto, Poupança, Ações no Brasil e no exterior. Invista gratuitamente pelo Super App do Inter.",
+            "telephone": "3003-4070",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Av. Barbacena, 1219, Santo Agostinho",
+              "addressLocality": "Brasil",
+              "addressCountry": "BR",
+              "addressRegion": "Minas Gerais",
+              "postalCode": "30190-131"
+            }
+          },
+          "faq": [
+            {
+              "question": "Investir no Inter é seguro?",
+              "answer": "Sim!<a href='https://blog.inter.co/e-seguro-investir-no-inter/'> É seguro investir no Inter.</a> Somos autorizados tanto pelo Banco Central quanto da Comissão de Valores Mobiliários (CVM) para operar. Além disso, o Inter possui certificação da Anbima, a Associação Brasileira das Entidades dos Mercados Financeiro e de Capitais."
+            },
+            {
+              "question": "É seguro utilizar um aplicativo para investir?",
+              "answer": "<p>Com o Super App do Inter é seguro. Faça aportes com um clique com o <a href='https://blog.inter.co/melhor-app-investimento/'>melhor app de investimento gratuito</a> e diversifique sua carteira de forma simples e inteligente. Veja o que dá para fazer: </p><ul class='pl-4'><li>Organizar suas dívidas e pagamentos;</li><li>Definir metas financeiras e de investimento;</li><li>Fazer um planejamento de orçamento para curto, médio e longo prazo;</li><li>Acompanhar as mudanças e tendências do mercado financeiro;</li><li>Acompanhar a cotação do dólar;</li><li>Ler análises e relatórios financeiros;</li><li>Fazer investimentos tanto no Brasil quanto no exterior.</li></ul>"
+            },
+            {
+              "question": "Quais as modalidades de investimentos disponíveis no Inter?",
+              "answer": "Aqui no Inter você tem várias opções para começar a investir nas seguintes modalidades com segurança: <a href='https://blog.inter.co/poupanca-o-que-e/'>Poupança</a>, <a href='https://blog.inter.co/o-que-e-cdb/'>CDB</a>, <a href='https://blog.inter.co/lci-90-dias-vantagens/'>LCI<a/>, <a href='https://inter.co/pra-voce/investimentos/renda-fixa/lca/'>LCA</a>, <a href='https://blog.inter.co/o-que-e-cri-e-como-investir/'>CRI</a>, <a href='https://blog.inter.co/cra-o-que-e-como-investir/'>CRA</a>, <a href='https://blog.inter.co/o-que-sao-as-debentures/'>Debêntures</a>, <a href='https://blog.inter.co/previdencia-privada-vale-a-pena/'>Previdência Privada</a>, <a href='https://blog.inter.co/tesouro-direto-o-que-e/'>Tesouro Direto</a>, <a href='https://blog.inter.co/fundos-de-investimento/'>Fundos de Investimentos</a>, Ações, entre outros."
+            },
+            {
+              "question": "Qual o melhor tipo de investimento para iniciantes?",
+              "answer": "<p>Os investimentos em renda fixa, como o CDB ou o Tesouro Direto, costumam ser os mais acessíveis para quem está começando a investir, já que apresentam baixo risco.</p><p>Por outro lado, manter uma <a href='https://blog.inter.co/reserva-de-emergencia/'>reserva de emergência<a/> é uma boa opção para não deixar o dinheiro parado, uma vez que pode ser utilizada em caso de imprevistos e possui liquidez diária ou de até 30 dias. Isso significa que você poderá resgatar o dinheiro a qualquer momento.</p>"
+            },
+            {
+              "question": "Como investir na Bolsa de Valores?",
+              "answer": "<p>O acesso ao <a href='https://blog.inter.co/home-broker/'>Home Broker</a> está disponível para os clientes com adesão à corretora Inter DTVM e teste de perfil de investidor realizados.</p><p>O HB do Inter é gratuito para operações com ações: não cobramos taxa de custódia e nem taxa de corretagem para este tipo de ativo. Para BM&F, caso o cliente realize a adesão ao RLP, também não haverá cobrança de corretagem. As taxas da B3 são aplicáveis. </p>"
+            },
+            {
+              "question": "O que é Inter DTVM?",
+              "answer": "A <a href='https://inter.co/inter-dtvm/'>Inter DTVM</a> (Distribuidora de Títulos e Valores Mobiliários) é a corretora do Inter, disponível exclusivamente e de forma gratuita a todos os nossos correntistas. Pela Inter DTVM o cliente investidor tem acesso a fundos, Home Broker, Tesouro Direto, Renda Fixa de outros emissores e mais."
+            },
+            {
+              "question": "Como guardar dinheiro todo mês?",
+              "answer": "Há várias possibilidades para <a href='https://blog.inter.co/como-guardar-dinheiro/'>guardar dinheiro</a>, mas a escolha depende dos seus objetivos de investimento, perfil de investidor e situação financeira. Algumas opções para começar a investir em produtos como Tesouro Direto, CDB ou Poupança."
+            },
+            {
+              "question": "É possível investir com pouco dinheiro?",
+              "answer": "Sim! No Inter, é possível <a href='https://blog.inter.co/o-que-e-meu-porquinho/'>investir no Meu Porquinho a partir de R$1,00.</a> Você pode escolher entre três tipos de investimento: o CDB de liquidez diária, CDB Meu Porquinho Liquidez 90 dias e LCI Porquinho 1080 dias. Essa é uma excelente opção para quem deseja dar os primeiros passos no mundo dos investimentos e evitar deixar o dinheiro parado na conta corrente."
+            },
+            {
+              "question": "Qual é o melhor investimento hoje?",
+              "answer": "<p>A escolha do melhor investimento depende de vários fatores, como objetivos financeiros, perfil de investidor, prazo de investimento e tolerância ao risco, entre outros. Para aqueles que buscam segurança, <a href='https://blog.inter.co/como-investir-tesouro-direto/'>investir nos títulos do Tesouro Direto</a> pode ser uma alternativa.</p><p>Esse programa possibilita a negociação de títulos públicos e oferece diversas opções que se adequam a diferentes objetivos, sejam eles de médio ou longo prazo, sendo considerado o mais seguro do país. </p>"
+            },
+            {
+              "question": "Como funciona o cashback de fundos de investimentos?",
+              "answer": "<p>Além do rendimento da aplicação atualizado diariamente, os clientes One, Prime e WIN recebem crédito de cashback em conta corrente sempre que aplicarem em fundos que têm o selo cashback ao lado do nome do produto, na página do Inter e no Super App. Os créditos são feitos automaticamente em conta corrente, no dia 15 de cada mês.</p>"
+            },
+            {
+              "question": "Quais são os canais de atendimento disponibilizados aos investidores? ",
+              "answer": "<p>Você pode entrar em contato com a gente pelo telefone, no 3003-4070 (Capitais e Regiões Metropolitanas), 0800 940 0007 (demais localidades). Caso você seja deficiente de fala e audição, entre em contato com a gente através do 0800 979 7099. Caso prefira, você também pode entrar em contato com a gente pelo chat. </p><p>Se não tiver encontrado a solução que gostaria por meio dos canais de atendimento, você poderá entrar em contato com a nossa <a href='https://inter.co/ouvidoria/'>Ouvidoria</a>, pelo telefone 0800 940 7772. A Ouvidoria está à disposição para ajudá-lo no tratamento e solução de problemas não solucionados pelos canais habituais de atendimento. </p><p>Se ainda assim for necessário, disponibilizamos os links de contato com a B3 e CVM.</p><p>Em relação às reclamações sobre operações de bolsa com valores mobiliários e serviços de custódia, a B3 por meio da <a href='https://www.bsmsupervisao.com.br/ressarcimento-de-prejuizos/como-funciona'>BSM (Supervisão de Mercado)</a> disponibiliza o MRP (Mecanismo de Ressarcimento ao Prejuízo) com todas as informações necessárias para registro e acompanhamento da demanda. </p><p><a href='https://www.gov.br/cvm/pt-br/canais_atendimento/consultas-reclamacoes-denuncias'>Já a CVM (Comissão de Valores Mobiliários)</a> disponibiliza o Serviço de Atendimento ao Cidadão (SAC) aos investidores. Para registrar uma reclamação junto à CVM é necessário apresentar seguintes documentos:</p><ul style='list-style-type:none'><li>a) Protocolo de atendimento junto ao intermediário;</li><li>b) Mensagens eletrônicas trocadas com o intermediário ou com seus prepostos (e-mail, chat, mensagem eletrônica etc.)</li><li>c) Correspondências recebidas do intermediário ou de seus prepostos; </li><li>d) Publicidades disponibilizadas pelo intermediário ou por seus prepostos;</li><li>e) Propostas encaminhadas pelo intermediário ou por seus prepostos;</li><li>f) Fotos, vídeos, prints de tela, gravações telefônicas ou qualquer outro tipo de documento que fundamente a controvérsia apresentada pelo cliente. </li></ul>"
+            }
+          ],
+          "howTo": {
+            "name": "É simples, é pra você",
+            "description": "Com alguns passos você conhece nossa plataforma e já pode começar suas aplicações.",
+            "content": [
+              {
+                "position": 1,
+                "name": "Abra a sua conta",
+                "text": "Baixe o App e abra a sua conta gratuita"
+              },
+              {
+                "position": 2,
+                "name": "Descubra o seu perfil",
+                "text": "Faça o teste e saiba qual é o seu perfil de investidor"
+              },
+              {
+                "position": 3,
+                "name": "Comece a investir",
+                "text": "Conheça os produtos de investimentos e aplique de acordo com seu perfil"
+              }
+            ]
+          }
+        },
+        "pageSlug": "pra-voce/investimentos",
+        "ogImageWidth": "1200",
+        "ogImageHeight": "630",
+        "twitter:card": "summary_large_image",
+        "twitter:url": "https://inter.co/pra-voce/investimentos/",
+        "twitter:domain": "inter.co",
+        "twitter:title": "Investimentos no Inter é simples e seguro a partir de R$ 1,00",
+        "twitter:description": "A melhor plataforma de investimentos em CDB, Tesouro Direto, Poupança, Ações no Brasil e no exterior. Invista gratuitamente pelo Super App do Inter.",
+        "twitter:image": "https://static.bancointer.com.br/blog/images/1e887a290be544169d93c308673e6273_investimentos-inter.png",
+        "ogType": "website",
+        "ogTitle": "Investimentos no Inter é simples e seguro a partir de R$ 1,00",
+        "ogUrl": "https://inter.co/pra-voce/investimentos/",
+        "ogDescription": " A melhor plataforma de investimentos em CDB, Tesouro Direto, Poupança, Ações no Brasil e no exterior. Invista gratuitamente pelo Super App do Inter",
+        "ogSiteName": "Investimentos do Inter",
+        "ogImage": "https://static.bancointer.com.br/blog/images/1e887a290be544169d93c308673e6273_investimentos-inter.png",
+        "removeFaqStructureData": true,
+        "noIndexOption": false,
+        "noFollowOption": false,
+        "crazyEggId": true
+      }
+    },
+    "staticQueryHashes": [],
+    "slicesMap": {}
+  }
+}
