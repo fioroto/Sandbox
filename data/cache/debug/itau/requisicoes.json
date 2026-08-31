@@ -1,0 +1,1221 @@
+{
+  "url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+  "final_url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+  "status": 200,
+  "content_stats": {
+    "chars": 5222,
+    "cnpjs": 1,
+    "rows": 11,
+    "links": 163
+  },
+  "responses": [
+    {
+      "url": "https://www.itau.com.br/investimentos/fundos/rentabilidade",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "size": 17170,
+      "resource_type": "document",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/template-styles/common.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 983,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/template-styles/varejo.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 600,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scss/clientslibs/clientlibs/base.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 13141,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://sdk-analytics-web.cloud.itau.com.br/index.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 7626,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/otSDKStub.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 8776,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/other_countries/other_countries.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 832,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/consent/018f6305-fe79-76f2-ab8e-89ca7ca6fa80/OtAutoBlock.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://bucketfileshiio-prd.cloud.itau.com.br/itau-sdk-interaction-studio/assets/sdk-interaction-studio-web-universal.min.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 0,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/modules/header/header.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1587,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu/navigation_menu.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 2989,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu/loading-busca.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 427,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/logo/logo.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 142,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/59ca6000bfbf59d6/original/ITAU_LOGO_HEX_48X48.png",
+      "status": 200,
+      "content_type": "image/webp",
+      "size": 5262,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/open_account/open_account.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 345,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/fancy_links/fancy_links.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 232,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/vendors/vanilla/vanilla-masker.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 1303,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu/navigation_menu.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 4189,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu/modal_login.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 2454,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/common-link/common-link.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 453,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu_mobile/navigation_menu_mobile.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 1117,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/smart_banner_app/smart_banner_app.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 453,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/breadcrumb_footer/breadcrumb_footer.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 42,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/social_networks/social_networks.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 510,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/login/login.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 3226,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/common-link/common-link.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 517,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/fancy_links/fancy_links.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1057,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/zone.js/0.11.4/zone.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 13426,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/stripe_open_account/stripe_open_account.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 576,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/navigation_menu_mobile/navigation_menu_mobile.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1499,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.evgnet.com/beacon/itauunibanco2/itau_br_prod/scripts/evergage.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "size": 45965,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/smart_banner_app/smart_banner_app.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 572,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/617c0fa5f48ce445/original/ITAU_LOGO_LARANJA_114X114.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 1412,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/login/login.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1862,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/gestao-de-cookies/styles.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 118,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/breadcrumb_header/breadcrumb_header.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 585,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/modules/richtext/richtext.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1752,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/modules/image_with_text_versao2/image_with_text_versao2.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 2032,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/modules/footer/footer.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 461,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/breadcrumb_footer/breadcrumb_footer.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 522,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/footer_common_link/footer_common_link.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 689,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/169271a6a1b62c7f/webimage-estatuto_de_acessibilidade_icon_cmsless.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 374,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/social_networks/social_networks.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 377,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/apps/apps.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 432,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/other_countries/other_countries.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 1296,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/components/texto_juridico/texto_juridico.css",
+      "status": 200,
+      "content_type": "text/css; charset=UTF-8",
+      "size": 381,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/handtalk.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 144446,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/consent/018f6305-fe79-76f2-ab8e-89ca7ca6fa80/018f6305-fe79-76f2-ab8e-89ca7ca6fa80.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 4840,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/j.php?a=740921&u=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&vn=2.1&x=true",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 0,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/styles.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 30962,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/styles.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 30962,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/gestao-de-cookies/polyfills.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 12132,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/gestao-de-cookies/main.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 139612,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/polyfills.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 34161,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scripts/deepLink.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 524,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scripts/iTagger-new.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 7012,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scripts/structured-data-seo.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 722,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/polyfills.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 34161,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/vendors/jquery/jquery-3-6-0.slim.min.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 25004,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/sdk-analytics/web.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 16824,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scripts/urlParamFix.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 905,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/assets/fonts/ItauTextPro_Bd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18132,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scss/clientslibs/clientlibs/resources/fonts/itaufonts_master_24px_v44/itaufonts_master_24px_v44.woff",
+      "status": 200,
+      "content_type": "font/woff",
+      "size": 179616,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/assets/fonts/ItauTextPro_Rg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18012,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/assets/fonts/ItauDisplayPro_Bd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18016,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/collect/v.gif?cd=0&a=740921&d=itau.com.br&u=D34DAFD7A9FB302587F1CB66E09B18E9E&h=c027ae06f9eb0d46f19d89a23cc659e3&t=false",
+      "status": 200,
+      "content_type": "image/gif",
+      "size": 35,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/main.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 938841,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/main.js",
+      "status": 200,
+      "content_type": "text/javascript",
+      "size": 1806859,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/cdn/edrv/worker-4095507a1900bd1e6e933399a7870a0f.br.js",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 74827,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/cdn/edrv/va_gq-d5f41943046fcfba10cf3b4edf089107.br.js",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 101780,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/libs/scss/clientslibs/clientlibs/resources/fonts/ItauIcon/Itau_Icons.woff",
+      "status": 200,
+      "content_type": "font/woff",
+      "size": 101820,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 71,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/otBannerSdk.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 127099,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "blob:https://www.itau.com.br/5e74a33a-d00c-40f4-a4e1-98d86c3d6cec",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 312822,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/varejo/tokens.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 20528,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/fonts/itaudisplay.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 1556,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/fonts/itautext.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 1496,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/fonts/itauicon.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 331,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://mfegestaocookies.cloud.itau.com.br/assets/i18n/pt-br.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 1521,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-5NGCP8C",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 171175,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/ItauDisplayPro_Bd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18016,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/ItauTextPro_Bd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18132,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/ItauDisplayPro_Rg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 17920,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/ItauTextPro_Rg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18012,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/Ids_Itau_Icons.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 124512,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/assets/resources/fonts/ItauDisplay/itaudisplay_rg-webfont.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 20336,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/assets/resources/fonts/ItauText/ItauText_Rg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 17892,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-apprentabilidade.cloud.itau.com.br/assets/resources/fonts/itaufonts_master_24px_v44/itaufonts_master_24px_v44.woff",
+      "status": 200,
+      "content_type": "font/woff",
+      "size": 179616,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://ids.cloud.itau.com.br/cdn/tokens/v1.28.0/web/assets/fonts/ItauDisplayPro_XBd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18700,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/35bd04d2cee93f28/original/logo-anbima.png",
+      "status": 200,
+      "content_type": "image/avif",
+      "size": 5739,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauText/ItauText_Rg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 17892,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/itaufonts_master_24px_v44/itaufonts_master_24px_v44.woff",
+      "status": 200,
+      "content_type": "font/woff",
+      "size": 179616,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://itauunibanco2.us-4.evergage.com/api2/event/itau_br_prod?event=eyJpdGVtQWN0aW9uIjpudWxsLCJzb3VyY2UiOnsicGFnZVR5cGUiOiJkZWZhdWx0IiwiY29udGVudFpvbmVzIjpbImNvbnRlbnRfd2ViUEYiLCJnZW5lcmljQ29udGVudFpvbmVfMiIsImdlbmVyaWNDb250ZW50Wm9uZV8zIl0sInVybCI6Imh0dHBzOi8vd3d3Lml0YXUuY29tLmJyL2ludmVzdGltZW50b3MvZnVuZG9zL3JlbnRhYmlsaWRhZGUiLCJ1cmxSZWZlcnJlciI6Imh0dHBzOi8vd3d3Lml0YXUuY29tLmJyLyIsImNoYW5uZWwiOiJXZWIiLCJiZWFjb25WZXJzaW9uIjoxNiwiY29uZmlnVmVyc2lvbiI6IjQxIn0sImZsYWdzIjp7InBhZ2VWaWV3Ijp0cnVlfSwidXNlciI6eyJhdHRyaWJ1dGVzIjp7ImNsaWVudElEIjpudWxsfSwiYW5vbklkIjoiOGZiNzljOGE5ZmJhNzYwMCJ9LCJwZXJmb3JtYW5jZSI6e30sImRlYnVnIjp7ImV4cGxhbmF0aW9ucyI6dHJ1ZX0sImNhdGFsb2ciOnt9LCJjb25zZW50cyI6W10sImFjY291bnQiOnt9LCJfdG9vbHNFdmVudExpbmtJZCI6IjEyMjkxMzgzODM1NDI3MjgzIn0%3D",
+      "status": 200,
+      "content_type": "application/json;charset=UTF-8",
+      "size": 9488,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/cdn/edrv/nc-efae489e0d433966d3111d7cffdb5078.br.js",
+      "status": 200,
+      "content_type": "text/javascript; charset=UTF-8",
+      "size": 27247,
+      "resource_type": "xhr",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/remote-config/6d531acddcb2d344af538f42d9864616.json",
+      "status": 200,
+      "content_type": "application/json charset=UTF-8",
+      "size": 1170,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://dev.visualwebsiteoptimizer.com/dcdn/settings.js?a=740921&settings_type=4&ts=1788171366&dt=desktop&cc=BR",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 7239,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/typography.6d166eba.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 2529,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/TranslatorPanel.4b97b731.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 10802,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/SignTranslationRequestModal.33640ec9.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 5419,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/TranslatorPanel.333332ec.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 108027,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/readerModeActions.dd109b4b.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 20320,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/TranslatorPanel.dc01e938.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 84193,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://plugin.handtalk.me/web/latest/AddonsPanel.42c9b8bc.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 33008,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/consent/018f6305-fe79-76f2-ab8e-89ca7ca6fa80/019ab368-658e-7ec3-be40-af763d389ce6/pt.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 348830,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap",
+      "status": 200,
+      "content_type": "text/css; charset=utf-8",
+      "size": 0,
+      "resource_type": "stylesheet",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/assets/otCommonStyles.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://itauunibanco2.us-4.evergage.com/pr?.top=670&.tt=628&.ttdns=15&.btdns=8&.bv=16&_ak=itauunibanco2&_ds=itau_br_prod&.scv=41&channel=Web&_r=918836&.anonId=8fb79c8a9fba7600&_anon=true",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "ping",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/otSDKStub.js?did=018f6305-fe79-76f2-ab8e-89ca7ca6fa80&data-document-language=true",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 8776,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/assets/otCookieSettingsButton.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 4883,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/assets/otFlat.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 15298,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://cdn.cookielaw.org/logos/6b908171-e777-49b0-ae1d-9d82e59fd5f4/018f9654-92af-7d58-b7ab-6dff9491fd6f/86ed9210-885e-4932-ab55-e9141fcf9ec1/itau-logo-0.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 162495,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/consent/018f6305-fe79-76f2-ab8e-89ca7ca6fa80/018f6305-fe79-76f2-ab8e-89ca7ca6fa80.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 4840,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 71,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://cdn.cookielaw.org/consent/018f6305-fe79-76f2-ab8e-89ca7ca6fa80/019ab368-658e-7ec3-be40-af763d389ce6/pt.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 348830,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=6&frm=0&apvc=1&ae=g&auid=201264292.1788181795&dt=Tabela%20de%20Rentabilidade%20de%20fundos%20Ita%C3%BA&en=page_view&dl=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&dr=https%3A%2F%2Fwww.itau.com.br%2F&scrsrc=www.googletagmanager.com&rnd=370389683.1788181795&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He68q1v9112447680za200zd9112447680xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616986~115938466~115938468~118897920~118897930~120385422&tft=1788181794792&tfd=1175&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/assets/otCommonStyles.css",
+      "status": 200,
+      "content_type": "text/css",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://ad.doubleclick.net/ccm/s/collect?auid=201264292.1788181795&gtm=45He68q1v9112447680za200zd9112447680xea&fmt=8",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/iske?charonId=6eak4osk",
+      "status": 200,
+      "content_type": "application/json;charset=UTF-8",
+      "size": 984,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/iske?charonId=6eak4osk",
+      "status": 200,
+      "content_type": "application/json;charset=UTF-8",
+      "size": 984,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/iske?charonId=6eak4osk",
+      "status": 200,
+      "content_type": "application/json;charset=UTF-8",
+      "size": 984,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://cdn.cookielaw.org/scripttemplates/202511.1.0/assets/otCookieSettingsButton.json",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 4883,
+      "resource_type": "fetch",
+      "is_json": true
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVSwiPGQ.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 23040,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHjx4wXg.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 23580,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=G-XX21YFL930&cx=c&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 179040,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 1620,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 1620,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 1620,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-MMDJ68X&gtm=4e68q1",
+      "status": 200,
+      "content_type": "application/javascript; charset=UTF-8",
+      "size": 201442,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-XX21YFL930&gtm=45je68q1v9122737903z89112447680za20gzb9112447680zd9112447680&_p=1788181794783&gcs=G100&gcd=13q3q3q3l5l1&npa=0&dma_cps=-&dma=0&gdid=dYWJhMj&_eu=AAAAAGAC&_platinum_request_status=ok&are=1&cid=1974926365.1788181795&frm=0&pscdl=denied&rcb=0&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.175%7CChromium%3B151.0.7922.175&uam=&uamb=0&uap=Linux&uapv=&uaw=0&ul=pt-br&gaf=2&_s=1&tag_exp=115938466~115938469~118869188~118897920~118897930~120213116~120385422~120412527&dt=%2Finvestimentos%2Ffundos%2Frentabilidade&sid=1788181795&sct=1&seg=0&dl=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&dr=https%3A%2F%2Fwww.itau.com.br%2F&en=screen_view&_fv=1&_nsi=1&_ss=2&ep.custom_path=%2Finvestimentos%2Ffundos%2Frentabilidade&ep.gtm_id=GTM-5NGCP8C&ep.gtm_version=84&ep.implementation_team=canal-itau-nao-logado&ep.environment=nao-logado&ep.business=pf&ep.business_channel=institucional&ep.flow=pf%3Avarejo&ep.sdk_analytics_web_version=0.19.0&ep.previous_screen_name=entrance&ep.screen_name=%2Finvestimentos%2Ffundos%2Frentabilidade&tfd=1438",
+      "status": 204,
+      "content_type": "text/plain",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://pagead2.googlesyndication.com/measurement/conversion?random=1788181795041&cv=11&tid=G-XX21YFL930&fst=1788181795041&fmt=8&en=session_start&gtm=45je68q1v9122737903z89112447680za20gzb9112447680zd9112447680xec&gcs=G100&gcd=13q3q3q3l5l1&dma_cps=-&dma=0&tag_exp=115938466~115938469~118869188~118897920~118897930~120213116~120385422~120412527&u_w=1440&u_h=900&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&ref=https%3A%2F%2Fwww.itau.com.br%2F&gacid=1974926365.1788181795&frm=0&tiba=Tabela%20de%20Rentabilidade%20de%20fundos%20Ita%C3%BA&gdid=dYWJhMj&npa=0&pscdl=denied&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.175%7CChromium%3B151.0.7922.175&uamb=0&uam=&uap=Linux&uapv=&uaw=0&rcb=0",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://snap.licdn.com/li.lms-analytics/insight.min.js",
+      "status": 200,
+      "content_type": "application/javascript;charset=utf-8",
+      "size": 20593,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://snap.licdn.com/li.lms-analytics/insight.old.min.js",
+      "status": 200,
+      "content_type": "application/javascript;charset=utf-8",
+      "size": 18894,
+      "resource_type": "script",
+      "is_json": false
+    },
+    {
+      "url": "https://pagead2.googlesyndication.com/ccm/collect?rcb=14&frm=0&apvc=0&ae=g&en=page_view&dl=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&dr=https%3A%2F%2Fwww.itau.com.br%2F&scrsrc=www.googletagmanager.com&rnd=370389683.1788181795&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He68q1v9116575127za20gzb9112447680zd9112447680xea&gcs=G100&gcd=13q3q3q3l5l1&dma_cps=-&dma=0&tag_exp=115938466~115938468~118897920~118897930~120385422~120474864&tft=1788181795207&tfd=1591&fmt=8",
+      "status": 200,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/7dbc5f84a0688349/original/logo-16px.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 352,
+      "resource_type": "other",
+      "is_json": false
+    },
+    {
+      "url": "https://www.itau.com.br/media/dam/m/4b2c52dd8411f2d5/original/logo-32px.png",
+      "status": 200,
+      "content_type": "image/png",
+      "size": 588,
+      "resource_type": "other",
+      "is_json": false
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk/f0e753dba0ac1412",
+      "status": 500,
+      "content_type": "application/json; charset=utf-8",
+      "size": 992,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauText/ItauText_Bd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18140,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://px.ads.linkedin.com/collect?v=2&fmt=js&pid=4465124&time=1788181795263&li_adsId=f273c04c-d01b-4f16-9b8a-2c9205786550&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&tm=gtmv2",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauDisplay/itaudisplay_rg-webfont.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 20336,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauText/ItauText_Lt.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 17508,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk/de6f5d5270c9eff6",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 3424,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauDisplay/itaudisplay_lt-webfont.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 19856,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://px.ads.linkedin.com/wa/?medium=fetch&fmt=g",
+      "status": 204,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "fetch",
+      "is_json": false
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauText/ItauText_XBd.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 18808,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk/656e812f2fbc1a8f",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "size": 1522268,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://appdeinvestimentos-appbenchmark.cloud.itau.com.br/assets/resources/fonts/ItauDisplay/itaudisplay_xbd-webfont.woff2",
+      "status": 200,
+      "content_type": "font/woff2",
+      "size": 20244,
+      "resource_type": "font",
+      "is_json": false
+    },
+    {
+      "url": "https://px.ads.linkedin.com/attribution_trigger?pid=4465124&time=1788181795263&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&tm=gtmv2",
+      "status": 200,
+      "content_type": "application/json",
+      "size": 2,
+      "resource_type": "xhr",
+      "is_json": true
+    },
+    {
+      "url": "https://px.ads.linkedin.com/collect?v=2&fmt=js&pid=4465124&time=1788181795263&li_adsId=f273c04c-d01b-4f16-9b8a-2c9205786550&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&tm=gtmv2&cookiesTest=true",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://www.linkedin.com/px/li_sync?redirect=https%3A%2F%2Fpx.ads.linkedin.com%2Fcollect%3Fv%3D2%26fmt%3Djs%26pid%3D4465124%26time%3D1788181795263%26li_adsId%3Df273c04c-d01b-4f16-9b8a-2c9205786550%26url%3Dhttps%253A%252F%252Fwww.itau.com.br%252Finvestimentos%252Ffundos%252Frentabilidade%26tm%3Dgtmv2%26cookiesTest%3Dtrue%26liSync%3Dtrue",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://px.ads.linkedin.com/collect?v=2&fmt=js&pid=4465124&time=1788181795263&li_adsId=f273c04c-d01b-4f16-9b8a-2c9205786550&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&tm=gtmv2&cookiesTest=true&liSync=true",
+      "status": 302,
+      "content_type": "",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    },
+    {
+      "url": "https://px4.ads.linkedin.com/collect?v=2&fmt=js&pid=4465124&time=1788181795263&li_adsId=f273c04c-d01b-4f16-9b8a-2c9205786550&url=https%3A%2F%2Fwww.itau.com.br%2Finvestimentos%2Ffundos%2Frentabilidade&tm=gtmv2&cookiesTest=true&liSync=true&e_ipv6=AQLSvxvNAl6FAwAAAaBX9m1Q09g0u9m-AkbjyKmnPGbbdzd6w9ojzBrlxt6xCZXv3ihSmKvYldABRK5HdIworHB1WcKwZA34",
+      "status": 200,
+      "content_type": "application/javascript",
+      "size": 0,
+      "resource_type": "image",
+      "is_json": false
+    }
+  ]
+}
