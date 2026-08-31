@@ -114,7 +114,7 @@ nao compensa.
 |---|---|---|---|
 | XP | Open Finance (pagina bloqueada por CDN) | `/investimentos/fundos-de-investimento/lista/` -> 403 ate para Chromium | **624** |
 | BTG | Open Finance -> **API publica** -> navegador | API `funds/list/v2` da pagina `/produtos`: **693 fundos** na prateleira comercial | **9.950** |
-| Itau | Open Finance (pagina bloqueada por CDN) | `/investimentos/fundos/rentabilidade` -> 403 Akamai ate para Chromium | **1.751** |
+| Itau | Open Finance -> navegador **com janela** | `/investimentos/fundos/rentabilidade`: tabela paginada, **~450 fundos** | **1.751** |
 | Inter | scraping (sitemap, **574** fundos) -> Open Finance | paginas estaticas por fundo + `page-data.json` (Gatsby) | via trust store do sistema |
 | Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada | **478** |
 
@@ -133,15 +133,25 @@ dos ~9.950 do Open Finance, que listam tudo que a casa administra. O coletor cha
 a API direto (`api-json`); se um WAF barrar cliente HTTP simples, o caminho
 `playwright` pagina a mesma API por dentro do navegador, com os cookies dele.
 
-**XP e Itau - bloqueio de CDN no proprio documento.** As duas listas devolvem 403
-ate para o Chromium do Playwright (XP com pagina de bloqueio propria, que indica o
-e-mail `bloqueio-cdn@xpi.com.br` para pedir liberacao; Itau com Access Denied da
-Akamai). Nao ha o que raspar num 403 - e este monitor nao tenta burlar
-fingerprinting. As opcoes legitimas: o Open Finance (que ja entrega 624 e 1.751
-fundos com dados ricos), a liberacao junto a CDN, ou abrir a lista com o navegador
-de verdade do usuario (`SHELF_BROWSER_HEADED=1` + `SHELF_BROWSER_CHANNEL=chrome`) -
-que e uma pessoa abrindo uma pagina publica no proprio Chrome; a CDN decide o que
-faz com isso.
+**Itau - funciona com o Chrome real.** O Chromium headless leva 403 da Akamai no
+proprio documento, mas com `SHELF_BROWSER_HEADED=1` + `SHELF_BROWSER_CHANNEL=chrome`
+(o Chrome instalado do usuario, com janela) a lista abre - comprovado na segunda
+rodada de evidencia. A tabela e paginada em ~10 fundos por pagina (45 paginas na
+medicao); o coletor clica "proxima" ate o fim e mapeia as colunas **pelo cabecalho**
+(nome, risco, aplicacao inicial, taxa maxima, resgate), nunca por posicao - as
+colunas de retorno ficam de fora por desenho, para rentabilidade nao virar "taxa".
+A tabela nao traz CNPJ, entao o merge reconcilia cada fundo com o gemeo do Open
+Finance pelo slug exato do nome (FIC/FIRF e afins descartados); o que nao casar
+permanece como registro proprio do site. Ha ainda um XHR de ~1,5 MB do gateway
+`apicd.cloud.itau.com.br` que deve carregar o dataset inteiro - a captura agora
+guarda o corpo dele (era o caso que revelou o bug abaixo) e, se parsear, os campos
+entram por cima.
+
+**XP - bloqueio de CDN no proprio documento.** 403 ate para o Chromium, com pagina
+de bloqueio propria que indica o e-mail `bloqueio-cdn@xpi.com.br` para pedir
+liberacao. Nao ha o que raspar num 403 - e este monitor nao tenta burlar
+fingerprinting. As vias: o Open Finance (624 fundos), a liberacao junto a CDN, ou
+o modo com janela acima, que tambem vale para a XP.
 
 **Inter - duas correcoes.** (1) A "falha de TLS" do Open Finance nao era do
 servidor: o `diagnose` verificou o handshake OK usando o trust store do sistema na
@@ -321,6 +331,14 @@ Ele sonda cada fonte daquela casa e **grava a resposta bruta** em `data/cache/de
 
 Os arquivos em `data/cache/debug/` sao a evidencia que permite corrigir o coletor com o dado
 na mao, em vez de por tentativa. `diagnostico.json` consolida tudo num arquivo so.
+
+> **Bug que a segunda rodada de evidencia revelou.** O capturador lia o corpo das
+> respostas dentro do handler de evento; para uma resposta grande ainda chegando,
+> o `body()` falha - foi assim que o XHR de 1,5 MB do Itau se perdeu enquanto os
+> JSONs pequenos sobreviviam. Os corpos agora sao lidos depois que a pagina
+> assenta, e `requisicoes.json` registra por resposta se o corpo foi lido e se o
+> JSON parseou; corpos rotulados como JSON que nao parseiam ficam em
+> `payloads-invalidos/` (e como se reconhece BOM, JSONP ou payload cifrado).
 
 ### `--browser`: o que o navegador ve
 

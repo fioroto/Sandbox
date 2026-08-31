@@ -581,3 +581,128 @@ class TestTrustStore(unittest.TestCase):
         self.assertTrue(context.cert_store_stats().get("x509_ca"))
         self.assertTrue(context.check_hostname)
         self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+
+# Cabecalho e linhas copiados literalmente da tabela renderizada na maquina do
+# usuario (data/cache/debug/itau/pagina.html, 2026-08-31) - incluindo o espaco
+# duro (\xa0) do "R$ 1,00".
+ITAU_HEADER = [
+    "nome", "risco", "aplicação inicial",
+    "12 meses referente ao período de 01/08/2025 a 31/07/2026",
+    "no ano referente ao período de 01/01/2026 a 31/07/2026",
+    "no mês referente ao período de 01/08/2026 a 28/08/2026",
+    "taxa máxima do produto Referente a taxa máxima praticada",
+    "resgate", "+ detalhes",
+]
+ITAU_PAGE_1 = [
+    ITAU_HEADER,
+    ["Diferenciado Crédito Privado Renda Fixa", "baixo risco", "R$\xa01,00",
+     "14,46%", "9,04%", "1,01% (até 28/08)", "0,45%",
+     "crédito em conta em 1 dia útil", "mais info"],
+    ["Privilege DI", "baixo risco", "R$\xa01,00", "14,60%", "9,23%",
+     "1,04% (até 28/08)", "0,30%", "crédito em conta no mesmo dia", "mais info"],
+]
+ITAU_PAGE_2 = [
+    ITAU_HEADER,
+    ["Bahia AM Mutá Seleção Multimercado", "médio risco", "R$\xa0500,00",
+     "13,20%", "8,00%", "0,90% (até 28/08)", "1,90%",
+     "crédito em conta em 30 dias úteis", "mais info"],
+]
+
+
+class TestItauRentabilidade(unittest.TestCase):
+    """Parser da tabela de rentabilidade, contra as linhas reais."""
+
+    def test_maps_by_header_not_position(self):
+        from shelf_monitor.collectors.itau import offers_from_rentability_rows
+
+        offers = offers_from_rentability_rows([ITAU_PAGE_1, ITAU_PAGE_2])
+        self.assertEqual(len(offers), 3, [o.name for o in offers])
+
+        diferenciado = offers[0]
+        self.assertEqual(diferenciado.name, "Diferenciado Crédito Privado Renda Fixa")
+        self.assertEqual(diferenciado.min_initial, 1.0)
+        self.assertEqual(diferenciado.admin_fee_pct, 0.45)
+        self.assertEqual(diferenciado.redemption_payment_days, 1)
+        self.assertEqual(diferenciado.asset_class, AssetClass.RENDA_FIXA)
+        self.assertEqual(diferenciado.extra["risco"], "baixo risco")
+
+    def test_returns_do_not_leak_into_the_fee(self):
+        """As colunas de 14,46%/9,04% sao retorno - a taxa e so a da coluna taxa."""
+        from shelf_monitor.collectors.itau import offers_from_rentability_rows
+
+        offers = offers_from_rentability_rows([ITAU_PAGE_1])
+        self.assertEqual([o.admin_fee_pct for o in offers], [0.45, 0.30])
+
+    def test_same_day_redemption_is_zero(self):
+        from shelf_monitor.collectors.itau import offers_from_rentability_rows
+
+        privilege = offers_from_rentability_rows([ITAU_PAGE_1])[1]
+        self.assertEqual(privilege.name, "Privilege DI")
+        self.assertEqual(privilege.redemption_payment_days, 0)
+
+    def test_thirty_business_days(self):
+        from shelf_monitor.collectors.itau import parse_redemption_days
+
+        self.assertEqual(parse_redemption_days("crédito em conta em 30 dias úteis"), 30)
+        self.assertIsNone(parse_redemption_days("consulte o regulamento"))
+
+    def test_repeated_pages_do_not_duplicate(self):
+        """Se o clique nao trocar a pagina, a mesma tabela nao vira fundos 2x."""
+        from shelf_monitor.collectors.itau import offers_from_rentability_rows
+
+        offers = offers_from_rentability_rows([ITAU_PAGE_1, ITAU_PAGE_1])
+        self.assertEqual(len(offers), 2)
+
+    def test_synthetic_payload_reaches_the_mapper(self):
+        from shelf_monitor.collectors.itau import _map_rentability_payload
+
+        offers = _map_rentability_payload(
+            "https://www.itau.com.br/x (tabela)", {"itau_rentabilidade": [ITAU_PAGE_1]}
+        )
+        self.assertEqual(len(offers), 2)
+        # Payload que nao e a tabela segue para o extrator generico.
+        self.assertIsNone(_map_rentability_payload("https://x", {"data": []}))
+
+
+class TestMergeReconciliation(unittest.TestCase):
+    """Fundo do site sem CNPJ nao pode duplicar o gemeo do Open Finance."""
+
+    def test_site_fund_merges_into_open_finance_twin_by_slug(self):
+        from shelf_monitor.merge import merge_offers
+
+        groups = {
+            "open-finance": [offer(
+                "itau", "Privilege DI FIC FIRF", "11111111000111",
+                manager_name="Itau Asset",
+            )],
+            "playwright": [offer(
+                "itau", "Privilege DI", None, admin_fee_pct=0.30,
+            )],
+        }
+        merged = merge_offers(groups)
+        # Slugs diferentes ("privilege-di" so casa se o slug bater exato):
+        # aqui "Privilege DI FIC FIRF" tem slug identico porque FIC/FIRF sao
+        # tokens genericos descartados - e o caso real do Itau.
+        self.assertEqual(len(merged), 1, [(o.name, o.cnpj) for o in merged])
+        fund = merged[0]
+        self.assertEqual(fund.cnpj, "11111111000111")
+        self.assertEqual(fund.sources, ["open-finance", "playwright"])
+        self.assertEqual(fund.admin_fee_pct, 0.30)
+        self.assertIn("Privilege DI", fund.extra["name_variants"])
+
+    def test_distinct_slugs_stay_apart(self):
+        from shelf_monitor.merge import merge_offers
+
+        groups = {
+            "open-finance": [offer("itau", "Kinea Chronos FIC FIM", "11111111000111")],
+            "playwright": [offer("itau", "Bahia AM Mutá Seleção", None)],
+        }
+        merged = merge_offers(groups)
+        self.assertEqual(len(merged), 2)
+
+
+def offer(platform: str, name: str, cnpj: str | None = None, **kwargs):
+    from shelf_monitor.models import FundOffer
+
+    return FundOffer(platform=platform, name=name, cnpj=cnpj, **kwargs)

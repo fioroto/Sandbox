@@ -71,9 +71,43 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
                 continue
             _absorb(existing, offer, source)
 
+    _reconcile_unidentified(merged)
+
     for offer in merged.values():
         offer.sources.sort(key=source_rank)
     return list(merged.values())
+
+
+def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
+    """Casa fundos sem CNPJ com o gemeo identificado, pelo slug do nome.
+
+    A identidade e o CNPJ quando existe e o slug quando nao - entao o mesmo
+    fundo lido do site (sem CNPJ, caso da tabela do Itau) e do Open Finance
+    (com CNPJ) ganha duas chaves e apareceria duas vezes na prateleira. So o
+    slug exato casa aqui: fuzzy em merge arriscaria fundir fundos distintos, e
+    o que nao casar continua na prateleira como registro proprio.
+    """
+    from shelf_monitor.normalize import name_slug
+
+    by_slug: dict[str, str] = {}
+    for identity, offer in merged.items():
+        if not offer.cnpj:
+            continue
+        by_slug.setdefault(name_slug(offer.name), identity)
+        for variant in offer.extra.get("name_variants", []):
+            by_slug.setdefault(name_slug(variant), identity)
+
+    for identity in [i for i, o in merged.items() if not o.cnpj]:
+        offer = merged[identity]
+        target_identity = by_slug.get(name_slug(offer.name))
+        if not target_identity or target_identity == identity:
+            continue
+        # O registro com CNPJ absorve o sem-CNPJ, que sai da prateleira:
+        # o fundo final e um so, carregando as duas fontes.
+        target = merged[target_identity]
+        for source in offer.sources:
+            _absorb(target, offer, source)
+        del merged[identity]
 
 
 def _absorb(target: FundOffer, other: FundOffer, source: str) -> None:

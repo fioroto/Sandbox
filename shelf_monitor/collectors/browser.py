@@ -551,6 +551,11 @@ class CapturedResponse:
     size: int
     resource_type: str
     is_json: bool
+    # None = corpo nao foi tentado; False = tentou e falhou. Distinguir os dois
+    # e o que diz se um payload sumiu por cap, por corpo indisponivel ou por
+    # JSON invalido - tres causas com tres correcoes diferentes.
+    body_read: bool | None = None
+    json_ok: bool | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -560,6 +565,8 @@ class CapturedResponse:
             "size": self.size,
             "resource_type": self.resource_type,
             "is_json": self.is_json,
+            "body_read": self.body_read,
+            "json_ok": self.json_ok,
         }
 
 
@@ -573,6 +580,9 @@ class BrowserCapture:
     html: str
     responses: list[CapturedResponse] = field(default_factory=list)
     payloads: list[tuple[str, Any]] = field(default_factory=list)
+    # Respostas rotuladas como JSON cujo corpo nao parseou: url + primeiros
+    # bytes. E a evidencia para reconhecer BOM, JSONP ou payload cifrado.
+    invalid_payloads: list[tuple[str, bytes]] = field(default_factory=list)
     screenshot: bytes | None = None
     content_stats: dict = field(default_factory=dict)
 
@@ -632,39 +642,50 @@ def render_page(
 
     responses: list[CapturedResponse] = []
     payloads: list[tuple[str, Any]] = []
-    json_bytes = 0
+    invalid_payloads: list[tuple[str, bytes]] = []
+    # (resposta Playwright, registro) para ler o corpo DEPOIS, fora do handler.
+    # Dentro do handler o corpo de uma resposta grande ainda esta chegando e o
+    # body() falha - foi assim que o XHR de 1,5 MB do Itau se perdeu enquanto os
+    # JSONs pequenos sobreviviam.
+    pending_bodies: list[tuple[Any, CapturedResponse]] = []
 
     def on_response(response) -> None:
-        nonlocal json_bytes
         headers = response.headers or {}
         content_type = headers.get("content-type", "")
         is_json = "json" in content_type.lower()
 
-        body: bytes | None = None
-        if is_json and len(payloads) < _MAX_JSON_RESPONSES and json_bytes < _MAX_JSON_BYTES:
+        record = CapturedResponse(
+            url=response.url,
+            status=response.status,
+            content_type=content_type,
+            size=_declared_size(headers),
+            resource_type=getattr(response.request, "resource_type", ""),
+            is_json=is_json,
+        )
+        responses.append(record)
+        if is_json and len(pending_bodies) < _MAX_JSON_RESPONSES:
+            pending_bodies.append((response, record))
+
+    def drain_bodies() -> None:
+        """Le os corpos com a navegacao ja assentada, quando estao completos."""
+        total = 0
+        for response, record in pending_bodies:
+            if total >= _MAX_JSON_BYTES:
+                break
             try:
                 body = response.body()
-            except Exception:  # noqa: BLE001 - redirect/abort nao tem corpo
-                body = None
-
-        responses.append(
-            CapturedResponse(
-                url=response.url,
-                status=response.status,
-                content_type=content_type,
-                size=len(body) if body is not None else _declared_size(headers),
-                resource_type=getattr(response.request, "resource_type", ""),
-                is_json=is_json,
-            )
-        )
-
-        if body is None:
-            return
-        json_bytes += len(body)
-        try:
-            payloads.append((response.url, json.loads(body)))
-        except (ValueError, UnicodeDecodeError):
-            pass  # resposta rotulada como JSON mas ilegivel e so ruido
+            except Exception:  # noqa: BLE001 - resposta descartada pelo browser
+                record.body_read = False
+                continue
+            record.body_read = True
+            record.size = len(body)
+            total += len(body)
+            try:
+                payloads.append((response.url, json.loads(body.decode("utf-8-sig"))))
+                record.json_ok = True
+            except (ValueError, UnicodeDecodeError):
+                record.json_ok = False
+                invalid_payloads.append((response.url, bytes(body[:2048])))
 
     origin = "{0.scheme}://{0.netloc}/".format(urlsplit(url))
 
@@ -751,6 +772,8 @@ def render_page(
                         )
                     )
 
+            drain_bodies()
+
             html = page.content()
             final_url = page.url
             shot = page.screenshot(full_page=False) if screenshot else None
@@ -771,6 +794,7 @@ def render_page(
         html=html,
         responses=responses,
         payloads=payloads,
+        invalid_payloads=invalid_payloads,
         screenshot=shot,
         content_stats=stats,
     )
@@ -940,6 +964,14 @@ def dump_capture(directory: Path, platform_id: str, capture: BrowserCapture) -> 
             + "\n",
             encoding="utf-8",
         )
+
+    if capture.invalid_payloads:
+        invalid_dir = target / "payloads-invalidos"
+        invalid_dir.mkdir(exist_ok=True)
+        for index, (response_url, preview) in enumerate(capture.invalid_payloads):
+            (invalid_dir / f"{index:03d}.bin").write_bytes(
+                response_url.encode("utf-8", "replace") + b"\n" + preview
+            )
 
     if capture.screenshot:
         (target / "tela.png").write_bytes(capture.screenshot)

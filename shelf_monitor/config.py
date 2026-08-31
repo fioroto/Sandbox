@@ -82,8 +82,11 @@ PLATFORMS: dict[str, PlatformConfig] = {
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
-            "Lista de rentabilidade e a prateleira publica. Cliente HTTP simples "
-            "leva 403 - so navegador real passa."
+            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, ~450 "
+            "fundos em 2026-08-31). Akamai barra HTTP simples e Chromium "
+            "headless; abre com o Chrome real (SHELF_BROWSER_HEADED=1 + "
+            "SHELF_BROWSER_CHANNEL=chrome). A tabela nao traz CNPJ - o merge "
+            "reconcilia com o Open Finance pelo slug do nome."
         ),
     ),
     "nu": PlatformConfig(
