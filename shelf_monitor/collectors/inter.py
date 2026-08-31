@@ -21,10 +21,10 @@ from shelf_monitor.normalize import (
     parse_number,
 )
 
-_SITEMAP_URLS = [
-    "https://inter.co/sitemap.xml",
-    "https://inter.co/sitemap-0.xml",
-]
+# So o sitemap.xml existe: o diagnostico na maquina do usuario mostrou 574 URLs
+# de fundos nele, e /sitemap-0.xml devolvendo 404. Manter o segundo so poluia o
+# log com uma falha esperada a cada coleta.
+_SITEMAP_URLS = ["https://inter.co/sitemap.xml"]
 _SHELF_PREFIX = "/pra-voce/investimentos/fundos-de-investimento/"
 _HUB_URL = f"https://inter.co{_SHELF_PREFIX}"
 _CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")

@@ -400,8 +400,13 @@ def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
         "[bold]Diagnosticando as fontes de prateleira...[/]\n"
         "  [dim]cada resposta e gravada em data/cache/debug/ para inspecao[/]"
     )
+    if args.browser:
+        console.print(
+            "  [dim]modo navegador: abre cada lista num Chromium real e grava "
+            "HTML renderizado, requisicoes e screenshot (leva ~1 min por site)[/]"
+        )
 
-    probes = diagnose.run(config, platform_ids)
+    probes = diagnose.run(config, platform_ids, browser=args.browser)
 
     table = Table(title="Sondagem das fontes", title_style="bold")
     table.add_column("Fonte")
@@ -467,11 +472,14 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     try:
         import playwright  # noqa: F401
 
-        console.print("[green]playwright disponivel[/] (necessario para XP e BTG)")
+        console.print(
+            "[green]playwright disponivel[/] (necessario para XP, BTG e Itau - "
+            "as tres listas so existem depois do JavaScript)"
+        )
     except ImportError:
         console.print(
-            "[yellow]playwright ausente[/] - XP e BTG so coletam via Open Finance. "
-            "Instale com: pip install playwright"
+            "[yellow]playwright ausente[/] - XP, BTG e Itau so coletam via Open "
+            "Finance. Instale com: pip install playwright"
         )
 
 
@@ -610,6 +618,14 @@ def main() -> None:
         parents=[common],
     )
     add_platform_arg(diagnose_parser)
+    diagnose_parser.add_argument(
+        "--browser",
+        action="store_true",
+        help=(
+            "Abrir cada lista num Chromium real e gravar HTML renderizado, "
+            "requisicoes XHR e screenshot (lento, mas e o que ve a lista de fato)"
+        ),
+    )
     diagnose_parser.set_defaults(func=cmd_diagnose)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])

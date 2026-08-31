@@ -59,17 +59,23 @@ PLATFORMS: dict[str, PlatformConfig] = {
         platform_id="btg",
         label="BTG Pactual",
         strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
-        shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento",
+        shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento/produtos",
         open_finance_brands=["BTG PACTUAL"],
-        notes="Prateleira grande (~1.500 fundos, 350+ gestoras).",
+        notes=(
+            "A pagina /produtos e a listagem; a raiz e institucional e nao lista nada. "
+            "Open Finance publica ~9.950 fundos desta casa."
+        ),
     ),
     "itau": PlatformConfig(
         platform_id="itau",
         label="Itau (Ion)",
-        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.HTML_SCRAPE],
-        shelf_url="https://www.itau.com.br/personnalite/investimentos/fundos/catalogo",
+        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
+        shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
-        notes="Catalogo Personnalite e a visao publica mais completa.",
+        notes=(
+            "Lista de rentabilidade e a prateleira publica. Cliente HTTP simples "
+            "leva 403 - so navegador real passa."
+        ),
     ),
     "nu": PlatformConfig(
         platform_id="nu",
@@ -186,6 +192,15 @@ class Config:
         # que o pacote playwright do pip espera; apontar o binario evita o
         # "playwright install" (que nem sempre e possivel).
         self.chromium_path = os.getenv("SHELF_CHROMIUM_PATH") or None
+        # Com isso ligado, toda renderizacao grava HTML, XHRs e payloads em
+        # data/cache/debug/ - e o que permite escrever o parser com a evidencia
+        # na mao quando uma listagem muda de layout.
+        self.browser_debug = os.getenv("SHELF_BROWSER_DEBUG", "").strip().lower() in (
+            "1",
+            "true",
+            "sim",
+            "yes",
+        )
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "")
         self.smtp_port = int(smtp_port or os.getenv("SMTP_PORT", "587"))
         self.smtp_user = smtp_user or os.getenv("SMTP_USER", "")
@@ -222,6 +237,11 @@ class Config:
     @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
+
+    @property
+    def debug_dir(self) -> Path:
+        """Evidencia bruta das sondagens e das renderizacoes - gitignored."""
+        return self.cache_dir / "debug"
 
     @property
     def reports_dir(self) -> Path:

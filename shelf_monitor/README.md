@@ -110,19 +110,51 @@ Para uma coleta mais rapida, `--first-source-only` volta ao comportamento de par
 primeira fonte util - util quando o Playwright, que leva dezenas de segundos por site,
 nao compensa.
 
-| Casa | Estrategia | Fonte |
-|---|---|---|
-| XP | Open Finance -> Playwright | lista de fundos (SPA) |
-| BTG | Open Finance -> Playwright | catalogo de fundos (SPA) |
-| Itau | Open Finance -> scraping | catalogo Personnalite |
-| Inter | scraping -> Open Finance | paginas estaticas por fundo, via sitemap.xml |
-| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada |
+| Casa | Estrategia | Lista publica | Fundos no Open Finance |
+|---|---|---|---|
+| XP | Open Finance -> navegador | `/investimentos/fundos-de-investimento/lista/` | ~624 |
+| BTG | Open Finance -> navegador | `/fundos-de-investimento/produtos` | ~9.950 |
+| Itau | Open Finance -> navegador | `/investimentos/fundos/rentabilidade` | ~1.751 |
+| Inter | scraping -> Open Finance | paginas estaticas por fundo, via sitemap.xml (574 URLs) | falha de TLS (abaixo) |
+| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada | ~478 |
+
+As contagens sao as medidas pelo `diagnose` numa maquina com acesso liberado
+(2026-08-31), nao estimativas.
+
+**As tres listas so existem depois do JavaScript, e duas delas devolvem 403 a
+cliente HTTP simples.** Por isso XP, BTG e Itau usam navegador, nao `requests`:
+insistir com HTTP simples ali e gastar tempo num erro previsivel. A captura pelo
+navegador le a pagina por tres vias ao mesmo tempo - o trafego JSON que alimenta a
+listagem, o estado embutido (`__NEXT_DATA__` e afins) e o DOM renderizado (linhas de
+tabela, cartoes repetidos, CNPJ no texto). O DOM entra sempre, nao so como plano B:
+um fundo em destaque na tela e ausente do XHR e justamente o que separa a prateleira
+comercial da lista bruta da API.
+
+> **Correcao de rota (2026-08-31).** Duas URLs estavam erradas: a do BTG apontava
+> para a raiz institucional (que nao lista nada) em vez de `/produtos`, e a do Itau
+> para a area Personnalite, que exige contexto de cliente e responde 403. O
+> diagnostico na maquina do usuario mostrou "SPA vazia" e "403" - o que parecia
+> anti-bot era, em boa parte, endereco errado.
 
 **Open Finance Brasil** e a estrategia preferida onde disponivel: a API de Dados
 Abertos de Investimentos (`/open-banking/opendata-investments/v1/funds`) e publica,
 sem autenticacao, e entrega CNPJ do fundo, gestor, categoria ANBIMA, taxas, minimo e
 prazos de resgate em formato padronizado - sem depender do layout do site. A
 completude varia por instituicao, entao o scraping continua como reconciliacao.
+
+> **Paginacao.** O `/funds` e paginado e nem toda instituicao respeita o `page-size`
+> pedido - ha quem devolva 10 quando se pede 500, o que multiplica o numero de
+> paginas por 50. O coletor registra o `page-size` efetivo e o `totalRecords`, e se
+> a trava de seguranca for atingida ele **avisa e marca o snapshot como `partial`**
+> em vez de truncar em silencio. Meia prateleira saindo como `ok` seria pior que
+> nenhuma: viraria a baseline do dia seguinte e o diff leria a diferenca como churn.
+
+> **Inter: falha de TLS.** `api.openbanking.bancointer.com.br` nao passa na
+> verificacao de certificado. O `diagnose` classifica a causa (cadeia incompleta no
+> servidor, host errado, certificado vencido, proxy interceptador) em vez de so dizer
+> "falha de TLS". O que ele **nao** faz e oferecer um `verify=False`: desligar a
+> verificacao faria a coleta passar escondendo qual dos casos e, e o Inter tem o
+> sitemap como via alternativa que funciona.
 
 **CVM**: `registro_fundo_classe.zip` (pos-CVM 175) como fonte primaria, com
 `cad_fi.csv` como fallback. O download bruto nao e versionado; so o extrato filtrado
@@ -245,6 +277,7 @@ Quando uma casa vem vazia, `diagnose` responde por que:
 
 ```bash
 python -m shelf_monitor diagnose --platform inter
+python -m shelf_monitor diagnose --browser          # abre as listas num Chromium real
 ```
 
 Ele sonda cada fonte daquela casa e **grava a resposta bruta** em `data/cache/debug/`:
@@ -259,6 +292,24 @@ Ele sonda cada fonte daquela casa e **grava a resposta bruta** em `data/cache/de
 
 Os arquivos em `data/cache/debug/` sao a evidencia que permite corrigir o coletor com o dado
 na mao, em vez de por tentativa. `diagnostico.json` consolida tudo num arquivo so.
+
+### `--browser`: o que o navegador ve
+
+O modo padrao usa `requests`, entao mede o que ja se sabe que falha nas tres listas
+que exigem JavaScript. Com `--browser`, cada lista e aberta num Chromium real e o
+diagnostico grava, em `data/cache/debug/<casa>/`:
+
+| Arquivo | Para que serve |
+|---|---|
+| `pagina.html` | o HTML **depois** do JavaScript - e nele que se ve se a lista existe |
+| `requisicoes.json` | toda requisicao da pagina (URL, status, tamanho, content-type) - identifica o XHR da listagem |
+| `payloads/NNN.json` | o corpo de **toda** resposta JSON, nao so a que o parser reconheceu |
+| `tela.png` | screenshot, para o caso de a pagina mostrar bloqueio ou consentimento |
+
+A sondagem tambem informa quantos fundos sairiam por cada via ("12 pelo JSON, 40 pelo
+DOM"), que e o que diz onde mexer. E lenta - cerca de um minuto por site.
+
+Para gravar essa mesma evidencia durante uma coleta normal, `SHELF_BROWSER_DEBUG=1`.
 
 ## Como o monitor evita falso alarme
 

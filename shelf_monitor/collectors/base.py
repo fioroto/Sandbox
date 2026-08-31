@@ -35,6 +35,10 @@ class BaseCollector(ABC):
         self.strategies_used: list[str] = []
         self.source_counts: dict[str, int] = {}
         self.partial_reason: str | None = None
+        # Avisos de coleta incompleta (paginacao truncada, por exemplo). Um
+        # deles ja basta para o snapshot sair PARTIAL: uma prateleira cortada
+        # pela metade nao pode virar a baseline do diff de amanha.
+        self.warnings: list[str] = []
 
     @property
     def platform_id(self) -> str:
@@ -56,18 +60,19 @@ class BaseCollector(ABC):
         if not funds:
             return self._unavailable(started, "coleta retornou zero fundos")
 
+        notes = [n for n in (self.partial_reason, *self.warnings) if n]
         return ShelfSnapshot(
             platform=self.platform_id,
             collected_at=started,
             strategy=self.strategy_used,
-            status=SnapshotStatus.OK,
+            status=SnapshotStatus.PARTIAL if self.warnings else SnapshotStatus.OK,
             funds=funds,
             source_urls=list(self.source_urls),
             strategies=list(self.strategies_used),
             source_counts=dict(self.source_counts),
             # Uma fonte que caiu nao invalida a coleta, mas explica um numero
             # menor do que o esperado - fica registrada como observacao.
-            error=self.partial_reason,
+            error=" | ".join(notes) or None,
         )
 
     def _unavailable(self, started: datetime, error: str) -> ShelfSnapshot:
