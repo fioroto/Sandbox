@@ -240,5 +240,105 @@ class TestWatchlistManagers(unittest.TestCase):
         self.assertIsNone(summarize_watchlist_managers(config))
 
 
+class TestFlowsEnrichment(unittest.TestCase):
+    """A captacao chegando as ofertas da prateleira, via enrich."""
+
+    CAPTACAO = "\n".join(
+        [
+            "cnpj_classe;mes;captacao;resgates;captacao_liquida;pl_fim_mes;"
+            "cotistas_fim_mes;data_ultimo_informe;dias_informados;mes_parcial",
+            "63.446.494/0001-52;2026-07;1000000.00;250000.00;750000.00;"
+            "11584330.36;1200;2026-07-31;22;N",
+            "63.446.494/0001-52;2026-08;100000.00;0.00;100000.00;"
+            "11684330.36;1210;2026-08-03;2;S",
+            "77.777.777/0001-77;2026-07;500000.00;0.00;500000.00;"
+            "5000000.00;100;2026-07-31;22;N",
+            "88.888.888/0001-88;2026-07;0.00;200000.00;-200000.00;"
+            "7000000.00;50;2026-07-30;21;N",
+        ]
+    )
+
+    def setUp(self):
+        import shutil
+
+        self.config, self._tmp = temp_config()
+        self.addCleanup(self._tmp.cleanup)
+        enrich_fixtures = Path(__file__).parent / "fixtures" / "enrich"
+        for name in ("mercado.csv", "subclasses.csv"):
+            shutil.copy(enrich_fixtures / name, self.config.market_dir / name)
+        (self.config.market_dir / "captacao.csv").write_text(
+            self.CAPTACAO + "\n", encoding="utf-8-sig"
+        )
+
+    def _snapshot(self, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform="btg", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def test_class_match_stamps_the_windows(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="A1 D30", cnpj="63446494000152")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertAlmostEqual(fund.extra["captacao_liquida_1m"], 750_000.0)
+        self.assertAlmostEqual(fund.extra["captacao_liquida_12m"], 750_000.0)
+        self.assertEqual(fund.extra["captacao_janela_meses"], 1)
+        self.assertEqual(fund.extra["captacao_data_base"], "2026-08-03")
+        self.assertEqual(stats.flows_matched, 1)
+        self.assertEqual(stats.by_platform["btg"]["flows"], 1)
+
+    def test_informe_net_worth_is_fresher_than_the_registry_one(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="A1 D30", cnpj="63446494000152")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        # pl_cvm (cadastro) e pl_informe (informe) convivem: o segundo e o
+        # mais fresco, o primeiro fica como referencia do registro.
+        self.assertAlmostEqual(fund.extra["pl_informe"], 11_684_330.36)
+        self.assertAlmostEqual(fund.extra["pl_cvm"], 11_584_330.36)
+        self.assertEqual(fund.extra["cotistas_informe"], 1210)
+
+    def test_envelope_offer_sums_its_classes(self):
+        """Oferta que so publicou o CNPJ do fundo: captacao = soma das classes."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="Fundo Multi", cnpj="66666666000166")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertAlmostEqual(fund.extra["captacao_liquida_12m"], 300_000.0)
+        self.assertAlmostEqual(fund.extra["pl_informe"], 12_000_000.0)
+        # O minimo das datas: a serie combinada so esta completa ate onde a
+        # classe mais atrasada informou.
+        self.assertEqual(fund.extra["captacao_data_base"], "2026-07-30")
+        self.assertEqual(stats.flows_matched, 1)
+
+    def test_without_captacao_base_nothing_is_stamped(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        (self.config.market_dir / "captacao.csv").unlink()
+        fund = FundOffer(platform="btg", name="A1 D30", cnpj="63446494000152")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertNotIn("captacao_liquida_12m", fund.extra)
+        self.assertEqual(stats.flows_matched, 0)
+        self.assertEqual(stats.matched, 1)  # o join do cadastro segue normal
+
+
 if __name__ == "__main__":
     unittest.main()

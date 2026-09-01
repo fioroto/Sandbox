@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from shelf_monitor.config import Config
+from shelf_monitor.market.flows import FlowSummary, load_summaries
 from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import (
     classify_asset_class,
@@ -43,6 +44,16 @@ KEY_PL = "pl_cvm"
 KEY_PUBLICO = "publico_alvo_cvm"
 KEY_ORIGEM_BASE = "base_cvm"
 KEY_EXCLUSIVO = "exclusivo_cvm"
+# Captacao liquida do informe diario, em janelas de meses FECHADOS. A janela
+# efetivamente coberta esta em KEY_CAPT_JANELA: uma serie recem-importada com
+# 4 meses nao pode se passar por 12m.
+KEY_CAPT_1M = "captacao_liquida_1m"
+KEY_CAPT_3M = "captacao_liquida_3m"
+KEY_CAPT_12M = "captacao_liquida_12m"
+KEY_CAPT_JANELA = "captacao_janela_meses"
+KEY_CAPT_DATA = "captacao_data_base"  # ISO do ultimo informe visto
+KEY_PL_INFORME = "pl_informe"  # PL do informe - mais fresco que o do cadastro
+KEY_COTISTAS = "cotistas_informe"
 
 
 @dataclass
@@ -73,6 +84,7 @@ class EnrichmentStats:
     anbima_filled: int = 0
     managers_from_cvm: int = 0
     managers_inferred: int = 0
+    flows_matched: int = 0
     by_platform: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -85,6 +97,7 @@ class EnrichmentStats:
             "anbima_filled": self.anbima_filled,
             "managers_from_cvm": self.managers_from_cvm,
             "managers_inferred": self.managers_inferred,
+            "flows_matched": self.flows_matched,
             "by_platform": self.by_platform,
         }
 
@@ -120,11 +133,15 @@ class MarketLookup:
         fund_records: dict[str, MarketRecord],
         cvm_codes: dict[str, tuple[MarketRecord, str]],
         source: Path,
+        fund_classes: dict[str, list[str]] | None = None,
     ):
         self._records = records
         self._fund_records = fund_records
         self._cvm_codes = cvm_codes
         self.source = source
+        # CNPJ do fundo (envelope) -> CNPJs das classes. E o que permite somar
+        # a captacao das classes quando a oferta so publicou o envelope.
+        self.fund_classes = fund_classes or {}
 
     def __len__(self) -> int:
         return len(self._records)
@@ -176,6 +193,7 @@ class MarketLookup:
 
         records: dict[str, MarketRecord] = {}
         by_fund: dict[str, list[dict]] = {}
+        fund_classes: dict[str, list[str]] = {}
         # Materia-prima do indice por codigo, montado depois que os registros
         # de envelope existirem.
         by_classe_id: dict[str, MarketRecord] = {}
@@ -203,6 +221,7 @@ class MarketLookup:
                 fund_cnpj = normalize_cnpj(row.get("cnpj_fundo"))
                 if fund_cnpj:
                     by_fund.setdefault(fund_cnpj, []).append(row)
+                    fund_classes.setdefault(fund_cnpj, []).append(cnpj)
 
                 # `codigo_cvm` e da classe nas linhas RCVM175 e do proprio
                 # fundo nas legadas, que nao tem classe.
@@ -234,7 +253,7 @@ class MarketLookup:
             if record is not None:
                 cvm_codes.setdefault(code, (record, "fundo"))
 
-        return cls(records, fund_records, cvm_codes, path)
+        return cls(records, fund_records, cvm_codes, path, fund_classes)
 
 
 def _subclass_codes(
@@ -338,6 +357,81 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
             offer.asset_class = official
 
 
+def _combined_flow_summary(
+    cnpjs: list[str], summaries: dict[str, FlowSummary]
+) -> FlowSummary | None:
+    """Soma os resumos de captacao das classes de um fundo (envelope).
+
+    Somar janelas de classes irmas e legitimo: sao carteiras disjuntas do
+    mesmo produto. Campos ausentes em todas as classes ficam ausentes; o
+    as_of e o MINIMO das datas - a serie combinada so esta completa ate onde
+    a classe mais atrasada informou.
+    """
+    parts = [summaries[cnpj] for cnpj in cnpjs if cnpj in summaries]
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+
+    combined = FlowSummary(cnpj=parts[0].cnpj)
+    for name in ("net_1m", "net_3m", "net_12m", "current_partial", "net_worth"):
+        values = [
+            getattr(part, name) for part in parts if getattr(part, name) is not None
+        ]
+        setattr(combined, name, sum(values) if values else None)
+    shareholders = [p.shareholders for p in parts if p.shareholders is not None]
+    combined.shareholders = sum(shareholders) if shareholders else None
+    combined.months_12m = max(part.months_12m for part in parts)
+    dates = [part.as_of for part in parts if part.as_of is not None]
+    combined.as_of = min(dates) if dates else None
+    return combined
+
+
+def _flow_summary_for(
+    offer: FundOffer,
+    record: MarketRecord,
+    lookup: MarketLookup,
+    summaries: dict[str, FlowSummary],
+) -> FlowSummary | None:
+    """Resumo de captacao de uma oferta ja casada com a base oficial.
+
+    O informe reporta CNPJ de CLASSE, entao o caminho direto e o CNPJ do
+    registro casado (que ja resolveu codigo CVM para a classe certa). Quando
+    a oferta so publicou o envelope, a captacao do fundo e a soma das
+    classes dele.
+    """
+    for cnpj in (offer.cnpj, record.cnpj):
+        summary = summaries.get(cnpj or "")
+        if summary is not None:
+            return summary
+    for cnpj in (offer.cnpj, record.cnpj):
+        classes = lookup.fund_classes.get(cnpj or "")
+        if classes:
+            combined = _combined_flow_summary(classes, summaries)
+            if combined is not None:
+                return combined
+    return None
+
+
+def _stamp_flows(offer: FundOffer, summary: FlowSummary) -> bool:
+    """Carimba a captacao no extra. False quando o resumo nao tinha nada."""
+    stamped = False
+    if summary.months_12m:
+        offer.extra[KEY_CAPT_1M] = summary.net_1m
+        offer.extra[KEY_CAPT_3M] = summary.net_3m
+        offer.extra[KEY_CAPT_12M] = summary.net_12m
+        offer.extra[KEY_CAPT_JANELA] = summary.months_12m
+        stamped = True
+    if summary.net_worth is not None:
+        offer.extra[KEY_PL_INFORME] = summary.net_worth
+        stamped = True
+    if summary.shareholders is not None:
+        offer.extra[KEY_COTISTAS] = summary.shareholders
+    if summary.as_of is not None:
+        offer.extra[KEY_CAPT_DATA] = summary.as_of.isoformat()
+    return stamped
+
+
 # Tokens juridicos/genericos que nao carregam a marca de uma gestora.
 _LEGAL_TOKENS = {
     "LTDA", "SA", "S", "A", "DTVM", "CTVM", "CCTVM", "ASSET", "MANAGEMENT",
@@ -414,10 +508,14 @@ def enrich_snapshots(
     if lookup is None:
         return None
 
+    # A base de captacao e opcional: sem ela o join do cadastro segue normal
+    # e as chaves de captacao simplesmente nao aparecem no extra.
+    flow_summaries = load_summaries(config) or {}
+
     stats = EnrichmentStats()
     for snapshot in snapshots:
         per_platform = stats.by_platform.setdefault(
-            snapshot.platform, {"total": 0, "matched": 0}
+            snapshot.platform, {"total": 0, "matched": 0, "flows": 0}
         )
         for offer in snapshot.funds:
             stats.total += 1
@@ -441,6 +539,12 @@ def enrich_snapshots(
                 stats.managers_from_cvm += 1
             if not had_anbima and offer.extra.get(KEY_ANBIMA):
                 stats.anbima_filled += 1
+
+            if flow_summaries:
+                summary = _flow_summary_for(offer, record, lookup, flow_summaries)
+                if summary is not None and _stamp_flows(offer, summary):
+                    stats.flows_matched += 1
+                    per_platform["flows"] += 1
 
     # Segunda passada: fundos que sobraram sem gestora (tabela do Itau sem
     # CNPJ, por exemplo) tentam a marca no prefixo do nome. Depois do join,
