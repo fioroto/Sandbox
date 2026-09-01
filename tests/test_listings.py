@@ -980,3 +980,173 @@ class TestCategoryFallback(unittest.TestCase):
 
         nothing = FundOffer(platform="x", name="D")
         self.assertEqual(anbima_category(nothing), "Sem classificacao")
+
+
+class TestRetailProfile(unittest.TestCase):
+    """Exclusivos/restritos ficam fora da analise principal, com motivo."""
+
+    def _fund(self, name="Fundo Comum FIC FIM", **extra):
+        from shelf_monitor.models import FundOffer
+        return FundOffer(platform="btg", name=name, cnpj="11111111000111", extra=extra)
+
+    def test_reasons_in_order_of_evidence(self):
+        from shelf_monitor.profile import restriction_reason
+
+        self.assertIn("registro CVM", restriction_reason(self._fund(exclusivo_cvm="S")))
+        self.assertIn("profissional", restriction_reason(
+            self._fund(publico_alvo_cvm="Investidor Profissional")))
+        self.assertIn("propria casa", restriction_reason(self._fund(restrito_casa=True)))
+        self.assertIn("nome", restriction_reason(
+            self._fund(name="Familia Silva Exclusivo FIC FIM")))
+
+    def test_retail_funds_pass_untouched(self):
+        from shelf_monitor.profile import restriction_reason
+
+        self.assertIsNone(restriction_reason(self._fund()))
+        # Qualificado NAO e motivo de corte - varejo de alta renda compra.
+        self.assertIsNone(restriction_reason(
+            self._fund(publico_alvo_cvm="Investidor Qualificado")))
+        # "Reserva" e "Selection" sao nomes de produto de varejo, nao restricao.
+        self.assertIsNone(restriction_reason(self._fund(name="Nu Reserva Imediata FIC")))
+        self.assertIsNone(restriction_reason(self._fund(name="XP Selection FIC FIM")))
+
+    def test_main_analyses_exclude_and_auxiliary_reports(self):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy, FundOffer, RunReport, ShelfSnapshot, SnapshotStatus,
+        )
+        from shelf_monitor.report.aggregate import (
+            build_listing_block, build_restricted_block, summarize_platform,
+        )
+
+        retail = FundOffer(platform="btg", name="BTG Varejo FIC FIM", cnpj="11111111000111")
+        retail.sources = ["api-json"]
+        restricted = FundOffer(
+            platform="btg", name="BTG Cliente Unico FIC FIM", cnpj="22222222000122",
+            extra={"exclusivo_cvm": "S"},
+        )
+        restricted.sources = ["api-json"]
+        snapshot = ShelfSnapshot(
+            platform="btg", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.API_JSON, status=SnapshotStatus.OK,
+            funds=[retail, restricted],
+        )
+        report = RunReport(generated_at=datetime(2026, 8, 31), snapshots=[snapshot])
+
+        summary = summarize_platform(snapshot, set())
+        self.assertEqual(summary.total_funds, 1, "restrito nao conta na analise")
+
+        listing = build_listing_block(report)
+        btg = next(p for p in listing["platforms"] if p["platform_id"] == "btg")
+        self.assertEqual(btg["total"], 1)
+
+        aux = build_restricted_block(report)
+        self.assertEqual(aux["total"], 1)
+        entry = aux["platforms"][0]
+        self.assertEqual(entry["restricted"], 1)
+        self.assertIn("exclusivo no registro CVM", entry["by_reason"])
+        self.assertEqual(entry["sample"][0]["name"], "BTG Cliente Unico FIC FIM")
+
+
+class TestManagerInference(unittest.TestCase):
+    """Gestora pelo prefixo do nome - inequivoca ou nada."""
+
+    MANAGERS = [
+        "KINEA INVESTIMENTOS LTDA",
+        "BAHIA AM RENDA VARIAVEL LTDA",
+        "ITAU UNIBANCO ASSET MANAGEMENT LTDA",
+        "ITAU DTVM S.A.",           # segunda "ITAU": ambiguidade proposital
+        "INTRAG DTVM LTDA",
+        "BRASIL CAPITAL GESTAO DE RECURSOS LTDA",
+    ]
+
+    def test_unambiguous_brands_fill_the_manager(self):
+        from shelf_monitor.enrich import build_brand_index, infer_manager
+        from shelf_monitor.models import FundOffer
+
+        index = build_brand_index(self.MANAGERS)
+        fund = FundOffer(platform="itau", name="Bahia AM Muta Selecao Multimercado")
+        self.assertTrue(infer_manager(fund, index))
+        self.assertEqual(fund.manager_name, "BAHIA AM RENDA VARIAVEL LTDA")
+        self.assertIn("gestor_inferido", fund.extra)
+
+        kinea = FundOffer(platform="itau", name="Kinea Chronos FIC FIM")
+        infer_manager(kinea, index)
+        self.assertEqual(kinea.manager_name, "KINEA INVESTIMENTOS LTDA")
+
+    def test_ambiguous_brand_fills_nothing(self):
+        """"ITAU" aponta para Itau Asset E Itau DTVM: melhor vazio que errado."""
+        from shelf_monitor.enrich import build_brand_index, infer_manager
+        from shelf_monitor.models import FundOffer
+
+        index = build_brand_index(self.MANAGERS)
+        self.assertNotIn("ITAU", index)
+        fund = FundOffer(platform="itau", name="Itau Carteira Livre FIC")
+        self.assertFalse(infer_manager(fund, index))
+        self.assertIsNone(fund.manager_name)
+
+    def test_same_manager_spelled_differently_is_not_ambiguity(self):
+        from shelf_monitor.enrich import build_brand_index
+
+        index = build_brand_index(
+            ["KINEA INVESTIMENTOS LTDA", "KINEA INVESTIMENTOS"]
+        )
+        self.assertEqual(index["KINEA"], "KINEA INVESTIMENTOS")
+
+    def test_existing_manager_is_never_overwritten(self):
+        from shelf_monitor.enrich import build_brand_index, infer_manager
+        from shelf_monitor.models import FundOffer
+
+        index = build_brand_index(self.MANAGERS)
+        fund = FundOffer(platform="itau", name="Kinea Chronos", manager_name="OFICIAL")
+        self.assertFalse(infer_manager(fund, index))
+        self.assertEqual(fund.manager_name, "OFICIAL")
+
+
+class TestFuzzyReconciliation(unittest.TestCase):
+    """Fuzzy conservador: casa o obvio, nunca o master com o feeder."""
+
+    def _merge(self, of_name, site_name):
+        from shelf_monitor.merge import merge_offers
+
+        return merge_offers({
+            "open-finance": [offer("itau", of_name, "11111111000111")],
+            "playwright": [offer("itau", site_name, None, admin_fee_pct=0.5)],
+        })
+
+    def test_typo_level_difference_merges(self):
+        merged = self._merge(
+            "Itau Global Dinamico Renda Fixa Longo Prazo",
+            "Itau Global Dinamico Renda Fixa Longo Praz",  # truncado pela tabela
+        )
+        self.assertEqual(len(merged), 1, [(o.name, o.cnpj) for o in merged])
+        self.assertEqual(merged[0].cnpj, "11111111000111")
+        self.assertIn("nome aproximado", merged[0].extra["reconciliacao"])
+
+    def test_master_and_feeder_never_merge_by_similarity(self):
+        merged = self._merge(
+            "Kinea Chronos Master Multimercado",
+            "Kinea Chronos Multimercado",
+        )
+        self.assertEqual(len(merged), 2, "MASTER e token distintivo - nao funde")
+
+    def test_numbered_siblings_never_merge(self):
+        merged = self._merge(
+            "A1 D30 Renda Fixa Credito Privado",
+            "A1 D60 Renda Fixa Credito Privado",
+        )
+        self.assertEqual(len(merged), 2)
+
+    def test_ambiguous_candidates_do_not_merge(self):
+        from shelf_monitor.merge import merge_offers
+
+        merged = merge_offers({
+            "open-finance": [
+                offer("itau", "Alpha Global Equities USDX FIC", "11111111000111"),
+                offer("itau", "Alpha Global Equities USDY FIC", "22222222000122"),
+            ],
+            "playwright": [offer("itau", "Alpha Global Equities USD FIC", None)],
+        })
+        # Dois candidatos igualmente parecidos: ambiguo, o do site fica separado.
+        self.assertEqual(len(merged), 3, [(o.name, o.cnpj) for o in merged])

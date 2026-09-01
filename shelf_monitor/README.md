@@ -390,6 +390,28 @@ forma da prateleira), "gestora da casa" definida pela mesma watchlist do radar C
 coleta suspeita nunca vira churn, e todo numero carrega proveniencia (fonte, data,
 cobertura) no rodape.
 
+**Perfil de varejo.** Fundos exclusivos/restritos - exclusivo no registro CVM,
+publico-alvo profissional, marcados pela propria casa (flags da API do BTG) ou
+denunciados pelo nome (EXCLUSIVO/RESERVADO/RESTRITO/FAMILY OFFICE) - ficam **fora de
+toda analise principal**: sao veiculos de um investidor, nao produtos a venda, e
+inflam qualquer comparacao. Nao somem: moram na aba "Restritos (auxiliar)" da
+planilha e no card auxiliar do dashboard, cada um com o motivo. Investidor
+*qualificado* nao e motivo de corte - plataforma de varejo distribui fundo
+qualificado a alta renda normalmente. Com o corte, "exclusivo" passou a significar
+uma coisa so; o conceito competitivo virou "so nesta casa"/"diferencial".
+
+**Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
+Tres vias, na ordem de confianca: (1) o join por CNPJ quando a reconciliacao por
+nome encontra o gemeo no Open Finance - exata pelo slug, ou aproximada com razao
+>= 0,95, candidato unico por margem e bloqueio de tokens que distinguem
+master/feeder/espelho (a proveniencia fica em `reconciliacao`); (2) inferencia pela
+marca no prefixo do nome ("Bahia AM Muta..." -> Bahia AM), contra um indice de
+marcas construido das gestoras da base CVM - so marcas inequivocas entram ("ITAU"
+fica de fora porque aponta para Itau Asset, Itau DTVM e Intrag), e o dado sai
+marcado `gestor_inferido`, nunca como oficial; (3) o XHR de ~1,5 MB do gateway do
+Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
+parser pendente de evidencia parseavel.
+
 ## Como o monitor evita falso alarme
 
 Um monitor de prateleira erra de dois jeitos: reportando mudanca que nao houve, ou

@@ -383,7 +383,7 @@ function renderVitrine(listing) {
     const catalog = p.catalog_total || 0;
     note.textContent = (catalog > p.total
       ? `de ${catalog.toLocaleString("pt-BR")} no catalogo` : "vitrine = total coletado") +
-      (p.exclusive ? ` - ${p.exclusive} exclusivos` : "");
+      (p.exclusive ? ` - ${p.exclusive} so nela` : "");
     tile.append(label, value, note);
     tiles.appendChild(tile);
   });
@@ -488,6 +488,10 @@ function renderVitrine(listing) {
     const e = DATA.enrichment;
     parts.push(`Normalizacao ANBIMA: ${e.matched} de ${e.with_cnpj} fundos com CNPJ ` +
       `casaram com o registro oficial CVM (${Math.round(100 * e.matched / e.with_cnpj)}%).`);
+    if (e.managers_inferred) {
+      parts.push(`${e.managers_inferred} gestoras inferidas pelo prefixo do nome ` +
+        `(marcadas como inferidas, nunca como oficiais).`);
+    }
   } else {
     parts.push("Normalizacao ANBIMA nao aplicada: base de mercado nao importada " +
       "(python -m shelf_monitor market).");
@@ -544,6 +548,30 @@ function table2(mount, columns, rows) {
 }
 
 renderVitrine(DATA.listing);
+
+(function renderRestricted(block) {
+  const mount = document.getElementById("table-restricted");
+  const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
+  if (!rows.length || !block.total) {
+    mount.innerHTML = '<p class="empty">Nenhum fundo restrito/exclusivo identificado ' +
+      'nesta coleta. A deteccao depende da base CVM importada e das flags das casas.</p>';
+    return;
+  }
+  table2(mount,
+    ["Casa", "Restritos", "% do total coletado", "Na vitrine", "Principais motivos"],
+    rows.map(p => {
+      const reasons = Object.entries(p.by_reason || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => `${reason} (${count})`).join("; ");
+      return [
+        p.label,
+        p.restricted.toLocaleString("pt-BR"),
+        `${Math.round(100 * p.restricted / p.total_snapshot)}%`,
+        String(p.on_listing || 0),
+        reasons || "–",
+      ];
+    }));
+})(DATA.restricted);
 
 renderLegend(document.getElementById("legend-classes"), usable);
 groupedBars(
@@ -790,10 +818,19 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
   </section>
 
   <section class="card">
-    <h2>Exclusividade</h2>
-    <p class="card-sub">Fundos (por CNPJ) presentes em apenas uma das plataformas coletadas.
-      Considera somente casas com coleta bem-sucedida.</p>
+    <h2>Diferenciais de prateleira</h2>
+    <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas oferta -
+      o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio, que fica fora
+      desta analise. Considera somente casas com coleta bem-sucedida.</p>
     <div class="chart-scroll" id="chart-exclusive"></div>
+  </section>
+
+  <section class="card">
+    <h2>Fundos exclusivos e restritos &mdash; auxiliar</h2>
+    <p class="card-sub">Veiculos fora do perfil de varejo (exclusivo no registro CVM,
+      publico profissional, marcados pela casa ou pelo nome). Ficam fora de toda analise
+      acima; aqui e o inventario deles.</p>
+    <div id="table-restricted"></div>
   </section>
 
   <section class="card" id="cvm-section">

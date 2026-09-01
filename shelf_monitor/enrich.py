@@ -18,7 +18,12 @@ from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot
-from shelf_monitor.normalize import classify_asset_class, normalize_cnpj, parse_number
+from shelf_monitor.normalize import (
+    classify_asset_class,
+    normalize_cnpj,
+    normalize_text,
+    parse_number,
+)
 
 # Chaves que o enriquecimento grava em FundOffer.extra. Consumidores (planilha,
 # dashboard, deck) leem estas - nunca as variantes por casa.
@@ -30,6 +35,7 @@ KEY_SITUACAO = "situacao_cvm"
 KEY_PL = "pl_cvm"
 KEY_PUBLICO = "publico_alvo_cvm"
 KEY_ORIGEM_BASE = "base_cvm"
+KEY_EXCLUSIVO = "exclusivo_cvm"
 
 
 @dataclass
@@ -45,6 +51,7 @@ class MarketRecord:
     situacao: str | None = None
     pl: float | None = None
     publico_alvo: str | None = None
+    exclusivo: str | None = None
 
 
 @dataclass
@@ -55,6 +62,7 @@ class EnrichmentStats:
     with_cnpj: int = 0
     matched: int = 0
     anbima_filled: int = 0
+    managers_inferred: int = 0
     by_platform: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -63,6 +71,7 @@ class EnrichmentStats:
             "with_cnpj": self.with_cnpj,
             "matched": self.matched,
             "anbima_filled": self.anbima_filled,
+            "managers_inferred": self.managers_inferred,
             "by_platform": self.by_platform,
         }
 
@@ -102,6 +111,16 @@ class MarketLookup:
             return None
         return self._records.get(cnpj) or self._fund_records.get(cnpj)
 
+    def managers(self) -> list[str]:
+        """Todos os nomes de gestor da base - materia-prima do indice de marcas."""
+        names = {
+            r.gestor
+            for source in (self._records, self._fund_records)
+            for r in source.values()
+            if r.gestor
+        }
+        return sorted(names)
+
     @classmethod
     def load(cls, config: Config) -> "MarketLookup | None":
         """Carrega o consolidado; None quando a base nao foi importada."""
@@ -128,6 +147,7 @@ class MarketLookup:
                     situacao=row.get("situacao") or None,
                     pl=parse_number(row.get("patrimonio_liquido")),
                     publico_alvo=row.get("publico_alvo") or None,
+                    exclusivo=row.get("exclusivo") or None,
                 )
                 fund_cnpj = normalize_cnpj(row.get("cnpj_fundo"))
                 if fund_cnpj:
@@ -158,6 +178,9 @@ def _fund_level_record(fund_cnpj: str, rows: list[dict]) -> MarketRecord:
         situacao=_unanimous([r.get("situacao") or "" for r in rows]),
         pl=None,  # PL e por classe; somar aqui inventaria um numero
         publico_alvo=_unanimous([r.get("publico_alvo") or "" for r in rows]),
+        # "Exclusivo" so desce ao envelope se TODAS as classes o forem - um
+        # fundo com classe exclusiva e classe aberta e distribuido.
+        exclusivo=_unanimous([r.get("exclusivo") or "" for r in rows]),
     )
 
 
@@ -188,6 +211,8 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
         offer.extra.setdefault(KEY_PL, record.pl)
     if record.publico_alvo:
         offer.extra.setdefault(KEY_PUBLICO, record.publico_alvo)
+    if record.exclusivo:
+        offer.extra.setdefault(KEY_EXCLUSIVO, record.exclusivo)
     offer.extra[KEY_ORIGEM_BASE] = record.origem
 
     # A classe de ativo derivada ganha a versao oficial quando a heuristica
@@ -196,6 +221,74 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
         official = classify_asset_class(record.anbima, record.cvm)
         if official != AssetClass.OUTROS:
             offer.asset_class = official
+
+
+# Tokens juridicos/genericos que nao carregam a marca de uma gestora.
+_LEGAL_TOKENS = {
+    "LTDA", "SA", "S", "A", "DTVM", "CTVM", "CCTVM", "ASSET", "MANAGEMENT",
+    "GESTAO", "GESTORA", "DE", "DO", "DA", "E", "RECURSOS", "INVESTIMENTOS",
+    "INVESTIMENTO", "ADMINISTRACAO", "ADM", "ADMINISTRADORA", "VALORES",
+    "MOBILIARIOS", "TITULOS", "DISTRIBUIDORA", "WEALTH", "PORTFOLIOS",
+}
+
+
+def _brand_tokens(manager: str) -> list[str]:
+    return [
+        t for t in normalize_text(manager).split() if t not in _LEGAL_TOKENS
+    ]
+
+
+def build_brand_index(managers: list[str]) -> dict[str, str]:
+    """Mapa marca -> nome canonico de gestora, so onde a marca e inequivoca.
+
+    Chaves: os dois primeiros tokens da marca e o primeiro sozinho. Uma chave
+    que aponta para duas gestoras DIFERENTES (assinaturas de marca distintas)
+    e descartada - "ITAU" some porque ha Itau Asset, Itau DTVM e Intrag, mas
+    "KINEA" e "BAHIA AM" ficam. Melhor nao preencher do que preencher errado.
+    """
+    candidates: dict[str, dict[str, str]] = {}
+    for manager in managers:
+        tokens = _brand_tokens(manager)
+        if not tokens:
+            continue
+        signature = " ".join(tokens)
+        keys = {tokens[0]} if len(tokens[0]) >= 2 else set()
+        if len(tokens) >= 2:
+            keys.add(" ".join(tokens[:2]))
+        for key in keys:
+            bucket = candidates.setdefault(key, {})
+            # Mesma assinatura escrita de jeitos diferentes ("... LTDA" vs
+            # sem) nao e ambiguidade; fica o nome mais curto.
+            if signature not in bucket or len(manager) < len(bucket[signature]):
+                bucket[signature] = manager
+
+    return {
+        key: next(iter(bucket.values()))
+        for key, bucket in candidates.items()
+        if len(bucket) == 1
+    }
+
+
+def infer_manager(fund: FundOffer, brand_index: dict[str, str]) -> bool:
+    """Preenche a gestora pelo prefixo do nome do fundo, quando inequivoco.
+
+    "Bahia AM Muta Selecao" comeca com a marca da gestora - convencao quase
+    universal em prateleira de terceiros. Tenta o prefixo de dois tokens antes
+    do de um. Marca a proveniencia: dado inferido nunca se passa por oficial.
+    """
+    if fund.manager_name:
+        return False
+    tokens = normalize_text(fund.name).split()
+    if not tokens:
+        return False
+
+    for key in (" ".join(tokens[:2]), tokens[0]):
+        manager = brand_index.get(key)
+        if manager:
+            fund.manager_name = manager
+            fund.extra["gestor_inferido"] = f"prefixo do nome ({key.title()})"
+            return True
+    return False
 
 
 def enrich_snapshots(
@@ -226,4 +319,18 @@ def enrich_snapshots(
             enrich_offer(offer, record)
             if not had_anbima and offer.extra.get(KEY_ANBIMA):
                 stats.anbima_filled += 1
+
+    # Segunda passada: fundos que sobraram sem gestora (tabela do Itau sem
+    # CNPJ, por exemplo) tentam a marca no prefixo do nome. Depois do join,
+    # para o indice de marcas incluir as gestoras oficiais recem-carimbadas.
+    known_managers = set(lookup.managers())
+    for snapshot in snapshots:
+        for offer in snapshot.funds:
+            if offer.manager_name:
+                known_managers.add(offer.manager_name)
+    brand_index = build_brand_index(sorted(known_managers))
+    for snapshot in snapshots:
+        for offer in snapshot.funds:
+            if infer_manager(offer, brand_index):
+                stats.managers_inferred += 1
     return stats

@@ -208,10 +208,10 @@ def _headline(prs, data: dict, platforms: list[dict]):
 
     exclusives = [(p["label"], p.get("exclusive", 0)) for p in platforms]
     if exclusives:
-        _text(slide, 0.6, 4.0, 12, 0.4, "Exclusivos na vitrine (por CNPJ)", 14, bold=True)
+        _text(slide, 0.6, 4.0, 12, 0.4, "Diferenciais na vitrine (por CNPJ)", 14, bold=True)
         _table(
             slide, 0.6, 4.5, 6.5,
-            ["Casa", "Fundos que so ela tem na vitrine"],
+            ["Casa", "Fundos de varejo que so ela oferta"],
             [[label, _fmt(count)] for label, count in exclusives],
             col_widths=[2, 3],
         )
@@ -376,10 +376,15 @@ def _methodology(prs, report: RunReport, data: dict):
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
     _title(slide, "Metodologia e proveniencia")
 
+    restricted = (data.get("restricted") or {}).get("total") or 0
     lines = [
         ("Vitrine", "fundo presente no canal da propria casa (site, API do portal ou "
                     "area logada). Open Finance = catalogo regulatorio, usado para "
                     "enriquecer e como referencia."),
+        ("Perfil de varejo",
+         f"fundos exclusivos/restritos ({_fmt(restricted)} nesta coleta) ficam fora "
+         "de toda analise; o inventario deles esta na aba 'Restritos (auxiliar)' "
+         "da planilha e no dashboard."),
         ("Precedencia", "Open Finance > area logada > API do portal > navegador > HTML; "
                         "fontes que faltam preenchem, nunca sobrescrevem."),
     ]

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
 from shelf_monitor.normalize import normalize_text
+from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
     AssetClass,
     FundOffer,
@@ -149,7 +150,7 @@ def anbima_category(fund: FundOffer) -> str:
 
 
 def _listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
-    return [f for f in snapshot.funds if f.on_listing]
+    return [f for f in retail_funds(snapshot) if f.on_listing]
 
 
 # Quantas categorias ANBIMA aparecem por extenso na matriz; o resto agrega em
@@ -218,7 +219,7 @@ def build_listing_block(report: RunReport) -> dict:
                 if snapshot.platform in PLATFORMS
                 else snapshot.platform,
                 "total": len(listing),
-                "catalog_total": len(snapshot.funds),
+                "catalog_total": len(retail_funds(snapshot)),
                 "by_category": dict(by_category),
                 "own_product": own,
                 "third_party": third,
@@ -270,16 +271,23 @@ def build_listing_block(report: RunReport) -> dict:
     }
 
 
-def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
-    """CNPJs presentes em exatamente uma plataforma coletada com sucesso.
+def retail_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
+    """So o perfil de varejo - a materia-prima de toda analise principal."""
+    return split_by_profile(snapshot.funds)[0]
 
-    So considera snapshots utilizaveis: uma coleta que falhou tornaria "exclusivo"
-    todo fundo das demais casas.
+
+def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
+    """CNPJs de varejo presentes em exatamente uma plataforma coletada.
+
+    E o conceito COMPETITIVO ("so esta casa oferta"), nao o regulatorio
+    ("fundo exclusivo de um investidor") - os regulatorios nem entram aqui.
+    So considera snapshots utilizaveis: uma coleta que falhou tornaria
+    diferencial todo fundo das demais casas.
     """
     usable = [s for s in snapshots if s.status != SnapshotStatus.UNAVAILABLE and s.funds]
     presence: dict[str, set[str]] = {}
     for snapshot in usable:
-        for fund in snapshot.funds:
+        for fund in retail_funds(snapshot):
             if fund.cnpj:
                 presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
 
@@ -296,7 +304,8 @@ def summarize_platform(
     platform_cfg = PLATFORMS.get(snapshot.platform)
     label = platform_cfg.label if platform_cfg else snapshot.platform
 
-    funds: list[FundOffer] = snapshot.funds
+    # A analise principal ve so o varejo; os restritos vao ao bloco auxiliar.
+    funds: list[FundOffer] = retail_funds(snapshot)
     by_class: dict[str, int] = {}
     for asset_class in AssetClass:
         count = sum(1 for f in funds if f.asset_class == asset_class)
@@ -336,6 +345,35 @@ def summarize_platform(
         exclusive_count=len(exclusive_cnpjs),
         cnpj_coverage=(with_cnpj / len(funds)) if funds else 0.0,
     )
+
+
+def build_restricted_block(report: RunReport) -> dict:
+    """O relatorio auxiliar: quem ficou fora da analise de varejo, e por que."""
+    platforms: list[dict] = []
+    total = 0
+    for snapshot in report.snapshots:
+        _, restricted = split_by_profile(snapshot.funds)
+        if not snapshot.funds:
+            continue
+        by_reason: Counter = Counter(reason for _, reason in restricted)
+        total += len(restricted)
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": PLATFORMS[snapshot.platform].label
+                if snapshot.platform in PLATFORMS
+                else snapshot.platform,
+                "total_snapshot": len(snapshot.funds),
+                "restricted": len(restricted),
+                "by_reason": dict(by_reason),
+                "on_listing": sum(1 for f, _ in restricted if f.on_listing),
+                "sample": [
+                    {"name": fund.name, "cnpj": fund.cnpj, "reason": reason}
+                    for fund, reason in restricted[:8]
+                ],
+            }
+        )
+    return {"total": total, "platforms": platforms}
 
 
 def build_dashboard_data(report: RunReport) -> dict:
@@ -405,6 +443,7 @@ def build_dashboard_data(report: RunReport) -> dict:
     return {
         "generated_at": report.generated_at.isoformat(),
         "listing": build_listing_block(report),
+        "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],

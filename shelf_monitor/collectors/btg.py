@@ -80,9 +80,16 @@ def offer_from_btg_item(item: dict) -> FundOffer | None:
     apply_open = detail.get("applyOpenPortal")
     closed = (not apply_open) if isinstance(apply_open, bool) else None
 
+    restricted = bool(
+        detail.get("restrictedOrExclusive")
+        or detail.get("isExclusiveFund")
+        or detail.get("isExclusiveFundPortal")
+    )
+
     extra = {
         key: value
         for key, value in (
+            ("restrito_casa", restricted or None),
             ("subcategoria_btg", subcategory),
             ("risco", _as_text(detail.get("riskName"))),
             ("classificacao_anbima", _as_text(inner.get("anbimaRating"))),

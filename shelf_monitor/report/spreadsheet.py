@@ -32,6 +32,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.profile import split_by_profile
 from shelf_monitor.report.aggregate import ASSET_CLASS_LABELS, is_own_product
 
 FONT = "Arial"
@@ -132,7 +133,7 @@ def _write_fund_rows(
     """Escreve o cabecalho e uma linha por fundo. Devolve a ultima linha usada."""
     headers = [name for name, _, _ in _COLUMNS]
     if with_exclusive:
-        headers.append("Exclusivo (por CNPJ)")
+        headers.append("So nesta casa (por CNPJ)")
 
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -146,7 +147,10 @@ def _write_fund_rows(
     row = header_row + 1
     for snapshot in snapshots:
         label = _platform_label(snapshot.platform)
-        for fund in sorted(snapshot.funds, key=lambda f: f.name):
+        # Restritos/exclusivos ficam fora das abas principais - moram na aba
+        # auxiliar "Restritos", com o motivo de cada um.
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in sorted(retail, key=lambda f: f.name):
             sheet.cell(row=row, column=_COL_PLATFORM, value=label)
             for index, (_, _, extract) in enumerate(_COLUMNS, start=1):
                 if extract is None:
@@ -235,7 +239,7 @@ def _add_summary(
     ).font = _NOTE_FONT
 
     classes = [ASSET_CLASS_LABELS[c] for c in AssetClass]
-    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas", "Exclusivos"]
+    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas", "So nesta casa"]
     header_row = 4
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -315,7 +319,7 @@ def _add_summary(
     for line in (
         "Como ler esta planilha:",
         "  Todos os numeros acima sao formulas sobre a aba Consolidado - filtrar ou corrigir la atualiza aqui.",
-        '  "Exclusivos" conta fundos cujo CNPJ aparece em uma unica plataforma desta coleta;',
+        '  "So nesta casa" conta fundos de varejo cujo CNPJ aparece em uma unica plataforma desta coleta;',
         "  fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
         "  \"Gestoras distintas\" e um valor da coleta, nao uma formula: contar valores unicos exigiria",
         "  funcao de matriz, que nem todo leitor de planilha avalia da mesma forma.",
@@ -487,7 +491,7 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
         ("Classe oficial (ANBIMA ou CVM)", 34), ("Categoria na origem", 26),
         ("Gestora", 34), ("Produto", 12), ("Taxa adm (%)", 13),
         ("Aplicacao minima (R$)", 20), ("Liquidacao resgate (D+)", 21),
-        ("Situacao CVM", 26), ("Exclusivo na vitrine", 18), ("Fontes", 26),
+        ("Situacao CVM", 26), ("So nesta vitrine", 16), ("Fontes", 26),
     ]
     for index, (name, width) in enumerate(headers, start=1):
         sheet.cell(row=1, column=index, value=name)
@@ -497,7 +501,8 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
     row = 1
     for snapshot in snapshots:
         label = _platform_label(snapshot.platform)
-        for fund in snapshot.funds:
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in retail:
             if not fund.on_listing:
                 continue
             row += 1
@@ -557,6 +562,45 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
     sheet.freeze_panes = "A2"
 
 
+def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
+    """Aba auxiliar: os fundos fora da analise de varejo, com o motivo.
+
+    Eles nao somem do monitor - so nao contaminam comparacao de prateleira.
+    """
+    sheet = workbook.create_sheet("Restritos (auxiliar)")
+    headers = [
+        ("Plataforma", 20), ("Fundo", 52), ("CNPJ", 20), ("Motivo", 40),
+        ("Classe oficial", 30), ("Gestora", 34), ("Na vitrine", 12), ("Fontes", 26),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    row = 1
+    for snapshot in snapshots:
+        label = _platform_label(snapshot.platform)
+        _, restricted = split_by_profile(snapshot.funds)
+        for fund, reason in sorted(restricted, key=lambda pair: pair[0].name):
+            row += 1
+            values = [
+                label, fund.name,
+                format_cnpj(fund.cnpj) if fund.cnpj else "",
+                reason,
+                fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
+                fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+                "Sim" if fund.on_listing else "Nao",
+                ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
+            ]
+            for index, value in enumerate(values, start=1):
+                cell = sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+    if row == 1:
+        sheet.cell(row=2, column=1, value="Nenhum fundo restrito/exclusivo identificado nesta coleta.").font = _NOTE_FONT
+    sheet.freeze_panes = "A2"
+
+
 def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
     """Aba "Movimentos": o que entrou, saiu ou mudou desde a coleta anterior."""
     sheet = workbook.create_sheet("Movimentos")
@@ -594,14 +638,19 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
             ).font = _ALERT_FONT
 
         entries: list[tuple[str, str, str, str, str]] = []
-        for fund in diff.added:
+        from shelf_monitor.profile import restriction_reason
+
+        def is_retail(fund) -> bool:
+            return restriction_reason(fund) is None
+
+        for fund in filter(is_retail, diff.added):
             entries.append((
                 "entrada", fund.name,
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 "Sim" if fund.on_listing else "Nao", "",
             ))
         if not diff.suspect:
-            for fund in diff.removed:
+            for fund in filter(is_retail, diff.removed):
                 entries.append((
                     "saida", fund.name,
                     format_cnpj(fund.cnpj) if fund.cnpj else "",
@@ -656,6 +705,12 @@ def _add_methodology_sheet(
         "area logada. Open Finance NAO conta como vitrine - e o catalogo "
         "regulatorio (tudo que a casa administra), usado aqui para enriquecer "
         "campos e medir o catalogo.",
+    )
+    row = line(
+        row, "Perfil de varejo",
+        "Fundos exclusivos/restritos (registro CVM, publico profissional, flag "
+        "da casa ou nome) ficam FORA das abas de analise e moram na aba "
+        "'Restritos (auxiliar)' com o motivo. Qualificado nao e motivo de corte.",
     )
     row = line(
         row, "Precedencia de fontes",
@@ -724,6 +779,7 @@ def render_spreadsheet(
     workbook = Workbook()
     last_row = _add_consolidated(workbook, usable)
     _add_listing_sheet(workbook, usable)
+    _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)
     _add_platform_sheets(workbook, usable)
