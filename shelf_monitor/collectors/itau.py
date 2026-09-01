@@ -5,16 +5,25 @@ A evidencia de 2026-08-31 (navegador com janela, na maquina do usuario) mostrou:
 
 - cliente HTTP simples e Chromium headless levam 403 da Akamai no documento;
   com o Chrome real do usuario (SHELF_BROWSER_HEADED=1) a pagina abre;
-- a tabela e paginada em ~10 fundos por pagina (45 paginas na medicao, ~450
-  fundos), com botao `data-testid="page__arrow-next"`;
+- a tabela e paginada em ~10 fundos por pagina (46 paginas na medicao de
+  2026-09-01, ~460 fundos), com botao `data-testid="page__arrow-next"`;
 - as colunas: nome, risco, aplicacao inicial, retornos (12m/ano/mes), taxa
-  maxima do produto, resgate - o cabecalho nomeia cada uma;
-- ha um XHR de ~1,5 MB (gateway `apicd.cloud.itau.com.br/charon/...`) que deve
-  carregar o dataset inteiro; o corpo dele fica em capture quando parsear -
-  o payload_mapper aqui nao depende dele.
+  maxima do produto, resgate e um "mais info" - o cabecalho nomeia cada uma.
+
+A captura completa de 2026-09-01 fechou duas hipoteses:
+
+- o trafego "grande" do gateway (`apicd.cloud.itau.com.br/charon/...`) e
+  telemetria: dezenas de chamadas de ~280 bytes respondendo 400
+  InvalidSession. Nao ha dataset escondido para parsear;
+- nenhuma das colunas da tabela traz CNPJ ou gestora, e o "mais info" e botao
+  de SPA (`data-testid="button-more-info"`), sem href. A identidade do fundo,
+  se o site a publica, chega no clique - a sondagem `diagnose --browser`
+  (probe_itau_detail) captura esse momento para o futuro parser do detalhe.
 
 O coletor clica "proxima" ate o fim, le a tabela renderizada de cada pagina e
-mapeia pelas colunas do cabecalho - nunca por posicao fixa.
+mapeia pelas colunas do cabecalho - nunca por posicao fixa. Sem CNPJ na fonte,
+a gestora destes fundos so aparece quando o merge reconcilia com o Open
+Finance pelo nome, ou quando o parser do detalhe existir.
 """
 from __future__ import annotations
 

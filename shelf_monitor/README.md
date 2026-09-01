@@ -148,10 +148,14 @@ medicao); o coletor clica "proxima" ate o fim e mapeia as colunas **pelo cabecal
 colunas de retorno ficam de fora por desenho, para rentabilidade nao virar "taxa".
 A tabela nao traz CNPJ, entao o merge reconcilia cada fundo com o gemeo do Open
 Finance pelo slug exato do nome (FIC/FIRF e afins descartados); o que nao casar
-permanece como registro proprio do site. Ha ainda um XHR de ~1,5 MB do gateway
-`apicd.cloud.itau.com.br` que deve carregar o dataset inteiro - a captura agora
-guarda o corpo dele (era o caso que revelou o bug abaixo) e, se parsear, os campos
-entram por cima.
+permanece como registro proprio do site. A captura completa de 2026-09-01
+desfez a hipotese do "XHR grande": o trafego do gateway
+`apicd.cloud.itau.com.br/charon` e telemetria (dezenas de chamadas de ~280
+bytes, todas 400 InvalidSession) - nao ha dataset escondido. A identidade de
+cada fundo, se o site a publica, chega no clique do "mais info" (botao de SPA,
+sem href); a sondagem `diagnose --browser` clica nele e grava a evidencia em
+`data/cache/debug/itau-detalhe/` para o parser do detalhe ser escrito com o
+payload na mao.
 
 **XP - bloqueio de CDN no proprio documento.** 403 ate para o Chromium, com pagina
 de bloqueio propria que indica o e-mail `bloqueio-cdn@xpi.com.br` para pedir
@@ -436,11 +440,12 @@ master/feeder/espelho (a proveniencia fica em `reconciliacao`); (2) inferencia p
 marca no prefixo do nome ("Bahia AM Muta..." -> Bahia AM), contra um indice de
 marcas construido das gestoras da base CVM - so marcas inequivocas entram ("ITAU"
 fica de fora porque aponta para Itau Asset, Itau DTVM e Intrag), e o dado sai
-marcado `gestor_inferido`, nunca como oficial; (3) o XHR de ~1,5 MB do gateway do
-Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
-parser pendente de evidencia parseavel. O campo `cvm_code` da oferta ja existe e o
-extrator generico de JSON o captura, entao quando esse parser chegar o caminho ate
-o registro ja esta pronto.
+marcado `gestor_inferido`, nunca como oficial; (3) o detalhe de cada fundo do
+Itau, aberto pelo botao "mais info" - a sondagem `diagnose --browser` clica nele
+e grava o que o clique dispara (o antigo suspeito, o XHR de ~1,5 MB do gateway,
+provou-se telemetria e saiu da lista). O campo `cvm_code` da oferta ja existe e o
+extrator generico de JSON o captura, entao quando o parser do detalhe chegar o
+caminho ate o registro ja esta pronto.
 
 ## Como o monitor evita falso alarme
 

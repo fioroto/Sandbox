@@ -505,6 +505,74 @@ def probe_inter_sitemap(config: Config) -> list[Probe]:
     return probes
 
 
+# O botao que abre o detalhe de um fundo na tabela de rentabilidade do Itau.
+_ITAU_DETAIL_BUTTON = '[data-testid="button-more-info"]'
+_ITAU_DETAIL_WAIT_MS = 6_000
+
+
+def probe_itau_detail(config: Config, platform: PlatformConfig) -> Probe:
+    """Clica no "mais info" do primeiro fundo do Itau e grava o que o clique traz.
+
+    A evidencia de 2026-09-01 fechou as outras portas: a tabela de rentabilidade
+    nao publica CNPJ em nenhuma coluna, e o XHR "grande" do gateway (charon) e
+    telemetria respondendo 400 InvalidSession. Se o site publica a identidade do
+    fundo (CNPJ, gestora), ela chega quando um fundo e aberto - e o "mais info"
+    e um botao de SPA, sem href para seguir. Esta sondagem captura exatamente
+    esse momento, em data/cache/debug/itau-detalhe/, para o parser do detalhe
+    ser escrito com o payload na mao em vez de por suposicao.
+    """
+    from shelf_monitor.collectors.browser import dump_capture, render_page
+
+    if not platform.shelf_url:
+        return Probe("itau/detalhe", "-", False, "sem shelf_url")
+
+    def open_first_detail(page):
+        button = page.query_selector(_ITAU_DETAIL_BUTTON)
+        if button is None:
+            return [("mais info: botao nao encontrado", {"itau_detalhe": False})]
+        button.click()
+        page.wait_for_timeout(_ITAU_DETAIL_WAIT_MS)
+        return [(f"clique em {_ITAU_DETAIL_BUTTON}", {"itau_detalhe": True})]
+
+    try:
+        capture = render_page(
+            platform.shelf_url,
+            user_agent=config.user_agent,
+            executable_path=config.chromium_path,
+            screenshot=True,
+            block_assets=False,
+            headed=config.browser_headed,
+            channel=config.browser_channel,
+            on_page=open_first_detail,
+        )
+    except SourceUnavailable as exc:
+        return Probe("itau/detalhe", platform.shelf_url, False, str(exc)[:200])
+
+    evidence = dump_capture(config.debug_dir, "itau-detalhe", capture)
+    clicked = any(
+        isinstance(payload, dict) and payload.get("itau_detalhe")
+        for _, payload in capture.payloads
+    )
+    detail = (
+        f"clique {'feito' if clicked else 'NAO feito (botao ausente)'}; "
+        f"{capture.json_responses} respostas JSON na sessao, "
+        f"final_url {capture.final_url}"
+    )
+    return Probe(
+        "itau/detalhe",
+        platform.shelf_url,
+        clicked,
+        detail,
+        evidence,
+        {
+            "clicked": clicked,
+            "final_url": capture.final_url,
+            "respostas_json": capture.json_responses,
+            "payloads_lidos": len(capture.payloads),
+        },
+    )
+
+
 def _is_tls_failure(detail: str) -> bool:
     lowered = detail.lower()
     return "tls" in lowered or "ssl" in lowered or "certificate" in lowered
@@ -535,6 +603,8 @@ def run(
         probes.append(probe_page(config, platform))
         if browser and platform.shelf_url:
             probes.append(probe_browser(config, platform))
+            if platform_id == "itau":
+                probes.append(probe_itau_detail(config, platform))
         if platform_id == "inter":
             probes.extend(probe_inter_sitemap(config))
 

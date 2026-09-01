@@ -1,9 +1,0 @@
-{
-  "url": "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location",
-  "payload": {
-    "country": "BR",
-    "state": "SP",
-    "stateName": "São Paulo",
-    "continent": "SA"
-  }
-}
