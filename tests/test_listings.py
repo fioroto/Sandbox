@@ -860,6 +860,43 @@ class TestEnrichment(unittest.TestCase):
         self.assertEqual(stats.managers_from_cvm, 3)
 
 
+class TestMarketBaseBootstrap(TestEnrichment):
+    """A base ausente era falha silenciosa: sem ela nao ha gestora nenhuma."""
+
+    def test_existing_base_is_not_downloaded_again(self):
+        from unittest import mock
+
+        from shelf_monitor import main
+
+        with mock.patch.object(main, "run_import") as run_import:
+            main.ensure_market_base(self.config)
+        run_import.assert_not_called()
+
+    def test_missing_base_triggers_the_import(self):
+        from unittest import mock
+
+        from datetime import datetime
+
+        from shelf_monitor import main
+        from shelf_monitor.market.models import MarketDatabase
+
+        (self.config.market_dir / "mercado.csv").unlink()
+        empty = (MarketDatabase(imported_at=datetime.now()), {})
+        with mock.patch.object(main, "run_import", return_value=empty) as run_import:
+            main.ensure_market_base(self.config)
+        run_import.assert_called_once()
+
+    def test_a_failed_import_does_not_bring_the_run_down(self):
+        """A coleta do dia vale mais que a base: o relatorio sai com o aviso."""
+        from unittest import mock
+
+        from shelf_monitor import main
+
+        (self.config.market_dir / "mercado.csv").unlink()
+        with mock.patch.object(main, "run_import", side_effect=OSError("sem rede")):
+            main.ensure_market_base(self.config)  # nao pode levantar
+
+
 class TestCvmCodeLookup(TestEnrichment):
     """Casamento pelo codigo CVM - a chave de quem nao publica CNPJ."""
 
