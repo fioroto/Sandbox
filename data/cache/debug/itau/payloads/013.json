@@ -1,0 +1,76 @@
+{
+  "url": "https://plugin.handtalk.me/remote-config/6d531acddcb2d344af538f42d9864616.json",
+  "payload": {
+    "config": {
+      "side": "right",
+      "zIndex": 1000000,
+      "doNotTrack": true,
+      "exceptions": [],
+      "clickables": [],
+      "textEnabled": true,
+      "align": "default",
+      "addonsEnabled": false,
+      "avatar": "MAYA",
+      "opacity": 50,
+      "highContrast": false,
+      "colorButton": "a11yColorMain",
+      "customStyle": {
+        "button": {
+          "primary": "#003087",
+          "primaryFg": "#FFFFFF",
+          "borderRadius": "12"
+        },
+        "light": {
+          "neutral1": "#EDEDED",
+          "neutral2": "#FFFFFF",
+          "neutralText": "#2E2E2E",
+          "neutralTextLow": "#656565",
+          "border": "#656565",
+          "primary": "#C64F01",
+          "primaryText": "#FFFFFF"
+        },
+        "dark": {
+          "neutral1": "#121212",
+          "neutral2": "#1F1F1F",
+          "neutralText": "#FFFFFF",
+          "neutralTextLow": "#989898",
+          "border": "#656565",
+          "primary": "#FF8B10",
+          "primaryText": "#2E1305"
+        },
+        "borderRadius": 16
+      },
+      "addonsMap": {
+        "aiAssistant": {
+          "synonymsMeanings": true
+        },
+        "fontControl": {
+          "fontSize": true,
+          "textStyle": true,
+          "lineHeight": true,
+          "letterSpacing": true,
+          "highlightLetters": true
+        },
+        "navigation": {
+          "pageSpeech": true,
+          "readerMode": true,
+          "readingMask": true,
+          "readingGuide": true,
+          "highlightLinks": true,
+          "pageStructure": true,
+          "magnifier": true,
+          "hideImages": true,
+          "highlightHeadings": true,
+          "pauseAnimations": true,
+          "disableSounds": true
+        },
+        "colorControl": {
+          "contrastMode": true,
+          "saturationMode": true,
+          "pageColors": true
+        }
+      }
+    },
+    "isMajority": false
+  }
+}

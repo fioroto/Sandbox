@@ -1,0 +1,11 @@
+{
+  "url": "https://apicd.cloud.itau.com.br/charon/6eak4osk",
+  "payload": {
+    "timestamp": "2026-09-01T11:45:55.713+00:00",
+    "path": "/charon/6eak4osk",
+    "status": 400,
+    "error": "Bad Request",
+    "message": "InvalidSession",
+    "requestId": "f753c9c2-368259"
+  }
+}
