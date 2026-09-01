@@ -21,7 +21,9 @@ from shelf_monitor.models import (
 from shelf_monitor.report.aggregate import (
     build_cvm_cross_block,
     build_dashboard_data,
+    build_liquidity_block,
     overlap_block_from_snapshots,
+    summarize_platform,
 )
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_html, render_markdown
@@ -301,6 +303,63 @@ class TestCvmMovementsPayload(unittest.TestCase):
         self.assertEqual(payload["new_registrations"], 1)
 
 
+class TestLiquidityBlock(unittest.TestCase):
+    def test_median_and_bands_need_both_redemption_fields(self):
+        block = build_liquidity_block(report_for([
+            shelf("xp", [
+                offer("xp", "Alfa", CNPJ_A, redemption_quotation_days=1,
+                      redemption_payment_days=1),
+                offer("xp", "Beta", CNPJ_B, redemption_quotation_days=15,
+                      redemption_payment_days=15),
+                # So cotizacao: nao entra - somar metade subestimaria a espera.
+                offer("xp", "Gama", CNPJ_C, redemption_quotation_days=5),
+            ]),
+        ]))
+        platform = block["platforms"][0]
+        self.assertEqual(platform["n"], 2)
+        self.assertEqual(platform["median_total_days"], 16.0)
+        self.assertEqual(platform["bands"]["D+0 a 1"], 0)
+        self.assertEqual(platform["bands"]["D+2 a 5"], 1)
+        self.assertEqual(platform["bands"]["D+31 ou mais"], 0)
+        self.assertEqual(platform["bands"]["D+16 a 30"], 1)
+
+    def test_taxation_mix_counts_sem_info(self):
+        block = build_liquidity_block(report_for([
+            shelf("xp", [
+                offer("xp", "Alfa", CNPJ_A, redemption_quotation_days=0,
+                      redemption_payment_days=1, taxation="LONGO_PRAZO"),
+                offer("xp", "Beta", CNPJ_B),
+            ]),
+        ]))
+        taxation = block["platforms"][0]["taxation"]
+        self.assertEqual(taxation["LONGO_PRAZO"], 1)
+        self.assertEqual(taxation["sem_info"], 1)
+
+    def test_platform_without_deadlines_goes_to_missing(self):
+        block = build_liquidity_block(report_for([
+            shelf("xp", [offer("xp", "Alfa", CNPJ_A, redemption_quotation_days=0,
+                                redemption_payment_days=1)]),
+            shelf("inter", [offer("inter", "Beta", CNPJ_B)]),
+        ]))
+        self.assertEqual([p["platform_id"] for p in block["platforms"]], ["xp"])
+        self.assertEqual(block["missing"], ["Banco Inter"])
+
+
+class TestTopAdmins(unittest.TestCase):
+    def test_summary_counts_top_admins(self):
+        snapshot = shelf("xp", [
+            offer("xp", "Alfa", CNPJ_A, admin_name="BTG DTVM "),
+            offer("xp", "Beta", CNPJ_B, admin_name="BTG DTVM"),
+            offer("xp", "Gama", CNPJ_C, admin_name="Intrag"),
+            offer("xp", "Delta"),
+        ])
+        summary = summarize_platform(snapshot, set())
+        self.assertEqual(summary.top_admins, [("BTG DTVM", 2), ("Intrag", 1)])
+        self.assertEqual(
+            summary.to_dict()["top_admins"][0], {"name": "BTG DTVM", "count": 2}
+        )
+
+
 class TestNewSurfaces(unittest.TestCase):
     def _report(self) -> RunReport:
         return report_for([
@@ -338,6 +397,16 @@ class TestNewSurfaces(unittest.TestCase):
             "table-pre-op-shelf",
             "table-cancelled-shelf",
         ):
+            self.assertIn(f'id="{element_id}"', html_text)
+
+    def test_dashboard_has_liquidity_and_admin_mounts(self):
+        config, tmp = temp_config()
+        try:
+            path = render_dashboard(config, self._report())
+            html_text = path.read_text(encoding="utf-8")
+        finally:
+            tmp.cleanup()
+        for element_id in ("liquidity-section", "chart-taxation", "table-top-admins"):
             self.assertIn(f'id="{element_id}"', html_text)
 
     def test_digest_has_competitive_highlights_in_both_renderers(self):

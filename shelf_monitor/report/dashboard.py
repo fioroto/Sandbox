@@ -622,6 +622,20 @@ table(
     }))
   )
 );
+// Concentracao de administrador: um administrador dominante e dependencia
+// operacional da casa inteira, nao so preferencia de prateleira.
+table(
+  document.getElementById("table-top-admins"),
+  [{ key: "platform", label: "Plataforma" }, { key: "admin", label: "Administrador" },
+   { key: "count", label: "Fundos", num: true },
+   { key: "share", label: "% da prateleira", num: true }],
+  usable.flatMap(p =>
+    (p.top_admins || []).map(a => ({
+      platform: p.label, admin: a.name, count: a.count,
+      share: p.total_funds ? Math.round(100 * a.count / p.total_funds) + "%" : "–",
+    }))
+  )
+);
 
 // --- Faixas de aplicacao minima ---------------------------------------------
 const withMins = usable.filter(p => Object.keys(p.min_bands).length);
@@ -655,6 +669,63 @@ horizontalBars(
   })).sort((a, b) => b.value - a.value),
   { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
 );
+
+// --- Liquidez e tributacao ---------------------------------------------------
+(function renderLiquidity(block) {
+  const platforms = (block && block.platforms) || [];
+  const legend = document.getElementById("legend-liquidity");
+  const chart = document.getElementById("chart-liquidity");
+  if (!platforms.length) {
+    legend.innerHTML = "";
+    document.getElementById("legend-taxation").innerHTML = "";
+    chart.innerHTML = '<p class="empty">Nenhuma casa publica prazos de resgate nesta coleta.</p>';
+    document.getElementById("chart-taxation").innerHTML = "";
+    document.getElementById("table-liquidity").innerHTML = "";
+    return;
+  }
+
+  renderLegend(legend, platforms);
+  groupedBars(chart, block.band_order || [], platforms.map(p => ({
+    id: p.platform_id, label: p.label,
+    values: (block.band_order || []).map(b => (p.bands || {})[b] || 0),
+  })), { height: 220, ariaLabel: "Distribuicao do prazo total de resgate por casa" });
+
+  // Aqui a cor segue o regime tributario, nao a casa - legenda propria.
+  const TAX = [
+    ["LONGO_PRAZO", "Longo prazo", "var(--s1)"],
+    ["CURTO_PRAZO", "Curto prazo", "var(--s2)"],
+    ["VARIAVEL", "Variavel", "var(--s4)"],
+  ];
+  document.getElementById("legend-taxation").innerHTML = TAX.map(([, label, color]) =>
+    `<span><i class="swatch" style="background:${color}"></i>${label}</span>`).join("") +
+    '<span><i class="swatch" style="background:var(--grid)"></i>Sem informacao</span>';
+  stackedRows(document.getElementById("chart-taxation"), platforms.map(p => {
+    const taxation = p.taxation || {};
+    const known = TAX.reduce((acc, [key]) => acc + (taxation[key] || 0), 0);
+    const total = Object.values(taxation).reduce((acc, v) => acc + v, 0);
+    return {
+      label: p.label,
+      parts: TAX.map(([key, name, color]) =>
+        ({ value: taxation[key] || 0, color, name: name.toLowerCase() }))
+        .concat([{ value: Math.max(0, total - known), color: "var(--grid)",
+                   name: "sem informacao" }]),
+    };
+  }));
+
+  const days = v => v === undefined || v === null ? "–"
+    : "D+" + v.toLocaleString("pt-BR");
+  table2(document.getElementById("table-liquidity"),
+    ["Casa", "Fundos com prazo", "Mediana total", ...DATA.class_order],
+    platforms.map(p => [
+      p.label, p.n.toLocaleString("pt-BR"), days(p.median_total_days),
+      ...DATA.class_order.map(c => days((p.by_class || {})[c])),
+    ]));
+
+  document.getElementById("liquidity-coverage").textContent =
+    (block.missing || []).length
+      ? "Sem prazos publicados nesta coleta: " + block.missing.join(", ") + "."
+      : "";
+})(DATA.liquidity);
 
 // --- Sobreposicao e arbitragem de preco -------------------------------------
 (function renderOverlap(block) {
@@ -989,6 +1060,8 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <div class="chart-scroll" id="chart-managers"></div>
     <details><summary>Ver as maiores gestoras de cada prateleira</summary>
       <div id="table-top-managers"></div></details>
+    <details><summary>Ver os administradores dominantes de cada prateleira</summary>
+      <div id="table-top-admins"></div></details>
   </section>
 
   <section class="card">
@@ -998,6 +1071,23 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <div class="legend" id="legend-bands"></div>
     <div class="chart-scroll" id="chart-bands"></div>
     <details><summary>Ver tabela</summary><div id="table-bands"></div></details>
+  </section>
+
+  <section class="card" id="liquidity-section">
+    <h2>Liquidez e tributacao</h2>
+    <p class="card-sub">Prazo total de resgate (cotizacao + liquidacao, em dias anunciados
+      pela casa) e regime tributario dos fundos de varejo. Prazo curto e argumento de venda;
+      o mix tributario e proxy direto do mix de produto.</p>
+    <div class="legend" id="legend-liquidity"></div>
+    <div class="chart-scroll" id="chart-liquidity"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:22px 0 4px">Mix de tributacao</h3>
+    <div class="legend" id="legend-taxation"></div>
+    <div class="chart-scroll" id="chart-taxation"></div>
+
+    <details><summary>Ver medianas de prazo por classe</summary>
+      <div id="table-liquidity"></div></details>
+    <div class="coverage" id="liquidity-coverage"></div>
   </section>
 
   <section class="card">

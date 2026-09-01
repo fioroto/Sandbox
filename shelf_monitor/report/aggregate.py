@@ -60,6 +60,7 @@ class PlatformSummary:
     by_class: dict[str, int] = field(default_factory=dict)
     distinct_managers: int = 0
     top_managers: list[tuple[str, int]] = field(default_factory=list)
+    top_admins: list[tuple[str, int]] = field(default_factory=list)
     min_bands: dict[str, int] = field(default_factory=dict)
     lowest_min: float | None = None
     median_admin_fee: float | None = None
@@ -77,6 +78,7 @@ class PlatformSummary:
             "by_class": self.by_class,
             "distinct_managers": self.distinct_managers,
             "top_managers": [{"name": n, "count": c} for n, c in self.top_managers],
+            "top_admins": [{"name": n, "count": c} for n, c in self.top_admins],
             "min_bands": self.min_bands,
             "lowest_min": self.lowest_min,
             "median_admin_fee": self.median_admin_fee,
@@ -329,6 +331,8 @@ def summarize_platform(
     minimums = [f.min_initial for f in funds if f.min_initial is not None]
     fees = [f.admin_fee_pct for f in funds if f.admin_fee_pct is not None]
     with_cnpj = sum(1 for f in funds if f.cnpj)
+    # Concentracao de administrador: quem de fato opera a prateleira da casa.
+    admins = Counter(f.admin_name.strip() for f in funds if f.admin_name)
 
     return PlatformSummary(
         platform_id=snapshot.platform,
@@ -340,6 +344,7 @@ def summarize_platform(
         by_class=by_class,
         distinct_managers=len(managers),
         top_managers=sorted(managers.items(), key=lambda kv: kv[1], reverse=True)[:10],
+        top_admins=admins.most_common(3),
         min_bands=bands,
         lowest_min=min(minimums) if minimums else None,
         median_admin_fee=_median(fees),
@@ -552,6 +557,94 @@ def build_overlap_block(report: RunReport) -> dict:
     return overlap_block_from_snapshots(report.snapshots)
 
 
+# --- Liquidez e tributacao ---------------------------------------------------
+
+# Prazo TOTAL de resgate (cotizacao + liquidacao) em faixas que separam fundo
+# de caixa, resgate curto, medio e o longo tipico de multimercado/credito.
+_LIQUIDITY_BANDS: list[tuple[str, int, int | None]] = [
+    ("D+0 a 1", 0, 1),
+    ("D+2 a 5", 2, 5),
+    ("D+6 a 15", 6, 15),
+    ("D+16 a 30", 16, 30),
+    ("D+31 ou mais", 31, None),
+]
+
+
+def _liquidity_band(days: int) -> str:
+    for label, low, high in _LIQUIDITY_BANDS:
+        if days >= low and (high is None or days <= high):
+            return label
+    return _LIQUIDITY_BANDS[-1][0]
+
+
+def build_liquidity_block(report: RunReport) -> dict:
+    """Prazo total de resgate e mix tributario, por casa, sobre o varejo.
+
+    O prazo so conta quando cotizacao E liquidacao existem - somar so metade
+    subestimaria a espera real. Casa sem nenhum prazo publicado (Inter) sai da
+    lista e e nomeada em `missing`: ausencia reportada, nunca silenciada.
+    """
+    ordered = [
+        s
+        for pid in PLATFORMS
+        for s in _usable_snapshots(report.snapshots)
+        if s.platform == pid
+    ]
+    ordered += [
+        s for s in _usable_snapshots(report.snapshots) if s.platform not in PLATFORMS
+    ]
+
+    platforms: list[dict] = []
+    missing: list[str] = []
+    for snapshot in ordered:
+        funds = retail_funds(snapshot)
+        totals: list[float] = []
+        by_class_values: dict[str, list[float]] = {}
+        bands: Counter = Counter()
+        for fund in funds:
+            if (
+                fund.redemption_quotation_days is None
+                or fund.redemption_payment_days is None
+            ):
+                continue
+            days = fund.redemption_quotation_days + fund.redemption_payment_days
+            totals.append(float(days))
+            bands[_liquidity_band(days)] += 1
+            by_class_values.setdefault(
+                ASSET_CLASS_LABELS[fund.asset_class], []
+            ).append(float(days))
+
+        if not totals:
+            missing.append(_platform_label(snapshot.platform))
+            continue
+
+        taxation: Counter = Counter(
+            (fund.taxation or "sem_info") for fund in funds
+        )
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": _platform_label(snapshot.platform),
+                "n": len(totals),
+                "median_total_days": _median(totals),
+                "by_class": {
+                    label: _median(values)
+                    for label, values in sorted(by_class_values.items())
+                },
+                "bands": {
+                    label: bands.get(label, 0) for label, _, _ in _LIQUIDITY_BANDS
+                },
+                "taxation": dict(taxation),
+            }
+        )
+
+    return {
+        "platforms": platforms,
+        "band_order": [label for label, _, _ in _LIQUIDITY_BANDS],
+        "missing": missing,
+    }
+
+
 # --- Cruzamento cadastro CVM x prateleiras -----------------------------------
 
 _CVM_CROSS_TOP = 30
@@ -728,6 +821,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         "listing": build_listing_block(report),
         "overlap": build_overlap_block(report),
         "cvm_cross": build_cvm_cross_block(report),
+        "liquidity": build_liquidity_block(report),
         "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
