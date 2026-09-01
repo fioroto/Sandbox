@@ -1,7 +1,7 @@
 """Deck executivo (.pptx) gerado a cada coleta.
 
-O dashboard e para explorar; o deck e para decidir: 8 slides com a leitura
-competitiva das vitrines, prontos para forum ou comite. Consome os mesmos
+O dashboard e para explorar; o deck e para decidir: a leitura competitiva das
+vitrines em poucos slides, prontos para forum ou comite. Consome os mesmos
 agregados do dashboard (build_dashboard_data) - um numero nunca diverge entre
 as duas superficies.
 
@@ -65,6 +65,7 @@ def render_deck(config: Config, report: RunReport) -> Path:
     if platforms:
         _architecture(prs, platforms)
         _costs(prs, platforms)
+    _arbitrage(prs, data)
     _movements(prs, report)
     _cvm_radar(prs, data)
     _methodology(prs, report, data)
@@ -313,6 +314,51 @@ def _costs(prs, platforms: list[dict]):
           "Taxa e a maxima publicada pela casa (mesma semantica do maxAdminFee do "
           "Open Finance). Celulas vazias = a fonte nao publica o campo.",
           10, color=_MUTED)
+
+
+def _arbitrage(prs, data: dict):
+    """Top de arbitragem de taxa - o mesmo CNPJ custando diferente entre casas."""
+    overlap = data.get("overlap") or {}
+    fee = overlap.get("fee_arbitrage") or {}
+    top = (fee.get("top") or [])[:8]
+    if not top:
+        return
+    labels = overlap.get("labels") or {}
+
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    _title(
+        slide,
+        "Arbitragem de preco: o mesmo fundo, taxas diferentes",
+        f"{fee.get('significant', 0)} CNPJs com divergencia >= 0,10 p.p. entre casas "
+        f"(de {fee.get('universe', 0)} comparaveis) - taxas canonicalizadas para % ao ano",
+    )
+
+    def pct(value):
+        return f"{_fmt(value)}%" if value is not None else "-"
+
+    rows = []
+    for item in top:
+        fees = item.get("fees") or {}
+        cheapest = item.get("cheapest")
+        priciest = item.get("priciest")
+        name = item.get("name") or ""
+        rows.append([
+            name if len(name) <= 58 else name[:55] + "...",
+            f"{pct(fees.get(cheapest))} - {labels.get(cheapest, cheapest or '-')}",
+            f"{pct(fees.get(priciest))} - {labels.get(priciest, priciest or '-')}",
+            f"+{_fmt(item.get('spread_pp'))} p.p.",
+        ])
+    _table(
+        slide, 0.6, 1.7, 12.1,
+        ["Fundo", "Mais barata", "Mais cara", "Spread"],
+        rows, col_widths=[6.6, 2.3, 2.3, 0.9],
+    )
+    _text(
+        slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.5,
+        "Uma divergencia pode refletir classe ou serie diferente sob o mesmo CNPJ.",
+        10, color=_MUTED,
+    )
 
 
 def _movements(prs, report: RunReport):
