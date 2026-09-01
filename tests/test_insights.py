@@ -10,12 +10,16 @@ from datetime import datetime
 from shelf_monitor.config import Config
 from shelf_monitor.models import (
     CollectorStrategy,
+    CvmDiff,
+    CvmFund,
+    CvmSnapshot,
     FundOffer,
     RunReport,
     ShelfSnapshot,
     SnapshotStatus,
 )
 from shelf_monitor.report.aggregate import (
+    build_cvm_cross_block,
     build_dashboard_data,
     overlap_block_from_snapshots,
 )
@@ -62,6 +66,31 @@ def shelf(
 def report_for(snapshots: list[ShelfSnapshot], **kwargs) -> RunReport:
     return RunReport(
         generated_at=datetime(2026, 8, 31, 12, 0), snapshots=snapshots, **kwargs
+    )
+
+
+def cvm_fund(
+    cnpj: str,
+    name: str,
+    house: str = "btg",
+    situation: str = "Em Funcionamento Normal",
+    registered_at: str | None = None,
+) -> CvmFund:
+    return CvmFund(
+        cnpj=cnpj,
+        name=name,
+        house=house,
+        matched_by="test",
+        situation=situation,
+        registered_at=registered_at,
+    )
+
+
+def cvm_snapshot(
+    funds: list[CvmFund], status: SnapshotStatus = SnapshotStatus.OK
+) -> CvmSnapshot:
+    return CvmSnapshot(
+        collected_at=datetime(2026, 8, 31, 12, 0), status=status, funds=funds
     )
 
 
@@ -188,12 +217,128 @@ class TestOverlapBlock(unittest.TestCase):
         self.assertEqual(block["core_all"]["count"], 0)
 
 
+class TestCvmCrossBlock(unittest.TestCase):
+    def test_pre_operational_already_on_shelf(self):
+        report = report_for(
+            [shelf("xp", [offer("xp", "Alfa", CNPJ_A)])],
+            cvm_snapshot=cvm_snapshot([
+                cvm_fund(CNPJ_A, "Alfa", situation="Fase Pre-Operacional"),
+                cvm_fund(CNPJ_B, "Beta", situation="Fase Pre-Operacional"),
+            ]),
+        )
+        cross = build_cvm_cross_block(report)
+        self.assertTrue(cross["available"])
+        pre = cross["pre_op_on_shelf"]
+        # So o CNPJ presente numa prateleira entra; o outro pre-operacional nao.
+        self.assertEqual(pre["count"], 1)
+        self.assertEqual(pre["funds"][0]["name"], "Alfa")
+        self.assertEqual(pre["funds"][0]["platforms"], ["XP Investimentos"])
+        self.assertFalse(pre["funds"][0]["on_listing"])
+
+    def test_cancelled_still_offered_and_listing_first(self):
+        vitrine = offer("xp", "Alfa", CNPJ_A)
+        vitrine.sources = [CollectorStrategy.HTML_SCRAPE.value]
+        catalogo = offer("xp", "Beta", CNPJ_B)
+        report = report_for(
+            [shelf("xp", [vitrine, catalogo])],
+            cvm_snapshot=cvm_snapshot([
+                cvm_fund(CNPJ_B, "Beta", situation="Cancelado"),
+                cvm_fund(CNPJ_A, "Alfa", situation="Cancelado"),
+                cvm_fund(CNPJ_C, "Gama", situation="Cancelado"),
+            ]),
+        )
+        cross = build_cvm_cross_block(report)
+        cancelled = cross["cancelled_on_shelf"]
+        # Gama nao esta em prateleira nenhuma; Alfa (vitrine) vem antes de Beta.
+        self.assertEqual(cancelled["count"], 2)
+        self.assertEqual(cancelled["on_listing"], 1)
+        self.assertEqual([f["name"] for f in cancelled["funds"]], ["Alfa", "Beta"])
+        self.assertTrue(cancelled["funds"][0]["on_listing"])
+        self.assertEqual(cancelled["by_platform"][0]["label"], "XP Investimentos")
+        self.assertEqual(cancelled["by_platform"][0]["count"], 2)
+
+    def test_unavailable_or_missing_cvm(self):
+        report = report_for([shelf("xp", [offer("xp", "Alfa", CNPJ_A)])])
+        self.assertFalse(build_cvm_cross_block(report)["available"])
+        report.cvm_snapshot = cvm_snapshot([], status=SnapshotStatus.UNAVAILABLE)
+        self.assertFalse(build_cvm_cross_block(report)["available"])
+
+
+class TestCvmMovementsPayload(unittest.TestCase):
+    def test_diff_items_are_listed_and_capped(self):
+        funds = [
+            cvm_fund(f"{i:014d}", f"Fundo {i:02d}", registered_at=f"2026-08-{i + 1:02d}")
+            for i in range(20)
+        ]
+        report = report_for(
+            [shelf("xp", [offer("xp", "Alfa", CNPJ_A)])],
+            cvm_snapshot=cvm_snapshot(funds),
+            cvm_diff=CvmDiff(
+                prev_date=datetime(2026, 8, 29).date(),
+                curr_date=datetime(2026, 8, 31).date(),
+                new_registrations=funds,
+            ),
+        )
+        payload = build_dashboard_data(report)["cvm"]["diff"]
+        self.assertFalse(payload["is_first_run"])
+        self.assertEqual(payload["new_registrations"], 20)
+        self.assertEqual(len(payload["new_items"]), 15)
+        self.assertEqual(payload["launch_items"], [])
+        self.assertEqual(payload["cancelled_items"], [])
+
+    def test_first_run_keeps_numeric_keys(self):
+        report = report_for(
+            [shelf("xp", [offer("xp", "Alfa", CNPJ_A)])],
+            cvm_snapshot=cvm_snapshot([cvm_fund(CNPJ_A, "Alfa")]),
+            cvm_diff=CvmDiff(
+                prev_date=None,
+                curr_date=datetime(2026, 8, 31).date(),
+                new_registrations=[cvm_fund(CNPJ_A, "Alfa")],
+            ),
+        )
+        payload = build_dashboard_data(report)["cvm"]["diff"]
+        self.assertTrue(payload["is_first_run"])
+        self.assertEqual(payload["new_registrations"], 1)
+
+
 class TestNewSurfaces(unittest.TestCase):
     def _report(self) -> RunReport:
         return report_for([
             shelf("xp", [offer("xp", "Alfa", CNPJ_A, fee=1.0)]),
             shelf("nu", [offer("nu", "Alfa", CNPJ_A, fee=2.0)]),
         ])
+
+    def test_digest_carries_cvm_cross_blocks(self):
+        report = self._report()
+        vitrine = offer("xp", "Velho", CNPJ_B)
+        vitrine.sources = [CollectorStrategy.HTML_SCRAPE.value]
+        report.snapshots[0].funds.append(vitrine)
+        report.cvm_snapshot = cvm_snapshot([
+            cvm_fund(CNPJ_A, "Alfa", situation="Fase Pre-Operacional"),
+            cvm_fund(CNPJ_B, "Velho", situation="Cancelado"),
+        ])
+        markdown = render_markdown(report)
+        self.assertIn("Ja em prateleira antes do lancamento", markdown)
+        self.assertIn("Higiene de catalogo", markdown)
+        self.assertIn("NA VITRINE", markdown)
+        html_text = render_html(report)
+        self.assertIn("Higiene de catalogo", html_text)
+
+    def test_dashboard_has_cvm_cross_and_movements_mounts(self):
+        config, tmp = temp_config()
+        try:
+            report = self._report()
+            report.cvm_snapshot = cvm_snapshot([cvm_fund(CNPJ_A, "Alfa")])
+            path = render_dashboard(config, report)
+            html_text = path.read_text(encoding="utf-8")
+        finally:
+            tmp.cleanup()
+        for element_id in (
+            "cvm-movements",
+            "table-pre-op-shelf",
+            "table-cancelled-shelf",
+        ):
+            self.assertIn(f'id="{element_id}"', html_text)
 
     def test_digest_has_competitive_highlights_in_both_renderers(self):
         report = self._report()

@@ -8,7 +8,7 @@ from itertools import combinations
 
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
-from shelf_monitor.normalize import format_cnpj, normalize_text
+from shelf_monitor.normalize import format_cnpj, normalize_text, strip_accents
 from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
     AssetClass,
@@ -552,6 +552,88 @@ def build_overlap_block(report: RunReport) -> dict:
     return overlap_block_from_snapshots(report.snapshots)
 
 
+# --- Cruzamento cadastro CVM x prateleiras -----------------------------------
+
+_CVM_CROSS_TOP = 30
+# Itens listados por movimento do radar no dashboard (as contagens sao inteiras).
+_CVM_DIFF_TOP = 15
+
+
+def build_cvm_cross_block(report: RunReport) -> dict:
+    """O funil de distribuicao: cadastro CVM cruzado com as prateleiras.
+
+    Dois sinais que nenhum dos lados da sozinho: o pre-operacional que JA
+    aparece numa prateleira (antecipacao de lancamento) e o CANCELADO na CVM
+    que ainda esta no catalogo coletado (higiene). Usa o snapshot inteiro, nao
+    so o varejo - higiene vale tambem para os restritos - e nao depende do
+    diff CVM: funciona com um unico extrato.
+    """
+    snapshot = report.cvm_snapshot
+    if (
+        not snapshot
+        or snapshot.status == SnapshotStatus.UNAVAILABLE
+        or not snapshot.funds
+    ):
+        return {"available": False}
+
+    presence: dict[str, set[str]] = {}
+    listing: dict[str, set[str]] = {}
+    for shelf_snapshot in _usable_snapshots(report.snapshots):
+        for fund in shelf_snapshot.funds:
+            if not fund.cnpj:
+                continue
+            presence.setdefault(fund.cnpj, set()).add(shelf_snapshot.platform)
+            if fund.on_listing:
+                listing.setdefault(fund.cnpj, set()).add(shelf_snapshot.platform)
+
+    def item(fund) -> dict:
+        return {
+            "cnpj": format_cnpj(fund.cnpj),
+            "name": fund.name,
+            "house_label": _platform_label(fund.house),
+            "platforms": [
+                _platform_label(p) for p in sorted(presence.get(fund.cnpj, set()))
+            ],
+            "on_listing": bool(listing.get(fund.cnpj)),
+            "registered_at": fund.registered_at,
+        }
+
+    pre_op = [f for f in snapshot.funds if f.is_pre_operational and f.cnpj in presence]
+    # Registro mais recente primeiro; quem ja esta na vitrine sobe ao topo.
+    pre_op.sort(key=lambda f: f.registered_at or "", reverse=True)
+    pre_op.sort(key=lambda f: not bool(listing.get(f.cnpj)))
+
+    cancelled = [
+        f
+        for f in snapshot.funds
+        if strip_accents(f.situation or "").upper().startswith("CANCELAD")
+        and f.cnpj in presence
+    ]
+    by_platform: Counter = Counter()
+    for fund in cancelled:
+        for pid in presence.get(fund.cnpj, set()):
+            by_platform[pid] += 1
+    cancelled.sort(key=lambda f: f.name)
+    cancelled.sort(key=lambda f: not bool(listing.get(f.cnpj)))
+
+    return {
+        "available": True,
+        "pre_op_on_shelf": {
+            "count": len(pre_op),
+            "funds": [item(f) for f in pre_op[:_CVM_CROSS_TOP]],
+        },
+        "cancelled_on_shelf": {
+            "count": len(cancelled),
+            "on_listing": sum(1 for f in cancelled if listing.get(f.cnpj)),
+            "by_platform": [
+                {"platform_id": pid, "label": _platform_label(pid), "count": count}
+                for pid, count in by_platform.most_common()
+            ],
+            "funds": [item(f) for f in cancelled[:_CVM_CROSS_TOP]],
+        },
+    }
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -603,11 +685,36 @@ def build_dashboard_data(report: RunReport) -> dict:
         }
 
     if report.cvm_diff:
+        diff = report.cvm_diff
         cvm_payload["diff"] = {
-            "is_first_run": report.cvm_diff.is_first_run,
-            "new_registrations": len(report.cvm_diff.new_registrations),
-            "launches": len(report.cvm_diff.launches),
-            "cancelled": len(report.cvm_diff.cancelled),
+            "is_first_run": diff.is_first_run,
+            "new_registrations": len(diff.new_registrations),
+            "launches": len(diff.launches),
+            "cancelled": len(diff.cancelled),
+            # As listas alimentam o bloco de movimentos do dashboard; as
+            # contagens acima ficam como estao para nao quebrar leitores do
+            # JSON ja commitado.
+            "new_items": [
+                {
+                    "name": f.name,
+                    "house_label": _platform_label(f.house),
+                    "cnpj": format_cnpj(f.cnpj),
+                    "pre_operational": f.is_pre_operational,
+                }
+                for f in diff.new_registrations[:_CVM_DIFF_TOP]
+            ],
+            "launch_items": [
+                {
+                    "name": c.fund.name,
+                    "house_label": _platform_label(c.fund.house),
+                    "cnpj": format_cnpj(c.fund.cnpj),
+                }
+                for c in diff.launches[:_CVM_DIFF_TOP]
+            ],
+            "cancelled_items": [
+                {"name": f.name, "house_label": _platform_label(f.house)}
+                for f in diff.cancelled[:_CVM_DIFF_TOP]
+            ],
         }
 
     class_order = [
@@ -620,6 +727,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         "generated_at": report.generated_at.isoformat(),
         "listing": build_listing_block(report),
         "overlap": build_overlap_block(report),
+        "cvm_cross": build_cvm_cross_block(report),
         "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,

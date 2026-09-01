@@ -333,14 +333,24 @@ def _add_summary(
         note_row += 1
 
 
-def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
+def _add_cvm(
+    workbook: Workbook, cvm: CvmSnapshot, snapshots: list[ShelfSnapshot]
+) -> None:
+    # Em que prateleiras coletadas o CNPJ do registro aparece - e o que liga o
+    # radar antecipado a oferta real de cada casa.
+    presence: dict[str, set[str]] = {}
+    for snapshot in snapshots:
+        for fund in snapshot.funds:
+            if fund.cnpj:
+                presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
+
     sheet = workbook.create_sheet("Radar CVM")
     headers = [
         "Casa", "Fundo", "CNPJ", "Gestora", "Administrador", "Tipo",
         "Situacao", "Pre-operacional", "Data de registro", "Inicio da situacao",
-        "Patrimonio liquido (R$)",
+        "Patrimonio liquido (R$)", "Em prateleira (casas)",
     ]
-    widths = [20, 52, 20, 34, 30, 12, 26, 16, 17, 18, 22]
+    widths = [20, 52, 20, 34, 30, 12, 26, 16, 17, 18, 22, 26]
     for index, (name, width) in enumerate(zip(headers, widths), start=1):
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
@@ -358,12 +368,15 @@ def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
             fund.manager_name or "", fund.admin_name or "", fund.fund_type or "",
             fund.situation or "", "Sim" if fund.is_pre_operational else "Nao",
             fund.registered_at or "", fund.situation_started_at or "", fund.pl,
+            ", ".join(
+                _platform_label(p) for p in sorted(presence.get(fund.cnpj, set()))
+            ),
         ]
         for index, value in enumerate(values, start=1):
             cell = sheet.cell(row=row, column=index, value=value)
             cell.font = _BODY_FONT
             cell.border = _BORDER
-        sheet.cell(row=row, column=len(headers)).number_format = _MONEY
+        sheet.cell(row=row, column=len(headers) - 1).number_format = _MONEY
         if fund.is_pre_operational:
             for index in range(1, len(headers) + 1):
                 sheet.cell(row=row, column=index).font = Font(
@@ -904,7 +917,7 @@ def render_spreadsheet(
     _add_arbitrage_sheet(workbook, overlap_block_from_snapshots(usable))
     _add_platform_sheets(workbook, usable)
     if cvm and cvm.funds:
-        _add_cvm(workbook, cvm)
+        _add_cvm(workbook, cvm, usable)
     _add_source_coverage(workbook, usable)
     _add_collection_health(workbook, snapshots, cvm)
     _add_methodology_sheet(workbook, snapshots, enrichment, generated_at)

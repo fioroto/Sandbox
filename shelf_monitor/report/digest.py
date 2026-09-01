@@ -18,7 +18,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
-from shelf_monitor.report.aggregate import build_overlap_block
+from shelf_monitor.report.aggregate import build_cvm_cross_block, build_overlap_block
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -241,7 +241,60 @@ def _md_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> list[s
     return lines
 
 
-def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
+_CROSS_CANCELLED_LISTED = 10
+
+
+def _md_cvm_cross(cross: dict | None) -> list[str]:
+    """Blocos do cruzamento cadastro x prateleira dentro do Radar CVM."""
+    if not cross or not cross.get("available"):
+        return []
+    lines: list[str] = []
+
+    pre = cross.get("pre_op_on_shelf", {})
+    if pre.get("count"):
+        lines += ["**Ja em prateleira antes do lancamento**", ""]
+        for item in pre.get("funds", [])[:_MAX_LISTED]:
+            where = ", ".join(item.get("platforms", [])) or "-"
+            listing = " - na vitrine" if item.get("on_listing") else ""
+            lines.append(
+                f"- [{item['house_label']}] {item['name']} ({item['cnpj']}) - "
+                f"presente em: {where}{listing}"
+            )
+        shown = min(pre["count"], len(pre.get("funds", [])), _MAX_LISTED)
+        if pre["count"] > shown:
+            lines.append(f"- ... e mais {pre['count'] - shown} fundos")
+        lines.append("")
+
+    cancelled = cross.get("cancelled_on_shelf", {})
+    if cancelled.get("count"):
+        by_platform = ", ".join(
+            f"{entry['label']} {entry['count']}"
+            for entry in cancelled.get("by_platform", [])
+        )
+        lines += [
+            "**Higiene de catalogo: cancelados na CVM ainda no catalogo**",
+            "",
+            f"{cancelled['count']} fundos com registro cancelado na CVM continuam no "
+            f"catalogo coletado ({by_platform}). Um cancelado no catalogo Open Finance "
+            "e cadastro administrado desatualizado; um cancelado na vitrine e alerta "
+            f"forte ({cancelled.get('on_listing', 0)} na vitrine).",
+            "",
+        ]
+        for item in cancelled.get("funds", [])[:_CROSS_CANCELLED_LISTED]:
+            listing = " - NA VITRINE" if item.get("on_listing") else ""
+            lines.append(f"- [{item['house_label']}] {item['name']}{listing}")
+        if cancelled["count"] > _CROSS_CANCELLED_LISTED:
+            lines.append(
+                f"- ... e mais {cancelled['count'] - _CROSS_CANCELLED_LISTED} fundos"
+            )
+        lines.append("")
+
+    return lines
+
+
+def _md_cvm_section(
+    diff: CvmDiff | None, report: RunReport, cross: dict | None = None
+) -> list[str]:
     lines = ["## Radar CVM", ""]
 
     snapshot = report.cvm_snapshot
@@ -262,6 +315,8 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
         pre_op = sum(1 for f in funds if f.is_pre_operational)
         lines.append(f"| {_platform_label(house)} | {len(funds)} | {pre_op} |")
     lines.append("")
+
+    lines += _md_cvm_cross(cross)
 
     if not diff:
         return lines
@@ -322,10 +377,16 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
-def render_markdown(report: RunReport, overlap: dict | None = None) -> str:
+def render_markdown(
+    report: RunReport,
+    overlap: dict | None = None,
+    cvm_cross: dict | None = None,
+) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     if overlap is None:
         overlap = build_overlap_block(report)
+    if cvm_cross is None:
+        cvm_cross = build_cvm_cross_block(report)
 
     lines = [
         "# Monitor de Prateleiras de Fundos",
@@ -355,7 +416,7 @@ def render_markdown(report: RunReport, overlap: dict | None = None) -> str:
 
     lines += _md_overlap_section(overlap)
 
-    lines += _md_cvm_section(report.cvm_diff, report)
+    lines += _md_cvm_section(report.cvm_diff, report, cvm_cross)
 
     lines += ["## Prateleiras", ""]
     for diff in report.shelf_diffs:
@@ -498,7 +559,43 @@ def _html_overlap_section(overlap: dict) -> str:
     return "".join(parts)
 
 
-def _html_cvm_section(report: RunReport) -> str:
+def _html_cvm_cross(cross: dict | None) -> str:
+    """Versao de e-mail do cruzamento cadastro x prateleira - top 5 de cada."""
+    if not cross or not cross.get("available"):
+        return ""
+    parts: list[str] = []
+
+    pre = cross.get("pre_op_on_shelf", {})
+    if pre.get("count"):
+        parts.append(
+            f'<p style="{_P}margin-bottom:6px;"><strong>Ja em prateleira antes do '
+            f"lancamento ({pre['count']})</strong></p>"
+        )
+        items = [
+            f"[{_esc(item['house_label'])}] {_esc(item['name'])}"
+            f" <span style='color:#898781;'>presente em "
+            f"{_esc(', '.join(item.get('platforms', [])) or '-')}</span>"
+            for item in pre.get("funds", [])[:5]
+        ]
+        parts.append(_html_list(items, pre["count"]))
+
+    cancelled = cross.get("cancelled_on_shelf", {})
+    if cancelled.get("count"):
+        by_platform = ", ".join(
+            f"{entry['label']} {entry['count']}"
+            for entry in cancelled.get("by_platform", [])
+        )
+        parts.append(
+            f'<p style="{_P}"><strong>Higiene de catalogo:</strong> '
+            f"{cancelled['count']} fundos cancelados na CVM continuam no catalogo "
+            f"coletado ({_esc(by_platform)}; {cancelled.get('on_listing', 0)} na "
+            "vitrine).</p>"
+        )
+
+    return "".join(parts)
+
+
+def _html_cvm_section(report: RunReport, cross: dict | None = None) -> str:
     snapshot = report.cvm_snapshot
     parts = [f'<h2 style="{_H2}">Radar CVM &mdash; visao antecipada</h2>']
 
@@ -528,6 +625,8 @@ def _html_cvm_section(report: RunReport) -> str:
         f'<th style="{_TH}text-align:right;">Pre-operacionais</th>'
         f"</tr></thead><tbody>{rows}</tbody></table>"
     )
+
+    parts.append(_html_cvm_cross(cross))
 
     diff = report.cvm_diff
     if not diff:
@@ -565,10 +664,16 @@ def _html_cvm_section(report: RunReport) -> str:
     return "".join(parts)
 
 
-def render_html(report: RunReport, overlap: dict | None = None) -> str:
+def render_html(
+    report: RunReport,
+    overlap: dict | None = None,
+    cvm_cross: dict | None = None,
+) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     if overlap is None:
         overlap = build_overlap_block(report)
+    if cvm_cross is None:
+        cvm_cross = build_cvm_cross_block(report)
     sentence, is_alert = _summary_sentence(report)
     summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
 
@@ -613,7 +718,7 @@ def render_html(report: RunReport, overlap: dict | None = None) -> str:
 
   {_html_overlap_section(overlap)}
 
-  {_html_cvm_section(report)}
+  {_html_cvm_section(report, cvm_cross)}
 
   <h2 style="{_H2}">Prateleiras</h2>
   {shelf_sections}
@@ -632,14 +737,21 @@ def render_digest(config: Config, report: RunReport) -> tuple[Path, Path]:
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     today: date = report.generated_at.date()
 
-    # Calculado uma vez e passado aos dois renderers - o conteudo dos destaques
+    # Calculados uma vez e passados aos dois renderers - o conteudo dos blocos
     # nunca diverge entre o markdown e o e-mail.
     overlap = build_overlap_block(report)
+    cvm_cross = build_cvm_cross_block(report)
 
     md_path = config.reports_dir / f"digest-{today.isoformat()}.md"
-    md_path.write_text(render_markdown(report, overlap=overlap), encoding="utf-8")
+    md_path.write_text(
+        render_markdown(report, overlap=overlap, cvm_cross=cvm_cross),
+        encoding="utf-8",
+    )
 
     html_path = config.reports_dir / f"digest-{today.isoformat()}.html"
-    html_path.write_text(render_html(report, overlap=overlap), encoding="utf-8")
+    html_path.write_text(
+        render_html(report, overlap=overlap, cvm_cross=cvm_cross),
+        encoding="utf-8",
+    )
 
     return md_path, html_path

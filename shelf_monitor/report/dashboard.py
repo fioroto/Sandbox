@@ -798,6 +798,67 @@ if (cvm.available && cvm.houses && cvm.houses.length) {
      { key: "manager", label: "Gestor" }, { key: "registered_at", label: "Registro" }],
     cvm.pre_operational_funds || []
   );
+
+  // Movimentos do radar: o diff ja vinha serializado e o JS o descartava.
+  const movements = document.getElementById("cvm-movements");
+  const cvmDiff = cvm.diff;
+  if (!cvmDiff) {
+    movements.innerHTML = "";
+  } else if (cvmDiff.is_first_run) {
+    movements.innerHTML = '<div class="note-box">Primeira coleta do radar: novos ' +
+      "registros, lancamentos e cancelamentos aparecem a partir do proximo extrato.</div>";
+  } else {
+    movements.innerHTML = "";
+    [
+      [`Novos registros na CVM (${cvmDiff.new_registrations})`,
+        ["Fundo", "Casa", "CNPJ", "Pre-operacional"],
+        (cvmDiff.new_items || []).map(f =>
+          [f.name, f.house_label, f.cnpj || "–", f.pre_operational ? "Sim" : "Nao"])],
+      [`Entraram em operacao (${cvmDiff.launches})`, ["Fundo", "Casa", "CNPJ"],
+        (cvmDiff.launch_items || []).map(f => [f.name, f.house_label, f.cnpj || "–"])],
+      [`Sairam do cadastro (${cvmDiff.cancelled})`, ["Fundo", "Casa"],
+        (cvmDiff.cancelled_items || []).map(f => [f.name, f.house_label])],
+    ].forEach(([title, cols, rows]) => {
+      if (!rows.length) return;
+      const heading = document.createElement("h3");
+      heading.style.cssText = "font-size:13.5px;font-weight:600;margin:16px 0 4px";
+      heading.textContent = title;
+      const mountDiv = document.createElement("div");
+      movements.append(heading, mountDiv);
+      table2(mountDiv, cols, rows);
+    });
+  }
+
+  // Cruzamento cadastro x prateleira: antecipacao e higiene.
+  const cross = DATA.cvm_cross || {};
+  if (cross.available) {
+    const preShelf = cross.pre_op_on_shelf || {};
+    document.getElementById("summary-pre-op-shelf").textContent =
+      `Pre-operacionais ja em prateleira (${preShelf.count || 0})`;
+    table2(document.getElementById("table-pre-op-shelf"),
+      ["Fundo", "Casa (CVM)", "Presente em", "Na vitrine", "Registro"],
+      (preShelf.funds || []).map(f => [
+        f.name, f.house_label, (f.platforms || []).join(", ") || "–",
+        f.on_listing ? "Sim" : "Nao", f.registered_at || "–",
+      ]));
+
+    const cancelledShelf = cross.cancelled_on_shelf || {};
+    document.getElementById("summary-cancelled-shelf").textContent =
+      "Higiene de catalogo: cancelados na CVM ainda no catalogo " +
+      `(${cancelledShelf.count || 0})`;
+    const byPlatform = (cancelledShelf.by_platform || [])
+      .map(entry => `${entry.label} ${entry.count}`).join(" · ");
+    document.getElementById("cancelled-shelf-note").textContent =
+      (byPlatform ? `Por casa: ${byPlatform}. ` : "") +
+      "Um cancelado no catalogo Open Finance e cadastro administrado desatualizado; " +
+      `um cancelado na vitrine e alerta forte (${cancelledShelf.on_listing || 0} na vitrine).`;
+    table2(document.getElementById("table-cancelled-shelf"),
+      ["Fundo", "Casa (CVM)", "Presente em", "Na vitrine"],
+      (cancelledShelf.funds || []).map(f => [
+        f.name, f.house_label, (f.platforms || []).join(", ") || "–",
+        f.on_listing ? "Sim" : "Nao",
+      ]));
+  }
 } else {
   document.getElementById("cvm-section").innerHTML =
     `<h2>Radar CVM</h2><p class="card-sub">Fundos registrados por gestoras ligadas as casas monitoradas.</p>
@@ -985,6 +1046,12 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <div class="chart-scroll" id="chart-cvm"></div>
     <details><summary>Ver tabela por casa</summary><div id="table-cvm"></div></details>
     <details open><summary>Fundos em fase pre-operacional</summary><div id="table-pre-op"></div></details>
+    <div id="cvm-movements"></div>
+    <details><summary id="summary-pre-op-shelf">Pre-operacionais ja em prateleira</summary>
+      <div id="table-pre-op-shelf"></div></details>
+    <details><summary id="summary-cancelled-shelf">Higiene de catalogo: cancelados na CVM ainda no catalogo</summary>
+      <p class="card-sub" id="cancelled-shelf-note" style="margin:8px 0 10px"></p>
+      <div id="table-cancelled-shelf"></div></details>
   </section>
 
   <section class="card">
