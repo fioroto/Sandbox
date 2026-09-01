@@ -452,6 +452,12 @@ def build_flows_block(report: RunReport) -> dict:
     top_inflow = [item for item in ranked if (item["net_12m"] or 0.0) > 0][:10]
     top_outflow = [item for item in reversed(ranked) if (item["net_12m"] or 0.0) < 0][:10]
 
+    # Sem fundo casado na prateleira, a janela ainda existe - a visao de
+    # mercado a conhece, e um numero sem janela rotulada nao sai.
+    if report.flows:
+        as_of = as_of or report.flows.get("as_of")
+        window_months = window_months or report.flows.get("window_months") or 0
+
     return {
         "available": bool(movers) or report.flows is not None,
         "as_of": as_of,

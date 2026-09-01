@@ -224,11 +224,15 @@ Resolucao CVM 175 preservada.
 ```bash
 python -m shelf_monitor market                 # importa e escreve as tabelas
 python -m shelf_monitor market --skip-fees     # pula o extrato (~100 MB) - base sem taxas
+python -m shelf_monitor market --skip-flows    # pula o informe diario - base sem captacao
+python -m shelf_monitor market --flows-months 6  # janela menor de captacao (default: 13)
 python -m shelf_monitor market --force         # rebaixa mesmo sem mudanca na origem
 ```
 
 Idempotente: sem mudanca na origem, a segunda execucao nao rebaixa nada (requisicao
-condicional por ETag/Last-Modified) e reescreve as mesmas tabelas.
+condicional por ETag/Last-Modified) e reescreve as mesmas tabelas. Na captacao isso
+importa dobrado: os zips mensais fechados sao imutaveis na origem e voltam 304 para
+sempre - so o mes corrente rebaixa a cada execucao.
 
 ### A hierarquia que a RCVM 175 criou
 
@@ -268,7 +272,8 @@ classe: subclasses partilham CNPJ e carteira, entao herdam a mesma taxa.
 | `classes.csv` | 1 classe |
 | `subclasses.csv` | 1 subclasse |
 | `taxas.csv` | 1 classe (entrega mais recente do extrato) |
-| `_manifest.json` | contagens, fontes, e as colunas novas da CVM ainda nao mapeadas |
+| `captacao.csv` | 1 classe x mes - captacao, resgates, liquido, PL e cotistas do informe diario |
+| `_manifest.json` | contagens, fontes, e as colunas novas da CVM ainda nao mapeadas (secoes separadas para cadastro e captacao) |
 
 ### Tres coisas que a base resolve e que quebram pipelines ingenuos
 
@@ -299,11 +304,32 @@ As colunas sao lidas por nome, nunca por posicao, e o que aparece no arquivo sem
 vai para `unknown_columns` no manifesto (e para um aviso no console). A importacao nao quebra -
 mas voce fica sabendo que ha dado novo sendo descartado.
 
+### Captacao e resgate (informe diario)
+
+O informe diario e a unica fonte publica de **fluxo financeiro** por fundo: captacao,
+resgate, PL e cotistas, uma linha por classe por dia util, um zip de ~11 MB por mes. A
+importacao agrega em streaming para uma linha por CNPJ de classe x mes em `captacao.csv`
+e pre-computa janelas moveis (1m/3m/12m) que o enriquecimento carimba nas prateleiras.
+
+Tres regras evitam numeros mentirosos:
+
+- **o mes corrente e parcial** e fica fora das janelas - comparar um mes de 3 dias uteis
+  com meses de 21 inverteria rankings; ele entra no CSV rotulado (`mes_parcial`);
+- **subclasses somam dentro do mesmo dia**: elas partilham o CNPJ da classe, entao o PL
+  da classe no dia e a soma das linhas daquele dia - e nada depende da ordem do arquivo;
+- **cobertura sempre visivel**: os relatorios somam so os fundos com informe casado e
+  dizem "N de M" ao lado de todo total.
+
+Alem da prateleira, `captacao.csv` x `mercado.csv` (join por CNPJ de classe) da o market
+share de captacao das **gestoras da watchlist** sobre o mercado inteiro - independente de
+qual prateleira oferta cada fundo. E a visao "quem esta levando o dinheiro" que aparece
+nos relatorios.
+
 ### Fora de escopo
 
-Informe diario, composicao de carteira (CDA), lamina e balancete estao mapeados em
+Composicao de carteira (CDA), lamina e balancete estao mapeados em
 `market/datasets.py` mas nao sao baixados: sao series temporais de dezenas de GB, e o uso hoje
-pede so cadastro e taxas.
+pede cadastro, taxas e o fluxo do informe diario.
 
 ## Area logada
 

@@ -84,6 +84,34 @@ def _short(message: str, limit: int = 220) -> str:
 _MARKET_STALE_DAYS = 45
 
 
+def flows_base_status(config: Config) -> tuple[str, str]:
+    """Estado da base de captacao: ('ok'|'ausente'|'sem-manifesto'|'velha', detalhe).
+
+    Mesmo contrato do market_base_status; a idade vem da secao `captacao` do
+    manifesto, que o modulo flows mantem separada da secao do cadastro.
+    """
+    if not (config.market_dir / "captacao.csv").is_file():
+        return "ausente", "informe diario nao importado"
+
+    try:
+        manifest = json.loads(
+            (config.market_dir / "_manifest.json").read_text(encoding="utf-8")
+        )
+        imported = date.fromisoformat(
+            str(manifest.get("captacao", {}).get("imported_at", ""))
+        )
+    except (OSError, ValueError):
+        return (
+            "sem-manifesto",
+            "captacao presente, mas sem registro no _manifest.json (idade desconhecida)",
+        )
+
+    age = (date.today() - imported).days
+    if age > _MARKET_STALE_DAYS:
+        return "velha", f"captacao importada ha {age} dias ({imported.isoformat()})"
+    return "ok", f"captacao importada ha {age} dias"
+
+
 def market_base_status(config: Config) -> tuple[str, str]:
     """Estado da base de mercado: ('ok'|'ausente'|'sem-manifesto'|'velha', detalhe).
 
@@ -183,31 +211,51 @@ def collect_cvm(config: Config, local_zip: Path | None = None) -> CvmSnapshot:
 
 
 def ensure_market_base(config: Config) -> None:
-    """Importa a base de mercado quando ela ainda nao existe em disco.
+    """Importa base de mercado e captacao quando ainda nao existem em disco.
 
     O download completo so acontece na primeira vez: depois o cache
-    condicional do modulo market resolve com um 304. Uma falha aqui nunca
-    derruba a coleta - o relatorio sai sem enriquecimento, com o aviso.
+    condicional do modulo market resolve com um 304 (na captacao, so o mes
+    corrente rebaixa). Uma falha aqui nunca derruba a coleta - o relatorio
+    sai sem enriquecimento, com o aviso.
 
     Base velha nao e reimportada aqui: quem denuncia a idade e o `doctor`, e
-    decidir por conta propria baixar 126 MB no meio de uma coleta seria uma
-    surpresa cara.
+    decidir por conta propria baixar centenas de MB no meio de uma coleta
+    seria uma surpresa cara.
     """
     state, _ = market_base_status(config)
-    if state != "ausente":
+    if state == "ausente":
+        console.print("[bold]Base de mercado ausente - importando da CVM...[/]")
+        try:
+            database, paths = run_import(config)
+        except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
+            console.print(f"[yellow]Falha ao importar a base: {_short(str(exc))}[/]")
+            return
+
+        for note in database.notes:
+            console.print(f"  [dim]{_short(note)}[/]")
+        if not paths:
+            console.print("[yellow]Nenhuma fonte da CVM respondeu.[/]")
+            return
+
+    # A captacao segue a mesma regra da base: so o AUSENTE dispara download no
+    # meio de uma coleta; base velha e assunto do doctor.
+    flows_state, _ = flows_base_status(config)
+    if flows_state != "ausente":
         return
 
-    console.print("[bold]Base de mercado ausente - importando da CVM...[/]")
+    console.print(
+        "[bold]Captacao ausente - importando o informe diario da CVM...[/]"
+    )
     try:
-        database, paths = run_import(config)
+        result, path = run_flows_import(config)
     except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
-        console.print(f"[yellow]Falha ao importar a base: {_short(str(exc))}[/]")
+        console.print(f"[yellow]Falha ao importar a captacao: {_short(str(exc))}[/]")
         return
 
-    for note in database.notes:
+    for note in result.notes:
         console.print(f"  [dim]{_short(note)}[/]")
-    if not paths:
-        console.print("[yellow]Nenhuma fonte da CVM respondeu.[/]")
+    if path is None:
+        console.print("[yellow]Nenhum mes do informe diario respondeu.[/]")
 
 
 def enrichment_coverage_line(stats: EnrichmentStats) -> str:
@@ -738,6 +786,16 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
             f"[yellow]base de mercado {state}[/] - {detail}. Sem ela a comparacao "
             "perde a classificacao ANBIMA oficial e a particao varejo/restrito "
             "cai nos sinais fracos. Rode: python -m shelf_monitor market"
+        )
+
+    flows_state, flows_detail = flows_base_status(config)
+    if flows_state == "ok":
+        console.print(f"[green]base de captacao disponivel[/] ({flows_detail})")
+    else:
+        console.print(
+            f"[yellow]base de captacao {flows_state}[/] - {flows_detail}. Sem ela os "
+            "relatorios saem sem a visao de captacao/resgate do informe diario. "
+            "Rode: python -m shelf_monitor market"
         )
 
     try:
