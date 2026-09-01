@@ -35,7 +35,7 @@ from shelf_monitor.config import (
     Config,
 )
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
-from shelf_monitor.enrich import enrich_snapshots
+from shelf_monitor.enrich import EnrichmentStats, enrich_snapshots
 from shelf_monitor.http import check_reachable
 from shelf_monitor.models import (
     CvmSnapshot,
@@ -203,6 +203,19 @@ def ensure_market_base(config: Config) -> None:
         console.print(f"  [dim]{_short(note)}[/]")
     if not paths:
         console.print("[yellow]Nenhuma fonte da CVM respondeu.[/]")
+
+
+def enrichment_coverage_line(stats: EnrichmentStats) -> str:
+    """Cobertura do join por casa, para o console do export.
+
+    Uma casa em 0/N e o sintoma a perseguir: ou a fonte nao publicou CNPJ nem
+    codigo (tabela do Itau), ou os CNPJs dela nao estao na base.
+    """
+    parts = []
+    for platform, counts in sorted(stats.by_platform.items()):
+        label = PLATFORMS[platform].label if platform in PLATFORMS else platform
+        parts.append(f"{label} {counts['matched']}/{counts['total']}")
+    return " · ".join(parts)
 
 
 def build_report(
@@ -463,6 +476,9 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
         console.print("[yellow]Nenhum snapshot encontrado. Rode `run` antes.[/]")
         return
 
+    if not args.no_market:
+        ensure_market_base(config)
+
     report = build_report(config, snapshots, latest_cvm_snapshot(config))
     print_summary(report)
     render_outputs(config, report, send_email=getattr(args, "send_email", False))
@@ -490,6 +506,9 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
                 "`export --collect` para coletar agora."
             )
             return
+
+    if not args.no_market:
+        ensure_market_base(config)
 
     enrichment = enrich_snapshots(config, snapshots)
     if enrichment is None:
@@ -519,6 +538,8 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         f"  {total} fundos de {len(snapshots)} plataforma(s)"
         + (f", {len(cvm_snapshot.funds)} registros da CVM" if cvm_snapshot else "")
     )
+    if enrichment is not None:
+        console.print(f"  join CVM por casa: {enrichment_coverage_line(enrichment)}")
 
 
 def cmd_market(config: Config, args: argparse.Namespace) -> None:
@@ -779,6 +800,11 @@ def main() -> None:
     report_parser.add_argument(
         "--send-email", action="store_true", help="Enviar o digest por SMTP"
     )
+    report_parser.add_argument(
+        "--no-market",
+        action="store_true",
+        help="Nao importar a base de mercado quando ela faltar (sai sem gestora oficial)",
+    )
     report_parser.set_defaults(func=cmd_report)
 
     export_parser = subparsers.add_parser(
@@ -792,6 +818,11 @@ def main() -> None:
         help="Coletar agora em vez de usar os ultimos snapshots salvos",
     )
     export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
+    export_parser.add_argument(
+        "--no-market",
+        action="store_true",
+        help="Nao importar a base de mercado quando ela faltar (sai sem gestora oficial)",
+    )
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
     export_parser.set_defaults(func=cmd_export)
 

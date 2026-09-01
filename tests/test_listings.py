@@ -1056,6 +1056,21 @@ class TestMarketBaseBootstrap(TestEnrichment):
         with mock.patch.object(main, "run_import", side_effect=OSError("sem rede")):
             main.ensure_market_base(self.config)  # nao pode levantar
 
+    def test_coverage_line_names_each_house(self):
+        """0/N numa casa e o sintoma a perseguir - a linha existe para mostra-lo."""
+        from shelf_monitor import main
+        from shelf_monitor.enrich import EnrichmentStats
+
+        stats = EnrichmentStats(
+            by_platform={
+                "itau": {"total": 450, "matched": 0},
+                "xp": {"total": 624, "matched": 620},
+            }
+        )
+        line = main.enrichment_coverage_line(stats)
+        self.assertIn("Itau (Ion) 0/450", line)
+        self.assertIn("XP Investimentos 620/624", line)
+
 
 class TestCvmCodeLookup(TestEnrichment):
     """Casamento pelo codigo CVM - a chave de quem nao publica CNPJ."""
