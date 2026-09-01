@@ -39,6 +39,7 @@ from shelf_monitor.normalize import (
     format_cnpj,
     name_slug,
     normalize_cnpj,
+    normalize_cvm_code,
     normalize_text,
     parse_money,
     parse_number,
@@ -67,6 +68,20 @@ class TestNormalize(unittest.TestCase):
         self.assertEqual(normalize_cnpj(12345678000191), "12345678000191")
         self.assertIsNone(normalize_cnpj(None))
         self.assertEqual(format_cnpj("12345678000191"), "12.345.678/0001-91")
+
+    def test_cvm_code_normalization_survives_the_type_of_the_source(self):
+        """O CSV traz texto com zero a esquerda; o JSON da casa traz numero."""
+        self.assertEqual(normalize_cvm_code("0555001"), "555001")
+        self.assertEqual(normalize_cvm_code(555001), "555001")
+        self.assertEqual(normalize_cvm_code(555001.0), "555001")
+        self.assertEqual(normalize_cvm_code(" c-555.001 "), "C555001")
+        # Codigo alfanumerico nao perde o zero: ele nao e zero a esquerda de
+        # numero, e parte do identificador.
+        self.assertEqual(normalize_cvm_code("S001"), "S001")
+
+    def test_cvm_code_refuses_what_is_not_a_code(self):
+        for value in (None, "", "   ", "000", "-", True, float("nan")):
+            self.assertIsNone(normalize_cvm_code(value), repr(value))
 
     def test_slug_collapses_legal_form_tokens(self):
         self.assertEqual(
