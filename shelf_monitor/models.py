@@ -80,6 +80,10 @@ class FundOffer:
     name: str
     cnpj: str | None = None
     isin: str | None = None
+    # Codigo CVM da subclasse, classe ou fundo, conforme o nivel que a casa
+    # anuncia. E a chave de reserva para casar com o cadastro oficial quando a
+    # fonte nao publica CNPJ.
+    cvm_code: str | None = None
     manager_name: str | None = None
     manager_cnpj: str | None = None
     admin_name: str | None = None
@@ -127,6 +131,7 @@ class FundOffer:
             "name": self.name,
             "cnpj": self.cnpj,
             "isin": self.isin,
+            "cvm_code": self.cvm_code,
             "manager_name": self.manager_name,
             "manager_cnpj": self.manager_cnpj,
             "admin_name": self.admin_name,
@@ -154,6 +159,9 @@ class FundOffer:
             name=data["name"],
             cnpj=data.get("cnpj"),
             isin=data.get("isin"),
+            # Snapshot anterior ao lookup por codigo nao tem a chave: le como
+            # None e o historico continua comparavel.
+            cvm_code=data.get("cvm_code"),
             manager_name=data.get("manager_name"),
             manager_cnpj=data.get("manager_cnpj"),
             admin_name=data.get("admin_name"),

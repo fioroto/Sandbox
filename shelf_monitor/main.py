@@ -108,14 +108,15 @@ def market_base_status(config: Config) -> tuple[str, str]:
 def warn_market_missing() -> None:
     """Sem a base, a analise degrada em silencio - este e o aviso que faltava.
 
-    Nao e so a classificacao ANBIMA que some: a particao varejo/restrito passa a
-    depender so dos sinais fracos (flag da casa e token no nome), e todo numero
-    principal muda de significado sem dizer nada.
+    Nao e so a classificacao ANBIMA que some: a gestora deixa de vir do
+    registro (fica so o que a casa publicou, quando publicou), a particao
+    varejo/restrito passa a depender so dos sinais fracos (flag da casa e token
+    no nome), e todo numero principal muda de significado sem dizer nada.
     """
     console.print(
         "[yellow]Base de mercado ausente:[/] analises degradam para sinais fracos "
-        "(sem classificacao ANBIMA nem gestor oficial). "
-        "Rode 'python -m shelf_monitor market'."
+        "(sem classificacao ANBIMA nem gestora oficial). "
+        "Rode 'python -m shelf_monitor market' (ou 'market --skip-fees', mais leve)."
     )
 
 
@@ -176,6 +177,34 @@ def collect_cvm(config: Config, local_zip: Path | None = None) -> CvmSnapshot:
     return snapshot
 
 
+def ensure_market_base(config: Config) -> None:
+    """Importa a base de mercado quando ela ainda nao existe em disco.
+
+    O download completo so acontece na primeira vez: depois o cache
+    condicional do modulo market resolve com um 304. Uma falha aqui nunca
+    derruba a coleta - o relatorio sai sem enriquecimento, com o aviso.
+
+    Base velha nao e reimportada aqui: quem denuncia a idade e o `doctor`, e
+    decidir por conta propria baixar 126 MB no meio de uma coleta seria uma
+    surpresa cara.
+    """
+    state, _ = market_base_status(config)
+    if state != "ausente":
+        return
+
+    console.print("[bold]Base de mercado ausente - importando da CVM...[/]")
+    try:
+        database, paths = run_import(config)
+    except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
+        console.print(f"[yellow]Falha ao importar a base: {_short(str(exc))}[/]")
+        return
+
+    for note in database.notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+    if not paths:
+        console.print("[yellow]Nenhuma fonte da CVM respondeu.[/]")
+
+
 def build_report(
     config: Config,
     snapshots: list[ShelfSnapshot],
@@ -186,10 +215,10 @@ def build_report(
     # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
     # "classe ANBIMA" significar a mesma coisa nas cinco casas.
     stats = enrich_snapshots(config, snapshots)
-    if stats is not None:
-        report.enrichment = stats.to_dict()
-    else:
+    if stats is None:
         warn_market_missing()
+    else:
+        report.enrichment = stats.to_dict()
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
@@ -360,6 +389,9 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
 
     snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
+
+    if not args.no_market:
+        ensure_market_base(config)
 
     report = build_report(config, snapshots, cvm_snapshot)
     print_summary(report)
@@ -715,6 +747,11 @@ def main() -> None:
     add_platform_arg(run_parser)
     add_collect_args(run_parser)
     run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
+    run_parser.add_argument(
+        "--no-market",
+        action="store_true",
+        help="Nao importar a base de mercado quando ela faltar (sai sem gestora oficial)",
+    )
     run_parser.add_argument(
         "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
     )

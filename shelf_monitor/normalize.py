@@ -23,6 +23,7 @@ _GENERIC_TOKENS = {
 _PUNCT_RE = re.compile(r"[^A-Z0-9\s]")
 _SPACE_RE = re.compile(r"\s+")
 _DIGITS_RE = re.compile(r"\D")
+_NON_ALNUM_RE = re.compile(r"[^A-Z0-9]")
 
 
 def strip_accents(text: str) -> str:
@@ -61,6 +62,34 @@ def format_cnpj(cnpj: str | None) -> str:
         f"{normalized[:2]}.{normalized[2:5]}.{normalized[5:8]}"
         f"/{normalized[8:12]}-{normalized[12:]}"
     )
+
+
+def normalize_cvm_code(raw: object) -> str | None:
+    """Canonicaliza um codigo CVM para servir de chave de indice.
+
+    Aceita qualquer coisa porque as fontes divergem no tipo: o CSV da CVM traz
+    texto (as vezes com zeros a esquerda), e os feeds JSON das casas serializam
+    como numero - `555001.0` vindo de um float e `555001` do mesmo codigo.
+
+    Ao contrario do CNPJ, o codigo nao tem largura fixa, entao zfill nao serve:
+    a canonizacao e por REMOCAO de zeros a esquerda, e so quando o codigo e
+    puramente numerico. Codigo alfanumerico fica como esta apos a limpeza.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):  # bool e int em Python; aqui nunca e codigo
+        return None
+    if isinstance(raw, float):
+        if raw != raw or raw in (float("inf"), float("-inf")):  # NaN/inf
+            return None
+        if raw.is_integer():
+            raw = int(raw)
+    text = _NON_ALNUM_RE.sub("", strip_accents(str(raw)).upper())
+    if not text:
+        return None
+    if text.isdigit():
+        text = text.lstrip("0")
+    return text or None
 
 
 def normalize_text(text: str | None) -> str:

@@ -389,11 +389,17 @@ def _methodology(prs, report: RunReport, data: dict):
                         "fontes que faltam preenchem, nunca sobrescrevem."),
     ]
     enrichment = data.get("enrichment")
-    if enrichment and enrichment.get("with_cnpj"):
-        pct = round(100 * enrichment["matched"] / enrichment["with_cnpj"])
+    identifiable = max(
+        (enrichment or {}).get("with_cnpj", 0),
+        (enrichment or {}).get("with_cvm_code", 0),
+    )
+    if identifiable:
+        pct = round(100 * enrichment["matched"] / identifiable)
         lines.append(("Normalizacao ANBIMA",
-                      f"join por CNPJ com o registro oficial CVM: {enrichment['matched']} "
-                      f"de {enrichment['with_cnpj']} fundos com CNPJ ({pct}%)."))
+                      f"join com o registro oficial CVM por CNPJ e por codigo: "
+                      f"{enrichment['matched']} de {identifiable} fundos "
+                      f"identificaveis ({pct}%); a gestora vem do registro em "
+                      f"{_fmt(enrichment.get('managers_from_cvm', 0))} deles."))
     else:
         lines.append(("Normalizacao ANBIMA",
                       "nao aplicada - base de mercado nao importada "
