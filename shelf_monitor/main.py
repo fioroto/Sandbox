@@ -8,6 +8,7 @@ Uso:
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
+    python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
 """
 from __future__ import annotations
@@ -33,6 +34,7 @@ from shelf_monitor.config import (
     Config,
 )
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.enrich import enrich_snapshots
 from shelf_monitor.http import check_reachable
 from shelf_monitor.models import (
     CvmSnapshot,
@@ -131,6 +133,12 @@ def build_report(
 ) -> RunReport:
     report = RunReport(generated_at=datetime.now(), snapshots=snapshots)
 
+    # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
+    # "classe ANBIMA" significar a mesma coisa nas cinco casas.
+    stats = enrich_snapshots(config, snapshots)
+    if stats is not None:
+        report.enrichment = stats.to_dict()
+
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
             config, snapshot.platform, before=snapshot.snapshot_date, trusted_only=True
@@ -150,11 +158,24 @@ def render_outputs(
 ) -> None:
     md_path, html_path = render_digest(config, report)
     dashboard_path = render_dashboard(config, report)
+    deck_path = None
+    try:
+        from shelf_monitor.report.deck import render_deck
+
+        deck_path = render_deck(config, report)
+    except ImportError:
+        deck_note = "instale python-pptx para gerar o deck executivo"
+    except Exception as exc:  # noqa: BLE001 - o deck nunca derruba o relatorio
+        deck_note = f"falha ao gerar o deck: {_short(str(exc))}"
     console.print()
     console.print("[bold]Relatorios gerados[/]")
     console.print(f"  digest markdown: {md_path}")
     console.print(f"  digest e-mail:   {html_path}")
     console.print(f"  dashboard:       {dashboard_path}")
+    if deck_path:
+        console.print(f"  deck executivo:  {deck_path}")
+    else:
+        console.print(f"  deck executivo:  [yellow]{deck_note}[/]")
     console.print(f"  assunto sugerido: {build_subject(report)}")
 
     if send_email:
@@ -322,8 +343,24 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
             )
             return
 
+    enrichment = enrich_snapshots(config, snapshots)
+    diffs = [
+        diff_shelf(
+            snapshot,
+            latest_shelf_snapshot(
+                config, snapshot.platform, before=snapshot.snapshot_date,
+                trusted_only=True,
+            ),
+        )
+        for snapshot in snapshots
+    ]
     path = render_spreadsheet(
-        config, snapshots, cvm_snapshot, path=Path(args.output) if args.output else None
+        config,
+        snapshots,
+        cvm_snapshot,
+        path=Path(args.output) if args.output else None,
+        diffs=diffs,
+        enrichment=enrichment,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()
@@ -383,9 +420,57 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
 
     console.print()
     console.print("[bold]Tabelas geradas[/]")
-    for key in ("mercado", "fundos", "classes", "subclasses", "taxas", "manifest"):
+    for key in (
+        "mercado", "hierarquia", "fundos", "classes", "subclasses", "taxas", "manifest",
+    ):
         if key in paths:
             console.print(f"  {key:10} {paths[key]}")
+
+
+def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
+    """Sonda cada fonte de prateleira e grava a resposta bruta em disco."""
+    from shelf_monitor import diagnose
+
+    platform_ids = args.platforms or list(PLATFORMS)
+    console.print(
+        "[bold]Diagnosticando as fontes de prateleira...[/]\n"
+        "  [dim]cada resposta e gravada em data/cache/debug/ para inspecao[/]"
+    )
+    if args.browser:
+        console.print(
+            "  [dim]modo navegador: abre cada lista num Chromium real e grava "
+            "HTML renderizado, requisicoes e screenshot (leva ~1 min por site)[/]"
+        )
+
+    probes = diagnose.run(config, platform_ids, browser=args.browser)
+
+    table = Table(title="Sondagem das fontes", title_style="bold")
+    table.add_column("Fonte")
+    table.add_column("OK")
+    table.add_column("O que veio", overflow="fold")
+    for probe in probes:
+        table.add_row(
+            probe.source,
+            "[green]sim[/]" if probe.ok else "[red]nao[/]",
+            _short(probe.detail, 110),
+        )
+    console.print()
+    console.print(table)
+
+    failing = [p for p in probes if not p.ok]
+    console.print()
+    if failing:
+        console.print(
+            f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado util.[/]"
+        )
+    console.print(
+        f"Evidencias em [bold]{config.cache_dir / 'debug'}[/] - "
+        "o relatorio consolidado esta em diagnostico.json."
+    )
+    console.print(
+        "[dim]Uma pagina que responde 200 mas nao traz CNPJ nem tabela e casca de "
+        "SPA: os dados chegam por JavaScript e so o Playwright os alcanca.[/]"
+    )
 
 
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
@@ -423,11 +508,14 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     try:
         import playwright  # noqa: F401
 
-        console.print("[green]playwright disponivel[/] (necessario para XP e BTG)")
+        console.print(
+            "[green]playwright disponivel[/] (necessario para XP, BTG e Itau - "
+            "as tres listas so existem depois do JavaScript)"
+        )
     except ImportError:
         console.print(
-            "[yellow]playwright ausente[/] - XP e BTG so coletam via Open Finance. "
-            "Instale com: pip install playwright"
+            "[yellow]playwright ausente[/] - XP, BTG e Itau so coletam via Open "
+            "Finance. Instale com: pip install playwright"
         )
 
 
@@ -559,6 +647,22 @@ def main() -> None:
         "--local-dir", help="Usar arquivos ja baixados neste diretorio"
     )
     market_parser.set_defaults(func=cmd_market)
+
+    diagnose_parser = subparsers.add_parser(
+        "diagnose",
+        help="Sondar as fontes de prateleira e gravar as respostas para analise",
+        parents=[common],
+    )
+    add_platform_arg(diagnose_parser)
+    diagnose_parser.add_argument(
+        "--browser",
+        action="store_true",
+        help=(
+            "Abrir cada lista num Chromium real e gravar HTML renderizado, "
+            "requisicoes XHR e screenshot (lento, mas e o que ve a lista de fato)"
+        ),
+    )
+    diagnose_parser.set_defaults(func=cmd_diagnose)
 
     doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)

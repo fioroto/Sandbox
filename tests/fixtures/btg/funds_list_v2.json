@@ -1,0 +1,1115 @@
+{
+ "items": [
+  {
+   "NameOriginal": "A1 D30 RF CP",
+   "CNPJ": "63446494000152",
+   "ID": 60656988,
+   "Detail": {
+    "featuredProductAssessor": true,
+    "activeDocument": false,
+    "productOriginal": "A1 D30 RF CP",
+    "permite4373": "N",
+    "investedBalance": 0,
+    "isRecentFund": false,
+    "externalPensionFund": false,
+    "fundTypePMS": "Fundo Distribuído",
+    "pensionFund": false,
+    "assetCode": 16285329,
+    "controllerType": "INTERNA",
+    "rescueOpen": true,
+    "currencyFull": "Real",
+    "currency": "BRL",
+    "pco": true,
+    "className": "A1 D30 RF CP",
+    "id": 60656988,
+    "fund175InitialDate": "2025-12-17T00:00:00Z",
+    "riskLevel": 2,
+    "quotaRule": null,
+    "fundsBenchmarks": [
+     {
+      "profitabilityBenchmark": {
+       "cotaLastMonth": false,
+       "yearPension": null,
+       "lastMonth": 1.2152179999999957,
+       "benchmarkMonthCDI": null,
+       "benchmarkLastMonthCDI": null,
+       "year": 9.271277877567986,
+       "month": 1.0418047894055427,
+       "benchmarkTwelveMonthsCDI": null,
+       "twelveMonthsPension": null,
+       "benchmarkYearCDI": null,
+       "day": 0.05166000000000892,
+       "twelveMonths": 14.701773905609073
+      },
+      "tipoBenchmark": "1",
+      "nomeBenchmark": "CDI"
+     }
+    ],
+    "subclassCode": null,
+    "isExclusiveFund": false,
+    "begin": "2025-11-10T00:00:00.000-0300",
+    "esFundESG": false,
+    "esFundNamePortal": true,
+    "strategy": null,
+    "exchangeExposure": false,
+    "subcategoryBTG": "Crédito Pós",
+    "isOpenFundPS": false,
+    "investment": {
+     "mainDisclaimer": "Para realizar a aplicação é necessário saldo em conta corrente.<br></br>\nAplicações realizadas após o horário limite serão agendadas para o próximo dia útil.<br></br>\nUtilize o Token para confirmar a operação.",
+     "settlementDate": null,
+     "confirmationDisclaimer": "Esta operação só será efetuada mediante confirmação do saldo em conta. <br></br>As operações serão executadas por ordem de solicitação.",
+     "maxInvestmentDate": "2026-09-28T08:26:09.099",
+     "quotaDate": null,
+     "aciValidDate": "2026-08-29T08:26:09.099",
+     "value": null,
+     "requestDate": "2026-08-29T08:26:09.099"
+    },
+    "openPlatform": true,
+    "fundCodeTypePMS": "FD",
+    "isQuotaCession": false,
+    "externalIssuer": "S",
+    "tipoInvestimentoIndicador": "NAO_QUALIFICADO",
+    "featuredProduct": [],
+    "isTumbledFund": false,
+    "maxAntecipatedLiquidation": 0,
+    "numeroDiaFinanceiroResgate": 31,
+    "isBlacklistApplyPortal": false,
+    "grantLevel": false,
+    "restrictedOrExclusive": false,
+    "nmTaxationPursued": "Longo Prazo",
+    "rescueOpenPortal": true,
+    "issuerGroup": "Distribuição Conta e Ordem",
+    "benchmarkName": "CDI",
+    "limitedLiability": true,
+    "fund175": true,
+    "fundCNPJ": "63446494000152",
+    "sgManagementType": null,
+    "condominiumType": "A",
+    "isOnDemand": false,
+    "esRedemptionBarrier": false,
+    "isNotApplicable": false,
+    "accountFundNumber": "015482334",
+    "isWhiteList": false,
+    "quotaType": "F",
+    "esMFO": false,
+    "subclassCGE": null,
+    "rescueType": "B",
+    "isBlacklistApply": false,
+    "cgeHierarchyPortfolio": 0,
+    "applyOpenPortal": true,
+    "issuerName": "ASSET1 CREDITO INVESTIMENTOS LTDA",
+    "offerPF": true,
+    "isWhitelistRedeem": false,
+    "selected": false,
+    "timeLimitDefault": "14:20",
+    "hierarchy": [],
+    "classCNPJ": "63446494000152",
+    "riskName": "MODERADO",
+    "isBlackList": false,
+    "showDetail": false,
+    "subcategoryBTGInitials": "CREDITO_POS",
+    "inComposicao": "N",
+    "riskScore": 2.25,
+    "anbimaTypeId": 77,
+    "averageNetEquity": null,
+    "isWhitelistApply": false,
+    "isinCode": null,
+    "isFoF": false,
+    "showInstitutionalPSF": false,
+    "signed": false,
+    "categoryBTG": "Renda Fixa",
+    "esFundGuide": false,
+    "isNotDistributed": false,
+    "isExclusiveFundPortal": false,
+    "scheduled": false,
+    "config": {
+     "configsTypes": [
+      "FDL",
+      "GTL",
+      "CHD"
+     ],
+     "trade": null,
+     "status": "ABE"
+    },
+    "features": [],
+    "quotaClassType": "U",
+    "administrationFeeMax": null,
+    "minimumInitialInvestment": 1000,
+    "textRegionType": "Local",
+    "isMandatePs": false,
+    "profitability": {
+     "sharpeTwelveMonths": null,
+     "twoYearsAgo": 0,
+     "threeYearsAgoCDI": 0,
+     "twentyFourMonthsCDI": 41.17,
+     "thirtySixMonths": 0,
+     "lastYear": 0,
+     "month": 1.0530919,
+     "twelveMonthsPension": 0,
+     "day": 0.054052300000000005,
+     "year": 10.0296786,
+     "threeYearsAgo": 0,
+     "benchmarkYearCDI": null,
+     "thirtySixMonthsCDI": 27.51,
+     "twelveMonths": 0,
+     "yearPension": 8.8830400914502,
+     "lastYearCDI": 108.8300679,
+     "twoYearsAgoCDI": 0,
+     "lastMonth": 1.3006249,
+     "twelveMonthsCDI": 82.52,
+     "volatilityTwelveMonths": null,
+     "benchmarkMonthCDI": null,
+     "benchmarkTwelveMonthsCDI": null,
+     "cotaLastMonth": false,
+     "benchmarkLastMonthCDI": null,
+     "twentyFourMonths": 0
+    },
+    "isTransferable": true,
+    "categoryBTGInitials": "RENDA_FIXA",
+    "investedPortfolio": true,
+    "signDocuments": null,
+    "fundMirror": false,
+    "applyOpen": true,
+    "investmentType": "Investidores em geral (Não qualificados)",
+    "fundCGE": 60656988,
+    "timeLimit": "14:10",
+    "hasFundCashBack": false,
+    "inAtivo": true,
+    "esExibeWebsite": "S",
+    "offerPJ": true,
+    "subclassName": null,
+    "isBlacklistRedeemPortal": false,
+    "detail": {
+     "performanceFee": 20,
+     "quotaRule": null,
+     "rescueQuota": "D+30",
+     "minimumMoviment": 1000,
+     "categoryCVM": "Renda Fixa",
+     "auditing": null,
+     "administrationFeeType": "PERCENTAGE",
+     "hourInvestimentRescue": "14:10",
+     "dateQuota": "2026-08-28T00:00:00.000-0300",
+     "administrator": "INTRAG DISTR DE TITULOS EVALORES MOBILIARIOS LTDA",
+     "valueQuota": 1.1219273,
+     "managementFee": null,
+     "auditingCge": null,
+     "categoryCode": 13,
+     "isAvailable24x7": false,
+     "numberOfDaysFinancialInvestment": 0,
+     "anbimaCode": "C0001306588",
+     "hasCashback": false,
+     "categoryDescription": "Renda Fixa",
+     "minimumAdministrationFee": 0,
+     "manager": "ASSET1 CREDITO INVESTIMENTOS LTDA",
+     "administrationFee": 0.9,
+     "distributionFee": null,
+     "investimentQuota": "D+0",
+     "cvmIdentifier": "Renda Fixa",
+     "managerCge": 66194055,
+     "managementFeeType": "PERCENTAGE",
+     "minimumBalanceRemain": 1000,
+     "totalStandardFeePercentage": 0.9,
+     "mandateType": null,
+     "minimumManagementFee": 0,
+     "totalMinimumFeePercentage": 0,
+     "custodyCge": null,
+     "cnpj": "63446494000152",
+     "minimumDistributionFee": 0,
+     "custody": null,
+     "performanceFeeCashback": null,
+     "valueLiquidQuota": 1.1219273,
+     "totalFee": 0.9,
+     "cvmNumberIdentifier": 2,
+     "administrationFeeCashback": null,
+     "rescuefinancialSettlement": "D+31",
+     "minimumInitialInvestment": 1000,
+     "administratorCge": 73862,
+     "anbimaRating": "RF duração livre crédito livre",
+     "files": [
+      {
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2381547/download/LAM",
+       "typeCode": "LAM",
+       "id": 2381547,
+       "name": "63446494000152_20260807_IM.pdf",
+       "file": null,
+       "size": null,
+       "format": "PDF",
+       "mimeType": null,
+       "version": null,
+       "description": "Informativo Mensal",
+       "typeId": 12
+      },
+      {
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2362735/download/TAF",
+       "id": 2362735,
+       "typeCode": "TAF",
+       "size": null,
+       "mimeType": null,
+       "typeId": 6,
+       "version": "1",
+       "description": "Termo de Adesão de Fundo",
+       "file": null,
+       "format": "DOCX",
+       "name": "68578_TCR.docx"
+      },
+      {
+       "format": "PDF",
+       "file": null,
+       "typeId": 7,
+       "version": "1",
+       "description": "Regulamento de Fundo",
+       "typeCode": "RAF",
+       "mimeType": null,
+       "id": 2362734,
+       "size": null,
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2362734/download/RAF",
+       "name": "DOC_REGUL_92869_166829_2025_102 (1).pdf"
+      },
+      {
+       "id": 3027286,
+       "name": "20260829_60656988_20260829.pdf",
+       "typeCode": "btg-dist",
+       "version": null,
+       "size": null,
+       "mimeType": null,
+       "url": "https://investimentos.btgpactual.com/services/api/funds-public/public/fund/file/3027286/revenue/download/btg-dist",
+       "dateReference": "2026-08-29",
+       "format": "pdf",
+       "file": null,
+       "typeId": null,
+       "description": "Remuneração de Distribuição"
+      }
+     ],
+     "investmentFinancialSettlement": "D+0",
+     "distributionFeeType": "PERCENTAGE",
+     "administrationFeeMax": null,
+     "totalMinimumFeeNominal": 0,
+     "totalStandardFeeNominal": 0,
+     "performanceLiqFeeCashback": null,
+     "updateDate": "2026-08-20T19:53:24.2424-0300",
+     "administrationLiqFeeCashback": null
+    },
+    "cnpj": "63446494000152",
+    "netEquity": 11584330.36,
+    "fundName": "A1 D30 RF CP",
+    "afterTimeLimitDetails": [],
+    "isDecisionIssuer": false,
+    "availableAccountBalance": null,
+    "profitabilityStatement": null,
+    "esFamilyFriends": false,
+    "description": "O objetivo da CLASSE é aplicar seus recursos em cotas de classes de fundos de investimento tipificadas como “Renda Fixa”, observado que a rentabilidade da CLASSE será impactada em virtude dos custos e despesas da CLASSE e/ou das SUBCLASSES, inclusive taxa de administração, gestão e distribuição.",
+    "descriptionFund": null,
+    "antecipatedLiquidation": false,
+    "hierarchyClassType": "C",
+    "specialWithdrawRules": null,
+    "classCGE": 60656988,
+    "isentoIR": false,
+    "isBlacklistRedeem": false,
+    "issuerId": 66194055,
+    "pension": {},
+    "externalController": false,
+    "isCetipFund": false,
+    "isMagnetisWallet": false,
+    "type": "MODERATE",
+    "migrationFund": true,
+    "simples": false,
+    "institutionalPSFTop": false,
+    "product": "A1 D30 FICFIRF LP CrPr RL",
+    "subordinationLevel": 0,
+    "distributors": [
+     {
+      "esMFO": false,
+      "openPlatform": true,
+      "idDistribuidorFundoFundGuide": null,
+      "isDecisionIssuer": false,
+      "isExclusiveFundPortal": false,
+      "ativo": true,
+      "rescueOpen": true,
+      "isOnDemand": false,
+      "offerDistributors": [
+       {
+        "sigla": "BTG",
+        "roa": [
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "WM"
+         },
+         {
+          "roaPerf": 4,
+          "siglaSegmento": "B2C",
+          "roaAdm": 0.36
+         },
+         {
+          "roaAdm": 0.24,
+          "roaPerf": 2.67,
+          "siglaSegmento": "B2B"
+         },
+         {
+          "roaAdm": 0.36,
+          "siglaSegmento": "ADV",
+          "roaPerf": 4
+         }
+        ],
+        "id": 2,
+        "idInstituicaoResponsavel": 1,
+        "cge": 1
+       },
+       {
+        "idInstituicaoResponsavel": 6,
+        "roa": [
+         {
+          "siglaSegmento": "WM",
+          "roaAdm": 0.36,
+          "roaPerf": 4
+         },
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "B2C"
+         },
+         {
+          "roaPerf": 2.67,
+          "siglaSegmento": "B2B",
+          "roaAdm": 0.24
+         },
+         {
+          "siglaSegmento": "ADV",
+          "roaAdm": 0.36,
+          "roaPerf": 4
+         }
+        ],
+        "sigla": "EMP",
+        "id": 1,
+        "cge": 958836
+       },
+       {
+        "idInstituicaoResponsavel": 3,
+        "roa": [
+         {
+          "siglaSegmento": "NEC-B2C",
+          "roaAdm": 0.36,
+          "roaPerf": 4
+         },
+         {
+          "roaPerf": 2.67,
+          "roaAdm": 0.24,
+          "siglaSegmento": "NEC-B2B"
+         },
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "NEC-ADV"
+         }
+        ],
+        "sigla": "NEC",
+        "id": 4,
+        "cge": 4223678
+       },
+       {
+        "cge": 18934396,
+        "idInstituicaoResponsavel": 7,
+        "roa": [
+         {
+          "roaPerf": 4,
+          "siglaSegmento": "UNC-B2C",
+          "roaAdm": 0.36
+         },
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "UNC-B2B"
+         },
+         {
+          "roaAdm": 0.36,
+          "siglaSegmento": "UNC-ADV",
+          "roaPerf": 4
+         }
+        ],
+        "sigla": "UNC",
+        "id": 5
+       },
+       {
+        "roa": [
+         {
+          "siglaSegmento": "WM",
+          "roaAdm": 0.36,
+          "roaPerf": 4
+         },
+         {
+          "roaPerf": 4,
+          "roaAdm": 0.36,
+          "siglaSegmento": "B2C"
+         },
+         {
+          "roaAdm": 0.24,
+          "roaPerf": 2.67,
+          "siglaSegmento": "B2B"
+         },
+         {
+          "roaAdm": 0.36,
+          "siglaSegmento": "ADV",
+          "roaPerf": 4
+         }
+        ],
+        "sigla": "SAM",
+        "idInstituicaoResponsavel": 8,
+        "id": 6,
+        "cge": 40423
+       },
+       {
+        "roa": [
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "WM"
+         },
+         {
+          "roaAdm": 0.36,
+          "roaPerf": 4,
+          "siglaSegmento": "B2C"
+         },
+         {
+          "roaAdm": 0.24,
+          "siglaSegmento": "B2B",
+          "roaPerf": 2.67
+         },
+         {
+          "roaPerf": 4,
+          "siglaSegmento": "ADV",
+          "roaAdm": 0.36
+         }
+        ],
+        "sigla": "CVP",
+        "id": 7,
+        "cge": 19718864,
+        "idInstituicaoResponsavel": 9
+       }
+      ],
+      "cnpj": "30306294000145",
+      "cge": 1,
+      "esFamilyFriends": false,
+      "idInstituicaoResponsavel": 1,
+      "applyOpen": true,
+      "esWM": false,
+      "id": 2,
+      "idDistribuidorFundoOferta": null,
+      "isMandatePs": false,
+      "sigla": "BTG",
+      "isNotApplicable": false,
+      "idDistribuidorFundoIsencao": null,
+      "isNotDistributed": false,
+      "nome": "BANCO BTG PACTUAL S.A."
+     },
+     {
+      "idDistribuidorFundoIsencao": null,
+      "isOnDemand": false,
+      "esFamilyFriends": false,
+      "isExclusiveFundPortal": false,
+      "cnpj": "47965438000178",
+      "idInstituicaoResponsavel": 2,
+      "rescueOpen": true,
+      "openPlatform": true,
+      "isDecisionIssuer": false,
+      "applyOpen": true,
+      "offerDistributors": [
+       {
+        "idInstituicaoResponsavel": 2,
+        "id": 3,
+        "roa": [
+         {
+          "roaPerf": 4,
+          "siglaSegmento": "EQI-B2C",
+          "roaAdm": 0.36
+         },
+         {
+          "roaPerf": 4,
+          "roaAdm": 0.36,
+          "siglaSegmento": "EQI-B2B"
+         },
+         {
+          "siglaSegmento": "EQI-ADV",
+          "roaPerf": 4,
+          "roaAdm": 0.36
+         }
+        ],
+        "cge": 3532899,
+        "sigla": "EQI"
+       }
+      ],
+      "ativo": true,
+      "id": 3,
+      "idDistribuidorFundoOferta": null,
+      "cge": 3532899,
+      "esMFO": false,
+      "sigla": "EQI",
+      "isNotApplicable": false,
+      "idDistribuidorFundoFundGuide": null,
+      "esWM": false,
+      "nome": "EQI CORRETORA",
+      "isNotDistributed": false,
+      "isMandatePs": false
+     }
+    ]
+   },
+   "Name": "A1 D30 FICFIRF LP CrPr RL"
+  },
+  {
+   "CNPJ": "53847813000188",
+   "ID": 15286777,
+   "Detail": {
+    "classCNPJ": "53847813000188",
+    "type": "MODERATE",
+    "isBlacklistRedeem": false,
+    "isNotApplicable": false,
+    "offerPJ": false,
+    "esExibeWebsite": "S",
+    "fundMirror": false,
+    "subclassCode": null,
+    "institutionalPSFTop": false,
+    "classCGE": 15286777,
+    "migrationFund": true,
+    "limitedLiability": true,
+    "isNotDistributed": false,
+    "isinCode": "BR018CTF007",
+    "isWhitelistRedeem": false,
+    "isTumbledFund": false,
+    "esFundNamePortal": true,
+    "issuerId": 949436,
+    "fund175InitialDate": "2024-02-29T00:00:00Z",
+    "cnpj": "53847813000188",
+    "riskScore": 2,
+    "featuredProduct": [],
+    "fundTypePMS": "Fundo Distribuído",
+    "condominiumType": "A",
+    "isDecisionIssuer": false,
+    "fundCNPJ": "53847813000188",
+    "tipoInvestimentoIndicador": "NAO_QUALIFICADO",
+    "specialWithdrawRules": null,
+    "rescueOpen": true,
+    "nmTaxationPursued": "Longo Prazo",
+    "maxAntecipatedLiquidation": 0,
+    "fundsBenchmarks": [
+     {
+      "tipoBenchmark": "1",
+      "nomeBenchmark": "CDI",
+      "profitabilityBenchmark": {
+       "benchmarkYearCDI": null,
+       "day": 0.05166000000000892,
+       "twelveMonths": 14.70575314850433,
+       "month": 0.9896335447163285,
+       "benchmarkLastMonthCDI": null,
+       "benchmarkMonthCDI": null,
+       "twelveMonthsPension": 11.851213067782474,
+       "cotaLastMonth": false,
+       "benchmarkTwelveMonthsCDI": null,
+       "yearPension": null,
+       "lastMonth": 1.2152179999999957,
+       "year": 9.214857482192684
+      }
+     }
+    ],
+    "cgeHierarchyPortfolio": 0,
+    "isBlacklistApply": false,
+    "isFoF": false,
+    "hierarchy": [],
+    "investedBalance": 0,
+    "fundCodeTypePMS": "FD",
+    "restrictedOrExclusive": false,
+    "simples": false,
+    "subcategoryBTG": "Ativo",
+    "riskName": "MODERADO",
+    "isRecentFund": false,
+    "controllerType": "INTERNA",
+    "distributors": [
+     {
+      "applyOpen": true,
+      "isExclusiveFundPortal": false,
+      "sigla": "BTG",
+      "cnpj": "30306294000145",
+      "openPlatform": true,
+      "idDistribuidorFundoIsencao": null,
+      "esWM": false,
+      "isDecisionIssuer": false,
+      "cge": 1,
+      "isOnDemand": false,
+      "idDistribuidorFundoFundGuide": null,
+      "rescueOpen": true,
+      "isNotApplicable": false,
+      "idDistribuidorFundoOferta": null,
+      "id": 2,
+      "esFamilyFriends": false,
+      "nome": "BANCO BTG PACTUAL S.A.",
+      "isNotDistributed": false,
+      "esMFO": false,
+      "ativo": true,
+      "isMandatePs": false,
+      "idInstituicaoResponsavel": 1,
+      "offerDistributors": [
+       {
+        "idInstituicaoResponsavel": 1,
+        "id": 2,
+        "sigla": "BTG",
+        "cge": 1,
+        "roa": [
+         {
+          "roaAdm": 0.33,
+          "roaPerf": 0,
+          "siglaSegmento": "WM"
+         },
+         {
+          "roaPerf": 0,
+          "roaAdm": 0.33,
+          "siglaSegmento": "B2C"
+         },
+         {
+          "roaPerf": 0,
+          "roaAdm": 0.22,
+          "siglaSegmento": "B2B"
+         },
+         {
+          "roaAdm": 0.33,
+          "roaPerf": 0,
+          "siglaSegmento": "ADV"
+         }
+        ]
+       },
+       {
+        "id": 1,
+        "roa": [
+         {
+          "roaPerf": 0,
+          "siglaSegmento": "WM",
+          "roaAdm": 0.33
+         },
+         {
+          "siglaSegmento": "B2C",
+          "roaAdm": 0.33,
+          "roaPerf": 0
+         },
+         {
+          "siglaSegmento": "B2B",
+          "roaAdm": 0.22,
+          "roaPerf": 0
+         },
+         {
+          "roaPerf": 0,
+          "siglaSegmento": "ADV",
+          "roaAdm": 0.33
+         }
+        ],
+        "cge": 958836,
+        "sigla": "EMP",
+        "idInstituicaoResponsavel": 6
+       },
+       {
+        "cge": 4223678,
+        "id": 4,
+        "idInstituicaoResponsavel": 3,
+        "roa": [
+         {
+          "siglaSegmento": "NEC-B2C",
+          "roaPerf": 0,
+          "roaAdm": 0.33
+         },
+         {
+          "siglaSegmento": "NEC-B2B",
+          "roaAdm": 0.22,
+          "roaPerf": 0
+         },
+         {
+          "siglaSegmento": "NEC-ADV",
+          "roaAdm": 0.33,
+          "roaPerf": 0
+         }
+        ],
+        "sigla": "NEC"
+       },
+       {
+        "id": 5,
+        "idInstituicaoResponsavel": 7,
+        "cge": 18934396,
+        "sigla": "UNC",
+        "roa": [
+         {
+          "roaAdm": 0.33,
+          "roaPerf": 0,
+          "siglaSegmento": "UNC-B2C"
+         },
+         {
+          "roaAdm": 0.33,
+          "siglaSegmento": "UNC-B2B",
+          "roaPerf": 0
+         },
+         {
+          "roaAdm": 0.33,
+          "siglaSegmento": "UNC-ADV",
+          "roaPerf": 0
+         }
+        ]
+       },
+       {
+        "sigla": "SAM",
+        "id": 6,
+        "idInstituicaoResponsavel": 8,
+        "roa": [
+         {
+          "siglaSegmento": "WM",
+          "roaPerf": 0,
+          "roaAdm": 0.33
+         },
+         {
+          "roaPerf": 0,
+          "siglaSegmento": "B2C",
+          "roaAdm": 0.33
+         },
+         {
+          "siglaSegmento": "B2B",
+          "roaAdm": 0.22,
+          "roaPerf": 0
+         },
+         {
+          "siglaSegmento": "ADV",
+          "roaAdm": 0.33,
+          "roaPerf": 0
+         }
+        ],
+        "cge": 40423
+       },
+       {
+        "sigla": "CVP",
+        "cge": 19718864,
+        "id": 7,
+        "idInstituicaoResponsavel": 9,
+        "roa": [
+         {
+          "roaPerf": 0,
+          "roaAdm": 0.33,
+          "siglaSegmento": "WM"
+         },
+         {
+          "siglaSegmento": "B2C",
+          "roaAdm": 0.33,
+          "roaPerf": 0
+         },
+         {
+          "roaAdm": 0.22,
+          "roaPerf": 0,
+          "siglaSegmento": "B2B"
+         },
+         {
+          "roaAdm": 0.33,
+          "siglaSegmento": "ADV",
+          "roaPerf": 0
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "nome": "EQI CORRETORA",
+      "esFamilyFriends": false,
+      "idDistribuidorFundoFundGuide": null,
+      "cge": 3532899,
+      "isExclusiveFundPortal": false,
+      "isNotDistributed": false,
+      "isMandatePs": false,
+      "rescueOpen": true,
+      "sigla": "EQI",
+      "isOnDemand": false,
+      "openPlatform": true,
+      "applyOpen": true,
+      "idDistribuidorFundoOferta": null,
+      "idInstituicaoResponsavel": 2,
+      "isNotApplicable": false,
+      "id": 3,
+      "esMFO": false,
+      "idDistribuidorFundoIsencao": null,
+      "isDecisionIssuer": false,
+      "cnpj": "47965438000178",
+      "offerDistributors": [
+       {
+        "id": 3,
+        "cge": 3532899,
+        "idInstituicaoResponsavel": 2,
+        "sigla": "EQI",
+        "roa": [
+         {
+          "roaAdm": 0.33,
+          "roaPerf": 0,
+          "siglaSegmento": "EQI-B2C"
+         },
+         {
+          "roaAdm": 0.33,
+          "siglaSegmento": "EQI-B2B",
+          "roaPerf": 0
+         },
+         {
+          "siglaSegmento": "EQI-ADV",
+          "roaAdm": 0.33,
+          "roaPerf": 0
+         }
+        ]
+       }
+      ],
+      "esWM": false,
+      "ativo": true
+     }
+    ],
+    "description": "Superar a variação do CDI através da atuação de forma ativa com instrumentos de renda fixa, como juros nominal/real e inflação.",
+    "begin": "2024-02-29T00:00:00.000-0300",
+    "signed": false,
+    "investedPortfolio": true,
+    "subcategoryBTGInitials": "ATIVO",
+    "sgManagementType": null,
+    "investmentType": "Investidores em geral (Não qualificados)",
+    "minimumInitialInvestment": 1000,
+    "esFundESG": false,
+    "quotaClassType": "U",
+    "isWhitelistApply": false,
+    "signDocuments": null,
+    "showDetail": false,
+    "descriptionFund": null,
+    "applyOpenPortal": true,
+    "currencyFull": "Real",
+    "offerPF": false,
+    "hasFundCashBack": false,
+    "isBlacklistRedeemPortal": false,
+    "subclassCGE": null,
+    "antecipatedLiquidation": false,
+    "profitability": {
+     "thirtySixMonths": 0,
+     "lastYear": 13.194703026845717,
+     "month": 0.7665079,
+     "day": 0.0785149,
+     "yearPension": 6.400396971879141,
+     "threeYearsAgo": 0,
+     "lastYearCDI": 92.1850724,
+     "cotaLastMonth": false,
+     "benchmarkYearCDI": null,
+     "twoYearsAgo": 0,
+     "threeYearsAgoCDI": 0,
+     "sharpeTwelveMonths": -1.27,
+     "twelveMonthsPension": 12.015390025618906,
+     "twoYearsAgoCDI": 106.1807579,
+     "benchmarkTwelveMonthsCDI": null,
+     "volatilityTwelveMonths": 2.22,
+     "year": 7.2159644,
+     "lastMonth": 1.4533585,
+     "twelveMonthsCDI": 80.68,
+     "twelveMonths": 11.851213067782473,
+     "thirtySixMonthsCDI": 74.7,
+     "twentyFourMonthsCDI": 90.44,
+     "twentyFourMonths": 26.504498243543022,
+     "benchmarkLastMonthCDI": null,
+     "benchmarkMonthCDI": null
+    },
+    "isBlacklistApplyPortal": false,
+    "quotaType": "F",
+    "activeDocument": false,
+    "rescueType": "B",
+    "administrationFeeMax": null,
+    "timeLimit": "14:10",
+    "detail": {
+     "distributionFee": null,
+     "valueLiquidQuota": 1.3288159,
+     "dateQuota": "2026-08-27T00:00:00.000-0300",
+     "totalFee": 0.9,
+     "cvmIdentifier": "Renda Fixa",
+     "auditingCge": null,
+     "performanceFeeCashback": null,
+     "valueQuota": 1.3288159,
+     "rescueQuota": "D+0",
+     "managementFeeType": "PERCENTAGE",
+     "managementFee": null,
+     "administrationFeeMax": null,
+     "totalStandardFeeNominal": 0,
+     "totalMinimumFeePercentage": 0,
+     "anbimaRating": "RF duração alta crédito livre",
+     "categoryCVM": "Renda Fixa",
+     "minimumAdministrationFee": 0,
+     "hourInvestimentRescue": "14:10",
+     "quotaRule": null,
+     "minimumMoviment": 1000,
+     "investimentQuota": "D+1",
+     "categoryDescription": "Renda Fixa",
+     "files": [
+      {
+       "typeId": 12,
+       "mimeType": null,
+       "description": "Informativo Mensal",
+       "size": null,
+       "format": "PDF",
+       "id": 2319432,
+       "name": "53847813000188_20260807_IM.pdf",
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2319432/download/LAM",
+       "version": null,
+       "typeCode": "LAM",
+       "file": null
+      },
+      {
+       "typeCode": "TAF",
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2309635/download/TAF",
+       "typeId": 6,
+       "format": "PDF",
+       "version": "1",
+       "id": 2309635,
+       "name": "A1_CIC_TCR.pdf",
+       "size": null,
+       "description": "Termo de Adesão de Fundo",
+       "mimeType": null,
+       "file": null
+      },
+      {
+       "description": "Regulamento de Fundo",
+       "name": "DOC_REGUL_131447_130040_2024_02 (1).pdf",
+       "typeCode": "RAF",
+       "file": null,
+       "id": 2309634,
+       "version": "1",
+       "format": "PDF",
+       "mimeType": null,
+       "typeId": 7,
+       "url": "https://portal.btgpactual.com/services/public/funds/file/2309634/download/RAF",
+       "size": null
+      },
+      {
+       "file": null,
+       "typeCode": "btg-dist",
+       "description": "Remuneração de Distribuição",
+       "mimeType": null,
+       "url": "https://investimentos.btgpactual.com/services/api/funds-public/public/fund/file/3026352/revenue/download/btg-dist",
+       "id": 3026352,
+       "format": "pdf",
+       "name": "20260829_15286777_20260829.pdf",
+       "dateReference": "2026-08-29",
+       "typeId": null,
+       "version": null,
+       "size": null
+      }
+     ],
+     "administrationLiqFeeCashback": null,
+     "minimumDistributionFee": 0,
+     "auditing": null,
+     "minimumBalanceRemain": 1000,
+     "performanceLiqFeeCashback": null,
+     "numberOfDaysFinancialInvestment": 0,
+     "isAvailable24x7": false,
+     "cvmNumberIdentifier": 2,
+     "rescuefinancialSettlement": "D+1",
+     "managerCge": 949436,
+     "minimumInitialInvestment": 1000,
+     "updateDate": "2026-08-18T23:56:05.055-0300",
+     "performanceFee": 20,
+     "minimumManagementFee": 0,
+     "totalMinimumFeeNominal": 0,
+     "administrator": "INTRAG DISTR DE TITULOS EVALORES MOBILIARIOS LTDA",
+     "administratorCge": 73862,
+     "distributionFeeType": "PERCENTAGE",
+     "hasCashback": false,
+     "administrationFeeCashback": null,
+     "investmentFinancialSettlement": "D+0",
+     "cnpj": "53847813000188",
+     "mandateType": null,
+     "manager": "ASSET1 INVESTIMENTOS S.A.",
+     "totalStandardFeePercentage": 0.9,
+     "administrationFeeType": "PERCENTAGE",
+     "custodyCge": 4406,
+     "categoryCode": 13,
+     "custody": "ITAU UNIBANCO S.A.",
+     "anbimaCode": "C0000747904",
+     "administrationFee": 0.9
+    },
+    "pco": true,
+    "isWhiteList": false,
+    "isBlackList": false,
+    "averageNetEquity": null,
+    "exchangeExposure": false,
+    "fundName": "A1 FICFIRF LP RL",
+    "pension": {},
+    "isExclusiveFundPortal": false,
+    "isQuotaCession": false,
+    "assetCode": 9670756,
+    "profitabilityStatement": null,
+    "benchmarkName": "CDI",
+    "accountFundNumber": "005288927",
+    "hierarchyClassType": "C",
+    "isMagnetisWallet": false,
+    "subclassName": null,
+    "externalPensionFund": false,
+    "isTransferable": true,
+    "externalIssuer": "S",
+    "permite4373": "N",
+    "timeLimitDefault": "14:20",
+    "productOriginal": "A1 FICFIRF LP RL",
+    "rescueOpenPortal": true,
+    "config": {
+     "status": "ABE",
+     "configsTypes": [
+      "FDL",
+      "CHD",
+      "GTL"
+     ],
+     "trade": null
+    },
+    "isOnDemand": false,
+    "features": [],
+    "product": "A1 FICFIRF LP RL",
+    "className": "A1 FICFIRF LP RL",
+    "availableAccountBalance": null,
+    "fundCGE": 15286777,
+    "featuredProductAssessor": true,
+    "inAtivo": true,
+    "netEquity": 11443366.61,
+    "externalController": false,
+    "isentoIR": false,
+    "scheduled": false,
+    "grantLevel": false,
+    "pensionFund": false,
+    "currency": "BRL",
+    "esFamilyFriends": false,
+    "esRedemptionBarrier": false,
+    "investment": {
+     "quotaDate": null,
+     "mainDisclaimer": "Para realizar a aplicação é necessário saldo em conta corrente.<br></br>\nAplicações realizadas após o horário limite serão agendadas para o próximo dia útil.<br></br>\nUtilize o Token para confirmar a operação.",
+     "maxInvestmentDate": "2026-09-28T00:49:27.2727",
+     "requestDate": "2026-08-29T00:49:27.2727",
+     "aciValidDate": "2026-08-29T00:49:27.2727",
+     "value": null,
+     "settlementDate": null,
+     "confirmationDisclaimer": "Esta operação só será efetuada mediante confirmação do saldo em conta. <br></br>As operações serão executadas por ordem de solicitação."
+    },
+    "id": 15286777,
+    "anbimaTypeId": 74,
+    "esMFO": false,
+    "quotaRule": null,
+    "riskLevel": 2,
+    "isCetipFund": false,
+    "isOpenFundPS": false,
+    "applyOpen": true,
+    "fund175": true,
+    "openPlatform": true,
+    "esFundGuide": false,
+    "showInstitutionalPSF": false,
+    "categoryBTG": "Renda Fixa",
+    "categoryBTGInitials": "RENDA_FIXA",
+    "numeroDiaFinanceiroResgate": 1,
+    "issuerName": "ASSET1 INVESTIMENTOS S.A.",
+    "issuerGroup": "Distribuição Conta e Ordem Interno",
+    "selected": false,
+    "strategy": null,
+    "subordinationLevel": 0,
+    "textRegionType": "Local",
+    "isMandatePs": false,
+    "afterTimeLimitDetails": [],
+    "isExclusiveFund": false,
+    "inComposicao": "N"
+   },
+   "Name": "A1 FICFIRF LP RL",
+   "NameOriginal": "A1 FICFIRF LP RL"
+  }
+ ],
+ "total": 693,
+ "page": 1,
+ "total_pages": 99
+}

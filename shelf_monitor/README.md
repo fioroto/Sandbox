@@ -110,19 +110,90 @@ Para uma coleta mais rapida, `--first-source-only` volta ao comportamento de par
 primeira fonte util - util quando o Playwright, que leva dezenas de segundos por site,
 nao compensa.
 
-| Casa | Estrategia | Fonte |
-|---|---|---|
-| XP | Open Finance -> Playwright | lista de fundos (SPA) |
-| BTG | Open Finance -> Playwright | catalogo de fundos (SPA) |
-| Itau | Open Finance -> scraping | catalogo Personnalite |
-| Inter | scraping -> Open Finance | paginas estaticas por fundo, via sitemap.xml |
-| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada |
+| Casa | Estrategia | Lista publica | Open Finance |
+|---|---|---|---|
+| XP | Open Finance (pagina bloqueada por CDN) | `/investimentos/fundos-de-investimento/lista/` -> 403 ate para Chromium | **624** |
+| BTG | Open Finance -> **API publica** -> navegador | API `funds/list/v2` da pagina `/produtos`: **693 fundos** na prateleira comercial | **9.950** |
+| Itau | Open Finance -> navegador **com janela** | `/investimentos/fundos/rentabilidade`: tabela paginada, **~450 fundos** | **1.751** |
+| Inter | scraping (sitemap, **574** fundos) -> Open Finance | paginas estaticas por fundo + `page-data.json` (Gatsby) | via trust store do sistema |
+| Nu | Open Finance | app NuInvest encerrado; sem prateleira web deslogada | **478** |
+
+Os numeros sao os medidos pelo `diagnose --browser` na maquina do usuario em
+2026-08-31 - nao estimativas.
+
+### O que a evidencia real mostrou, casa a casa
+
+**BTG - o melhor resultado.** O navegador passa (HTTP 200) e a pagina `/produtos` e
+alimentada por uma API publica e paginada:
+`/services/api/funds-public/public/funds/list/v2?page=N&size=K`. Ela devolve a
+**prateleira comercial** (693 fundos na medicao) com taxa (e a unidade dela),
+minimo, D+ de cotizacao e liquidacao, gestor, administrador, classificacao ANBIMA,
+PL, publico-alvo e ate flag de destaque. E um dado diferente - e complementar -
+dos ~9.950 do Open Finance, que listam tudo que a casa administra. O coletor chama
+a API direto (`api-json`); se um WAF barrar cliente HTTP simples, o caminho
+`playwright` pagina a mesma API por dentro do navegador, com os cookies dele.
+
+**Itau - funciona com o Chrome real.** O Chromium headless leva 403 da Akamai no
+proprio documento, mas com `SHELF_BROWSER_HEADED=1` + `SHELF_BROWSER_CHANNEL=chrome`
+(o Chrome instalado do usuario, com janela) a lista abre - comprovado na segunda
+rodada de evidencia. A tabela e paginada em ~10 fundos por pagina (45 paginas na
+medicao); o coletor clica "proxima" ate o fim e mapeia as colunas **pelo cabecalho**
+(nome, risco, aplicacao inicial, taxa maxima, resgate), nunca por posicao - as
+colunas de retorno ficam de fora por desenho, para rentabilidade nao virar "taxa".
+A tabela nao traz CNPJ, entao o merge reconcilia cada fundo com o gemeo do Open
+Finance pelo slug exato do nome (FIC/FIRF e afins descartados); o que nao casar
+permanece como registro proprio do site. Ha ainda um XHR de ~1,5 MB do gateway
+`apicd.cloud.itau.com.br` que deve carregar o dataset inteiro - a captura agora
+guarda o corpo dele (era o caso que revelou o bug abaixo) e, se parsear, os campos
+entram por cima.
+
+**XP - bloqueio de CDN no proprio documento.** 403 ate para o Chromium, com pagina
+de bloqueio propria que indica o e-mail `bloqueio-cdn@xpi.com.br` para pedir
+liberacao. Nao ha o que raspar num 403 - e este monitor nao tenta burlar
+fingerprinting. As vias: o Open Finance (624 fundos), a liberacao junto a CDN, ou
+o modo com janela acima, que tambem vale para a XP.
+
+**Inter - duas correcoes.** (1) A "falha de TLS" do Open Finance nao era do
+servidor: o `diagnose` verificou o handshake OK usando o trust store do sistema na
+mesma maquina em que o `requests` (que confia so no bundle do certifi) falhava. A
+sessao HTTP agora soma os dois stores - verificacao integral mantida, `verify=False`
+continua nao existindo aqui. (2) O coletor parava em 400 fundos por um teto
+silencioso, com 574 no sitemap; o teto subiu e, se for atingido, vira aviso e
+snapshot `partial`. De quebra, cada pagina de fundo tem um `page-data.json`
+estatico (o site e Gatsby) que o coletor agora le para completar taxa, minimo e
+gestor que o HTML nao entrega.
+
+> **Correcao de rota (2026-08-31).** Duas URLs estavam erradas: a do BTG apontava
+> para a raiz institucional (que nao lista nada) em vez de `/produtos`, e a do Itau
+> para a area Personnalite, que exige contexto de cliente. O diagnostico na maquina
+> do usuario mostrou "SPA vazia" e "403" - parte do que parecia anti-bot era
+> endereco errado. A parte que era anti-bot de verdade (XP e Itau) esta documentada
+> acima.
+
+A captura pelo navegador le a pagina por tres vias ao mesmo tempo - o trafego JSON
+que alimenta a listagem, o estado embutido (`__NEXT_DATA__` e afins) e o DOM
+renderizado (linhas de tabela, cartoes repetidos, CNPJ no texto). O DOM entra
+sempre, nao so como plano B: um fundo em destaque na tela e ausente do XHR e
+justamente o que separa a prateleira comercial da lista bruta da API.
 
 **Open Finance Brasil** e a estrategia preferida onde disponivel: a API de Dados
 Abertos de Investimentos (`/open-banking/opendata-investments/v1/funds`) e publica,
 sem autenticacao, e entrega CNPJ do fundo, gestor, categoria ANBIMA, taxas, minimo e
 prazos de resgate em formato padronizado - sem depender do layout do site. A
 completude varia por instituicao, entao o scraping continua como reconciliacao.
+
+> **Paginacao.** O `/funds` e paginado e nem toda instituicao respeita o `page-size`
+> pedido - ha quem devolva 10 quando se pede 500, o que multiplica o numero de
+> paginas por 50. O coletor registra o `page-size` efetivo e o `totalRecords`, e se
+> a trava de seguranca for atingida ele **avisa e marca o snapshot como `partial`**
+> em vez de truncar em silencio. Meia prateleira saindo como `ok` seria pior que
+> nenhuma: viraria a baseline do dia seguinte e o diff leria a diferenca como churn.
+
+> **Inter: falha de TLS - resolvida sem baixar a guarda.** O `diagnose` provou que
+> `api.openbanking.bancointer.com.br` valida pelo trust store do sistema e falha so
+> pelo bundle do certifi que o requests usa. A sessao HTTP soma os dois stores
+> (mais o `REQUESTS_CA_BUNDLE`, se houver) num unico contexto verificado - hostname
+> e cadeia continuam checados, e `verify=False` continua nao existindo aqui.
 
 **CVM**: `registro_fundo_classe.zip` (pos-CVM 175) como fonte primaria, com
 `cad_fi.csv` como fallback. O download bruto nao e versionado; so o extrato filtrado
@@ -160,11 +231,28 @@ fundo        envelope juridico, responsabilidade limitada por classe
 O grao da base e a **classe**, nao o fundo: e o CNPJ de classe que distribuidores e o informe
 diario reportam. Um fundo com duas classes aparece como duas linhas em `mercado.csv`.
 
+Para descer ate o ultimo nivel, use `hierarquia.csv`: uma linha por subclasse, com as colunas
+de fundo, classe e subclasse lado a lado (prefixadas `fundo_`, `classe_` e `subclasse_`). E na
+subclasse que moram publico-alvo e condicoes comerciais distintas - duas subclasses da mesma
+classe partilham carteira e CNPJ e ainda assim sao produtos diferentes na prateleira.
+
+A coluna `nivel` diz o que cada linha e:
+
+| `nivel` | Quando |
+|---|---|
+| `subclasse` | a classe tem subclasses; uma linha para cada |
+| `classe` | a classe nao tem subclasse - a propria classe e a unidade |
+| `fundo_legado` | fundo nao adaptado, que nao tem classe nem subclasse |
+
+Assim a tabela cobre o mercado inteiro sem exigir um union de quem consome. As taxas sao as da
+classe: subclasses partilham CNPJ e carteira, entao herdam a mesma taxa.
+
 ### Tabelas geradas em `data/market/` (gitignored)
 
 | Arquivo | Grao |
 |---|---|
 | `mercado.csv` | **o consolidado** - uma linha por classe, mais os fundos legados. E o que se abre direto |
+| `hierarquia.csv` | a visao normalizada completa - uma linha por **subclasse**, com fundo, classe e subclasse lado a lado |
 | `fundos.csv` | 1 fundo |
 | `classes.csv` | 1 classe |
 | `subclasses.csv` | 1 subclasse |
@@ -217,6 +305,112 @@ registre a classe em `collectors/__init__.py` e aponte
 
 O Nu e o caso que mais se beneficia disso: sem app web deslogado, e a unica via para
 ver sua prateleira.
+
+## Quando uma prateleira nao traz nada
+
+Os coletores de prateleira foram escritos a partir de documentacao publica, nao de
+observacao dos sites. A mecanica e testada (parsing, uniao, diff), mas os seletores e URLs
+podem nao corresponder ao que cada site publica hoje - e sites de banco mudam com frequencia.
+
+Quando uma casa vem vazia, `diagnose` responde por que:
+
+```bash
+python -m shelf_monitor diagnose --platform inter
+python -m shelf_monitor diagnose --browser          # abre as listas num Chromium real
+```
+
+Ele sonda cada fonte daquela casa e **grava a resposta bruta** em `data/cache/debug/`:
+
+| Sinal na sondagem | O que significa |
+|---|---|
+| `bloqueado pela network policy` | firewall ou proxy corporativo barrando o dominio |
+| pagina responde 200 mas sem CNPJ, sem `<tr>` e sem bloco JSON | casca de SPA: os dados chegam por JavaScript, so o Playwright alcanca |
+| diretorio Open Finance: `0 casaram` | a instituicao usa outra razao social; ajuste `open_finance_brands` em `config.py` |
+| `/funds` responde mas `0 fundos extraidos` | o envelope tem formato diferente do previsto - o JSON salvo mostra qual |
+| sitemap sem o prefixo de fundos | o site reorganizou as URLs; o sitemap salvo mostra a estrutura atual |
+
+Os arquivos em `data/cache/debug/` sao a evidencia que permite corrigir o coletor com o dado
+na mao, em vez de por tentativa. `diagnostico.json` consolida tudo num arquivo so.
+
+> **Bug que a segunda rodada de evidencia revelou.** O capturador lia o corpo das
+> respostas dentro do handler de evento; para uma resposta grande ainda chegando,
+> o `body()` falha - foi assim que o XHR de 1,5 MB do Itau se perdeu enquanto os
+> JSONs pequenos sobreviviam. Os corpos agora sao lidos depois que a pagina
+> assenta, e `requisicoes.json` registra por resposta se o corpo foi lido e se o
+> JSON parseou; corpos rotulados como JSON que nao parseiam ficam em
+> `payloads-invalidos/` (e como se reconhece BOM, JSONP ou payload cifrado).
+
+### `--browser`: o que o navegador ve
+
+O modo padrao usa `requests`, entao mede o que ja se sabe que falha nas tres listas
+que exigem JavaScript. Com `--browser`, cada lista e aberta num Chromium real e o
+diagnostico grava, em `data/cache/debug/<casa>/`:
+
+| Arquivo | Para que serve |
+|---|---|
+| `pagina.html` | o HTML **depois** do JavaScript - e nele que se ve se a lista existe |
+| `requisicoes.json` | toda requisicao da pagina (URL, status, tamanho, content-type) - identifica o XHR da listagem |
+| `payloads/NNN.json` | o corpo de **toda** resposta JSON, nao so a que o parser reconheceu |
+| `tela.png` | screenshot, para o caso de a pagina mostrar bloqueio ou consentimento |
+
+A sondagem tambem informa quantos fundos sairiam por cada via ("12 pelo JSON, 40 pelo
+DOM"), que e o que diz onde mexer. E lenta - cerca de um minuto por site.
+
+Para gravar essa mesma evidencia durante uma coleta normal, `SHELF_BROWSER_DEBUG=1`.
+
+## Comparacao profissional: vitrine, normalizacao e as quatro superficies
+
+A comparacao competitiva se apoia em dois conceitos e sai por quatro superficies.
+
+**Vitrine vs. catalogo.** Vitrine e o que o cliente ve no canal da propria casa
+(site, API do portal, area logada) - e a resposta a "o que esta disponivel para o
+varejo". Catalogo e o que o Open Finance publica: tudo que a casa administra,
+incluindo o que nunca aparece para o cliente. Todo relatorio separa os dois; um
+filtro por minimo sobre o catalogo nao aproxima a vitrine (no BTG marcaria 5.415
+fundos "varejo" quando a vitrine tem 693; na XP deixaria 9).
+
+**Normalizacao ANBIMA.** Cada casa descreve categoria do seu jeito ("Credito Pos"
+no BTG, "baixo risco" no Itau). Com a base de mercado importada
+(`python -m shelf_monitor market`), todo fundo com CNPJ e carimbado com a
+classificacao ANBIMA e CVM oficial, gestor, situacao e PL do registro - e a
+comparacao por classe passa a significar a mesma coisa nas cinco casas. A
+classificacao publicada pela casa, quando diverge, e preservada
+(`classificacao_anbima_casa`): a divergencia em si e informacao. A cobertura do
+join sai no rodape de cada superficie.
+
+| Superficie | Comando | Para quem |
+|---|---|---|
+| Dashboard (`dashboard.html`) | `report` / `run` | explorar - matriz casa x classe ANBIMA, arquitetura aberta, custo/ticket por quartis, exclusivos |
+| Deck executivo (`prateleiras-<data>.pptx`) | `report` / `run` | decidir - 8 slides para forum/comite, gerados a cada coleta |
+| Planilha (`prateleiras-<data>.xlsx`) | `export` | trabalhar - abas Vitrine varejo (tabela-dinamica-ready), Movimentos e Metodologia |
+| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo do dia por e-mail |
+
+Regras de leitura que valem nas quatro: quartis em vez de media (a media esconde a
+forma da prateleira), "gestora da casa" definida pela mesma watchlist do radar CVM,
+coleta suspeita nunca vira churn, e todo numero carrega proveniencia (fonte, data,
+cobertura) no rodape.
+
+**Perfil de varejo.** Fundos exclusivos/restritos - exclusivo no registro CVM,
+publico-alvo profissional, marcados pela propria casa (flags da API do BTG) ou
+denunciados pelo nome (EXCLUSIVO/RESERVADO/RESTRITO/FAMILY OFFICE) - ficam **fora de
+toda analise principal**: sao veiculos de um investidor, nao produtos a venda, e
+inflam qualquer comparacao. Nao somem: moram na aba "Restritos (auxiliar)" da
+planilha e no card auxiliar do dashboard, cada um com o motivo. Investidor
+*qualificado* nao e motivo de corte - plataforma de varejo distribui fundo
+qualificado a alta renda normalmente. Com o corte, "exclusivo" passou a significar
+uma coisa so; o conceito competitivo virou "so nesta casa"/"diferencial".
+
+**Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
+Tres vias, na ordem de confianca: (1) o join por CNPJ quando a reconciliacao por
+nome encontra o gemeo no Open Finance - exata pelo slug, ou aproximada com razao
+>= 0,95, candidato unico por margem e bloqueio de tokens que distinguem
+master/feeder/espelho (a proveniencia fica em `reconciliacao`); (2) inferencia pela
+marca no prefixo do nome ("Bahia AM Muta..." -> Bahia AM), contra um indice de
+marcas construido das gestoras da base CVM - so marcas inequivocas entram ("ITAU"
+fica de fora porque aponta para Itau Asset, Itau DTVM e Intrag), e o dado sai
+marcado `gestor_inferido`, nunca como oficial; (3) o XHR de ~1,5 MB do gateway do
+Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
+parser pendente de evidencia parseavel.
 
 ## Como o monitor evita falso alarme
 

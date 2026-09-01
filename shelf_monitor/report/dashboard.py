@@ -88,6 +88,19 @@ h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
 .tile .value { font-size: 30px; font-weight: 600; line-height: 1.15; margin-top: 6px; }
 .tile .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+.subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+.subgrid h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
+.subgrid .card-sub { margin-bottom: 12px; }
+.matrix-scroll { overflow-x: auto; }
+.matrix { border-collapse: collapse; font-size: 13px; width: 100%; }
+.matrix th { color: var(--text-secondary); font-weight: 600; font-size: 12px; padding: 6px 10px; text-align: right; }
+.matrix th.rowh { text-align: left; padding-left: 0; }
+.matrix td { padding: 0; border: 2px solid var(--surface-1); }
+.matrix td .cell { display: block; padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; border-radius: 4px; min-width: 52px; }
+.matrix td .zero { color: var(--muted); }
+.matrix td.rowlabel { color: var(--text-primary); padding: 7px 12px 7px 0; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.coverage { color: var(--text-secondary); font-size: 12.5px; border-top: 1px solid var(--grid); margin-top: 18px; padding-top: 12px; }
+
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-secondary); }
 .swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
@@ -333,6 +346,233 @@ function table(mount, columns, rows) {
 const usable = DATA.platforms.filter(p => p.status !== "unavailable" && p.total_funds > 0);
 
 // --- Matriz de classes ------------------------------------------------------
+/* --- Vitrine de varejo ---------------------------------------------------- */
+/* Rampa sequencial (um matiz, claro->escuro) da paleta validada; o texto da
+   celula escolhe tinta pelo passo do preenchimento, nunca a cor da serie. */
+const SEQ_STEPS = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+function heatColor(value, max) {
+  if (!value) return null;
+  const idx = Math.min(SEQ_STEPS.length - 1,
+    Math.floor((value / max) * SEQ_STEPS.length));
+  return { fill: SEQ_STEPS[idx], ink: idx >= 3 ? "#ffffff" : "#0b0b0b" };
+}
+
+function renderVitrine(listing) {
+  const section = document.getElementById("vitrine-section");
+  const withListing = (listing && listing.platforms || []).filter(p => p.total > 0);
+  if (!withListing.length) {
+    section.querySelectorAll(".tiles, .matrix-scroll, .subgrid, details").forEach(n => n.remove());
+    document.getElementById("vitrine-coverage").textContent =
+      "Nenhuma vitrine coletada nesta execucao - rode a coleta com navegador " +
+      "(SHELF_BROWSER_HEADED=1 para o Itau) para materializar as listagens.";
+    return;
+  }
+
+  // Tiles: vitrine por casa, catalogo como nota secundaria.
+  const tiles = document.getElementById("vitrine-tiles");
+  tiles.innerHTML = "";
+  withListing.forEach(p => {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const label = document.createElement("div");
+    label.className = "label"; label.textContent = p.label;
+    const value = document.createElement("div");
+    value.className = "value"; value.textContent = p.total.toLocaleString("pt-BR");
+    const note = document.createElement("div");
+    note.className = "note";
+    const catalog = p.catalog_total || 0;
+    note.textContent = (catalog > p.total
+      ? `de ${catalog.toLocaleString("pt-BR")} no catalogo` : "vitrine = total coletado") +
+      (p.exclusive ? ` - ${p.exclusive} so nela` : "");
+    tile.append(label, value, note);
+    tiles.appendChild(tile);
+  });
+
+  // Matriz casa x classe ANBIMA (heatmap sequencial).
+  let matrix = listing.matrix || [];
+  const mount = document.getElementById("matrix-vitrine");
+  // Matriz so de "sem classificacao" nao e matriz - e a ausencia da base.
+  if (matrix.length === 1 && matrix[0].category === "Sem classificacao") {
+    matrix = [];
+  }
+  if (matrix.length) {
+    const max = Math.max(1, ...matrix.flatMap(r => Object.values(r.counts)));
+    const table = document.createElement("table");
+    table.className = "matrix";
+    const head = table.createTHead().insertRow();
+    const corner = document.createElement("th");
+    corner.className = "rowh"; corner.textContent = "Classe ANBIMA";
+    head.appendChild(corner);
+    withListing.forEach(p => {
+      const th = document.createElement("th");
+      th.textContent = p.label; head.appendChild(th);
+    });
+    const body = table.createTBody();
+    matrix.forEach(rowData => {
+      const row = body.insertRow();
+      const rowLabel = row.insertCell();
+      rowLabel.className = "rowlabel";
+      rowLabel.textContent = rowData.category;
+      rowLabel.title = rowData.category;
+      withListing.forEach(p => {
+        const cell = row.insertCell();
+        const value = rowData.counts[p.platform_id] || 0;
+        const span = document.createElement("span");
+        span.className = "cell";
+        if (value) {
+          const heat = heatColor(value, max);
+          span.style.background = heat.fill;
+          span.style.color = heat.ink;
+          span.textContent = value.toLocaleString("pt-BR");
+          span.title = `${p.label} - ${rowData.category}: ${value}`;
+        } else {
+          span.className = "cell zero";
+          span.textContent = "\u2013";
+        }
+        cell.appendChild(span);
+      });
+    });
+    mount.innerHTML = "";
+    mount.appendChild(table);
+
+    table2(document.getElementById("table-vitrine"),
+      ["Classe ANBIMA", ...withListing.map(p => p.label)],
+      matrix.map(r => [r.category, ...withListing.map(p => String(r.counts[p.platform_id] || 0))]));
+  } else {
+    mount.innerHTML = '<p class="empty">Sem classificacao ANBIMA disponivel - importe a base ' +
+      'de mercado (python -m shelf_monitor market) para normalizar a vitrine.</p>';
+  }
+
+  // Arquitetura aberta: propria vs terceiros (2 series fixas, gap de 2px).
+  const archMount = document.getElementById("chart-arch");
+  const archLegend = document.getElementById("legend-arch");
+  archLegend.innerHTML =
+    '<span><span class="swatch" style="background:var(--s1)"></span>Gestora da casa</span>' +
+    '<span><span class="swatch" style="background:var(--s2)"></span>Terceiros</span>' +
+    '<span><span class="swatch" style="background:var(--grid)"></span>Sem gestor identificado</span>';
+  stackedRows(archMount, withListing.map(p => ({
+    label: p.label,
+    parts: [
+      { value: p.own_product || 0, color: "var(--s1)", name: "gestora da casa" },
+      { value: p.third_party || 0, color: "var(--s2)", name: "terceiros" },
+      { value: Math.max(0, p.total - (p.own_product || 0) - (p.third_party || 0)),
+        color: "var(--grid)", name: "sem gestor identificado" },
+    ],
+  })));
+
+  // Custo e ticket: tabela compacta - poucos numeros precisos pedem tabela.
+  table2(document.getElementById("table-costs"),
+    ["Casa", "Taxa adm q1", "mediana", "q3", "Minimo mediano (R$)", "Cobertura CNPJ"],
+    withListing.map(p => {
+      const fee = p.fee_quartiles, min = p.min_quartiles;
+      const pct = v => v === undefined || v === null ? "\u2013" : v.toLocaleString("pt-BR",
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+      const money = v => v === undefined || v === null ? "\u2013"
+        : "R$ " + v.toLocaleString("pt-BR");
+      return [
+        p.label,
+        fee ? pct(fee.q1) : "\u2013", fee ? pct(fee.median) : "\u2013",
+        fee ? pct(fee.q3) : "\u2013",
+        min ? money(min.median) : "\u2013",
+        Math.round((p.cnpj_coverage || 0) * 100) + "%",
+      ];
+    }));
+
+  // Cobertura e casas sem vitrine - o rodape que um comite pergunta primeiro.
+  const parts = [];
+  const missing = (listing.platforms || []).filter(p => !p.total);
+  if (missing.length) {
+    parts.push("Sem vitrine alcancavel: " + missing.map(p => p.label).join(", ") + ".");
+  }
+  if (DATA.enrichment && DATA.enrichment.with_cnpj) {
+    const e = DATA.enrichment;
+    parts.push(`Normalizacao ANBIMA: ${e.matched} de ${e.with_cnpj} fundos com CNPJ ` +
+      `casaram com o registro oficial CVM (${Math.round(100 * e.matched / e.with_cnpj)}%).`);
+    if (e.managers_inferred) {
+      parts.push(`${e.managers_inferred} gestoras inferidas pelo prefixo do nome ` +
+        `(marcadas como inferidas, nunca como oficiais).`);
+    }
+  } else {
+    parts.push("Normalizacao ANBIMA nao aplicada: base de mercado nao importada " +
+      "(python -m shelf_monitor market).");
+  }
+  if (listing.shared_all) {
+    parts.push(`${listing.shared_all} fundos aparecem em duas ou mais vitrines (por CNPJ).`);
+  }
+  document.getElementById("vitrine-coverage").textContent = parts.join(" ");
+}
+
+/* Barra horizontal empilhada: segmentos separados por gap de 2px da superficie,
+   rotulo do total na ponta; valores por segmento no tooltip e na legenda. */
+function stackedRows(mount, rows) {
+  if (!rows.length) {
+    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
+    return;
+  }
+  const rowH = 30, barH = 15, padL = 118, padR = 56, padT = 6, padB = 10;
+  const plotW = 420;
+  const width = padL + plotW + padR;
+  const height = padT + rows.length * rowH + padB;
+  const max = Math.max(1, ...rows.map(r => r.parts.reduce((a, s) => a + s.value, 0)));
+
+  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height,
+    role: "img", "aria-label": "arquitetura aberta por casa" });
+
+  rows.forEach((row, i) => {
+    const y = padT + i * rowH;
+    svg.appendChild(el("text", { class: "axis-label", x: padL - 12, y: y + barH - 2,
+      "text-anchor": "end" }, row.label));
+    let x = padL;
+    const total = row.parts.reduce((a, s) => a + s.value, 0);
+    row.parts.forEach(part => {
+      if (!part.value) return;
+      const w = Math.max(1, (part.value / max) * plotW - 2);
+      const rect = el("rect", { class: "bar", x, y, width: w, height: barH, rx: 3,
+        fill: part.color });
+      rect.appendChild(el("title", {},
+        `${row.label} - ${part.name}: ${part.value} de ${total}`));
+      svg.appendChild(rect);
+      x += w + 2; // gap de 2px na cor da superficie
+    });
+    svg.appendChild(el("text", { class: "tick", x: x + 6, y: y + barH - 2 },
+      String(total)));
+  });
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+}
+
+function table2(mount, columns, rows) {
+  const cols = columns.map((c, i) => ({ label: c, key: "c" + i, num: i > 0 }));
+  table(mount, cols, rows.map(r =>
+    Object.fromEntries(r.map((v, i) => ["c" + i, v]))));
+}
+
+renderVitrine(DATA.listing);
+
+(function renderRestricted(block) {
+  const mount = document.getElementById("table-restricted");
+  const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
+  if (!rows.length || !block.total) {
+    mount.innerHTML = '<p class="empty">Nenhum fundo restrito/exclusivo identificado ' +
+      'nesta coleta. A deteccao depende da base CVM importada e das flags das casas.</p>';
+    return;
+  }
+  table2(mount,
+    ["Casa", "Restritos", "% do total coletado", "Na vitrine", "Principais motivos"],
+    rows.map(p => {
+      const reasons = Object.entries(p.by_reason || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => `${reason} (${count})`).join("; ");
+      return [
+        p.label,
+        p.restricted.toLocaleString("pt-BR"),
+        `${Math.round(100 * p.restricted / p.total_snapshot)}%`,
+        String(p.on_listing || 0),
+        reasons || "–",
+      ];
+    }));
+})(DATA.restricted);
+
 renderLegend(document.getElementById("legend-classes"), usable);
 groupedBars(
   document.getElementById("chart-classes"),
@@ -519,6 +759,37 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
   <div class="tiles">{_stat_tiles(data)}</div>
 
+  <section class="card" id="vitrine-section">
+    <h2>Vitrine de varejo &mdash; o que o cliente ve</h2>
+    <p class="card-sub">Fundos presentes na listagem da propria casa (site, API do portal ou
+      area logada). O Open Finance nao entra aqui: ele e o catalogo regulatorio &mdash; tudo
+      que a casa administra &mdash; e serve de referencia, nao de prateleira.</p>
+    <div class="tiles" id="vitrine-tiles"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Matriz casa &times; classe ANBIMA</h3>
+    <p class="card-sub">Contagem de fundos da vitrine por classificacao ANBIMA oficial
+      (join por CNPJ com o registro CVM). Mais escuro = mais fundos.</p>
+    <div class="matrix-scroll" id="matrix-vitrine"></div>
+
+    <div class="subgrid" style="margin-top:22px">
+      <div>
+        <h3>Arquitetura aberta</h3>
+        <p class="card-sub">Produto de gestora da propria casa vs. de terceiros, na vitrine.</p>
+        <div class="legend" id="legend-arch"></div>
+        <div class="chart-scroll" id="chart-arch"></div>
+      </div>
+      <div>
+        <h3>Custo e ticket por casa</h3>
+        <p class="card-sub">Quartis da taxa de administracao e mediana do minimo &mdash;
+          quartis mostram a forma da prateleira; media esconderia.</p>
+        <div id="table-costs"></div>
+      </div>
+    </div>
+
+    <details><summary>Ver a matriz como tabela</summary><div id="table-vitrine"></div></details>
+    <div class="coverage" id="vitrine-coverage"></div>
+  </section>
+
   <section class="card">
     <h2>Amplitude por classe de ativo</h2>
     <p class="card-sub">Quantos fundos cada casa oferta em cada classe - a leitura mais direta
@@ -547,10 +818,19 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
   </section>
 
   <section class="card">
-    <h2>Exclusividade</h2>
-    <p class="card-sub">Fundos (por CNPJ) presentes em apenas uma das plataformas coletadas.
-      Considera somente casas com coleta bem-sucedida.</p>
+    <h2>Diferenciais de prateleira</h2>
+    <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas oferta -
+      o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio, que fica fora
+      desta analise. Considera somente casas com coleta bem-sucedida.</p>
     <div class="chart-scroll" id="chart-exclusive"></div>
+  </section>
+
+  <section class="card">
+    <h2>Fundos exclusivos e restritos &mdash; auxiliar</h2>
+    <p class="card-sub">Veiculos fora do perfil de varejo (exclusivo no registro CVM,
+      publico profissional, marcados pela casa ou pelo nome). Ficam fora de toda analise
+      acima; aqui e o inventario deles.</p>
+    <div id="table-restricted"></div>
   </section>
 
   <section class="card" id="cvm-section">

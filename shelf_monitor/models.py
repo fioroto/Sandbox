@@ -60,6 +60,18 @@ class PerformanceFee:
         )
 
 
+# Fontes que representam a vitrine comercial da casa (o que o varejo ve),
+# em oposicao ao catalogo regulatorio do Open Finance.
+LISTING_SOURCES = frozenset(
+    {
+        CollectorStrategy.API_JSON.value,
+        CollectorStrategy.PLAYWRIGHT.value,
+        CollectorStrategy.HTML_SCRAPE.value,
+        CollectorStrategy.AUTHENTICATED.value,
+    }
+)
+
+
 @dataclass
 class FundOffer:
     """Um fundo ofertado por uma plataforma, normalizado entre fontes."""
@@ -89,6 +101,16 @@ class FundOffer:
 
     def in_source(self, source: str) -> bool:
         return source in self.sources
+
+    @property
+    def on_listing(self) -> bool:
+        """O fundo esta na vitrine da casa - a lista que o varejo ve.
+
+        Vitrine e o que veio do canal da propria casa (site, API do portal ou
+        area logada). Open Finance nao conta: ele publica tudo que a casa
+        administra, inclusive o que nunca aparece para o cliente.
+        """
+        return any(source in LISTING_SOURCES for source in self.sources)
 
     @property
     def identity(self) -> str:
@@ -449,6 +471,9 @@ class RunReport:
     shelf_diffs: list[ShelfDiff] = field(default_factory=list)
     cvm_snapshot: CvmSnapshot | None = None
     cvm_diff: CvmDiff | None = None
+    # Cobertura do join com a base oficial (enrich.EnrichmentStats.to_dict());
+    # None quando a base de mercado nao esta importada.
+    enrichment: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

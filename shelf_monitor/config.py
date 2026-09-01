@@ -12,6 +12,10 @@ from shelf_monitor.models import CollectorStrategy
 load_dotenv()
 
 
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "sim", "yes")
+
+
 # --- Fontes de dados publicas ------------------------------------------------
 
 CVM_REGISTRO_ZIP_URL = (
@@ -58,18 +62,32 @@ PLATFORMS: dict[str, PlatformConfig] = {
     "btg": PlatformConfig(
         platform_id="btg",
         label="BTG Pactual",
-        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
-        shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento",
+        strategies=[
+            CollectorStrategy.OPEN_FINANCE,
+            CollectorStrategy.API_JSON,
+            CollectorStrategy.PLAYWRIGHT,
+        ],
+        shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento/produtos",
         open_finance_brands=["BTG PACTUAL"],
-        notes="Prateleira grande (~1.500 fundos, 350+ gestoras).",
+        notes=(
+            "A pagina /produtos e alimentada pela API publica funds/list/v2 "
+            "(~693 fundos na prateleira comercial, medido em 2026-08-31). "
+            "Open Finance publica ~9.950 - tudo que a casa administra."
+        ),
     ),
     "itau": PlatformConfig(
         platform_id="itau",
         label="Itau (Ion)",
-        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.HTML_SCRAPE],
-        shelf_url="https://www.itau.com.br/personnalite/investimentos/fundos/catalogo",
+        strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
+        shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
-        notes="Catalogo Personnalite e a visao publica mais completa.",
+        notes=(
+            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, ~450 "
+            "fundos em 2026-08-31). Akamai barra HTTP simples e Chromium "
+            "headless; abre com o Chrome real (SHELF_BROWSER_HEADED=1 + "
+            "SHELF_BROWSER_CHANNEL=chrome). A tabela nao traz CNPJ - o merge "
+            "reconcilia com o Open Finance pelo slug do nome."
+        ),
     ),
     "nu": PlatformConfig(
         platform_id="nu",
@@ -186,6 +204,16 @@ class Config:
         # que o pacote playwright do pip espera; apontar o binario evita o
         # "playwright install" (que nem sempre e possivel).
         self.chromium_path = os.getenv("SHELF_CHROMIUM_PATH") or None
+        # Com isso ligado, toda renderizacao grava HTML, XHRs e payloads em
+        # data/cache/debug/ - e o que permite escrever o parser com a evidencia
+        # na mao quando uma listagem muda de layout.
+        self.browser_debug = _env_flag("SHELF_BROWSER_DEBUG")
+        # Navegador com janela, usando o Chrome instalado do usuario
+        # (SHELF_BROWSER_CHANNEL=chrome). E a via legitima para paginas que
+        # barram o Chromium headless: e o navegador real da pessoa abrindo uma
+        # pagina publica - a CDN decide o que faz com isso.
+        self.browser_headed = _env_flag("SHELF_BROWSER_HEADED")
+        self.browser_channel = os.getenv("SHELF_BROWSER_CHANNEL", "").strip() or None
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "")
         self.smtp_port = int(smtp_port or os.getenv("SMTP_PORT", "587"))
         self.smtp_user = smtp_user or os.getenv("SMTP_USER", "")
@@ -222,6 +250,11 @@ class Config:
     @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
+
+    @property
+    def debug_dir(self) -> Path:
+        """Evidencia bruta das sondagens e das renderizacoes - gitignored."""
+        return self.cache_dir / "debug"
 
     @property
     def reports_dir(self) -> Path:

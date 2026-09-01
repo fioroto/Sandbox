@@ -71,9 +71,93 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
                 continue
             _absorb(existing, offer, source)
 
+    _reconcile_unidentified(merged)
+
     for offer in merged.values():
         offer.sources.sort(key=source_rank)
     return list(merged.values())
+
+
+# Fuzzy so acima disto, com candidato unico por margem. Abaixo, dois nomes
+# parecidos podem ser dois produtos.
+_FUZZY_RATIO = 0.95
+_FUZZY_MARGIN = 0.04
+# Tokens que distinguem veiculos irmaos: se um lado tem e o outro nao, NUNCA
+# fundir por semelhanca - master/feeder e espelhos tem nomes quase iguais.
+_DISTINGUISHING_TOKENS = {
+    "MASTER", "ESPELHO", "MIRROR", "SENIOR", "SUBORDINADA", "JUNIOR",
+    "PREV", "PREVIDENCIA", "II", "III", "IV", "V",
+}
+
+
+def _fuzzy_target(slug: str, candidates: dict[str, str]) -> str | None:
+    """Slug com CNPJ mais parecido, se for inequivoco e sem token distintivo."""
+    import difflib
+
+    scored = sorted(
+        (
+            (difflib.SequenceMatcher(None, slug, candidate).ratio(), candidate)
+            for candidate in candidates
+        ),
+        reverse=True,
+    )
+    if not scored or scored[0][0] < _FUZZY_RATIO:
+        return None
+    if len(scored) > 1 and scored[0][0] - scored[1][0] < _FUZZY_MARGIN:
+        return None  # dois candidatos plausiveis = ambiguo, nao fundir
+
+    best = scored[0][1]
+    difference = set(slug.upper().split("-")) ^ set(best.upper().split("-"))
+    if difference & _DISTINGUISHING_TOKENS:
+        return None
+    if any(token.isdigit() for token in difference):
+        return None  # "D30" vs "D60", "II" numerico etc.
+    return best
+
+
+def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
+    """Casa fundos sem CNPJ com o gemeo identificado, pelo nome.
+
+    A identidade e o CNPJ quando existe e o slug quando nao - entao o mesmo
+    fundo lido do site (sem CNPJ, caso da tabela do Itau) e do Open Finance
+    (com CNPJ) ganha duas chaves e apareceria duas vezes na prateleira.
+
+    Duas rodadas: slug exato (seguro) e depois fuzzy conservador - razao
+    >= 0.95, candidato unico por margem e bloqueio de tokens que distinguem
+    master/feeder/espelho. O que nao casar continua como registro proprio, e
+    todo casamento carrega a proveniencia em extra["reconciliacao"].
+    """
+    from shelf_monitor.normalize import name_slug
+
+    by_slug: dict[str, str] = {}
+    for identity, offer in merged.items():
+        if not offer.cnpj:
+            continue
+        by_slug.setdefault(name_slug(offer.name), identity)
+        for variant in offer.extra.get("name_variants", []):
+            by_slug.setdefault(name_slug(variant), identity)
+
+    for identity in [i for i, o in merged.items() if not o.cnpj]:
+        offer = merged[identity]
+        slug = name_slug(offer.name)
+
+        target_identity = by_slug.get(slug)
+        provenance = "slug exato"
+        if not target_identity:
+            fuzzy_slug = _fuzzy_target(slug, by_slug)
+            if fuzzy_slug:
+                target_identity = by_slug[fuzzy_slug]
+                provenance = f"nome aproximado ({slug} ~ {fuzzy_slug})"
+        if not target_identity or target_identity == identity:
+            continue
+
+        # O registro com CNPJ absorve o sem-CNPJ, que sai da prateleira:
+        # o fundo final e um so, carregando as duas fontes.
+        target = merged[target_identity]
+        for source in offer.sources:
+            _absorb(target, offer, source)
+        target.extra.setdefault("reconciliacao", provenance)
+        del merged[identity]
 
 
 def _absorb(target: FundOffer, other: FundOffer, source: str) -> None:

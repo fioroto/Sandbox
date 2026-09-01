@@ -34,7 +34,11 @@ from shelf_monitor.normalize import (
 )
 
 _PAGE_SIZE = 500
-_MAX_PAGES = 200  # trava de seguranca contra paginacao mal comportada
+# Trava contra paginacao mal comportada (servidor que nunca decrementa). O teto
+# alto e deliberado: o BTG publica ~9.950 fundos e ha instituicoes que ignoram o
+# page-size pedido e devolvem 10 por pagina - com o teto antigo (200) a coleta
+# saia pela metade, e saia como OK.
+_MAX_PAGES = 2_000
 _DIRECTORY_CACHE_TTL = 24 * 60 * 60  # o diretorio muda devagar, mas muda
 
 
@@ -75,6 +79,12 @@ class OpenFinanceFunds:
         self.platform = platform
         self.session = session
         self.source_urls: list[str] = []
+        # Metricas da paginacao, lidas pelo diagnose e pelo aviso de truncamento.
+        self.effective_page_size: int | None = None
+        self.total_records: int | None = None
+        self.pages_read = 0
+        self.truncated = False
+        self.warnings: list[str] = []
 
     # --- descoberta de host ---------------------------------------------------
 
@@ -149,6 +159,7 @@ class OpenFinanceFunds:
 
         offers: list[FundOffer] = []
         page = 1
+        total_pages = 1
         while page <= _MAX_PAGES:
             payload = get_json(
                 self.session,
@@ -166,11 +177,29 @@ class OpenFinanceFunds:
                 if offer:
                     offers.append(offer)
 
-            meta = payload.get("meta")
-            total_pages = parse_int((meta or {}).get("totalPages")) or 1
+            meta = _as_mapping(payload.get("meta"))
+            if page == 1:
+                # Nem toda instituicao respeita o page-size pedido. Registrar o
+                # efetivo e o que explica, depois, uma paginacao de 995 paginas
+                # quando se pediu 500 itens por pagina.
+                self.effective_page_size = len(items)
+                self.total_records = parse_int(meta.get("totalRecords"))
+            total_pages = parse_int(meta.get("totalPages")) or 1
+            self.pages_read = page
+
             if page >= total_pages or not items:
                 break
             page += 1
+
+        if total_pages > _MAX_PAGES:
+            # Truncar em silencio faria o snapshot sair OK com metade da
+            # prateleira - e o diff do dia seguinte leria isso como churn.
+            self.truncated = True
+            self.warnings.append(
+                f"paginacao truncada em {_MAX_PAGES} paginas de {total_pages} "
+                f"(page-size efetivo {self.effective_page_size}); "
+                f"{len(offers)} de {self.total_records or '?'} fundos coletados"
+            )
 
         return offers
 

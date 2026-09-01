@@ -16,15 +16,24 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from shelf_monitor.config import PLATFORMS, Config
+from shelf_monitor.enrich import (
+    EnrichmentStats,
+    KEY_ANBIMA,
+    KEY_CVM,
+    KEY_GESTOR_OFICIAL,
+    KEY_SITUACAO,
+)
 from shelf_monitor.models import (
     AssetClass,
     CvmSnapshot,
     FundOffer,
+    ShelfDiff,
     ShelfSnapshot,
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
-from shelf_monitor.report.aggregate import ASSET_CLASS_LABELS
+from shelf_monitor.profile import split_by_profile
+from shelf_monitor.report.aggregate import ASSET_CLASS_LABELS, is_own_product
 
 FONT = "Arial"
 
@@ -66,7 +75,7 @@ _COLUMNS: list[tuple[str, int, object]] = [
     # tabela dinamica cruzando plataforma x fonte.
     ("Open Finance", 13, lambda f: _yes_no(f.in_source("open-finance"))),
     ("Prateleira (site)", 17, lambda f: _yes_no(
-        f.in_source("html-scrape") or f.in_source("playwright") or f.in_source("api-json")
+        f.on_listing
     )),
     ("Area logada", 13, lambda f: _yes_no(f.in_source("authenticated"))),
     ("Link", 42, lambda f: f.detail_url or ""),
@@ -124,7 +133,7 @@ def _write_fund_rows(
     """Escreve o cabecalho e uma linha por fundo. Devolve a ultima linha usada."""
     headers = [name for name, _, _ in _COLUMNS]
     if with_exclusive:
-        headers.append("Exclusivo (por CNPJ)")
+        headers.append("So nesta casa (por CNPJ)")
 
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -138,7 +147,10 @@ def _write_fund_rows(
     row = header_row + 1
     for snapshot in snapshots:
         label = _platform_label(snapshot.platform)
-        for fund in sorted(snapshot.funds, key=lambda f: f.name):
+        # Restritos/exclusivos ficam fora das abas principais - moram na aba
+        # auxiliar "Restritos", com o motivo de cada um.
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in sorted(retail, key=lambda f: f.name):
             sheet.cell(row=row, column=_COL_PLATFORM, value=label)
             for index, (_, _, extract) in enumerate(_COLUMNS, start=1):
                 if extract is None:
@@ -227,7 +239,7 @@ def _add_summary(
     ).font = _NOTE_FONT
 
     classes = [ASSET_CLASS_LABELS[c] for c in AssetClass]
-    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas", "Exclusivos"]
+    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas", "So nesta casa"]
     header_row = 4
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -307,7 +319,7 @@ def _add_summary(
     for line in (
         "Como ler esta planilha:",
         "  Todos os numeros acima sao formulas sobre a aba Consolidado - filtrar ou corrigir la atualiza aqui.",
-        '  "Exclusivos" conta fundos cujo CNPJ aparece em uma unica plataforma desta coleta;',
+        '  "So nesta casa" conta fundos de varejo cujo CNPJ aparece em uma unica plataforma desta coleta;',
         "  fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
         "  \"Gestoras distintas\" e um valor da coleta, nao uma formula: contar valores unicos exigiria",
         "  funcao de matriz, que nem todo leitor de planilha avalia da mesma forma.",
@@ -461,12 +473,304 @@ def _add_collection_health(
             sheet.cell(row=row, column=2).font = _ALERT_FONT
 
 
+_OWN_LABELS = {True: "Propria", False: "Terceiros", None: "-"}
+
+
+def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
+    """Aba "Vitrine varejo": so o que o cliente ve no canal de cada casa.
+
+    E a aba para tabela dinamica: classe ANBIMA oficial (quando a base de
+    mercado foi importada), gestora, produto proprio vs terceiros, custo e
+    ticket - tudo no mesmo grao, uma linha por fundo por vitrine.
+    """
+    from openpyxl.formatting.rule import ColorScaleRule
+
+    sheet = workbook.create_sheet("Vitrine varejo")
+    headers = [
+        ("Plataforma", 20), ("Fundo", 52), ("CNPJ", 20),
+        ("Classe oficial (ANBIMA ou CVM)", 34), ("Categoria na origem", 26),
+        ("Gestora", 34), ("Produto", 12), ("Taxa adm (%)", 13),
+        ("Aplicacao minima (R$)", 20), ("Liquidacao resgate (D+)", 21),
+        ("Situacao CVM", 26), ("So nesta vitrine", 16), ("Fontes", 26),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    row = 1
+    for snapshot in snapshots:
+        label = _platform_label(snapshot.platform)
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in retail:
+            if not fund.on_listing:
+                continue
+            row += 1
+            own = is_own_product(snapshot.platform, fund)
+            values = [
+                label,
+                fund.name,
+                format_cnpj(fund.cnpj) if fund.cnpj else "",
+                fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
+                fund.raw_category or "",
+                fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+                _OWN_LABELS[own],
+                fund.admin_fee_pct,
+                fund.min_initial,
+                fund.redemption_payment_days,
+                fund.extra.get(KEY_SITUACAO) or "",
+                None,  # formula abaixo
+                ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
+            ]
+            for index, value in enumerate(values, start=1):
+                cell = sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+            sheet.cell(row=row, column=8).number_format = _PCT
+            sheet.cell(row=row, column=9).number_format = _MONEY
+            sheet.cell(row=row, column=10).number_format = _INT
+
+    if row > 1:
+        # Exclusivo entre vitrines: o CNPJ aparece uma vez so nesta aba.
+        # Formula (e nao valor) para acompanhar filtros e correcoes manuais;
+        # o intervalo e limitado as linhas de dado - COUNTIF de coluna inteira
+        # ja provou travar o arquivo.
+        cnpj_range = f"$C$2:$C${row}"
+        for r in range(2, row + 1):
+            cell = sheet.cell(
+                row=r,
+                column=12,
+                value=(
+                    f'=IF(C{r}="","",IF(COUNTIF({cnpj_range},C{r})=1,"Sim","Nao"))'
+                ),
+            )
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        # Leitura rapida de custo e ticket: escala de cor so no intervalo de dados.
+        scale = ColorScaleRule(
+            start_type="min", start_color="C6EFCE",
+            end_type="max", end_color="FFC7CE",
+        )
+        sheet.conditional_formatting.add(f"H2:H{row}", scale)
+        sheet.conditional_formatting.add(
+            f"I2:I{row}",
+            ColorScaleRule(
+                start_type="min", start_color="C6EFCE",
+                end_type="max", end_color="FFC7CE",
+            ),
+        )
+    sheet.freeze_panes = "A2"
+
+
+def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
+    """Aba auxiliar: os fundos fora da analise de varejo, com o motivo.
+
+    Eles nao somem do monitor - so nao contaminam comparacao de prateleira.
+    """
+    sheet = workbook.create_sheet("Restritos (auxiliar)")
+    headers = [
+        ("Plataforma", 20), ("Fundo", 52), ("CNPJ", 20), ("Motivo", 40),
+        ("Classe oficial", 30), ("Gestora", 34), ("Na vitrine", 12), ("Fontes", 26),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    row = 1
+    for snapshot in snapshots:
+        label = _platform_label(snapshot.platform)
+        _, restricted = split_by_profile(snapshot.funds)
+        for fund, reason in sorted(restricted, key=lambda pair: pair[0].name):
+            row += 1
+            values = [
+                label, fund.name,
+                format_cnpj(fund.cnpj) if fund.cnpj else "",
+                reason,
+                fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
+                fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+                "Sim" if fund.on_listing else "Nao",
+                ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
+            ]
+            for index, value in enumerate(values, start=1):
+                cell = sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+    if row == 1:
+        sheet.cell(row=2, column=1, value="Nenhum fundo restrito/exclusivo identificado nesta coleta.").font = _NOTE_FONT
+    sheet.freeze_panes = "A2"
+
+
+def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
+    """Aba "Movimentos": o que entrou, saiu ou mudou desde a coleta anterior."""
+    sheet = workbook.create_sheet("Movimentos")
+    headers = [
+        ("Plataforma", 20), ("Movimento", 14), ("Fundo", 52), ("CNPJ", 20),
+        ("Na vitrine", 12), ("Detalhe", 60),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    row = 1
+    for diff in diffs:
+        label = _platform_label(diff.platform)
+        if diff.is_first_run:
+            row += 1
+            sheet.cell(row=row, column=1, value=label).font = _BODY_FONT
+            sheet.cell(row=row, column=2, value="baseline").font = _NOTE_FONT
+            sheet.cell(
+                row=row, column=6,
+                value="primeira coleta - sem base de comparacao",
+            ).font = _NOTE_FONT
+            continue
+        if diff.suspect:
+            row += 1
+            sheet.cell(row=row, column=1, value=label).font = _BODY_FONT
+            sheet.cell(row=row, column=2, value="SUSPEITO").font = _ALERT_FONT
+            sheet.cell(
+                row=row, column=6,
+                value=(
+                    "coleta parcial ou queda brusca - saidas nao listadas para "
+                    "nao virar churn falso"
+                ),
+            ).font = _ALERT_FONT
+
+        entries: list[tuple[str, str, str, str, str]] = []
+        from shelf_monitor.profile import restriction_reason
+
+        def is_retail(fund) -> bool:
+            return restriction_reason(fund) is None
+
+        for fund in filter(is_retail, diff.added):
+            entries.append((
+                "entrada", fund.name,
+                format_cnpj(fund.cnpj) if fund.cnpj else "",
+                "Sim" if fund.on_listing else "Nao", "",
+            ))
+        if not diff.suspect:
+            for fund in filter(is_retail, diff.removed):
+                entries.append((
+                    "saida", fund.name,
+                    format_cnpj(fund.cnpj) if fund.cnpj else "",
+                    "Sim" if fund.on_listing else "Nao", "",
+                ))
+        for change in diff.changed:
+            detail = "; ".join(
+                f"{c.field}: {c.old} -> {c.new}" for c in change.changes
+            )
+            cnpj = change.identity if change.identity.isdigit() else ""
+            entries.append((
+                "alteracao", change.name,
+                format_cnpj(cnpj) if cnpj else "", "", detail,
+            ))
+
+        for movement, name, cnpj, listing, detail in entries:
+            row += 1
+            for index, value in enumerate(
+                (label, movement, name, cnpj, listing, detail), start=1
+            ):
+                cell = sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+    sheet.freeze_panes = "A2"
+
+
+def _add_methodology_sheet(
+    workbook: Workbook,
+    snapshots: list[ShelfSnapshot],
+    enrichment: EnrichmentStats | None,
+    generated_at: datetime,
+) -> None:
+    """Aba "Metodologia": proveniencia e cobertura - o que um comite pergunta."""
+    sheet = workbook.create_sheet("Metodologia")
+    sheet.column_dimensions["A"].width = 34
+    sheet.column_dimensions["B"].width = 90
+
+    def line(row: int, key: str, value: str, font=None) -> int:
+        sheet.cell(row=row, column=1, value=key).font = _HEADER_FONT if font is None else font
+        sheet.cell(row=row, column=1).fill = _HEADER_FILL if font is None else PatternFill()
+        sheet.cell(row=row, column=2, value=value).font = _BODY_FONT
+        return row + 1
+
+    row = 1
+    sheet.cell(row=row, column=1, value="Metodologia e proveniencia").font = _TITLE_FONT
+    row += 2
+
+    row = line(row, "Gerado em", generated_at.strftime("%d/%m/%Y %H:%M"))
+    row = line(
+        row, "Vitrine (definicao)",
+        "Fundo presente no canal da propria casa: site publico, API do portal ou "
+        "area logada. Open Finance NAO conta como vitrine - e o catalogo "
+        "regulatorio (tudo que a casa administra), usado aqui para enriquecer "
+        "campos e medir o catalogo.",
+    )
+    row = line(
+        row, "Perfil de varejo",
+        "Fundos exclusivos/restritos (registro CVM, publico profissional, flag "
+        "da casa ou nome) ficam FORA das abas de analise e moram na aba "
+        "'Restritos (auxiliar)' com o motivo. Qualificado nao e motivo de corte.",
+    )
+    row = line(
+        row, "Precedencia de fontes",
+        "Open Finance > area logada > API do portal > navegador > HTML. Quando "
+        "duas fontes discordam de um campo, vence a de maior confianca; as "
+        "demais preenchem lacunas.",
+    )
+    if enrichment is not None:
+        pct = (
+            f"{100 * enrichment.matched / enrichment.with_cnpj:.0f}%"
+            if enrichment.with_cnpj
+            else "n/a"
+        )
+        row = line(
+            row, "Normalizacao ANBIMA",
+            f"Join por CNPJ com a base oficial CVM ({enrichment.matched} de "
+            f"{enrichment.with_cnpj} fundos com CNPJ casaram - {pct}). Classe "
+            "ANBIMA, gestor e situacao vem do registro oficial; a classificacao "
+            "publicada pela casa, quando diverge, fica na coluna "
+            "classificacao_anbima_casa.",
+        )
+    else:
+        row = line(
+            row, "Normalizacao ANBIMA",
+            "NAO aplicada nesta geracao: base de mercado ausente. Rode "
+            "`python -m shelf_monitor market` para importar a base oficial da "
+            "CVM e reexporte.",
+            font=_ALERT_FONT,
+        )
+
+    row += 1
+    sheet.cell(row=row, column=1, value="Coleta por casa").font = _TITLE_FONT
+    row += 1
+    for snapshot in snapshots:
+        parts = [f"status={snapshot.status.value}"]
+        if snapshot.source_counts:
+            parts.append(
+                "fontes: "
+                + ", ".join(f"{k}={v}" for k, v in snapshot.source_counts.items())
+            )
+        listing = sum(1 for f in snapshot.funds if f.on_listing)
+        parts.append(f"vitrine={listing} de {len(snapshot.funds)}")
+        if snapshot.error:
+            parts.append(f"obs: {snapshot.error[:180]}")
+        row = line(
+            row,
+            _platform_label(snapshot.platform),
+            f"{snapshot.collected_at.strftime('%d/%m/%Y %H:%M')} - "
+            + " | ".join(parts),
+        )
+
+
 def render_spreadsheet(
     config: Config,
     snapshots: list[ShelfSnapshot],
     cvm: CvmSnapshot | None = None,
     generated_at: datetime | None = None,
     path: Path | None = None,
+    diffs: list[ShelfDiff] | None = None,
+    enrichment: EnrichmentStats | None = None,
 ) -> Path:
     """Gera a planilha das prateleiras. Devolve o caminho do arquivo."""
     generated_at = generated_at or datetime.now()
@@ -474,11 +778,16 @@ def render_spreadsheet(
 
     workbook = Workbook()
     last_row = _add_consolidated(workbook, usable)
+    _add_listing_sheet(workbook, usable)
+    _add_restricted_sheet(workbook, usable)
+    if diffs:
+        _add_movements_sheet(workbook, diffs)
     _add_platform_sheets(workbook, usable)
     if cvm and cvm.funds:
         _add_cvm(workbook, cvm)
     _add_source_coverage(workbook, usable)
     _add_collection_health(workbook, snapshots, cvm)
+    _add_methodology_sheet(workbook, snapshots, enrichment, generated_at)
     _add_summary(workbook, usable, snapshots, last_row, generated_at)
 
     config.reports_dir.mkdir(parents=True, exist_ok=True)

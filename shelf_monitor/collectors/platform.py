@@ -99,6 +99,7 @@ class PlatformCollector(BaseCollector):
             return client.fetch()
         finally:
             self.source_urls.extend(client.source_urls)
+            self.warnings.extend(client.warnings)
 
     def _collect_web(self) -> list[FundOffer]:
         """Scraping HTML/API interna. Subclasses implementam."""
@@ -107,7 +108,27 @@ class PlatformCollector(BaseCollector):
         )
 
     def _collect_playwright(self) -> list[FundOffer]:
-        """Renderizacao headless para prateleiras que sao SPA. Subclasses implementam."""
-        raise NotImplementedError(
-            f"coletor Playwright nao implementado para {self.platform_id}"
+        """Renderizacao headless para prateleiras que sao SPA.
+
+        Serve para as tres casas cuja lista so existe depois do JavaScript (XP,
+        BTG, Itau) - o caminho e o mesmo, o que muda e so a URL. Uma subclasse so
+        precisa sobrescrever isto se a casa exigir algum passo extra na pagina.
+        """
+        from shelf_monitor.collectors.browser import collect_via_browser
+
+        if not self.platform.shelf_url:
+            raise SourceUnavailable(
+                f"shelf_url nao configurada para {self.platform_id}"
+            )
+
+        offers, urls = collect_via_browser(
+            self.platform_id,
+            self.platform.shelf_url,
+            user_agent=self.config.user_agent,
+            executable_path=self.config.chromium_path,
+            debug_dir=self.config.debug_dir if self.config.browser_debug else None,
+            headed=self.config.browser_headed,
+            channel=self.config.browser_channel,
         )
+        self.source_urls.extend(urls)
+        return offers

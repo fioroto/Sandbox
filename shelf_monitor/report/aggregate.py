@@ -1,9 +1,14 @@
 """Agregacoes competitivas derivadas dos snapshots - insumo dos relatorios."""
 from __future__ import annotations
 
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 
-from shelf_monitor.config import PLATFORMS
+from shelf_monitor.config import PLATFORMS, WATCHLIST
+from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
+from shelf_monitor.normalize import normalize_text
+from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
     AssetClass,
     FundOffer,
@@ -89,16 +94,200 @@ def _median(values: list[float]) -> float | None:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
-def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
-    """CNPJs presentes em exatamente uma plataforma coletada com sucesso.
+def _quartiles(values: list[float]) -> dict | None:
+    """q1/mediana/q3 - quartis dizem a forma da prateleira; media esconde."""
+    if len(values) < 4:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    lower = ordered[:mid]
+    upper = ordered[mid + 1 :] if len(ordered) % 2 else ordered[mid:]
+    return {
+        "q1": round(_median(lower), 4),
+        "median": round(_median(ordered), 4),
+        "q3": round(_median(upper), 4),
+        "n": len(ordered),
+    }
 
-    So considera snapshots utilizaveis: uma coleta que falhou tornaria "exclusivo"
-    todo fundo das demais casas.
+
+def _own_product_patterns(platform_id: str) -> list[re.Pattern] | None:
+    watch = WATCHLIST.get(platform_id)
+    if not watch:
+        return None
+    return [re.compile(pattern) for pattern in watch.name_patterns]
+
+
+def is_own_product(platform_id: str, fund: FundOffer) -> bool | None:
+    """O fundo e de gestora ligada a propria casa? None = sem gestor conhecido.
+
+    Reusa os mesmos padroes da watchlist do radar CVM - a definicao de "gestora
+    da casa" e uma so no monitor inteiro.
+    """
+    patterns = _own_product_patterns(platform_id)
+    manager = fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name
+    if not patterns or not manager:
+        return None
+    normalized = normalize_text(manager)
+    return any(p.search(normalized) for p in patterns)
+
+
+def anbima_category(fund: FundOffer) -> str:
+    """Categoria do fundo, na melhor fonte disponivel, em tres camadas.
+
+    1. Classificacao ANBIMA oficial - so existe para fundo aderente a ANBIMA;
+    2. Classificacao CVM oficial (Renda Fixa/Acoes/Multimercado/Cambial) - o
+       registro sempre a tem, entao um fundo casado nunca fica "sem classe";
+    3. a heuristica sobre nome/categoria da casa, quando nem o join houve.
+    Rotulos ficam como estao (a granularidade diferente e visivel por si), e o
+    "Sem classificacao" sobra so para quem nao tem CNPJ casado nem nome legivel.
+    """
+    official = fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM)
+    if official:
+        return official
+    if fund.asset_class != AssetClass.OUTROS:
+        return ASSET_CLASS_LABELS[fund.asset_class]
+    return "Sem classificacao"
+
+
+def _listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
+    return [f for f in retail_funds(snapshot) if f.on_listing]
+
+
+# Quantas categorias ANBIMA aparecem por extenso na matriz; o resto agrega em
+# "Outras" para a tabela caber numa tela de comite.
+_MATRIX_CATEGORIES = 12
+
+
+def build_listing_block(report: RunReport) -> dict:
+    """A visao de vitrine: so o que o varejo ve em cada casa.
+
+    E deliberadamente separada dos totais por snapshot - o Open Finance lista o
+    que a casa administra, e misturar os dois faria o catalogo passar por
+    prateleira.
+    """
+    usable = [
+        s
+        for s in report.snapshots
+        if s.status != SnapshotStatus.UNAVAILABLE and s.funds
+    ]
+
+    presence: dict[str, set[str]] = {}
+    platforms: list[dict] = []
+    category_totals: Counter = Counter()
+
+    for snapshot in usable:
+        listing = _listing_funds(snapshot)
+        for fund in listing:
+            if fund.cnpj:
+                presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
+
+    for snapshot in usable:
+        listing = _listing_funds(snapshot)
+        if not listing:
+            platforms.append(
+                {
+                    "platform_id": snapshot.platform,
+                    "label": PLATFORMS[snapshot.platform].label
+                    if snapshot.platform in PLATFORMS
+                    else snapshot.platform,
+                    "total": 0,
+                    "reason": "sem listagem publica alcancavel nesta coleta",
+                }
+            )
+            continue
+
+        by_category: Counter = Counter(anbima_category(f) for f in listing)
+        category_totals.update(by_category)
+
+        own = sum(1 for f in listing if is_own_product(snapshot.platform, f) is True)
+        third = sum(1 for f in listing if is_own_product(snapshot.platform, f) is False)
+        managers = {
+            (f.extra.get(KEY_GESTOR_OFICIAL) or f.manager_name or "").strip()
+            for f in listing
+            if f.extra.get(KEY_GESTOR_OFICIAL) or f.manager_name
+        }
+        exclusive = sum(
+            1
+            for f in listing
+            if f.cnpj and presence.get(f.cnpj) == {snapshot.platform}
+        )
+
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": PLATFORMS[snapshot.platform].label
+                if snapshot.platform in PLATFORMS
+                else snapshot.platform,
+                "total": len(listing),
+                "catalog_total": len(retail_funds(snapshot)),
+                "by_category": dict(by_category),
+                "own_product": own,
+                "third_party": third,
+                "distinct_managers": len(managers),
+                "exclusive": exclusive,
+                "fee_quartiles": _quartiles(
+                    [f.admin_fee_pct for f in listing if f.admin_fee_pct is not None]
+                ),
+                "min_quartiles": _quartiles(
+                    [f.min_initial for f in listing if f.min_initial is not None]
+                ),
+                "cnpj_coverage": round(
+                    sum(1 for f in listing if f.cnpj) / len(listing), 3
+                ),
+            }
+        )
+
+    top_categories = [c for c, _ in category_totals.most_common(_MATRIX_CATEGORIES)]
+    matrix: list[dict] = []
+    for category in top_categories:
+        matrix.append(
+            {
+                "category": category,
+                "counts": {
+                    p["platform_id"]: p.get("by_category", {}).get(category, 0)
+                    for p in platforms
+                },
+            }
+        )
+    other = {
+        p["platform_id"]: sum(
+            n
+            for cat, n in p.get("by_category", {}).items()
+            if cat not in top_categories
+        )
+        for p in platforms
+    }
+    if any(other.values()):
+        matrix.append({"category": "Outras", "counts": other})
+
+    return {
+        "platforms": platforms,
+        "matrix": matrix,
+        "shared_all": sum(
+            1
+            for cnpjs in presence.values()
+            if len(cnpjs) >= 2
+        ),
+    }
+
+
+def retail_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
+    """So o perfil de varejo - a materia-prima de toda analise principal."""
+    return split_by_profile(snapshot.funds)[0]
+
+
+def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
+    """CNPJs de varejo presentes em exatamente uma plataforma coletada.
+
+    E o conceito COMPETITIVO ("so esta casa oferta"), nao o regulatorio
+    ("fundo exclusivo de um investidor") - os regulatorios nem entram aqui.
+    So considera snapshots utilizaveis: uma coleta que falhou tornaria
+    diferencial todo fundo das demais casas.
     """
     usable = [s for s in snapshots if s.status != SnapshotStatus.UNAVAILABLE and s.funds]
     presence: dict[str, set[str]] = {}
     for snapshot in usable:
-        for fund in snapshot.funds:
+        for fund in retail_funds(snapshot):
             if fund.cnpj:
                 presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
 
@@ -115,7 +304,8 @@ def summarize_platform(
     platform_cfg = PLATFORMS.get(snapshot.platform)
     label = platform_cfg.label if platform_cfg else snapshot.platform
 
-    funds: list[FundOffer] = snapshot.funds
+    # A analise principal ve so o varejo; os restritos vao ao bloco auxiliar.
+    funds: list[FundOffer] = retail_funds(snapshot)
     by_class: dict[str, int] = {}
     for asset_class in AssetClass:
         count = sum(1 for f in funds if f.asset_class == asset_class)
@@ -155,6 +345,35 @@ def summarize_platform(
         exclusive_count=len(exclusive_cnpjs),
         cnpj_coverage=(with_cnpj / len(funds)) if funds else 0.0,
     )
+
+
+def build_restricted_block(report: RunReport) -> dict:
+    """O relatorio auxiliar: quem ficou fora da analise de varejo, e por que."""
+    platforms: list[dict] = []
+    total = 0
+    for snapshot in report.snapshots:
+        _, restricted = split_by_profile(snapshot.funds)
+        if not snapshot.funds:
+            continue
+        by_reason: Counter = Counter(reason for _, reason in restricted)
+        total += len(restricted)
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": PLATFORMS[snapshot.platform].label
+                if snapshot.platform in PLATFORMS
+                else snapshot.platform,
+                "total_snapshot": len(snapshot.funds),
+                "restricted": len(restricted),
+                "by_reason": dict(by_reason),
+                "on_listing": sum(1 for f, _ in restricted if f.on_listing),
+                "sample": [
+                    {"name": fund.name, "cnpj": fund.cnpj, "reason": reason}
+                    for fund, reason in restricted[:8]
+                ],
+            }
+        )
+    return {"total": total, "platforms": platforms}
 
 
 def build_dashboard_data(report: RunReport) -> dict:
@@ -223,6 +442,9 @@ def build_dashboard_data(report: RunReport) -> dict:
 
     return {
         "generated_at": report.generated_at.isoformat(),
+        "listing": build_listing_block(report),
+        "restricted": build_restricted_block(report),
+        "enrichment": report.enrichment,
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],
         # Ordem canonica das casas: fixa a cor de cada uma nos graficos, mesmo
