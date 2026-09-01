@@ -1,0 +1,36 @@
+{
+  "url": "https://mfegestaocookies.cloud.itau.com.br/assets/i18n/pt-br.json",
+  "payload": {
+    "BANNER_TEXT": "Utilizamos cookies para melhorar a experiência de navegação e identificar suas preferências. Você pode aceitar todos os cookies, rejeitar os não essenciais ou gerenciar os que serão usados. Leia mais em nossa",
+    "POLICY_PRIVACY_TEXT": "Política de Privacidade e cookies",
+    "POLICY_PRIVACY_LINK": "https://www.itau.com.br/privacidade/politica-de-privacidade-e-cookies",
+    "BUTTONS": {
+      "ACCEPT_ALL": "Aceitar todos",
+      "REJECT": "Rejeitar não essenciais ",
+      "MANAGE": "Gerenciar cookies",
+      "CLOSE": "fechar",
+      "SAVE": "Salvar"
+    },
+    "MODAL": {
+      "TITLE": "Gerenciar cookies",
+      "ESSENTIAL_COOKIES": {
+        "TITLE": "Cookies Essenciais",
+        "DESCRIPTION": "Necessários para as funções básicas do site, permitindo que este opere corretamente."
+      },
+      "FUNCTIONALITY_COOKIES": {
+        "TITLE": "Cookies de Funcionalidade",
+        "DESCRIPTION": "Possibilitam melhor desempenho dos serviços solicitados e lembram preferências do site."
+      },
+      "ADVERTISING_COOKIES": {
+        "TITLE": "Cookies de Publicidade",
+        "DESCRIPTION": "Personalizam anúncios conforme sua experiência de navegação."
+      },
+      "ANALYTIC_COOKIES": {
+        "TITLE": "Cookies Analíticos",
+        "DESCRIPTION": "Coletam dados e informações de uso do site, para melhorar seu funcionamento."
+      },
+      "POLICY_PRIVACY_TEXT": "Você pode desativar os cookies em seu navegador. Para saber mais, consulte nossa",
+      "POLICY_PRIVACY_LINK": "Política de privacidade e cookies"
+    }
+  }
+}
