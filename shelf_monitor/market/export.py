@@ -446,6 +446,15 @@ def write_database(config: Config, database: MarketDatabase) -> dict[str, Path]:
         "notes": database.notes,
     }
     manifest_path = target / "_manifest.json"
+    if manifest_path.is_file():
+        # A secao de captacao pertence a outro produtor (market/flows);
+        # reimportar o cadastro nao pode apagar o registro dela.
+        try:
+            previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            previous = {}
+        if "captacao" in previous:
+            manifest["captacao"] = previous["captacao"]
     manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

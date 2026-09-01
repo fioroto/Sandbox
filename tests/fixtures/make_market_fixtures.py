@@ -9,6 +9,8 @@ casos que quebram a importacao no mundo real:
 - CNPJ com mascara no extrato e sem mascara no cadastro
 - taxa de administracao em reais convivendo com taxa em percentual
 - coluna nova no header que o modelo ainda nao conhece
+- informe diario nos dois schemas (pre e pos RCVM 175), com subclasses no
+  mesmo dia (PL soma), linhas fora de ordem e mes parcial
 
 Rode com: python tests/fixtures/make_market_fixtures.py
 """
@@ -171,10 +173,69 @@ EXTRATO_ROWS = [
 ]
 
 
+# --- informe diario -----------------------------------------------------------
+# Schema pos-RCVM 175 (arquivos de 2025 em diante), com uma coluna que o
+# modelo nao conhece - o manifesto deve denuncia-la.
+INF_DIARIO_COLUMNS = [
+    "TP_FUNDO_CLASSE", "CNPJ_FUNDO_CLASSE", "ID_SUBCLASSE", "DT_COMPTC",
+    "VL_TOTAL", "VL_QUOTA", "VL_PATRIM_LIQ", "CAPTC_DIA", "RESG_DIA",
+    "NR_COTST", "ID_INFORME",
+]
+
+# Mes fechado. As linhas de 31/07 vem ANTES da de 30/07 de proposito: o
+# agregador nao pode depender da ordem do arquivo. A classe BTG aparece com
+# CNPJ mascarado (como no extrato) e com duas subclasses no mesmo dia - o PL
+# do dia e a soma das duas.
+INF_202607_ROWS = [
+    ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-07-31",
+     "905100000.00", "1.523456", "905000000.00", "2000000.00", "0.00",
+     "10100", "900001"],
+    ["CLASSES - FIF", "12.345.678/0001-91", "3002", "2026-07-31",
+     "95100000.00", "1.523456", "95000000.00", "500000.00", "250000.00",
+     "900", "900002"],
+    ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-07-30",
+     "900100000.00", "1.522000", "900000000.00", "1000000.00", "500000.00",
+     "10000", "900003"],
+    ["CLASSES - FIF", "42345678000194", "", "2026-07-31",
+     "5100100000.00", "2.100000", "5100000000.00", "0.00", "3000000.00",
+     "210", "900004"],
+]
+
+# Mes corrente na data dos testes (2026-08-15): parcial por definicao.
+INF_202608_ROWS = [
+    ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-08-03",
+     "1001100000.00", "1.524000", "1001000000.00", "400000.00", "100000.00",
+     "11050", "900005"],
+    ["CLASSES - FIF", "42345678000194", "", "2026-08-03",
+     "5090100000.00", "2.101000", "5090000000.00", "0.00", "1000000.00",
+     "208", "900006"],
+]
+
+# Schema antigo (pre-RCVM 175): TP_FUNDO/CNPJ_FUNDO, sem ID_SUBCLASSE.
+INF_OLD_COLUMNS = [
+    "TP_FUNDO", "CNPJ_FUNDO", "DT_COMPTC", "VL_TOTAL", "VL_QUOTA",
+    "VL_PATRIM_LIQ", "CAPTC_DIA", "RESG_DIA", "NR_COTST",
+]
+
+INF_202412_ROWS = [
+    ["FI", "12345678000191", "2024-12-30", "800100000.00", "1.400000",
+     "800000000.00", "100000.00", "0.00", "9000"],
+    ["FI", "70345678000170", "2024-12-30", "9100100000.00", "3.000000",
+     "9100000000.00", "5000000.00", "2000000.00", "500"],
+]
+
+
 def _csv(header: list[str], rows: list[list[str]]) -> bytes:
     lines = [";".join(header)]
     lines.extend(";".join(row) for row in rows)
     return "\n".join(lines).encode("iso-8859-1")
+
+
+def _informe_zip(directory: Path, yyyymm: str, header: list[str], rows: list[list[str]]) -> None:
+    with zipfile.ZipFile(
+        directory / f"inf_diario_fi_{yyyymm}.zip", "w", zipfile.ZIP_DEFLATED
+    ) as archive:
+        archive.writestr(f"inf_diario_fi_{yyyymm}.csv", _csv(header, rows))
 
 
 def build(directory: Path = FIXTURES) -> Path:
@@ -189,6 +250,10 @@ def build(directory: Path = FIXTURES) -> Path:
 
     (directory / "cad_fi.csv").write_bytes(_csv(CAD_FI_COLUMNS, CAD_FI_ROWS))
     (directory / "extrato_fi.csv").write_bytes(_csv(EXTRATO_COLUMNS, EXTRATO_ROWS))
+
+    _informe_zip(directory, "202607", INF_DIARIO_COLUMNS, INF_202607_ROWS)
+    _informe_zip(directory, "202608", INF_DIARIO_COLUMNS, INF_202608_ROWS)
+    _informe_zip(directory, "202412", INF_OLD_COLUMNS, INF_202412_ROWS)
     return directory
 
 

@@ -1,8 +1,9 @@
 """Catalogo dos datasets da CVM usados pela base de mercado.
 
-Escopo atual: cadastro (hierarquia fundo/classe/subclasse) e taxas. As series
-temporais (informe diario, carteira, lamina) estao mapeadas no fim do arquivo
-mas nao sao baixadas - sao dezenas de GB e o uso hoje nao pede.
+Escopo atual: cadastro (hierarquia fundo/classe/subclasse), taxas e o informe
+diario (captacao/resgate/PL, um zip por mes). As demais series temporais
+(carteira, lamina) estao mapeadas no fim do arquivo mas nao sao baixadas -
+sao dezenas de GB e o uso hoje nao pede.
 """
 from __future__ import annotations
 
@@ -58,6 +59,24 @@ EXTRATO = Dataset(
     approx_mb=100,
 )
 
+def informe_diario_dataset(yyyymm: str) -> Dataset:
+    """Dataset mensal do informe diario ('202608' -> o zip daquele mes).
+
+    Ao contrario do cadastro, a URL e parametrizada pelo mes - por isso uma
+    fabrica e nao uma constante. A key mensal da a cada zip sua propria
+    entrada no cache condicional: meses fechados sao imutaveis na origem e
+    voltam 304 para sempre; so o mes corrente muda a cada dia util.
+    """
+    return Dataset(
+        key=f"inf_diario_{yyyymm}",
+        url=f"{CVM_BASE}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{yyyymm}.zip",
+        filename=f"inf_diario_fi_{yyyymm}.zip",
+        description=f"Informe diario {yyyymm}: PL, cota, captacao e resgate",
+        members={"informe": f"inf_diario_fi_{yyyymm}"},
+        approx_mb=11,
+    )
+
+
 CADASTRO_DATASETS = (REGISTRO, CAD_FI)
 ALL_DATASETS = (REGISTRO, CAD_FI, EXTRATO)
 
@@ -96,10 +115,19 @@ REGISTRO_SUBCLASSE_COLUMNS = (
     "Exclusivo_INR", "Exclusivo_Previdencia_Complementar",
 )
 
+# O informe mudou de identidade na RCVM 175: TP_FUNDO/CNPJ_FUNDO viraram
+# TP_FUNDO_CLASSE/CNPJ_FUNDO_CLASSE (+ ID_SUBCLASSE). Os dois vocabularios
+# ficam aqui porque uma janela de 13 meses pode atravessar a virada.
+INF_DIARIO_COLUMNS = (
+    "TP_FUNDO_CLASSE", "CNPJ_FUNDO_CLASSE", "ID_SUBCLASSE", "DT_COMPTC",
+    "VL_TOTAL", "VL_QUOTA", "VL_PATRIM_LIQ", "CAPTC_DIA", "RESG_DIA",
+    "NR_COTST",
+    "TP_FUNDO", "CNPJ_FUNDO",
+)
+
 
 # --- fora do escopo atual -----------------------------------------------------
-# Mapeados na pesquisa e prontos para quando a base precisar de series:
-#   informe diario  /FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{YYYYMM}.zip  (~11 MB/mes)
+# Mapeados na pesquisa e prontos para quando a base precisar de mais series:
 #   carteira (CDA)  /FI/DOC/CDA/DADOS/cda_fi_{YYYYMM}.zip                (~22 MB/mes)
 #   lamina          /FI/DOC/LAMINA/DADOS/lamina_fi_{YYYYMM}.zip          (~10 MB/mes)
 #   perfil mensal   /FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{YYYYMM}.csv

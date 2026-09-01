@@ -43,6 +43,10 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.market.flows import (
+    DEFAULT_MONTHS as FLOWS_DEFAULT_MONTHS,
+    run_flows_import,
+)
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
@@ -589,6 +593,10 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
         for table_name, columns in database.unknown_columns.items():
             console.print(f"  {table_name}: {', '.join(columns)}")
 
+    flows_path = None
+    if not args.skip_flows:
+        flows_path = _import_flows_step(config, args.flows_months, local_dir, args.force)
+
     console.print()
     console.print("[bold]Tabelas geradas[/]")
     for key in (
@@ -596,6 +604,45 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
     ):
         if key in paths:
             console.print(f"  {key:10} {paths[key]}")
+    if flows_path is not None:
+        console.print(f"  {'captacao':10} {flows_path}")
+
+
+def _import_flows_step(
+    config: Config, months: int, local_dir: Path | None, force: bool
+) -> Path | None:
+    """Importa o informe diario e imprime o resumo. None quando nada veio."""
+    console.print()
+    console.print("[bold]Importando captacao/resgate (informe diario da CVM)...[/]")
+    if local_dir is None:
+        console.print(
+            f"  [dim]~11 MB por mes x {months} meses na primeira execucao; depois "
+            "so o mes corrente rebaixa (use --skip-flows para pular)[/]"
+        )
+
+    result, path = run_flows_import(
+        config, months=months, local_dir=local_dir, force=force
+    )
+    for note in result.notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+    if result.unknown_columns:
+        console.print(
+            "[yellow]Colunas novas no informe diario, ainda nao mapeadas:[/] "
+            + ", ".join(result.unknown_columns)
+        )
+
+    if path is None:
+        console.print(
+            "[yellow]Nenhum mes do informe diario veio - a captacao nao foi gerada.[/]"
+        )
+        return None
+
+    counts = result.counts()
+    console.print(
+        f"  {counts['meses']} de {len(result.window)} meses, "
+        f"{counts['classes_com_captacao']:,} classes com captacao".replace(",", ".")
+    )
+    return path
 
 
 def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
@@ -835,6 +882,22 @@ def main() -> None:
         "--skip-fees",
         action="store_true",
         help="Nao baixar o extrato de informacoes (~100 MB) - base sem taxas",
+    )
+    market_parser.add_argument(
+        "--skip-flows",
+        action="store_true",
+        help=(
+            "Nao baixar o informe diario (~11 MB/mes) - base sem captacao/resgate"
+        ),
+    )
+    market_parser.add_argument(
+        "--flows-months",
+        type=int,
+        default=FLOWS_DEFAULT_MONTHS,
+        help=(
+            "Meses do informe diario a importar (default: "
+            f"{FLOWS_DEFAULT_MONTHS} = 12 fechados + o corrente)"
+        ),
     )
     market_parser.add_argument(
         "--force", action="store_true", help="Rebaixar mesmo sem mudanca na origem"

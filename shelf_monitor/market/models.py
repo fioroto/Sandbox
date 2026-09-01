@@ -157,6 +157,55 @@ class ClassFees:
 
 
 @dataclass
+class MonthlyFlow:
+    """Agregado mensal do informe diario para uma classe.
+
+    O informe repete o CNPJ da classe em cada linha de subclasse; captacao e
+    resgate somam trivialmente, e PL/cotistas somam apenas dentro do mesmo
+    DT_COMPTC (as subclasses partilham a carteira, entao o PL da classe no dia
+    e a soma das linhas daquele dia - somar dias diferentes inflaria tudo).
+    """
+
+    cnpj: str  # CNPJ da classe, 14 digitos
+    month: str  # "YYYY-MM"
+    inflow: float = 0.0  # soma de CAPTC_DIA no mes
+    outflow: float = 0.0  # soma de RESG_DIA no mes
+    net_worth: float | None = None  # VL_PATRIM_LIQ do ultimo DT_COMPTC
+    shareholders: int | None = None  # NR_COTST do ultimo DT_COMPTC
+    last_date: date | None = None  # maior DT_COMPTC vista no mes
+    days: int = 0  # dias com informe - denuncia mes curto
+    partial: bool = False  # mes corrente na data da importacao
+
+    @property
+    def net(self) -> float:
+        return self.inflow - self.outflow
+
+
+@dataclass
+class FlowsResult:
+    """O resultado de uma importacao de captacao - espelha MarketDatabase."""
+
+    imported_at: date
+    window: list[str] = field(default_factory=list)  # meses pedidos, "YYYY-MM"
+    flows: dict[tuple[str, str], MonthlyFlow] = field(default_factory=dict)
+    sources: dict[str, str] = field(default_factory=dict)  # mes -> url/path
+    # Zip do mes nao veio (o caso tipico: o mes corrente ainda nao publicado).
+    missing_months: list[str] = field(default_factory=list)
+    # Zip reusado do disco porque a origem estava fora - dado de ontem.
+    stale_months: list[str] = field(default_factory=list)
+    unknown_columns: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    def counts(self) -> dict[str, int]:
+        classes = {cnpj for cnpj, _ in self.flows}
+        return {
+            "meses": len(self.window) - len(self.missing_months),
+            "classes_com_captacao": len(classes),
+            "linhas": len(self.flows),
+        }
+
+
+@dataclass
 class MarketDatabase:
     """O resultado de uma importacao."""
 
