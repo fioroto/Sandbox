@@ -370,6 +370,54 @@ class TestOpenFinancePagination(unittest.TestCase):
         self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
         self.assertIn("truncada", snapshot.error)
 
+    def test_missing_meta_midway_does_not_end_pagination(self):
+        """A instituicao que omite `totalPages` numa pagina do meio nao pode
+        encerrar o laco como se a paginacao tivesse acabado."""
+        def fake_get_json(session, url, config, params=None):
+            page = (params or {}).get("page", 1)
+            meta = (
+                {"totalPages": 4, "totalRecords": 40} if page == 1 else {}
+            )
+            return {
+                "data": [
+                    {"name": f"Fundo {page}-{i}", "cnpjNumber": f"{page:07d}{i:07d}"}
+                    for i in range(10)
+                ],
+                "meta": meta,
+            }
+
+        of.get_json = fake_get_json
+        client = self._client()
+        offers = client.fetch()
+
+        self.assertEqual(client.pages_read, 4)
+        self.assertEqual(len(offers), 40)
+        self.assertFalse(client.truncated)
+        self.assertEqual(client.warnings, [])
+
+    def test_pages_exhausted_before_declared_total_is_reported(self):
+        """Itens acabaram antes do total anunciado: a prateleira nao e a inteira."""
+        def fake_get_json(session, url, config, params=None):
+            page = (params or {}).get("page", 1)
+            data = (
+                [
+                    {"name": f"Fundo {page}-{i}", "cnpjNumber": f"{page:07d}{i:07d}"}
+                    for i in range(10)
+                ]
+                if page < 4
+                else []
+            )
+            return {"data": data, "meta": {"totalPages": 10, "totalRecords": 100}}
+
+        of.get_json = fake_get_json
+        client = self._client()
+        offers = client.fetch()
+
+        self.assertEqual(len(offers), 30)
+        self.assertTrue(client.truncated)
+        self.assertEqual(len(client.warnings), 1)
+        self.assertIn("de 10", client.warnings[0])
+
 
 class TestPlatformSources(unittest.TestCase):
     """As URLs que o usuario indicou, e a estrategia que as alcanca."""
@@ -542,6 +590,43 @@ class TestBtgApi(unittest.TestCase):
                 lambda url: {"error": "maintenance"}, "https://exemplo.invalido"
             )
 
+    def test_page_cap_overflow_is_reported(self):
+        """Prateleira cortada pelo teto nao pode sair como coleta inteira."""
+        from unittest import mock
+
+        from shelf_monitor.collectors import btg as btg_mod
+        from shelf_monitor.collectors.btg import paginate_btg_api
+
+        def fetch(url):
+            page = int(url.split("page=")[1].split("&")[0])
+            return {
+                "items": [{"Name": f"Fundo {page} FIC FIM", "CNPJ": f"{page:014d}"}],
+                "total": 5,
+                "page": page,
+                "total_pages": 5,
+            }
+
+        warnings: list[str] = []
+        with mock.patch.object(btg_mod, "_MAX_PAGES", 2):
+            offers, _ = paginate_btg_api(
+                fetch, "https://exemplo.invalido", warnings
+            )
+
+        self.assertEqual(len(offers), 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("truncada", warnings[0])
+
+    def test_pagination_without_warnings_list_still_works(self):
+        """O parametro e opcional: quem nao passa a lista nao quebra."""
+        from shelf_monitor.collectors.btg import paginate_btg_api
+
+        def fetch(url):
+            return {"items": [{"Name": "Fundo A FIC FIM", "CNPJ": "1" * 14}],
+                    "total": 1, "page": 1, "total_pages": 1}
+
+        offers, _ = paginate_btg_api(fetch, "https://exemplo.invalido")
+        self.assertEqual(len(offers), 1)
+
 
 class TestInterCollector(unittest.TestCase):
     def test_cap_overflow_becomes_a_warning_not_silence(self):
@@ -568,6 +653,81 @@ class TestInterCollector(unittest.TestCase):
         self.assertEqual(len(snapshot.funds), 3)
         self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
         self.assertIn("teto", snapshot.error)
+
+    def _collector_over(self, url_count: int, failing: set[int],
+                        page_data_fails: bool = False):
+        """Coletor do Inter sobre `url_count` paginas, com `failing` caindo.
+
+        Stubba o `get` (e nao `_parse_fund_page`) para os contadores rodarem de
+        verdade - e o caminho que perdia fundo em silencio.
+        """
+        from unittest import mock
+
+        from shelf_monitor.collectors import inter as inter_mod
+        from shelf_monitor.collectors.inter import InterCollector
+        from shelf_monitor.http import SourceUnavailable
+
+        prefix = "https://inter.co/pra-voce/investimentos/fundos-de-investimento/"
+        urls = [f"{prefix}f{i}/" for i in range(url_count)]
+
+        class FakeResponse:
+            def __init__(self, text):
+                self.text = text
+
+            def json(self):
+                raise ValueError("sem json")
+
+        def fake_get(session, url, config, **kwargs):
+            if "/page-data/" in url:
+                if page_data_fails:
+                    raise SourceUnavailable("page-data fora do ar")
+                return FakeResponse("{}")
+            index = int(url.rstrip("/").rsplit("f", 1)[1])
+            if index in failing:
+                raise SourceUnavailable("HTTP 503")
+            return FakeResponse(
+                f"<html><h1>Inter Fundo {index} FIC FIM</h1>"
+                f"<p>11.111.{index:03d}/0001-11</p></html>"
+            )
+
+        config = Config(data_dir="/tmp/nao-usado")
+        collector = InterCollector(config, config.platform("inter"))
+        collector._discover_fund_urls = lambda: urls
+        collector._collect_open_finance = lambda: []
+        return collector, mock.patch.object(inter_mod, "get", fake_get)
+
+    def test_mass_page_failures_downgrade_to_partial(self):
+        """Pagina que nao abre e fundo perdido: sem aviso, o diff de amanha le
+        a perda como saida da prateleira."""
+        collector, patched = self._collector_over(20, failing=set(range(10)))
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 10)
+        self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
+        self.assertIn("paginas de fundo falharam", snapshot.error)
+
+    def test_single_page_failure_does_not_downgrade(self):
+        """Uma falha isolada e ruido de rede, nao prateleira incompleta."""
+        collector, patched = self._collector_over(20, failing={3})
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 19)
+        self.assertEqual(snapshot.status, SnapshotStatus.OK)
+        self.assertEqual(collector.warnings, [])
+
+    def test_page_data_mass_failure_is_a_note_not_partial(self):
+        """A prateleira esta inteira; o que faltou foram os fatos."""
+        collector, patched = self._collector_over(
+            20, failing=set(), page_data_fails=True
+        )
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 20)
+        self.assertEqual(snapshot.status, SnapshotStatus.OK)
+        self.assertIn("page-data.json falhou", snapshot.error)
 
     def test_fill_missing_keeps_html_identity(self):
         """page-data completa o que falta; nome e CNPJ do HTML prevalecem."""

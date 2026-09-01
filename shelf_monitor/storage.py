@@ -53,7 +53,7 @@ def save_shelf_snapshot(config: Config, snapshot: ShelfSnapshot) -> Path | None:
     return _write_json(path, snapshot.to_dict())
 
 
-def _quality_rank(snapshot: ShelfSnapshot) -> tuple[int, int]:
+def _quality_rank(snapshot: ShelfSnapshot | CvmSnapshot) -> tuple[int, int]:
     """Ordena snapshots do mesmo dia: status primeiro, contagem como desempate."""
     status_rank = {
         SnapshotStatus.OK: 2,
@@ -103,8 +103,20 @@ def shelf_snapshot_dates(config: Config, platform_id: str) -> list[date]:
 # --- CVM ---------------------------------------------------------------------
 
 
-def save_cvm_snapshot(config: Config, snapshot: CvmSnapshot) -> Path:
+def save_cvm_snapshot(config: Config, snapshot: CvmSnapshot) -> Path | None:
+    """Grava o extrato do dia, com a mesma guarda das prateleiras.
+
+    Um `run` da tarde que pegou a CVM fora do ar nao pode apagar o extrato bom
+    da manha: o arquivo vazio viraria a baseline do dia seguinte e o radar leria
+    a diferenca como cancelamento em massa. Gravacao recusada devolve None.
+    """
     path = config.cvm_extract_dir / f"{snapshot.snapshot_date.isoformat()}.json"
+
+    if path.exists():
+        existing = load_cvm_snapshot(path)
+        if _quality_rank(existing) > _quality_rank(snapshot):
+            return None
+
     return _write_json(path, snapshot.to_dict())
 
 

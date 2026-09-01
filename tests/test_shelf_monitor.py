@@ -13,6 +13,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from shelf_monitor import main as main_mod
 from shelf_monitor.collectors.cvm import (
     CvmCollector,
     WatchlistMatcher,
@@ -28,6 +29,7 @@ from shelf_monitor.merge import merge_offers, source_summary
 from shelf_monitor.models import (
     AssetClass,
     CollectorStrategy,
+    CvmFund,
     CvmSnapshot,
     FundOffer,
     RunReport,
@@ -48,7 +50,12 @@ from shelf_monitor.report.aggregate import build_dashboard_data
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest, render_markdown
 from shelf_monitor.report.mailer import build_subject, send_digest
-from shelf_monitor.storage import latest_shelf_snapshot, save_shelf_snapshot
+from shelf_monitor.storage import (
+    latest_cvm_snapshot,
+    latest_shelf_snapshot,
+    save_cvm_snapshot,
+    save_shelf_snapshot,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CVM_ZIP = FIXTURES / "cvm" / "registro_fundo_classe.zip"
@@ -471,6 +478,74 @@ class TestShelfDiff(unittest.TestCase):
         self.assertEqual(current.status, SnapshotStatus.PARTIAL)
         self.assertIn("tratada como parcial", current.error)
 
+    def _pair_with_lost_source(self, prev_count: int, curr_count: int):
+        """Baseline de duas fontes contra uma coleta em que a segunda caiu."""
+        previous = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(prev_count)],
+            self.yesterday,
+        )
+        previous.strategies = ["open-finance", "playwright"]
+        previous.source_counts = {"open-finance": prev_count, "playwright": 30}
+        current = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(curr_count)],
+            self.today,
+        )
+        current.strategies = ["open-finance"]
+        current.source_counts = {"open-finance": curr_count}
+        return previous, current
+
+    def test_missing_source_marks_diff_suspect_even_with_mild_shrink(self):
+        """O caso BTG: 9.950 -> 9.818 nao dispara o limiar de encolhimento, mas
+        a vitrine comercial inteira sumiu junto com o navegador."""
+        previous, current = self._pair_with_lost_source(200, 198)
+
+        diff = diff_shelf(current, previous)
+        self.assertTrue(diff.suspect)
+        self.assertIn("playwright", diff.suspect_reason)
+        self.assertEqual(diff.removed, [], "saida de fonte nao vira saida de fundo")
+
+    def test_missing_source_downgrades_snapshot_to_partial(self):
+        previous, current = self._pair_with_lost_source(200, 198)
+        current.error = "fontes indisponiveis -> playwright: bloqueado"
+
+        assess_quality(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.PARTIAL)
+        self.assertIn("tratada como parcial", current.error)
+        self.assertIn("bloqueado", current.error, "a causa original e preservada")
+
+    def test_legacy_baseline_without_strategies_stays_calm(self):
+        """Snapshot anterior a coluna de fontes: nada a comparar, nada a acusar."""
+        previous = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(200)],
+            self.yesterday,
+        )
+        current = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(198)],
+            self.today,
+        )
+        current.strategies = ["open-finance"]
+
+        assess_quality(current, previous)
+        diff = diff_shelf(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.OK)
+        self.assertFalse(diff.suspect)
+
+    def test_missing_source_without_shrink_is_not_suspect(self):
+        """A uniao compensou: nao ha cobertura perdida a proteger."""
+        previous, current = self._pair_with_lost_source(200, 200)
+
+        assess_quality(current, previous)
+        diff = diff_shelf(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.OK)
+        self.assertFalse(diff.suspect)
+
+    def test_empty_source_in_baseline_is_not_a_loss(self):
+        previous, current = self._pair_with_lost_source(200, 198)
+        previous.source_counts["playwright"] = 0
+
+        diff = diff_shelf(current, previous)
+        self.assertFalse(diff.suspect, "fonte que nao trouxe nada nao e perda")
+
     def test_different_funds_are_not_merged_as_a_rename(self):
         previous = snapshot_for("btg", [offer("btg", "Verde AM Scena")], self.yesterday)
         current = snapshot_for("btg", [offer("btg", "SPX Nimitz")], self.today)
@@ -591,6 +666,35 @@ class TestStorage(unittest.TestCase):
 
         baseline = latest_shelf_snapshot(self.config, "btg", before=datetime.now().date())
         self.assertEqual(len(baseline.funds), 1)
+
+    def _cvm_snapshot(self, count: int, status=SnapshotStatus.OK) -> CvmSnapshot:
+        return CvmSnapshot(
+            collected_at=datetime.now(),
+            status=status,
+            funds=[
+                CvmFund(cnpj=f"{i:014d}", name=f"Fundo {i}", house="btg",
+                        matched_by="regex")
+                for i in range(count)
+            ],
+        )
+
+    def test_worse_cvm_extract_does_not_overwrite_same_day(self):
+        """Um retry da tarde que pegou a CVM fora do ar nao pode apagar o
+        extrato bom da manha - ele viraria a baseline do radar amanha."""
+        save_cvm_snapshot(self.config, self._cvm_snapshot(3))
+        refused = save_cvm_snapshot(
+            self.config, self._cvm_snapshot(0, SnapshotStatus.UNAVAILABLE)
+        )
+
+        self.assertIsNone(refused)
+        self.assertEqual(len(latest_cvm_snapshot(self.config).funds), 3)
+
+    def test_better_cvm_extract_overwrites_same_day(self):
+        save_cvm_snapshot(self.config, self._cvm_snapshot(1, SnapshotStatus.PARTIAL))
+        stored = save_cvm_snapshot(self.config, self._cvm_snapshot(3))
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(len(latest_cvm_snapshot(self.config).funds), 3)
 
 
 class TestMailer(unittest.TestCase):
@@ -803,6 +907,112 @@ class TestReports(unittest.TestCase):
         self.assertTrue(md_path.exists() and html_path.exists())
         html = html_path.read_text(encoding="utf-8")
         self.assertNotIn("<script", html, "digest de e-mail nao deve conter JS")
+
+    def test_digest_failure_does_not_stop_dashboard(self):
+        """Um renderer que quebra nao pode descartar o e-mail e o commit de uma
+        coleta que levou dezenas de minutos."""
+        def explode(config, report):
+            raise RuntimeError("dado inesperado")
+
+        original = main_mod.render_digest
+        main_mod.render_digest = explode
+        try:
+            failures = main_mod.render_outputs(self.config, self.report)
+        finally:
+            main_mod.render_digest = original
+
+        self.assertEqual(len(failures), 1)
+        self.assertIn("digest", failures[0])
+        self.assertTrue((self.config.reports_dir / "dashboard.html").exists())
+
+    def test_healthy_run_reports_no_failures(self):
+        self.assertEqual(main_mod.render_outputs(self.config, self.report), [])
+
+
+class TestRunOutcome(unittest.TestCase):
+    """O `run` saia 0 com tudo bloqueado fazia o job aparecer verde no cron."""
+
+    def _report(self, snapshots, cvm_snapshot=None) -> RunReport:
+        return RunReport(
+            generated_at=datetime.now(),
+            snapshots=snapshots,
+            cvm_snapshot=cvm_snapshot,
+        )
+
+    def test_total_collection_failure_exits_one(self):
+        now = datetime.now()
+        broken = [
+            snapshot_for("btg", [], now, status=SnapshotStatus.UNAVAILABLE),
+            snapshot_for("xp", [], now, status=SnapshotStatus.UNAVAILABLE),
+        ]
+        line, code = main_mod.run_outcome(self._report(broken), True, [])
+
+        self.assertEqual(code, 1)
+        self.assertIn("0 de 2 casas", line)
+        self.assertIn("CVM falhou", line)
+
+    def test_partial_house_still_counts_as_collected(self):
+        now = datetime.now()
+        snapshots = [
+            snapshot_for("btg", [offer("btg", "A", "11111111000191")], now),
+            snapshot_for("xp", [offer("xp", "B", "22222222000192")], now,
+                         status=SnapshotStatus.PARTIAL),
+        ]
+        line, code = main_mod.run_outcome(self._report(snapshots), False, [])
+
+        self.assertEqual(code, 0)
+        self.assertIn("2 de 2 casas", line)
+        self.assertIn("CVM pulada", line)
+        self.assertIn("relatorios ok", line)
+
+    def test_report_failure_forces_exit_one(self):
+        now = datetime.now()
+        snapshots = [snapshot_for("btg", [offer("btg", "A", "11111111000191")], now)]
+        line, code = main_mod.run_outcome(
+            self._report(snapshots), False, ["digest: boom"]
+        )
+
+        self.assertEqual(code, 1)
+        self.assertIn("1 relatorio(s) falharam", line)
+
+
+class TestMarketBaseStatus(unittest.TestCase):
+    """Sem a base de mercado a analise degrada em silencio - o doctor avisa."""
+
+    def setUp(self):
+        self.config, self.tmp = temp_config()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_base(self, imported_at: str | None) -> None:
+        (self.config.market_dir / "mercado.csv").write_text("cnpj\n", encoding="utf-8")
+        if imported_at is not None:
+            (self.config.market_dir / "_manifest.json").write_text(
+                json.dumps({"imported_at": imported_at}), encoding="utf-8"
+            )
+
+    def test_missing_base_is_reported(self):
+        state, _ = main_mod.market_base_status(self.config)
+        self.assertEqual(state, "ausente")
+
+    def test_base_without_manifest_has_unknown_age(self):
+        self._write_base(None)
+        state, detail = main_mod.market_base_status(self.config)
+        self.assertEqual(state, "sem-manifesto")
+        self.assertIn("idade desconhecida", detail)
+
+    def test_stale_base_is_flagged(self):
+        old = (datetime.now() - timedelta(days=90)).date().isoformat()
+        self._write_base(old)
+        state, detail = main_mod.market_base_status(self.config)
+        self.assertEqual(state, "velha")
+        self.assertIn("90", detail)
+
+    def test_fresh_base_is_ok(self):
+        self._write_base(datetime.now().date().isoformat())
+        state, _ = main_mod.market_base_status(self.config)
+        self.assertEqual(state, "ok")
 
 
 if __name__ == "__main__":

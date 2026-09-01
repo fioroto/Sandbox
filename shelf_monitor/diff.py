@@ -42,10 +42,39 @@ _TRACKED = (
 )
 
 
+def _missing_sources(
+    current: ShelfSnapshot, previous: ShelfSnapshot | None
+) -> list[str]:
+    """Fontes que alimentavam a baseline e nao responderam nesta coleta.
+
+    Contar so o tamanho da prateleira nao enxerga o caso mais comum de perda de
+    cobertura: a casa em que uma das fontes da uniao caiu. O BTG que sai de
+    9.950 para 9.818 fundos porque o navegador falhou tem razao 0,99 - passa
+    longe do limiar de encolhimento e ainda assim perdeu a vitrine comercial.
+
+    Le `previous.strategies` em vez de `sources_used` de proposito: snapshots
+    anteriores a essa coluna voltam do disco com a lista vazia, e a regra fica
+    inerte para eles em vez de acusar uma perda que nao se pode verificar.
+    """
+    if previous is None or not previous.strategies:
+        return []
+
+    used_now = set(current.sources_used)
+    missing = []
+    for source in previous.strategies:
+        if source in used_now:
+            continue
+        # Fonte que nao trouxe fundo na baseline nao e perda material.
+        if previous.source_counts and not previous.source_counts.get(source):
+            continue
+        missing.append(source)
+    return missing
+
+
 def assess_quality(
     current: ShelfSnapshot, previous: ShelfSnapshot | None
 ) -> ShelfSnapshot:
-    """Rebaixa para PARTIAL uma coleta que encolheu demais.
+    """Rebaixa para PARTIAL uma coleta que encolheu demais ou perdeu uma fonte.
 
     A marcacao precisa viver no snapshot, nao so no diff: um snapshot truncado
     salvo como OK vira a baseline confiavel do dia seguinte, e a prateleira
@@ -61,6 +90,25 @@ def assess_quality(
             f"coleta trouxe {len(current.funds)} fundos contra {len(previous.funds)} "
             f"da anterior ({ratio:.0%}) - tratada como parcial"
         )
+        return current
+
+    # Fonte perdida so e rebaixamento quando a prateleira tambem encolheu: se a
+    # uniao compensou, nao ha cobertura a proteger - e e assim que a casa sai do
+    # estado parcial sozinha quando a fonte volta ou outra assume.
+    missing = _missing_sources(current, previous)
+    if missing and len(current.funds) < len(previous.funds):
+        current.status = SnapshotStatus.PARTIAL
+        detail = ", ".join(
+            f"{source} (antes {previous.source_counts.get(source, '?')} fundos)"
+            for source in missing
+        )
+        note = (
+            f"fonte(s) da coleta anterior sem resposta nesta: {detail}; "
+            f"{len(current.funds)} contra {len(previous.funds)} fundos - "
+            "tratada como parcial"
+        )
+        # Concatena: a observacao que o coletor gravou diz por que a fonte caiu.
+        current.error = f"{note} | {current.error}" if current.error else note
     return current
 
 
@@ -212,6 +260,16 @@ def diff_shelf(
             f"coleta atual tem {len(current.funds)} fundos contra "
             f"{len(previous.funds)} da anterior ({shrink_ratio:.0%})"
         )
+    else:
+        # Repetido aqui porque `diff`/`report` comparam snapshots lidos do disco,
+        # sem passar por assess_quality.
+        missing = _missing_sources(current, previous)
+        if missing and len(current.funds) < len(previous.funds):
+            diff.suspect = True
+            diff.suspect_reason = (
+                f"fonte(s) {', '.join(missing)} da coleta anterior nao responderam "
+                f"nesta ({len(current.funds)} contra {len(previous.funds)} fundos)"
+            )
 
     # Coleta suspeita: as "saidas" provavelmente sao da coleta, nao da prateleira.
     diff.removed = [] if diff.suspect else sorted(removed, key=lambda f: f.name)
