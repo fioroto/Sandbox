@@ -255,6 +255,16 @@ class TestSourceMerge(unittest.TestCase):
         })
         self.assertEqual(merged[0].asset_class, AssetClass.ACOES)
 
+    def test_cvm_code_is_merged_like_the_other_identifiers(self):
+        """O codigo que so a via do navegador viu sobrevive a uniao."""
+        merged = merge_offers({
+            "open-finance": [offer("itau", "Fundo A", "11111111000191")],
+            "playwright": [
+                offer("itau", "Fundo A", "11111111000191", cvm_code="555001"),
+            ],
+        })
+        self.assertEqual(merged[0].cvm_code, "555001")
+
     def test_summary_counts_what_each_source_alone_saw(self):
         groups = {
             "open-finance": [offer("btg", "A", "11111111000191")],
@@ -549,6 +559,27 @@ class TestStorage(unittest.TestCase):
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.funds[0].cnpj, "11111111000191")
         self.assertEqual(loaded.funds[0].asset_class, AssetClass.RENDA_FIXA)
+
+    def test_roundtrip_preserves_the_cvm_code(self):
+        snapshot = snapshot_for("itau", [
+            offer("itau", "Fundo A", None, cvm_code="555001"),
+        ], datetime.now())
+        save_shelf_snapshot(self.config, snapshot)
+
+        loaded = latest_shelf_snapshot(self.config, "itau")
+        self.assertEqual(loaded.funds[0].cvm_code, "555001")
+
+    def test_snapshot_written_before_the_cvm_code_still_loads(self):
+        """Historico gravado sem a chave nova continua comparavel."""
+        legacy = {
+            "platform": "btg",
+            "name": "Fundo A",
+            "cnpj": "11111111000191",
+            "sources": ["open-finance"],
+        }
+        restored = FundOffer.from_dict(legacy)
+        self.assertIsNone(restored.cvm_code)
+        self.assertEqual(restored.identity, "11111111000191")
 
     def test_unavailable_snapshot_is_not_used_as_baseline(self):
         old = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")],

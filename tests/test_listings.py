@@ -12,7 +12,11 @@ from __future__ import annotations
 import unittest
 
 from shelf_monitor.collectors import open_finance as of
-from shelf_monitor.collectors.browser import extract_from_dom, looks_like_fund_name
+from shelf_monitor.collectors.browser import (
+    extract_from_dom,
+    looks_like_fund_name,
+    to_offer,
+)
 from shelf_monitor.collectors.inter import _SITEMAP_URLS
 from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import PLATFORMS, Config
@@ -126,6 +130,23 @@ class TestFundNameHeuristic(unittest.TestCase):
     def test_a_cnpj_is_not_a_name(self):
         """Sem isso o proprio numero viraria o nome do fundo."""
         self.assertFalse(looks_like_fund_name("CNPJ: 12.345.678/0001-90", has_cnpj=True))
+
+
+class TestJsonExtraction(unittest.TestCase):
+    def test_reads_the_cvm_code_however_the_feed_spells_it(self):
+        """O codigo costuma vir como numero, e a grafia varia por casa."""
+        for key, raw in (
+            ("codigoCVM", 555001),
+            ("cd_cvm", "0555001"),
+            ("codCvm", "555001"),
+        ):
+            item = {"nomeFundo": "Fundo A", "cnpj": "12.345.678/0001-91", key: raw}
+            fund = to_offer("itau", item)
+            self.assertEqual(fund.cvm_code, "555001", key)
+
+    def test_a_fund_without_cvm_code_keeps_it_empty(self):
+        fund = to_offer("itau", {"nomeFundo": "Fundo A", "cnpj": "12345678000191"})
+        self.assertIsNone(fund.cvm_code)
 
 
 class TestDomExtraction(unittest.TestCase):
