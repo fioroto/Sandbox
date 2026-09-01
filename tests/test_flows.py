@@ -455,5 +455,158 @@ class TestFlowsBlock(unittest.TestCase):
         self.assertIs(block["managers"], managers)
 
 
+class TestFlowsRendering(unittest.TestCase):
+    """A secao de captacao nas quatro superficies."""
+
+    def _snapshot(self, platform, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def _report(self):
+        from datetime import datetime
+
+        from shelf_monitor.diff import diff_shelf
+        from shelf_monitor.models import FundOffer, RunReport
+
+        funds = [
+            FundOffer(
+                platform="btg", name="Alpha Captador", cnpj="11111111000111",
+                manager_name="Gestora Alpha",
+                extra={
+                    "captacao_liquida_12m": 1_000_000.0,
+                    "captacao_liquida_3m": 400_000.0,
+                    "captacao_janela_meses": 12,
+                    "captacao_data_base": "2026-08-29",
+                    "pl_informe": 50_000_000.0,
+                },
+            ),
+            FundOffer(
+                platform="btg", name="Beta Resgatado", cnpj="22222222000122",
+                extra={
+                    "captacao_liquida_12m": -2_500_000.0,
+                    "captacao_liquida_3m": -900_000.0,
+                    "captacao_janela_meses": 12,
+                    "captacao_data_base": "2026-08-29",
+                },
+            ),
+        ]
+        snapshot = self._snapshot("btg", funds)
+        managers = {
+            "as_of": "2026-08-29",
+            "window_months": 12,
+            "market": {"net_3m": -1e9, "net_12m": 5e9, "pl": 9.3e12, "classes": 70000},
+            "houses": [
+                {
+                    "house": "btg", "label": "BTG Pactual", "net_3m": 2e8,
+                    "net_12m": 1.5e9, "pl": 3e11, "classes": 900, "managers": [],
+                }
+            ],
+            "coverage": {"classes_com_gestora": 68000, "classes_total": 70000},
+        }
+        return RunReport(
+            generated_at=datetime(2026, 8, 31), snapshots=[snapshot],
+            shelf_diffs=[diff_shelf(snapshot, None)], flows=managers,
+        )
+
+    def test_markdown_carries_the_flows_section(self):
+        from shelf_monitor.report.digest import render_markdown
+
+        markdown = render_markdown(self._report())
+        self.assertIn("## Captacao (CVM)", markdown)
+        self.assertIn("Alpha Captador", markdown)
+        self.assertIn("Beta Resgatado", markdown)
+        self.assertIn("BTG Pactual", markdown)
+        # A janela rotulada acompanha o numero - nunca um total sem contexto.
+        self.assertIn("meses fechados", markdown)
+
+    def test_markdown_without_flows_says_how_to_get_them(self):
+        from datetime import datetime
+
+        from shelf_monitor.diff import diff_shelf
+        from shelf_monitor.models import FundOffer, RunReport
+        from shelf_monitor.report.digest import render_markdown
+
+        snapshot = self._snapshot(
+            "btg", [FundOffer(platform="btg", name="Sem informe")]
+        )
+        report = RunReport(
+            generated_at=datetime(2026, 8, 31), snapshots=[snapshot],
+            shelf_diffs=[diff_shelf(snapshot, None)],
+        )
+        markdown = render_markdown(report)
+        self.assertIn("Captacao indisponivel", markdown)
+        self.assertIn("shelf_monitor market", markdown)
+
+    def test_digest_html_flows_section_has_no_script(self):
+        from shelf_monitor.report.digest import render_html
+
+        html = render_html(self._report())
+        self.assertIn("Captacao (CVM)", html)
+        self.assertNotIn("<script", html)
+
+    def test_dashboard_embeds_the_flows_block(self):
+        import json
+
+        from shelf_monitor.report.dashboard import render_dashboard
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        content = render_dashboard(config, self._report()).read_text(encoding="utf-8")
+        self.assertIn('id="flows-section"', content)
+        start = content.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(content[start:content.index("</script>", start)])
+        self.assertTrue(data["flows"]["available"])
+        self.assertEqual(data["flows"]["managers"]["houses"][0]["label"], "BTG Pactual")
+
+    def test_spreadsheet_gains_the_flows_tab_and_columns(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        report = self._report()
+        path = render_spreadsheet(config, report.snapshots)
+        workbook = load_workbook(path)
+
+        self.assertIn("Captacao", workbook.sheetnames)
+        flows_sheet = workbook["Captacao"]
+        # Ordenada pela captacao liquida de 12m: captador no topo.
+        self.assertEqual(flows_sheet.cell(row=2, column=2).value, "Alpha Captador")
+        self.assertEqual(flows_sheet.cell(row=2, column=7).value, 1_000_000.0)
+
+        consolidated = workbook["Consolidado"]
+        headers = [cell.value for cell in consolidated[1]]
+        self.assertIn("Captacao liq. 12m (R$)", headers)
+
+    def test_deck_renders_the_flows_slide(self):
+        try:
+            from shelf_monitor.report.deck import render_deck
+            from pptx import Presentation
+        except ImportError:
+            self.skipTest("python-pptx nao instalado")
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        path = render_deck(config, self._report())
+        texts = []
+        for slide in Presentation(path).slides:
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    texts.append(shape.text_frame.text)
+        self.assertTrue(any("Captacao (CVM)" in t for t in texts))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -66,6 +66,7 @@ def render_deck(config: Config, report: RunReport) -> Path:
         _architecture(prs, platforms)
         _costs(prs, platforms)
     _movements(prs, report)
+    _flows(prs, data)
     _cvm_radar(prs, data)
     _methodology(prs, report, data)
 
@@ -341,6 +342,70 @@ def _movements(prs, report: RunReport):
     _table(slide, 0.6, 1.7, 12.1,
            ["Casa", "Entradas", "Saidas", "Observacao / exemplos de entrada"],
            rows, col_widths=[1.4, 1, 1, 6], size=10)
+
+
+def _brl(value: object) -> str:
+    """R$ compacto (bi/mi/mil) - captacao se le em ordem de grandeza."""
+    if value is None:
+        return "-"
+    number = float(value)
+    sign = "-" if number < 0 else ""
+    magnitude = abs(number)
+    if magnitude >= 1e9:
+        return f"{sign}R$ {magnitude / 1e9:.2f} bi".replace(".", ",")
+    if magnitude >= 1e6:
+        return f"{sign}R$ {magnitude / 1e6:.1f} mi".replace(".", ",")
+    if magnitude >= 1e3:
+        return f"{sign}R$ {magnitude / 1e3:.0f} mil"
+    return f"{sign}R$ {magnitude:.0f}"
+
+
+def _flows(prs, data: dict):
+    flows = data.get("flows") or {}
+    if not flows.get("available"):
+        return
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    window = (
+        f"{flows.get('window_months') or ''}m fechados"
+        + (f" ate {flows['as_of']}" if flows.get("as_of") else "")
+    )
+    _title(slide, "Captacao (CVM) - fluxo financeiro",
+           f"Captacao liquida do informe diario, {window}; o mes corrente e "
+           "parcial e fica fora das somas")
+
+    platforms = [p for p in flows.get("platforms") or [] if p.get("matched")]
+    if platforms:
+        _text(slide, 0.6, 1.55, 6, 0.4, "Vitrine por casa", 13, bold=True)
+        _table(slide, 0.6, 2.0, 5.9,
+               ["Casa", "Liquido 3m", "Liquido 12m", "Cobertura"],
+               [[p["label"], _brl(p["net_3m"]), _brl(p["net_12m"]),
+                 f"{p['matched']}/{p['total']}"] for p in platforms],
+               col_widths=[1.8, 1.4, 1.4, 1.1], size=10)
+
+    managers = flows.get("managers") or {}
+    houses = managers.get("houses") or []
+    if houses:
+        _text(slide, 7.0, 1.55, 5.7, 0.4, "Gestoras da watchlist - mercado inteiro",
+              13, bold=True)
+        _table(slide, 7.0, 2.0, 5.7,
+               ["Casa", "Liquido 12m", "PL", "Classes"],
+               [[h["label"], _brl(h["net_12m"]), _brl(h["pl"]), _fmt(h["classes"])]
+                for h in houses],
+               col_widths=[1.7, 1.5, 1.5, 1.0], size=10)
+
+    movers = [("captador", item) for item in (flows.get("top_inflow") or [])[:3]]
+    movers += [("resgate", item) for item in (flows.get("top_outflow") or [])[:3]]
+    if movers:
+        y = 2.0 + 0.32 * (max(len(platforms), len(houses)) + 1) + 0.4
+        _text(slide, 0.6, y, 12, 0.4, "Maiores movimentos da prateleira (12m)", 13,
+              bold=True)
+        _table(slide, 0.6, y + 0.45, 12.1,
+               ["Tipo", "Fundo", "Gestora", "Liquido 12m", "Prateleiras"],
+               [[kind, item["name"][:60], (item.get("manager") or "-")[:36],
+                 _brl(item["net_12m"]), ", ".join(item.get("platforms") or [])]
+                for kind, item in movers],
+               col_widths=[1.0, 4.6, 2.6, 1.5, 2.0], size=9)
 
 
 def _cvm_radar(prs, data: dict):

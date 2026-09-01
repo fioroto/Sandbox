@@ -18,6 +18,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.report.aggregate import build_flows_block
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -248,6 +249,102 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
+def _format_brl(value: float | None) -> str:
+    """R$ compacto (bi/mi/mil): captacao se le em ordem de grandeza."""
+    if value is None:
+        return "-"
+    sign = "-" if value < 0 else ""
+    magnitude = abs(value)
+    if magnitude >= 1e9:
+        return f"{sign}R$ {magnitude / 1e9:.2f} bi".replace(".", ",")
+    if magnitude >= 1e6:
+        return f"{sign}R$ {magnitude / 1e6:.1f} mi".replace(".", ",")
+    if magnitude >= 1e3:
+        return f"{sign}R$ {magnitude / 1e3:.0f} mil"
+    return f"{sign}R$ {magnitude:.0f}"
+
+
+def _flows_intro(block: dict) -> str:
+    """A frase que rotula a janela - nenhum numero de captacao sai sem ela."""
+    intro = "Captacao liquida (aplicacoes menos resgates) do informe diario da CVM"
+    if block["window_months"]:
+        intro += f", em ate {block['window_months']} meses fechados"
+    if block["as_of"]:
+        intro += f", ate {block['as_of']}"
+    return intro + ". O mes corrente e parcial e fica fora das somas."
+
+
+def _md_flows_section(report: RunReport) -> list[str]:
+    block = build_flows_block(report)
+    lines = ["## Captacao (CVM)", ""]
+
+    if not block["available"]:
+        lines += [
+            "Captacao indisponivel: importe o informe diario com "
+            "`python -m shelf_monitor market`.",
+            "",
+        ]
+        return lines
+
+    lines += [_flows_intro(block), ""]
+
+    platforms = [p for p in block["platforms"] if p["total"]]
+    if any(p["matched"] for p in platforms):
+        lines.append("| Casa | Liquido 3m | Liquido 12m | Cobertura |")
+        lines.append("|---|---:|---:|---:|")
+        for p in platforms:
+            lines.append(
+                f"| {p['label']} | {_format_brl(p['net_3m'])} | "
+                f"{_format_brl(p['net_12m'])} | {p['matched']}/{p['total']} |"
+            )
+        lines.append("")
+
+    for title, movers in (
+        ("**Maiores captadores da prateleira (12m)**", block["top_inflow"][:5]),
+        ("**Maiores resgates da prateleira (12m)**", block["top_outflow"][:5]),
+    ):
+        if not movers:
+            continue
+        lines += [title, ""]
+        for item in movers:
+            manager = f" ({item['manager']})" if item.get("manager") else ""
+            houses = ", ".join(item["platforms"])
+            lines.append(
+                f"- {item['name']}{manager}: {_format_brl(item['net_12m'])} - {houses}"
+            )
+        lines.append("")
+
+    managers = block["managers"]
+    if managers and managers.get("houses"):
+        lines += ["**Gestoras da watchlist - mercado inteiro**", ""]
+        lines.append("| Casa | Liquido 3m | Liquido 12m | PL | Classes |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for house in managers["houses"]:
+            lines.append(
+                f"| {house['label']} | {_format_brl(house['net_3m'])} | "
+                f"{_format_brl(house['net_12m'])} | {_format_brl(house['pl'])} | "
+                f"{house['classes']} |"
+            )
+        lines.append("")
+        market = managers.get("market") or {}
+        coverage = managers.get("coverage") or {}
+        if market:
+            lines.append(
+                f"Mercado inteiro: {_format_brl(market.get('net_12m'))} liquidos em "
+                f"12m, PL de {_format_brl(market.get('pl'))} em "
+                f"{market.get('classes', 0)} classes com informe"
+                + (
+                    f"; gestora identificada em {coverage.get('classes_com_gestora')} "
+                    f"delas."
+                    if coverage
+                    else "."
+                )
+            )
+            lines.append("")
+
+    return lines
+
+
 def render_markdown(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
@@ -278,6 +375,8 @@ def render_markdown(report: RunReport) -> str:
     lines.append("")
 
     lines += _md_cvm_section(report.cvm_diff, report)
+
+    lines += _md_flows_section(report)
 
     lines += ["## Prateleiras", ""]
     for diff in report.shelf_diffs:
@@ -460,6 +559,92 @@ def _html_cvm_section(report: RunReport) -> str:
     return "".join(parts)
 
 
+def _html_flows_section(report: RunReport) -> str:
+    block = build_flows_block(report)
+    parts = [f'<h2 style="{_H2}">Captacao (CVM)</h2>']
+
+    if not block["available"]:
+        parts.append(
+            f'<p style="{_P}">Captacao indisponivel: importe o informe diario com '
+            "<code>python -m shelf_monitor market</code>.</p>"
+        )
+        return "".join(parts)
+
+    parts.append(f'<p style="{_P}">{_esc(_flows_intro(block))}</p>')
+
+    platforms = [p for p in block["platforms"] if p["total"]]
+    if any(p["matched"] for p in platforms):
+        rows = "".join(
+            f'<tr><td style="{_TD}">{_esc(p["label"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_esc(_format_brl(p["net_3m"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{_esc(_format_brl(p["net_12m"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{p["matched"]}/{p["total"]}</td></tr>'
+            for p in platforms
+        )
+        parts.append(
+            f'<table style="{_TABLE}"><thead><tr>'
+            f'<th style="{_TH}">Casa</th>'
+            f'<th style="{_TH}text-align:right;">Liquido 3m</th>'
+            f'<th style="{_TH}text-align:right;">Liquido 12m</th>'
+            f'<th style="{_TH}text-align:right;">Cobertura</th>'
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+
+    for title, movers in (
+        ("Maiores captadores da prateleira (12m)", block["top_inflow"][:5]),
+        ("Maiores resgates da prateleira (12m)", block["top_outflow"][:5]),
+    ):
+        if not movers:
+            continue
+        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>{title}</strong></p>')
+        parts.append(
+            _html_list(
+                [
+                    _esc(item["name"])
+                    + (f" ({_esc(item['manager'])})" if item.get("manager") else "")
+                    + f": <strong>{_esc(_format_brl(item['net_12m']))}</strong>"
+                    + f" <span style='color:#898781;'>{_esc(', '.join(item['platforms']))}</span>"
+                    for item in movers
+                ],
+                len(movers),
+            )
+        )
+
+    managers = block["managers"]
+    if managers and managers.get("houses"):
+        parts.append(
+            f'<p style="{_P}margin-bottom:6px;"><strong>Gestoras da watchlist &mdash; '
+            "mercado inteiro</strong></p>"
+        )
+        rows = "".join(
+            f'<tr><td style="{_TD}">{_esc(h["label"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_esc(_format_brl(h["net_3m"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{_esc(_format_brl(h["net_12m"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{_esc(_format_brl(h["pl"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{h["classes"]}</td></tr>'
+            for h in managers["houses"]
+        )
+        parts.append(
+            f'<table style="{_TABLE}"><thead><tr>'
+            f'<th style="{_TH}">Casa</th>'
+            f'<th style="{_TH}text-align:right;">Liquido 3m</th>'
+            f'<th style="{_TH}text-align:right;">Liquido 12m</th>'
+            f'<th style="{_TH}text-align:right;">PL</th>'
+            f'<th style="{_TH}text-align:right;">Classes</th>'
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+        market = managers.get("market") or {}
+        if market:
+            parts.append(
+                f'<p style="{_P}">Mercado inteiro: '
+                f"{_esc(_format_brl(market.get('net_12m')))} liquidos em 12m, PL de "
+                f"{_esc(_format_brl(market.get('pl')))} em "
+                f"{market.get('classes', 0)} classes com informe.</p>"
+            )
+
+    return "".join(parts)
+
+
 def render_html(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     sentence, is_alert = _summary_sentence(report)
@@ -506,12 +691,14 @@ def render_html(report: RunReport) -> str:
 
   {_html_cvm_section(report)}
 
+  {_html_flows_section(report)}
+
   <h2 style="{_H2}">Prateleiras</h2>
   {shelf_sections}
 
   <p style="font-size:12px;color:#898781;margin-top:24px;border-top:1px solid #e1e0d9;padding-top:14px;">
     Fontes publicas: sites das plataformas, API de Dados Abertos de Investimentos do Open
-    Finance Brasil e cadastro de fundos da CVM.
+    Finance Brasil, cadastro e informe diario de fundos da CVM.
   </p>
 </div>
 </body></html>

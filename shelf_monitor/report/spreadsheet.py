@@ -19,8 +19,15 @@ from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.enrich import (
     EnrichmentStats,
     KEY_ANBIMA,
+    KEY_CAPT_1M,
+    KEY_CAPT_3M,
+    KEY_CAPT_12M,
+    KEY_CAPT_DATA,
+    KEY_CAPT_JANELA,
+    KEY_COTISTAS,
     KEY_CVM,
     KEY_GESTOR_OFICIAL,
+    KEY_PL_INFORME,
     KEY_SITUACAO,
 )
 from shelf_monitor.models import (
@@ -79,6 +86,10 @@ _COLUMNS: list[tuple[str, int, object]] = [
     )),
     ("Area logada", 13, lambda f: _yes_no(f.in_source("authenticated"))),
     ("Link", 42, lambda f: f.detail_url or ""),
+    # No FIM de proposito: os indices _COL_* acima sao posicionais e a formula
+    # de exclusividade deriva de len(_COLUMNS).
+    ("Captacao liq. 3m (R$)", 20, lambda f: f.extra.get(KEY_CAPT_3M)),
+    ("Captacao liq. 12m (R$)", 21, lambda f: f.extra.get(KEY_CAPT_12M)),
 ]
 
 SOURCE_LABELS = {
@@ -100,6 +111,8 @@ _COL_PERF_FEE = 11
 _COL_QUOTATION = 13
 _COL_PAYMENT = 14
 _COL_GRACE = 15
+_COL_CAPT_3M = len(_COLUMNS) - 1
+_COL_CAPT_12M = len(_COLUMNS)
 _COL_EXCLUSIVE = len(_COLUMNS) + 1
 
 
@@ -205,6 +218,8 @@ def _style_row(sheet: Worksheet, row: int, columns: int) -> None:
     sheet.cell(row=row, column=_COL_PERF_FEE).number_format = _PCT
     for col in (_COL_QUOTATION, _COL_PAYMENT, _COL_GRACE):
         sheet.cell(row=row, column=col).number_format = _INT
+    for col in (_COL_CAPT_3M, _COL_CAPT_12M):
+        sheet.cell(row=row, column=col).number_format = _MONEY
 
 
 def _add_consolidated(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> int:
@@ -370,6 +385,71 @@ def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
     if row > 2:
         sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row - 1}"
     sheet.freeze_panes = sheet.cell(row=2, column=3)
+
+
+def _add_flows_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
+    """Aba "Captacao": fluxo do informe diario para os fundos da vitrine.
+
+    Uma linha por fundo de varejo com informe casado, ordenada pela captacao
+    liquida de 12m - captadores no topo, resgates no fim. A janela cobre so
+    meses fechados; a coluna de janela diz quantos a serie realmente tem.
+    """
+    rows: list[tuple[str, FundOffer]] = []
+    for snapshot in snapshots:
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in retail:
+            if KEY_CAPT_12M in fund.extra or KEY_PL_INFORME in fund.extra:
+                rows.append((_platform_label(snapshot.platform), fund))
+    if not rows:
+        return
+
+    sheet = workbook.create_sheet("Captacao")
+    headers = [
+        "Plataforma", "Fundo", "CNPJ", "Gestora",
+        "Captacao liq. 1m (R$)", "Captacao liq. 3m (R$)", "Captacao liq. 12m (R$)",
+        "Janela (meses fechados)", "PL informe (R$)", "Cotistas", "Data-base",
+    ]
+    widths = [20, 52, 20, 34, 20, 20, 21, 21, 20, 12, 12]
+    for index, (name, width) in enumerate(zip(headers, widths), start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    rows.sort(
+        key=lambda item: item[1].extra.get(KEY_CAPT_12M) or 0.0, reverse=True
+    )
+    row = 2
+    for label, fund in rows:
+        values = [
+            label, fund.name, format_cnpj(fund.cnpj) if fund.cnpj else "",
+            fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+            fund.extra.get(KEY_CAPT_1M), fund.extra.get(KEY_CAPT_3M),
+            fund.extra.get(KEY_CAPT_12M), fund.extra.get(KEY_CAPT_JANELA),
+            fund.extra.get(KEY_PL_INFORME), fund.extra.get(KEY_COTISTAS),
+            fund.extra.get(KEY_CAPT_DATA) or "",
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        for col in (5, 6, 7, 9):
+            sheet.cell(row=row, column=col).number_format = _MONEY
+        for col in (8, 10):
+            sheet.cell(row=row, column=col).number_format = _INT
+        row += 1
+
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row - 1}"
+    sheet.freeze_panes = sheet.cell(row=2, column=3)
+
+    note = row + 1
+    for text in (
+        "Fonte: informe diario da CVM (dados.cvm.gov.br), agregado por mes e por CNPJ",
+        "de classe. As janelas somam apenas MESES FECHADOS - o mes corrente e parcial e",
+        "fica fora; 'Janela' diz quantos meses a serie realmente cobre. Fundo anunciado",
+        "pelo CNPJ do envelope soma a captacao das classes dele.",
+    ):
+        sheet.cell(row=note, column=1, value=text).font = _NOTE_FONT
+        note += 1
 
 
 def _add_source_coverage(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
@@ -751,6 +831,27 @@ def _add_methodology_sheet(
             font=_ALERT_FONT,
         )
 
+    with_flows = sum(
+        1
+        for snapshot in snapshots
+        for fund in snapshot.funds
+        if KEY_CAPT_12M in fund.extra
+    )
+    if with_flows:
+        row = line(
+            row, "Captacao (CVM)",
+            f"Informe diario agregado por mes e CNPJ de classe ({with_flows} "
+            "fundos com informe casado nesta geracao). As janelas 1m/3m/12m "
+            "somam apenas meses FECHADOS - o mes corrente e parcial e fica "
+            "fora das somas. Ver a aba 'Captacao'.",
+        )
+    else:
+        row = line(
+            row, "Captacao (CVM)",
+            "Sem captacao nesta geracao: importe o informe diario com "
+            "`python -m shelf_monitor market` e reexporte.",
+        )
+
     row += 1
     sheet.cell(row=row, column=1, value="Coleta por casa").font = _TITLE_FONT
     row += 1
@@ -793,6 +894,7 @@ def render_spreadsheet(
     if diffs:
         _add_movements_sheet(workbook, diffs)
     _add_platform_sheets(workbook, usable)
+    _add_flows_sheet(workbook, usable)
     if cvm and cvm.funds:
         _add_cvm(workbook, cvm)
     _add_source_coverage(workbook, usable)

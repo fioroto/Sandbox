@@ -656,6 +656,151 @@ horizontalBars(
   { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
 );
 
+// --- Captacao (CVM) ---------------------------------------------------------
+/* R$ compacto (bi/mi/mil): captacao se le em ordem de grandeza, nao em
+   centavos. O sinal fica no numero - barra e texto contam a mesma historia. */
+function formatBRL(value) {
+  if (value === null || value === undefined) return "–";
+  const sign = value < 0 ? "-" : "";
+  const v = Math.abs(value);
+  if (v >= 1e9) return `${sign}R$ ${(v / 1e9).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} bi`;
+  if (v >= 1e6) return `${sign}R$ ${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (v >= 1e3) return `${sign}R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`;
+  return `${sign}R$ ${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+}
+
+/* Barras horizontais com sinal: eixo central, captacao para a direita e
+   resgate liquido para a esquerda - a direcao E o dado. */
+function signedBars(mount, rows) {
+  if (!rows.length) {
+    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
+    return;
+  }
+  const rowH = 30, barH = 15, padL = 118, padR = 70, padT = 6, padB = 10;
+  const plotW = 440;
+  const width = padL + plotW + padR;
+  const height = padT + rows.length * rowH + padB;
+  const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.value || 0)));
+  const zero = padL + plotW / 2;
+  const scale = (plotW / 2 - 8) / maxAbs;
+
+  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height,
+    role: "img", "aria-label": "captacao liquida por casa" });
+
+  rows.forEach((row, i) => {
+    const y = padT + i * rowH;
+    const value = row.value || 0;
+    svg.appendChild(el("text", { class: "axis-label", x: padL - 12, y: y + barH - 2,
+      "text-anchor": "end" }, row.label));
+    const w = Math.abs(value) * scale;
+    if (w > 0.5) {
+      const x = value >= 0 ? zero : zero - w;
+      const rect = el("rect", { class: "bar", x, y, width: w, height: barH, rx: 3,
+        fill: row.color || "var(--s1)" });
+      rect.appendChild(el("title", {}, `${row.label}: ${formatBRL(value)}`));
+      svg.appendChild(rect);
+    }
+    const labelX = value >= 0 ? zero + w + 8 : zero - w - 8;
+    svg.appendChild(el("text", {
+      class: "tick", x: labelX, y: y + barH - 2,
+      "text-anchor": value >= 0 ? "start" : "end",
+    }, row.display !== undefined ? row.display : formatBRL(value)));
+  });
+
+  svg.appendChild(el("line", { class: "baseline", x1: zero, x2: zero,
+    y1: padT, y2: padT + rows.length * rowH - (rowH - barH) }));
+
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+}
+
+(function renderFlows(flows) {
+  const section = document.getElementById("flows-section");
+  if (!flows || !flows.available) {
+    section.innerHTML =
+      `<h2>Captacao (CVM)</h2>
+       <div class="note-box">Captacao indisponivel nesta execucao: importe o informe
+       diario com <code>python -m shelf_monitor market</code>.</div>`;
+    return;
+  }
+
+  const windowLabel = (flows.window_months ? `${flows.window_months}m fechados` : "meses fechados") +
+    (flows.as_of ? ` ate ${flows.as_of}` : "");
+  const withFlows = (flows.platforms || []).filter(p => p.matched > 0);
+  const managers = flows.managers;
+
+  // Tiles: o total da vitrine, a casa lider e o mercado inteiro.
+  const tiles = [];
+  if (withFlows.length) {
+    const total12 = withFlows.reduce((a, p) => a + (p.net_12m || 0), 0);
+    tiles.push(["Vitrines somadas (12m)", formatBRL(total12), windowLabel]);
+    const leader = [...withFlows].sort((a, b) => (b.net_12m || 0) - (a.net_12m || 0))[0];
+    tiles.push(["Casa lider em captacao", leader.label, `${formatBRL(leader.net_12m)} em 12m`]);
+  }
+  if (managers && managers.market) {
+    tiles.push(["Mercado inteiro (12m)", formatBRL(managers.market.net_12m),
+      `${(managers.market.classes || 0).toLocaleString("pt-BR")} classes com informe`]);
+    const houses = managers.houses || [];
+    const watchTotal = houses.reduce((a, h) => a + (h.net_12m || 0), 0);
+    if (houses.length) {
+      tiles.push(["Gestoras da watchlist (12m)", formatBRL(watchTotal),
+        "todo o mercado, nao so prateleira"]);
+    }
+  }
+  document.getElementById("flows-tiles").innerHTML = tiles.map(([label, value, note]) =>
+    `<div class="tile"><div class="label">${escapeHtml(label)}</div>` +
+    `<div class="value" style="font-size:22px">${escapeHtml(value)}</div>` +
+    `<div class="note">${escapeHtml(note)}</div></div>`).join("");
+
+  signedBars(document.getElementById("chart-flows"),
+    withFlows.map(p => ({
+      label: p.label, value: p.net_12m, color: platformColor[p.platform_id],
+    })).sort((a, b) => (b.value || 0) - (a.value || 0)));
+
+  const housesMount = document.getElementById("table-flows-houses");
+  if (managers && (managers.houses || []).length) {
+    table2(housesMount,
+      ["Casa", "Liquido 3m", "Liquido 12m", "PL", "Classes"],
+      managers.houses.map(h => [
+        h.label, formatBRL(h.net_3m), formatBRL(h.net_12m), formatBRL(h.pl),
+        (h.classes || 0).toLocaleString("pt-BR"),
+      ]));
+  } else {
+    housesMount.innerHTML = '<p class="empty">Visao de gestoras indisponivel - requer ' +
+      'a base de mercado e a captacao importadas juntas.</p>';
+  }
+
+  const moverCols = [
+    { key: "name", label: "Fundo" }, { key: "manager", label: "Gestora" },
+    { key: "net", label: "Liquido 12m", num: true },
+    { key: "pl", label: "PL", num: true }, { key: "houses", label: "Prateleiras" },
+  ];
+  const moverRow = m => ({
+    name: m.name, manager: m.manager || "–", net: formatBRL(m.net_12m),
+    pl: formatBRL(m.pl), houses: (m.platforms || []).join(", "),
+  });
+  table(document.getElementById("table-flows-inflow"), moverCols,
+    (flows.top_inflow || []).map(moverRow));
+  table(document.getElementById("table-flows-outflow"), moverCols,
+    (flows.top_outflow || []).map(moverRow));
+
+  // Cobertura: somar so quem tem informe muda o significado do total, entao
+  // o "N de M" acompanha a secao inteira.
+  const parts = [];
+  if (withFlows.length || (flows.platforms || []).length) {
+    const coverage = (flows.platforms || []).filter(p => p.total)
+      .map(p => `${p.label} ${p.matched}/${p.total}`).join(" · ");
+    if (coverage) parts.push(`Fundos da vitrine com informe casado: ${coverage}.`);
+  }
+  if (managers && managers.coverage) {
+    parts.push(`Mercado: gestora identificada em ` +
+      `${(managers.coverage.classes_com_gestora || 0).toLocaleString("pt-BR")} de ` +
+      `${(managers.coverage.classes_total || 0).toLocaleString("pt-BR")} classes com informe.`);
+  }
+  parts.push("Janela: " + windowLabel + "; o mes corrente (parcial) fica fora das somas.");
+  document.getElementById("flows-coverage").textContent = parts.join(" ");
+})(DATA.flows);
+
 // --- Radar CVM --------------------------------------------------------------
 const cvm = DATA.cvm;
 if (cvm.available && cvm.houses && cvm.houses.length) {
@@ -844,6 +989,33 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <div id="table-restricted"></div>
   </section>
 
+  <section class="card" id="flows-section">
+    <h2>Captacao (CVM) &mdash; fluxo financeiro</h2>
+    <p class="card-sub">Captacao liquida (aplicacoes menos resgates) do informe diario da
+      CVM, em meses fechados &mdash; o mes corrente e parcial e fica fora das somas. As
+      barras somam so os fundos da vitrine com informe casado; a cobertura esta no rodape
+      da secao.</p>
+    <div class="tiles" id="flows-tiles"></div>
+    <div class="subgrid" style="margin-top:8px">
+      <div>
+        <h3>Captacao liquida da vitrine por casa (12m)</h3>
+        <p class="card-sub">Barras para a esquerda sao resgate liquido.</p>
+        <div class="chart-scroll" id="chart-flows"></div>
+      </div>
+      <div>
+        <h3>Gestoras da watchlist no mercado inteiro</h3>
+        <p class="card-sub">Captacao das gestoras ligadas a cada casa em TODO o mercado
+          &mdash; independe de a prateleira ofertar o fundo.</p>
+        <div id="table-flows-houses"></div>
+      </div>
+    </div>
+    <details open><summary>Maiores captadores da prateleira (12m)</summary>
+      <div id="table-flows-inflow"></div></details>
+    <details><summary>Maiores resgates da prateleira (12m)</summary>
+      <div id="table-flows-outflow"></div></details>
+    <div class="coverage" id="flows-coverage"></div>
+  </section>
+
   <section class="card" id="cvm-section">
     <h2>Radar CVM &mdash; visao antecipada</h2>
     <p class="card-sub">Fundos registrados na CVM por gestoras ligadas a cada casa. Um fundo em
@@ -864,7 +1036,7 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
   <footer>
     Fontes publicas: sites das plataformas, API de Dados Abertos de Investimentos do Open
-    Finance Brasil e cadastro de fundos da CVM (dados.cvm.gov.br).
+    Finance Brasil, cadastro e informe diario de fundos da CVM (dados.cvm.gov.br).
   </footer>
 </div>
 
