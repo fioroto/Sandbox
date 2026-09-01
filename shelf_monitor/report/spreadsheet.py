@@ -33,7 +33,11 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import split_by_profile
-from shelf_monitor.report.aggregate import ASSET_CLASS_LABELS, is_own_product
+from shelf_monitor.report.aggregate import (
+    ASSET_CLASS_LABELS,
+    is_own_product,
+    overlap_block_from_snapshots,
+)
 
 FONT = "Arial"
 
@@ -677,6 +681,111 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
     sheet.freeze_panes = "A2"
 
 
+def _add_arbitrage_sheet(workbook: Workbook, overlap: dict) -> None:
+    """Aba "Arbitragem": o mesmo CNPJ com taxa ou minimo diferente entre casas.
+
+    Valores ja calculados em Python (nao formulas): a comparacao cruza casas e
+    canonicaliza a escala da taxa, e MINIFS entre abas nao e universal no Excel.
+    """
+    sheet = workbook.create_sheet("Arbitragem")
+    platform_ids = overlap.get("platforms", [])
+    labels = overlap.get("labels", {})
+
+    sheet.cell(
+        row=1, column=1, value="Arbitragem de preco - mesmo CNPJ em mais de uma casa"
+    ).font = _TITLE_FONT
+    sheet.cell(
+        row=2,
+        column=1,
+        value=(
+            "Taxas canonicalizadas para percentual ao ano por casa (fontes publicam "
+            "em escalas diferentes); uma divergencia pode refletir classe ou serie "
+            "diferente sob o mesmo CNPJ. Valores calculados na geracao, sem formulas."
+        ),
+    ).font = _NOTE_FONT
+
+    if len(platform_ids) < 2:
+        sheet.cell(
+            row=4,
+            column=1,
+            value="Sobreposicao exige duas ou mais casas com coleta utilizavel.",
+        ).font = _NOTE_FONT
+        return
+
+    def block(row: int, title: str, headers: list[str], rows: list[list], widths: list[int], fmt_cols: dict[int, str]) -> int:
+        sheet.cell(row=row, column=1, value=title).font = _TITLE_FONT
+        row += 1
+        for index, name in enumerate(headers, start=1):
+            sheet.cell(row=row, column=index, value=name)
+        _style_header(sheet, row, len(headers))
+        for index, width in enumerate(widths, start=1):
+            column = sheet.column_dimensions[get_column_letter(index)]
+            column.width = max(column.width or 0, width)
+        header_row = row
+        for values in rows:
+            row += 1
+            for index, value in enumerate(values, start=1):
+                cell = sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+                if index in fmt_cols and value is not None:
+                    cell.number_format = fmt_cols[index]
+        if not rows:
+            row += 1
+            sheet.cell(
+                row=row, column=1, value="Nenhuma divergencia acima do corte."
+            ).font = _NOTE_FONT
+        return row + 2
+
+    fee = overlap.get("fee_arbitrage", {})
+    fee_headers = (
+        ["Fundo", "CNPJ"]
+        + [f"{labels.get(pid, pid)} (%)" for pid in platform_ids]
+        + ["Spread (p.p.)", "Mais barata"]
+    )
+    fee_fmt = {2 + i + 1: _PCT for i in range(len(platform_ids))}
+    fee_fmt[len(fee_headers) - 1] = '0.00'
+    fee_rows = [
+        [item["name"], item.get("cnpj") or ""]
+        + [item.get("fees", {}).get(pid) for pid in platform_ids]
+        + [item["spread_pp"], labels.get(item.get("cheapest"), item.get("cheapest") or "")]
+        for item in fee.get("top", [])
+    ]
+    row = block(
+        4,
+        f"Taxa de administracao ({fee.get('significant', 0)} CNPJs com divergencia "
+        f">= 0,10 p.p. de {fee.get('universe', 0)} comparaveis)",
+        fee_headers,
+        fee_rows,
+        [52, 20] + [16] * len(platform_ids) + [14, 18],
+        fee_fmt,
+    )
+
+    mins = overlap.get("min_arbitrage", {})
+    min_headers = (
+        ["Fundo", "CNPJ"]
+        + [f"{labels.get(pid, pid)} (R$)" for pid in platform_ids]
+        + ["Diferenca (R$)", "Menor minimo em"]
+    )
+    min_fmt = {2 + i + 1: _MONEY for i in range(len(platform_ids))}
+    min_fmt[len(min_headers) - 1] = _MONEY
+    min_rows = [
+        [item["name"], item.get("cnpj") or ""]
+        + [item.get("mins", {}).get(pid) for pid in platform_ids]
+        + [item["diff"], labels.get(item.get("lowest"), item.get("lowest") or "")]
+        for item in mins.get("top", [])
+    ]
+    block(
+        row,
+        f"Aplicacao minima ({mins.get('significant', 0)} CNPJs com diferenca "
+        f">= R$ 1.000 de {mins.get('universe', 0)} comparaveis)",
+        min_headers,
+        min_rows,
+        [52, 20] + [16] * len(platform_ids) + [16, 18],
+        min_fmt,
+    )
+
+
 def _add_methodology_sheet(
     workbook: Workbook,
     snapshots: list[ShelfSnapshot],
@@ -792,6 +901,7 @@ def render_spreadsheet(
     _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)
+    _add_arbitrage_sheet(workbook, overlap_block_from_snapshots(usable))
     _add_platform_sheets(workbook, usable)
     if cvm and cvm.funds:
         _add_cvm(workbook, cvm)

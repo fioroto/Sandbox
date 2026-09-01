@@ -18,6 +18,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.report.aggregate import build_overlap_block
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -91,6 +92,79 @@ def _summary_sentence(report: RunReport) -> tuple[str, bool]:
         "alteradas nas prateleiras monitoradas.",
         False,
     )
+
+
+_HIGHLIGHT_ARBITRAGE = 5
+
+
+def _fmt_pct(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",") + "%"
+
+
+def _fmt_pp(value: float) -> str:
+    return "+" + f"{value:.2f}".replace(".", ",") + " p.p."
+
+
+def _overlap_highlights(overlap: dict) -> tuple[str | None, list[tuple[str, str]]]:
+    """(frase do nucleo comum, [(texto do fundo, detalhe de precos), ...]).
+
+    Materia-prima dos Destaques competitivos, compartilhada entre o markdown e
+    o HTML para as duas superficies nunca divergirem no conteudo.
+    """
+    if not overlap or len(overlap.get("platforms", [])) < 2:
+        return None, []
+
+    labels = overlap.get("labels", {})
+    n_houses = len(overlap["platforms"])
+    core = overlap.get("core_all", {}).get("count", 0)
+    multi = sum(overlap.get("multi_home", {}).values())
+
+    sentence = None
+    if multi:
+        sentence = (
+            f"{multi} fundos de varejo aparecem em 2 ou mais das {n_houses} casas "
+            f"coletadas (por CNPJ)"
+        )
+        if core:
+            sentence += f"; {core} estao em todas elas"
+        sentence += "."
+
+    items: list[tuple[str, str]] = []
+    for item in overlap.get("fee_arbitrage", {}).get("top", [])[:_HIGHLIGHT_ARBITRAGE]:
+        fees = item.get("fees", {})
+        cheapest = item.get("cheapest")
+        priciest = item.get("priciest")
+        if cheapest not in fees or priciest not in fees:
+            continue
+        detail = (
+            f"{_fmt_pct(fees[cheapest])} em {labels.get(cheapest, cheapest)} vs "
+            f"{_fmt_pct(fees[priciest])} em {labels.get(priciest, priciest)} "
+            f"({_fmt_pp(item['spread_pp'])})"
+        )
+        name = item["name"] + (f" ({item['cnpj']})" if item.get("cnpj") else "")
+        items.append((name, detail))
+    return sentence, items
+
+
+def _md_overlap_section(overlap: dict) -> list[str]:
+    sentence, items = _overlap_highlights(overlap)
+    if not sentence and not items:
+        return []
+
+    lines = ["## Destaques competitivos", ""]
+    if sentence:
+        lines += [sentence, ""]
+    if items:
+        lines += ["**Maiores diferencas de taxa para o mesmo fundo**", ""]
+        for name, detail in items:
+            lines.append(f"- {name} - {detail}")
+        lines += [
+            "",
+            "Taxas canonicalizadas para percentual ao ano por casa; uma divergencia "
+            "pode refletir classe ou serie diferente sob o mesmo CNPJ.",
+            "",
+        ]
+    return lines
 
 
 # --- markdown ----------------------------------------------------------------
@@ -248,8 +322,10 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
-def render_markdown(report: RunReport) -> str:
+def render_markdown(report: RunReport, overlap: dict | None = None) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
+    if overlap is None:
+        overlap = build_overlap_block(report)
 
     lines = [
         "# Monitor de Prateleiras de Fundos",
@@ -276,6 +352,8 @@ def render_markdown(report: RunReport) -> str:
             f"{len(diff.changed) if diff and not diff.is_first_run else 0} |"
         )
     lines.append("")
+
+    lines += _md_overlap_section(overlap)
 
     lines += _md_cvm_section(report.cvm_diff, report)
 
@@ -393,6 +471,33 @@ def _html_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> str:
     return "".join(parts)
 
 
+def _html_overlap_section(overlap: dict) -> str:
+    sentence, items = _overlap_highlights(overlap)
+    if not sentence and not items:
+        return ""
+
+    parts = [f'<h2 style="{_H2}">Destaques competitivos</h2>']
+    if sentence:
+        parts.append(f'<p style="{_P}">{_esc(sentence)}</p>')
+    if items:
+        parts.append(
+            f'<p style="{_P}margin-bottom:6px;"><strong>Maiores diferencas de taxa '
+            "para o mesmo fundo</strong></p>"
+        )
+        parts.append(
+            _html_list(
+                [f"{_esc(name)} &mdash; {_esc(detail)}" for name, detail in items],
+                len(items),
+            )
+        )
+        parts.append(
+            f'<p style="{_P}font-size:12px;color:#898781;">Taxas canonicalizadas para '
+            "percentual ao ano por casa; uma divergencia pode refletir classe ou serie "
+            "diferente sob o mesmo CNPJ.</p>"
+        )
+    return "".join(parts)
+
+
 def _html_cvm_section(report: RunReport) -> str:
     snapshot = report.cvm_snapshot
     parts = [f'<h2 style="{_H2}">Radar CVM &mdash; visao antecipada</h2>']
@@ -460,8 +565,10 @@ def _html_cvm_section(report: RunReport) -> str:
     return "".join(parts)
 
 
-def render_html(report: RunReport) -> str:
+def render_html(report: RunReport, overlap: dict | None = None) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
+    if overlap is None:
+        overlap = build_overlap_block(report)
     sentence, is_alert = _summary_sentence(report)
     summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
 
@@ -504,6 +611,8 @@ def render_html(report: RunReport) -> str:
     <th style="{_TH}text-align:right;">Alteracoes</th>
   </tr></thead><tbody>{rows}</tbody></table>
 
+  {_html_overlap_section(overlap)}
+
   {_html_cvm_section(report)}
 
   <h2 style="{_H2}">Prateleiras</h2>
@@ -523,10 +632,14 @@ def render_digest(config: Config, report: RunReport) -> tuple[Path, Path]:
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     today: date = report.generated_at.date()
 
+    # Calculado uma vez e passado aos dois renderers - o conteudo dos destaques
+    # nunca diverge entre o markdown e o e-mail.
+    overlap = build_overlap_block(report)
+
     md_path = config.reports_dir / f"digest-{today.isoformat()}.md"
-    md_path.write_text(render_markdown(report), encoding="utf-8")
+    md_path.write_text(render_markdown(report, overlap=overlap), encoding="utf-8")
 
     html_path = config.reports_dir / f"digest-{today.isoformat()}.html"
-    html_path.write_text(render_html(report), encoding="utf-8")
+    html_path.write_text(render_html(report, overlap=overlap), encoding="utf-8")
 
     return md_path, html_path

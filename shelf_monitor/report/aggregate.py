@@ -4,10 +4,11 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from itertools import combinations
 
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
-from shelf_monitor.normalize import normalize_text
+from shelf_monitor.normalize import format_cnpj, normalize_text
 from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
     AssetClass,
@@ -376,6 +377,181 @@ def build_restricted_block(report: RunReport) -> dict:
     return {"total": total, "platforms": platforms}
 
 
+# --- Sobreposicao competitiva e arbitragem de preco --------------------------
+
+# Abaixo desta mediana a casa publica a taxa como fracao (0.015 = 1,5% a.a.):
+# prateleira de varejo inteira com mediana < 0,2% a.a. nao existe no Brasil.
+_FEE_FRACTION_MEDIAN = 0.2
+# Divergencia minima (em p.p., pos-canonicalizacao) para contar como arbitragem;
+# abaixo disso e arredondamento de fonte, nao decisao de preco.
+_FEE_SPREAD_MIN_PP = 0.10
+# Mesmo fundo com razao max/min de taxa acima disto e erro de unidade no dado.
+_FEE_UNIT_SUSPECT_RATIO = 20.0
+# Diferenca de minimo que de fato muda o acesso de um investidor de varejo.
+_MIN_DIFF_FLOOR = 1_000.0
+_ARBITRAGE_TOP = 15
+_CORE_TOP = 60
+
+
+def _usable_snapshots(snapshots: list[ShelfSnapshot]) -> list[ShelfSnapshot]:
+    return [s for s in snapshots if s.status != SnapshotStatus.UNAVAILABLE and s.funds]
+
+
+def _platform_label(platform_id: str) -> str:
+    cfg = PLATFORMS.get(platform_id)
+    return cfg.label if cfg else platform_id
+
+
+def _fee_scale(values: list[float]) -> float:
+    """Multiplicador que canonicaliza a taxa da casa para percentual ao ano."""
+    med = _median(values)
+    if med is None:
+        return 1.0
+    return 100.0 if med < _FEE_FRACTION_MEDIAN else 1.0
+
+
+def overlap_block_from_snapshots(snapshots: list[ShelfSnapshot]) -> dict:
+    """Sobreposicao par-a-par, nucleo comum e arbitragem de preco por CNPJ.
+
+    Compara so o varejo (a materia-prima de toda analise principal) e so casas
+    com coleta utilizavel - uma coleta que falhou tornaria "exclusivo" todo
+    fundo das demais. A taxa e canonicalizada para percentual por casa antes de
+    comparar: sem isso a diferenca de unidade entre fontes viraria arbitragem.
+    """
+    usable = _usable_snapshots(snapshots)
+    ordered = [s for pid in PLATFORMS for s in usable if s.platform == pid]
+    ordered += [s for s in usable if s.platform not in PLATFORMS]
+    platform_ids = [s.platform for s in ordered]
+    labels = {pid: _platform_label(pid) for pid in platform_ids}
+
+    retail_by_platform = {s.platform: retail_funds(s) for s in ordered}
+    fee_scale = {
+        pid: _fee_scale([f.admin_fee_pct for f in funds if f.admin_fee_pct is not None])
+        for pid, funds in retail_by_platform.items()
+    }
+
+    presence: dict[str, set[str]] = {}
+    fund_by_key: dict[tuple[str, str], FundOffer] = {}
+    for pid, funds in retail_by_platform.items():
+        for fund in funds:
+            if not fund.cnpj:
+                continue
+            presence.setdefault(fund.cnpj, set()).add(pid)
+            fund_by_key.setdefault((pid, fund.cnpj), fund)
+
+    pair_matrix = [
+        {
+            "a": a,
+            "b": b,
+            "shared": sum(1 for plats in presence.values() if a in plats and b in plats),
+        }
+        for a, b in combinations(platform_ids, 2)
+    ]
+    diagonal = {
+        pid: len({f.cnpj for f in funds if f.cnpj})
+        for pid, funds in retail_by_platform.items()
+    }
+    multi_home = Counter(len(p) for p in presence.values() if len(p) >= 2)
+
+    core_funds: list[dict] = []
+    if len(platform_ids) >= 2:
+        everywhere = [
+            cnpj for cnpj, plats in presence.items() if len(plats) == len(platform_ids)
+        ]
+        for cnpj in everywhere:
+            fund = fund_by_key[(platform_ids[0], cnpj)]
+            core_funds.append(
+                {
+                    "cnpj": format_cnpj(cnpj),
+                    "name": fund.name,
+                    "category": anbima_category(fund),
+                }
+            )
+        core_funds.sort(key=lambda f: f["name"])
+
+    fee_universe = fee_significant = unit_suspect = 0
+    fee_items: list[dict] = []
+    min_universe = min_significant = 0
+    min_items: list[dict] = []
+
+    for cnpj, plats in presence.items():
+        if len(plats) < 2:
+            continue
+
+        fees = {}
+        mins = {}
+        for pid in plats:
+            fund = fund_by_key[(pid, cnpj)]
+            if fund.admin_fee_pct is not None:
+                fees[pid] = round(fund.admin_fee_pct * fee_scale[pid], 4)
+            if fund.min_initial is not None:
+                mins[pid] = fund.min_initial
+
+        if len(fees) >= 2:
+            fee_universe += 1
+            low, high = min(fees.values()), max(fees.values())
+            spread = round(high - low, 2)
+            if low > 0 and high / low >= _FEE_UNIT_SUSPECT_RATIO:
+                unit_suspect += 1
+            elif spread >= _FEE_SPREAD_MIN_PP:
+                fee_significant += 1
+                cheapest = min(fees, key=fees.get)
+                fee_items.append(
+                    {
+                        "cnpj": format_cnpj(cnpj),
+                        "name": fund_by_key[(cheapest, cnpj)].name,
+                        "spread_pp": spread,
+                        "fees": {pid: round(v, 2) for pid, v in fees.items()},
+                        "cheapest": cheapest,
+                        "priciest": max(fees, key=fees.get),
+                    }
+                )
+
+        if len(mins) >= 2:
+            min_universe += 1
+            low, high = min(mins.values()), max(mins.values())
+            diff = high - low
+            if diff >= _MIN_DIFF_FLOOR:
+                min_significant += 1
+                lowest = min(mins, key=mins.get)
+                min_items.append(
+                    {
+                        "cnpj": format_cnpj(cnpj),
+                        "name": fund_by_key[(lowest, cnpj)].name,
+                        "diff": diff,
+                        "mins": dict(mins),
+                        "lowest": lowest,
+                    }
+                )
+
+    fee_items.sort(key=lambda i: i["spread_pp"], reverse=True)
+    min_items.sort(key=lambda i: i["diff"], reverse=True)
+
+    return {
+        "platforms": platform_ids,
+        "labels": labels,
+        "pair_matrix": pair_matrix,
+        "diagonal": diagonal,
+        "multi_home": {str(k): v for k, v in sorted(multi_home.items())},
+        "core_all": {"count": len(core_funds), "funds": core_funds[:_CORE_TOP]},
+        "fee_arbitrage": {
+            "universe": fee_universe,
+            "significant": fee_significant,
+            "unit_suspect": unit_suspect,
+            "top": fee_items[:_ARBITRAGE_TOP],
+        },
+        "min_arbitrage": {
+            "universe": min_universe,
+            "significant": min_significant,
+            "top": min_items[:_ARBITRAGE_TOP],
+        },
+    }
+
+
+def build_overlap_block(report: RunReport) -> dict:
+    return overlap_block_from_snapshots(report.snapshots)
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -443,6 +619,7 @@ def build_dashboard_data(report: RunReport) -> dict:
     return {
         "generated_at": report.generated_at.isoformat(),
         "listing": build_listing_block(report),
+        "overlap": build_overlap_block(report),
         "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,

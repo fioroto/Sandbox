@@ -656,6 +656,117 @@ horizontalBars(
   { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
 );
 
+// --- Sobreposicao e arbitragem de preco -------------------------------------
+(function renderOverlap(block) {
+  const section = document.getElementById("overlap-section");
+  if (!block || !block.platforms || block.platforms.length < 2) {
+    section.innerHTML = "<h2>Sobreposicao e arbitragem de preco</h2>" +
+      '<div class="note-box">A leitura de sobreposicao exige duas ou mais casas ' +
+      "com coleta utilizavel nesta execucao.</div>";
+    return;
+  }
+  const ids = block.platforms;
+  const labels = block.labels || {};
+
+  // Matriz par-a-par (heatmap sequencial, diagonal em cinza = total da casa).
+  const shared = {};
+  (block.pair_matrix || []).forEach(p => {
+    shared[p.a + "|" + p.b] = p.shared;
+    shared[p.b + "|" + p.a] = p.shared;
+  });
+  const maxShared = Math.max(1, ...(block.pair_matrix || []).map(p => p.shared));
+  const matrixTable = document.createElement("table");
+  matrixTable.className = "matrix";
+  const head = matrixTable.createTHead().insertRow();
+  const corner = document.createElement("th");
+  corner.className = "rowh"; corner.textContent = "CNPJs em comum";
+  head.appendChild(corner);
+  ids.forEach(id => {
+    const th = document.createElement("th");
+    th.textContent = labels[id] || id; head.appendChild(th);
+  });
+  const body = matrixTable.createTBody();
+  ids.forEach(a => {
+    const row = body.insertRow();
+    const rowLabel = row.insertCell();
+    rowLabel.className = "rowlabel"; rowLabel.textContent = labels[a] || a;
+    ids.forEach(b => {
+      const cell = row.insertCell();
+      const span = document.createElement("span");
+      span.className = "cell";
+      if (a === b) {
+        span.classList.add("zero");
+        span.textContent = ((block.diagonal || {})[a] || 0).toLocaleString("pt-BR");
+        span.title = `${labels[a] || a}: fundos de varejo com CNPJ`;
+      } else {
+        const value = shared[a + "|" + b] || 0;
+        if (value) {
+          const heat = heatColor(value, maxShared);
+          span.style.background = heat.fill;
+          span.style.color = heat.ink;
+          span.textContent = value.toLocaleString("pt-BR");
+          span.title = `${labels[a]} e ${labels[b]}: ${value} fundos em comum`;
+        } else {
+          span.classList.add("zero");
+          span.textContent = "–";
+        }
+      }
+      cell.appendChild(span);
+    });
+  });
+  const matrixMount = document.getElementById("matrix-overlap");
+  matrixMount.innerHTML = "";
+  matrixMount.appendChild(matrixTable);
+
+  const pct = v => v === undefined || v === null ? "–"
+    : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+  const money = v => v === undefined || v === null ? "–"
+    : "R$ " + v.toLocaleString("pt-BR");
+
+  const fee = block.fee_arbitrage || {};
+  table2(document.getElementById("table-arbitrage"),
+    ["Fundo", "CNPJ", ...ids.map(id => labels[id] || id), "Spread (p.p.)", "Mais barata"],
+    (fee.top || []).map(item => [
+      item.name, item.cnpj || "–",
+      ...ids.map(id => pct((item.fees || {})[id])),
+      (item.spread_pp || 0).toLocaleString("pt-BR",
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      labels[item.cheapest] || item.cheapest || "–",
+    ]));
+
+  const mins = block.min_arbitrage || {};
+  table2(document.getElementById("table-min-arbitrage"),
+    ["Fundo", "CNPJ", ...ids.map(id => labels[id] || id), "Diferenca", "Menor minimo em"],
+    (mins.top || []).map(item => [
+      item.name, item.cnpj || "–",
+      ...ids.map(id => money((item.mins || {})[id])),
+      money(item.diff),
+      labels[item.lowest] || item.lowest || "–",
+    ]));
+
+  const core = block.core_all || {};
+  table2(document.getElementById("table-core"),
+    ["Fundo", "CNPJ", "Categoria"],
+    (core.funds || []).map(f => [f.name, f.cnpj || "–", f.category || "–"]));
+
+  const parts = [];
+  const homes = block.multi_home || {};
+  const multiTotal = Object.values(homes).reduce((a, v) => a + v, 0);
+  if (multiTotal) {
+    parts.push(`${multiTotal} CNPJs de varejo aparecem em 2+ casas (` +
+      Object.entries(homes).map(([k, v]) => `${k} casas: ${v}`).join("; ") + ").");
+  }
+  if (core.count) {
+    parts.push(`Nucleo comum: ${core.count} fundos presentes nas ${ids.length} casas.`);
+  }
+  if (fee.universe) {
+    parts.push(`${fee.universe} CNPJs comparaveis com taxa em 2+ casas; ` +
+      `${fee.significant || 0} com divergencia >= 0,10 p.p.` +
+      (fee.unit_suspect ? `; ${fee.unit_suspect} descartados por suspeita de erro de unidade na fonte.` : "."));
+  }
+  document.getElementById("overlap-coverage").textContent = parts.join(" ");
+})(DATA.overlap);
+
 // --- Radar CVM --------------------------------------------------------------
 const cvm = DATA.cvm;
 if (cvm.available && cvm.houses && cvm.houses.length) {
@@ -834,6 +945,27 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
       o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio, que fica fora
       desta analise. Considera somente casas com coleta bem-sucedida.</p>
     <div class="chart-scroll" id="chart-exclusive"></div>
+  </section>
+
+  <section class="card" id="overlap-section">
+    <h2>Sobreposicao e arbitragem de preco</h2>
+    <p class="card-sub">Fundos de varejo presentes em mais de uma casa (por CNPJ) e onde o
+      mesmo fundo custa diferente. Taxas canonicalizadas para percentual ao ano por casa;
+      uma divergencia pode refletir classe ou serie diferente sob o mesmo CNPJ.</p>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Matriz de sobreposicao casa &times; casa</h3>
+    <p class="card-sub">CNPJs de varejo em comum entre cada par de casas; a diagonal e o
+      total de fundos com CNPJ da propria casa.</p>
+    <div class="matrix-scroll" id="matrix-overlap"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:22px 0 4px">Maiores diferencas de taxa para o mesmo fundo</h3>
+    <div id="table-arbitrage"></div>
+
+    <details><summary>Maiores diferencas de aplicacao minima</summary>
+      <div id="table-min-arbitrage"></div></details>
+    <details><summary>Nucleo comum: fundos presentes em todas as casas coletadas</summary>
+      <div id="table-core"></div></details>
+    <div class="coverage" id="overlap-coverage"></div>
   </section>
 
   <section class="card">
