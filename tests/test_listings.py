@@ -740,10 +740,9 @@ class TestEnrichment(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = Config(data_dir=self.tmp.name)
         self.config.market_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(
-            Path(__file__).parent / "fixtures" / "enrich" / "mercado.csv",
-            self.config.market_dir / "mercado.csv",
-        )
+        fixtures = Path(__file__).parent / "fixtures" / "enrich"
+        for name in ("mercado.csv", "subclasses.csv"):
+            shutil.copy(fixtures / name, self.config.market_dir / name)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -815,6 +814,188 @@ class TestEnrichment(unittest.TestCase):
         self.assertEqual(stats.with_cnpj, 1)
         self.assertEqual(stats.matched, 0)
         self.assertNotIn("classificacao_anbima", fund.extra)
+
+    def test_official_manager_wins_over_what_the_house_publishes(self):
+        """Sem isso, a mesma gestora aparece com tres nomes e o total infla."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="btg", name="A1 D30", cnpj="63446494000152",
+            manager_name="Asset1", manager_cnpj="99999999000199",
+        )
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.manager_cnpj, "41287689000164")
+        self.assertEqual(fund.extra["gestor_casa"], "Asset1")
+        self.assertEqual(fund.extra["cnpj_gestor_casa"], "99999999000199")
+        self.assertEqual(stats.managers_from_cvm, 1)
+
+    def test_same_manager_written_differently_is_not_a_divergence(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="btg", name="A1 D30", cnpj="63446494000152",
+            manager_name="Asset1 Crédito Investimentos Ltda.",
+        )
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertNotIn("gestor_casa", fund.extra)
+
+    def test_a_shelf_without_managers_is_filled_from_the_registry(self):
+        """O sintoma que motivou o lookup: prateleira inteira sem gestora."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        funds = [
+            FundOffer(platform="inter", name="A1 D30", cnpj="63446494000152"),
+            FundOffer(platform="inter", name="Privilege DI", cnpj="11111111000111"),
+            FundOffer(platform="inter", name="Legado", cnpj="99999999000199"),
+        ]
+        stats = enrich_snapshots(self.config, [self._snapshot(funds)])
+
+        self.assertTrue(all(f.manager_name for f in funds))
+        self.assertEqual(stats.managers_from_cvm, 3)
+
+
+class TestCvmCodeLookup(TestEnrichment):
+    """Casamento pelo codigo CVM - a chave de quem nao publica CNPJ."""
+
+    def test_matches_by_class_code(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="A1 D30", cvm_code="C100")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_classe")
+        self.assertEqual(stats.matched_by_cvm_code, 1)
+        self.assertEqual(stats.with_cvm_code, 1)
+        self.assertEqual(stats.with_cnpj, 0)
+
+    def test_matches_by_subclass_code_through_the_parent_class(self):
+        """A subclasse partilha CNPJ e carteira: a resposta e a da classe-mae."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="A1 D30 Varejo", cvm_code="S777")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["classificacao_anbima"], "RF duração livre crédito livre")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_subclasse")
+
+    def test_matches_by_fund_code_of_a_multi_class_envelope(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fundo Multi", cvm_code="400400")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA MULTI LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_fundo")
+        # As duas classes concordam, entao a classificacao desce ao envelope.
+        self.assertEqual(fund.extra["classificacao_anbima"], "Multimercados Livre")
+
+    def test_envelope_code_does_not_invent_a_classification(self):
+        """Classes que discordam: gestora desce, classificacao nao."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fundo Diverge", cvm_code="600600")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA DIVERGE")
+        self.assertNotIn("classificacao_anbima", fund.extra)
+
+    def test_legacy_fund_code_also_matches(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Legado", cvm_code="999099")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA LEGADA LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_fundo")
+
+    def test_cnpj_is_tried_before_the_code(self):
+        """Com as duas chaves, vale a mais confiavel."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="itau", name="A1 D30", cnpj="63446494000152", cvm_code="C200",
+        )
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "cnpj")
+        self.assertEqual(stats.matched_by_cvm_code, 0)
+
+    def test_the_most_specific_level_wins_a_code_collision(self):
+        """COL1 e codigo de uma subclasse de C4 e de outra classe."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Colidido", cvm_code="COL1")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA MULTI LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_subclasse")
+
+    def test_code_normalization_crosses_the_join(self):
+        """Zero a esquerda e numero cru sao o mesmo codigo dos dois lados."""
+        from shelf_monitor.enrich import MarketLookup
+
+        lookup = MarketLookup.load(self.config)
+        for value in ("400400", "0400400", 400400, 400400.0):
+            hit = lookup.get_by_cvm_code(value)
+            self.assertIsNotNone(hit, repr(value))
+            self.assertEqual(hit[0].gestor, "GESTORA MULTI LTDA")
+
+    def test_unknown_code_is_not_forced_into_a_match(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fora da base", cvm_code="Z999")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(stats.matched, 0)
+        self.assertIsNone(fund.manager_name)
+
+    def test_a_base_without_subclasses_still_loads(self):
+        """Base importada antes desta versao nao tem o arquivo - nao pode quebrar."""
+        from shelf_monitor.enrich import MarketLookup
+
+        (self.config.market_dir / "subclasses.csv").unlink()
+        lookup = MarketLookup.load(self.config)
+
+        self.assertIsNone(lookup.get_by_cvm_code("S777"))
+        self.assertIsNotNone(lookup.get_by_cvm_code("C100"))
+        self.assertIsNotNone(lookup.get("63446494000152"))
+
+    def test_a_base_without_the_code_columns_still_loads(self):
+        """mercado.csv antigo: sem as colunas, o indice fica vazio e so."""
+        import csv
+
+        from shelf_monitor.enrich import MarketLookup
+
+        path = self.config.market_dir / "mercado.csv"
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter=";"))
+        headers = [h for h in rows[0] if not h.startswith("codigo_cvm")]
+        with path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=headers, delimiter=";", extrasaction="ignore"
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+        lookup = MarketLookup.load(self.config)
+        self.assertIsNone(lookup.get_by_cvm_code("C100"))
+        self.assertIsNotNone(lookup.get("63446494000152"))
 
 
 class TestListingBlock(unittest.TestCase):
