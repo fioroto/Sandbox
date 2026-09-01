@@ -6,7 +6,16 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from shelf_monitor.config import PLATFORMS, WATCHLIST
-from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
+from shelf_monitor.enrich import (
+    KEY_ANBIMA,
+    KEY_CAPT_3M,
+    KEY_CAPT_12M,
+    KEY_CAPT_DATA,
+    KEY_CAPT_JANELA,
+    KEY_CVM,
+    KEY_GESTOR_OFICIAL,
+    KEY_PL_INFORME,
+)
 from shelf_monitor.normalize import normalize_text
 from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
@@ -376,6 +385,85 @@ def build_restricted_block(report: RunReport) -> dict:
     return {"total": total, "platforms": platforms}
 
 
+def build_flows_block(report: RunReport) -> dict:
+    """Visao de captacao (informe diario da CVM) - fonte unica das superficies.
+
+    Tres leituras num bloco so: a captacao liquida da vitrine de varejo casa a
+    casa (com a cobertura do join explicita, porque somar so os fundos com
+    informe muda o significado do total), os maiores captadores e resgatadores
+    entre os fundos distribuidos, e a visao de gestoras da watchlist sobre o
+    mercado inteiro (report.flows), que independe de prateleira.
+    """
+    platforms: list[dict] = []
+    movers: dict[str, dict] = {}
+    as_of: str | None = None
+    window_months = 0
+
+    for snapshot in report.snapshots:
+        funds = retail_funds(snapshot)
+        matched = [f for f in funds if f.extra.get(KEY_CAPT_12M) is not None]
+        for fund in matched:
+            date_base = fund.extra.get(KEY_CAPT_DATA)
+            if date_base and (as_of is None or date_base > as_of):
+                as_of = date_base
+            window_months = max(window_months, fund.extra.get(KEY_CAPT_JANELA) or 0)
+
+            # Dedupe por CNPJ: o mesmo fundo em duas prateleiras e um fluxo
+            # so no mercado - contar duas vezes dobraria o movimento.
+            key = fund.cnpj or f"{snapshot.platform}:{fund.name}"
+            entry = movers.setdefault(
+                key,
+                {
+                    "name": fund.name,
+                    "cnpj": fund.cnpj,
+                    "manager": fund.extra.get(KEY_GESTOR_OFICIAL)
+                    or fund.manager_name,
+                    "platforms": [],
+                    "net_3m": fund.extra.get(KEY_CAPT_3M),
+                    "net_12m": fund.extra.get(KEY_CAPT_12M),
+                    "pl": fund.extra.get(KEY_PL_INFORME),
+                },
+            )
+            label = (
+                PLATFORMS[snapshot.platform].label
+                if snapshot.platform in PLATFORMS
+                else snapshot.platform
+            )
+            if label not in entry["platforms"]:
+                entry["platforms"].append(label)
+
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": PLATFORMS[snapshot.platform].label
+                if snapshot.platform in PLATFORMS
+                else snapshot.platform,
+                "net_3m": sum(f.extra.get(KEY_CAPT_3M) or 0.0 for f in matched),
+                "net_12m": sum(f.extra.get(KEY_CAPT_12M) or 0.0 for f in matched),
+                "matched": len(matched),
+                "total": len(funds),
+                "coverage": (len(matched) / len(funds)) if funds else 0.0,
+            }
+        )
+
+    ranked = sorted(
+        movers.values(), key=lambda item: item["net_12m"] or 0.0, reverse=True
+    )
+    top_inflow = [item for item in ranked if (item["net_12m"] or 0.0) > 0][:10]
+    top_outflow = [item for item in reversed(ranked) if (item["net_12m"] or 0.0) < 0][:10]
+
+    return {
+        "available": bool(movers) or report.flows is not None,
+        "as_of": as_of,
+        "window_months": window_months,
+        "platforms": platforms,
+        "top_inflow": top_inflow,
+        "top_outflow": top_outflow,
+        # Visao de mercado inteiro por gestora/casa; None sem as bases.
+        "managers": report.flows,
+    }
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -467,4 +555,5 @@ def build_dashboard_data(report: RunReport) -> dict:
             for d in report.shelf_diffs
         ],
         "cvm": cvm_payload,
+        "flows": build_flows_block(report),
     }

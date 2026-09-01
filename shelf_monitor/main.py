@@ -46,6 +46,7 @@ from shelf_monitor.models import (
 from shelf_monitor.market.flows import (
     DEFAULT_MONTHS as FLOWS_DEFAULT_MONTHS,
     run_flows_import,
+    summarize_watchlist_managers,
 )
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
@@ -236,6 +237,12 @@ def build_report(
         warn_market_missing()
     else:
         report.enrichment = stats.to_dict()
+
+    try:
+        # Captacao por gestora sobre o mercado inteiro; None sem as bases.
+        report.flows = summarize_watchlist_managers(config)
+    except Exception as exc:  # noqa: BLE001 - a visao de gestora nunca derruba o report
+        console.print(f"[yellow]Visao de captacao por gestora falhou:[/] {_short(str(exc))}")
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(

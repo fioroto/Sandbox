@@ -340,5 +340,120 @@ class TestFlowsEnrichment(unittest.TestCase):
         self.assertEqual(stats.matched, 1)  # o join do cadastro segue normal
 
 
+class TestFlowsBlock(unittest.TestCase):
+    """O bloco 'flows' do payload - fonte unica das quatro superficies."""
+
+    def _snapshot(self, platform, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def _offer(self, platform, name, cnpj, net_12m, net_3m=None, pl=None):
+        from shelf_monitor.models import FundOffer
+
+        return FundOffer(
+            platform=platform, name=name, cnpj=cnpj,
+            extra={
+                "captacao_liquida_12m": net_12m,
+                "captacao_liquida_3m": net_3m if net_3m is not None else net_12m,
+                "captacao_janela_meses": 12,
+                "captacao_data_base": "2026-08-29",
+                "pl_informe": pl,
+            },
+        )
+
+    def _report(self, snapshots, flows=None):
+        from datetime import datetime
+
+        from shelf_monitor.models import RunReport
+
+        return RunReport(
+            generated_at=datetime(2026, 8, 31), snapshots=snapshots, flows=flows
+        )
+
+    def test_platform_sums_carry_their_coverage(self):
+        from shelf_monitor.models import FundOffer
+        from shelf_monitor.report.aggregate import build_flows_block
+
+        snapshot = self._snapshot(
+            "btg",
+            [
+                self._offer("btg", "Alpha", "11111111000111", 1_000_000.0),
+                self._offer("btg", "Beta", "22222222000122", -400_000.0),
+                FundOffer(platform="btg", name="Sem informe", cnpj="33333333000133"),
+            ],
+        )
+        block = build_flows_block(self._report([snapshot]))
+
+        platform = block["platforms"][0]
+        self.assertAlmostEqual(platform["net_12m"], 600_000.0)
+        self.assertEqual((platform["matched"], platform["total"]), (2, 3))
+        self.assertTrue(block["available"])
+        self.assertEqual(block["as_of"], "2026-08-29")
+        self.assertEqual(block["window_months"], 12)
+
+    def test_top_movers_dedupe_the_same_fund_across_shelves(self):
+        """Fundo em duas prateleiras e UM fluxo no mercado, nao dois."""
+        from shelf_monitor.report.aggregate import build_flows_block
+
+        block = build_flows_block(
+            self._report(
+                [
+                    self._snapshot(
+                        "btg",
+                        [self._offer("btg", "Alpha", "11111111000111", 1_000_000.0)],
+                    ),
+                    self._snapshot(
+                        "inter",
+                        [
+                            self._offer(
+                                "inter", "Alpha", "11111111000111", 1_000_000.0
+                            ),
+                            self._offer(
+                                "inter", "Gamma", "44444444000144", -2_000_000.0
+                            ),
+                        ],
+                    ),
+                ]
+            )
+        )
+
+        self.assertEqual(len(block["top_inflow"]), 1)
+        self.assertEqual(
+            sorted(block["top_inflow"][0]["platforms"]), ["BTG Pactual", "Banco Inter"]
+        )
+        self.assertEqual(len(block["top_outflow"]), 1)
+        self.assertEqual(block["top_outflow"][0]["cnpj"], "44444444000144")
+
+    def test_without_any_flow_data_the_block_says_unavailable(self):
+        from shelf_monitor.models import FundOffer
+        from shelf_monitor.report.aggregate import build_flows_block
+
+        snapshot = self._snapshot(
+            "btg", [FundOffer(platform="btg", name="Sem informe")]
+        )
+        block = build_flows_block(self._report([snapshot]))
+        self.assertFalse(block["available"])
+        self.assertIsNone(block["managers"])
+
+    def test_managers_view_rides_along_when_present(self):
+        from shelf_monitor.report.aggregate import build_flows_block
+
+        managers = {"houses": [], "market": {}, "as_of": "2026-08-29"}
+        block = build_flows_block(self._report([], flows=managers))
+        self.assertTrue(block["available"])
+        self.assertIs(block["managers"], managers)
+
+
 if __name__ == "__main__":
     unittest.main()

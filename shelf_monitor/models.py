@@ -482,6 +482,10 @@ class RunReport:
     # Cobertura do join com a base oficial (enrich.EnrichmentStats.to_dict());
     # None quando a base de mercado nao esta importada.
     enrichment: dict | None = None
+    # Captacao por gestora/casa sobre o mercado inteiro
+    # (market.flows.summarize_watchlist_managers); None sem as bases em disco.
+    # Calculada no build_report, que tem Config em maos - os renderers nao tem.
+    flows: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:
