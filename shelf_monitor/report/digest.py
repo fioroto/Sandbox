@@ -97,6 +97,32 @@ def _summary_sentence(report: RunReport) -> tuple[str, bool]:
 _HIGHLIGHT_ARBITRAGE = 5
 
 
+def _history_line(history: dict | None) -> str | None:
+    """Uma linha de tendencia: variacao de cada casa desde a primeira coleta.
+
+    So aparece com 2+ datas em disco e ao menos uma casa com delta confiavel
+    (medido entre coletas com status ok) - senao a linha inteira e omitida.
+    """
+    if not history or len(history.get("dates", [])) < 2:
+        return None
+
+    parts: list[str] = []
+    for platform in history.get("platforms", []):
+        delta = platform.get("delta")
+        if delta is None:
+            continue
+        text = f"{platform['label']} {'+' if delta >= 0 else ''}{delta}"
+        pct = platform.get("delta_pct")
+        if pct is not None:
+            pct_text = f"{pct:+.1f}".replace(".", ",")
+            text += f" ({pct_text}%)"
+        parts.append(text)
+
+    if not parts:
+        return None
+    return f"Desde {history['dates'][0]}: " + ", ".join(parts) + "."
+
+
 def _fmt_pct(value: float) -> str:
     return f"{value:.2f}".replace(".", ",") + "%"
 
@@ -401,6 +427,10 @@ def render_markdown(
     lines.append(f"**{sentence}**" if is_alert else sentence)
     lines.append("")
 
+    trend = _history_line(report.history)
+    if trend:
+        lines += [trend, ""]
+
     lines.append("| Plataforma | Fundos | Status | Entradas | Saidas | Alteracoes |")
     lines.append("|---|---:|---|---:|---:|---:|")
     for snapshot in report.snapshots:
@@ -676,6 +706,10 @@ def render_html(
         cvm_cross = build_cvm_cross_block(report)
     sentence, is_alert = _summary_sentence(report)
     summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
+    trend = _history_line(report.history)
+    trend_html = (
+        f'<p style="{_P}font-size:13px;color:#52514e;">{_esc(trend)}</p>' if trend else ""
+    )
 
     rows = ""
     for snapshot in report.snapshots:
@@ -706,6 +740,7 @@ def render_html(
     Concorrentes da XP &middot; execucao de {_esc(generated)}</p>
 
   <p style="{_P}">{summary}</p>
+  {trend_html}
 
   <table style="{_TABLE}"><thead><tr>
     <th style="{_TH}">Plataforma</th>

@@ -21,10 +21,12 @@ from shelf_monitor.models import (
 from shelf_monitor.report.aggregate import (
     build_cvm_cross_block,
     build_dashboard_data,
+    build_history_block,
     build_liquidity_block,
     overlap_block_from_snapshots,
     summarize_platform,
 )
+from shelf_monitor.storage import save_shelf_snapshot
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_html, render_markdown
 
@@ -360,6 +362,64 @@ class TestTopAdmins(unittest.TestCase):
         )
 
 
+class TestHistoryBlock(unittest.TestCase):
+    def _snapshot(
+        self, day: int, funds: list[FundOffer],
+        status: SnapshotStatus = SnapshotStatus.OK,
+    ) -> ShelfSnapshot:
+        snapshot = shelf("xp", funds, status=status)
+        snapshot.collected_at = datetime(2026, 8, day, 12, 0)
+        return snapshot
+
+    def test_series_and_delta_from_disk(self):
+        config, tmp = temp_config()
+        try:
+            save_shelf_snapshot(config, self._snapshot(29, [offer("xp", "A", CNPJ_A)]))
+            save_shelf_snapshot(config, self._snapshot(31, [
+                offer("xp", "A", CNPJ_A), offer("xp", "B", CNPJ_B),
+            ]))
+            block = build_history_block(config, ["xp"])
+        finally:
+            tmp.cleanup()
+        self.assertEqual(block["dates"], ["2026-08-29", "2026-08-31"])
+        platform = block["platforms"][0]
+        self.assertEqual([p["total"] for p in platform["points"]], [1, 2])
+        self.assertEqual(platform["delta"], 1)
+        self.assertEqual(platform["delta_pct"], 100.0)
+        self.assertEqual(platform["base_date"], "2026-08-29")
+
+    def test_single_date_has_no_delta(self):
+        config, tmp = temp_config()
+        try:
+            save_shelf_snapshot(config, self._snapshot(31, [offer("xp", "A", CNPJ_A)]))
+            block = build_history_block(config, ["xp"])
+        finally:
+            tmp.cleanup()
+        self.assertIsNone(block["platforms"][0]["delta"])
+        self.assertEqual(block["platforms"][0]["latest_total"], 1)
+
+    def test_partial_never_anchors_delta(self):
+        config, tmp = temp_config()
+        try:
+            save_shelf_snapshot(config, self._snapshot(
+                29, [offer("xp", "A", CNPJ_A)], status=SnapshotStatus.PARTIAL))
+            save_shelf_snapshot(config, self._snapshot(30, [
+                offer("xp", "A", CNPJ_A), offer("xp", "B", CNPJ_B),
+            ]))
+            save_shelf_snapshot(config, self._snapshot(31, [
+                offer("xp", "A", CNPJ_A), offer("xp", "B", CNPJ_B),
+                offer("xp", "C", CNPJ_C),
+            ]))
+            block = build_history_block(config, ["xp"])
+        finally:
+            tmp.cleanup()
+        platform = block["platforms"][0]
+        # O PARTIAL aparece na serie, mas o delta ancora na primeira coleta ok.
+        self.assertEqual(len(platform["points"]), 3)
+        self.assertEqual(platform["base_date"], "2026-08-30")
+        self.assertEqual(platform["delta"], 1)
+
+
 class TestNewSurfaces(unittest.TestCase):
     def _report(self) -> RunReport:
         return report_for([
@@ -408,6 +468,34 @@ class TestNewSurfaces(unittest.TestCase):
             tmp.cleanup()
         for element_id in ("liquidity-section", "chart-taxation", "table-top-admins"):
             self.assertIn(f'id="{element_id}"', html_text)
+
+    def test_digest_history_line_in_both_renderers(self):
+        report = self._report()
+        report.history = {
+            "dates": ["2026-08-29", "2026-08-31"],
+            "platforms": [{
+                "platform_id": "xp", "label": "XP Investimentos",
+                "points": [], "delta": 3, "delta_pct": 0.5,
+            }],
+        }
+        expected = "Desde 2026-08-29: XP Investimentos +3 (+0,5%)."
+        self.assertIn(expected, render_markdown(report))
+        self.assertIn(expected, render_html(report))
+
+    def test_digest_omits_history_line_with_single_date(self):
+        report = self._report()
+        report.history = {"dates": ["2026-08-31"], "platforms": []}
+        self.assertNotIn("Desde 2026-08-31", render_markdown(report))
+
+    def test_dashboard_has_trend_section(self):
+        config, tmp = temp_config()
+        try:
+            path = render_dashboard(config, self._report())
+            html_text = path.read_text(encoding="utf-8")
+        finally:
+            tmp.cleanup()
+        self.assertIn('id="trend-section"', html_text)
+        self.assertIn('id="chart-trend"', html_text)
 
     def test_digest_has_competitive_highlights_in_both_renderers(self):
         report = self._report()

@@ -44,6 +44,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.market.importer import run_import
+from shelf_monitor.report.aggregate import build_history_block
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.mailer import build_subject, send_digest
@@ -238,6 +239,9 @@ def build_report(
             config, snapshot.platform, before=snapshot.snapshot_date, trusted_only=True
         )
         report.shelf_diffs.append(diff_shelf(snapshot, previous))
+
+    # A tendencia le todas as datas em disco - o diff acima compara so duas.
+    report.history = build_history_block(config, [s.platform for s in snapshots])
 
     if cvm_snapshot:
         report.cvm_snapshot = cvm_snapshot

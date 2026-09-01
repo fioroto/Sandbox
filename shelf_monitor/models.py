@@ -482,6 +482,10 @@ class RunReport:
     # Cobertura do join com a base oficial (enrich.EnrichmentStats.to_dict());
     # None quando a base de mercado nao esta importada.
     enrichment: dict | None = None
+    # Serie historica do tamanho da prateleira por casa, sobre todas as datas
+    # de snapshot em disco (aggregate.build_history_block); None quando o
+    # relatorio foi montado sem acesso ao diretorio de snapshots.
+    history: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

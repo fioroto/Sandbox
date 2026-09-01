@@ -100,6 +100,29 @@ def shelf_snapshot_dates(config: Config, platform_id: str) -> list[date]:
     return [_parse_date(p) for p in _dated_files(config.platform_snapshots_dir(platform_id))]
 
 
+def shelf_snapshot_series(config: Config, platform_id: str) -> list[dict]:
+    """Serie leve por data: {'date', 'total', 'status'}, em ordem cronologica.
+
+    Le so as chaves de topo do JSON - nao materializa FundOffer (o catalogo do
+    BTG passa de 9 mil fundos por dia). Um arquivo ilegivel e pulado: a serie
+    historica nao pode derrubar o relatorio do dia.
+    """
+    series: list[dict] = []
+    for path in _dated_files(config.platform_snapshots_dir(platform_id)):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        series.append(
+            {
+                "date": path.stem,
+                "total": data.get("fund_count", len(data.get("funds", []))),
+                "status": data.get("status", SnapshotStatus.OK.value),
+            }
+        )
+    return series
+
+
 # --- CVM ---------------------------------------------------------------------
 
 

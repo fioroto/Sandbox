@@ -560,6 +560,110 @@ function table2(mount, columns, rows) {
 
 renderVitrine(DATA.listing);
 
+/* --- Tendencia da prateleira -----------------------------------------------
+   Linha multi-serie sobre datas discretas, em indice base 100 por casa:
+   escalas absolutas de 400 a 10 mil fundos nao convivem num eixo so. Ponto
+   PARTIAL e desenhado vazado - dado presente, confianca menor. */
+(function renderTrend(block) {
+  const legend = document.getElementById("legend-trend");
+  const mount = document.getElementById("chart-trend");
+  const note = document.getElementById("trend-note");
+  const platforms = ((block && block.platforms) || []).filter(p => (p.points || []).length);
+  const dates = (block && block.dates) || [];
+  if (!platforms.length || !dates.length) {
+    legend.innerHTML = "";
+    mount.innerHTML = '<p class="empty">Sem historico de snapshots em disco - a serie ' +
+      "comeca na primeira coleta salva.</p>";
+    return;
+  }
+  renderLegend(legend, platforms);
+
+  const series = platforms.map(p => {
+    const points = p.points || [];
+    const base = (points.find(pt => pt.status === "ok" && pt.total) || points[0]).total || 1;
+    const byDate = {};
+    points.forEach(pt => { byDate[pt.date] = pt; });
+    return { p, byDate, base };
+  });
+
+  const indexed = series.flatMap(s => dates
+    .map(d => s.byDate[d]).filter(Boolean).map(pt => (pt.total / s.base) * 100));
+  let lo = Math.min(...indexed), hi = Math.max(...indexed);
+  if (hi - lo < 4) { lo -= 2; hi += 2; }
+  const span = (hi - lo) * 0.08;
+  lo -= span; hi += span;
+
+  const padL = 56, padR = 24, padT = 12, padB = 34;
+  const plotW = Math.max(320, dates.length * 110), plotH = 200;
+  const width = padL + plotW + padR, height = padT + plotH + padB;
+  const x = i => dates.length === 1 ? padL + plotW / 2
+    : padL + (i / (dates.length - 1)) * plotW;
+  const y = v => padT + plotH - ((v - lo) / (hi - lo)) * plotH;
+
+  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height,
+    role: "img", "aria-label": "evolucao do tamanho da prateleira por casa, em indice" });
+
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const value = lo + ((hi - lo) / ticks) * i;
+    svg.appendChild(el("line", { class: i === 0 ? "baseline" : "gridline",
+      x1: padL, x2: padL + plotW, y1: y(value), y2: y(value) }));
+    svg.appendChild(el("text", { class: "tick", x: padL - 9, y: y(value) + 4,
+      "text-anchor": "end" }, value.toFixed(0)));
+  }
+  dates.forEach((d, i) => {
+    svg.appendChild(el("text", { class: "tick", x: x(i), y: padT + plotH + 18,
+      "text-anchor": "middle" }, d));
+  });
+
+  series.forEach(({ p, byDate, base }) => {
+    const color = platformColor[p.platform_id] || "var(--s1)";
+    const coords = dates
+      .map((d, i) => byDate[d]
+        ? { pt: byDate[d], vx: x(i), vy: y((byDate[d].total / base) * 100) } : null)
+      .filter(Boolean);
+    if (coords.length > 1) {
+      svg.appendChild(el("path", {
+        d: coords.map((c, k) => `${k ? "L" : "M"} ${c.vx} ${c.vy}`).join(" "),
+        fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round",
+      }));
+    }
+    coords.forEach(c => {
+      const partial = c.pt.status !== "ok";
+      const dot = el("circle", { cx: c.vx, cy: c.vy, r: 4,
+        fill: partial ? "var(--surface-1)" : color,
+        stroke: color, "stroke-width": 2 });
+      dot.appendChild(el("title", {},
+        `${p.label} - ${c.pt.date}: ${c.pt.total} fundos` +
+        (partial ? " (coleta parcial)" : "")));
+      svg.appendChild(dot);
+    });
+  });
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+
+  const signed = v => (v >= 0 ? "+" : "") + v.toLocaleString("pt-BR");
+  const deltaText = p => p.delta === null || p.delta === undefined ? "–"
+    : signed(p.delta) + (p.delta_pct === null || p.delta_pct === undefined
+      ? "" : ` (${signed(p.delta_pct)}%)`);
+  table2(document.getElementById("table-trend"),
+    ["Casa", ...dates, "Variacao"],
+    platforms.map(p => {
+      const byDate = {};
+      (p.points || []).forEach(pt => { byDate[pt.date] = pt; });
+      return [p.label,
+        ...dates.map(d => byDate[d]
+          ? byDate[d].total.toLocaleString("pt-BR") +
+            (byDate[d].status !== "ok" ? " *" : "")
+          : "–"),
+        deltaText(p)];
+    }));
+
+  note.textContent = dates.length === 1
+    ? "Primeira data em disco - a tendencia se constroi a cada coleta."
+    : "* coleta parcial. Variacao entre a primeira e a ultima coleta confiavel de cada casa.";
+})(DATA.history);
+
 (function renderRestricted(block) {
   const mount = document.getElementById("table-restricted");
   const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
@@ -1012,6 +1116,17 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
   </header>
 
   <div class="tiles">{_stat_tiles(data)}</div>
+
+  <section class="card" id="trend-section">
+    <h2>Tendencia da prateleira</h2>
+    <p class="card-sub">Evolucao do numero de fundos coletados por casa, sobre todas as
+      datas de snapshot em disco. O grafico normaliza cada casa em indice (base 100 na
+      primeira coleta confiavel); a tabela traz os numeros absolutos.</p>
+    <div class="legend" id="legend-trend"></div>
+    <div class="chart-scroll" id="chart-trend"></div>
+    <details><summary>Ver tabela</summary><div id="table-trend"></div></details>
+    <div class="coverage" id="trend-note"></div>
+  </section>
 
   <section class="card" id="vitrine-section">
     <h2>Vitrine de varejo &mdash; o que o cliente ve</h2>

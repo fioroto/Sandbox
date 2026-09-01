@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from itertools import combinations
 
-from shelf_monitor.config import PLATFORMS, WATCHLIST
+from shelf_monitor.config import PLATFORMS, WATCHLIST, Config
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
 from shelf_monitor.normalize import format_cnpj, normalize_text, strip_accents
 from shelf_monitor.profile import restriction_reason, split_by_profile
@@ -645,6 +645,55 @@ def build_liquidity_block(report: RunReport) -> dict:
     }
 
 
+# --- Tendencia historica -----------------------------------------------------
+
+
+def build_history_block(config: Config, platform_ids: list[str]) -> dict:
+    """Serie do tamanho da prateleira por casa, sobre as datas em disco.
+
+    E o unico bloco que le o disco em vez do RunReport: tendencia precisa de
+    todas as datas, nao das duas que o diff compara. A variacao e medida entre
+    a primeira e a ultima coleta CONFIAVEL (status ok) - um PARTIAL aparece na
+    serie, mas nunca ancora o delta.
+    """
+    from shelf_monitor.storage import shelf_snapshot_series
+
+    ordered = [pid for pid in PLATFORMS if pid in platform_ids]
+    ordered += [pid for pid in platform_ids if pid not in PLATFORMS]
+
+    dates: set[str] = set()
+    platforms: list[dict] = []
+    for pid in ordered:
+        points = shelf_snapshot_series(config, pid)
+        if not points:
+            continue
+        dates.update(p["date"] for p in points)
+
+        trusted = [
+            p for p in points if p["status"] == SnapshotStatus.OK.value and p["total"]
+        ]
+        delta = delta_pct = base_date = None
+        if len(trusted) >= 2:
+            first, last = trusted[0], trusted[-1]
+            delta = last["total"] - first["total"]
+            delta_pct = round(100 * delta / first["total"], 1)
+            base_date = first["date"]
+
+        platforms.append(
+            {
+                "platform_id": pid,
+                "label": _platform_label(pid),
+                "points": points,
+                "latest_total": points[-1]["total"],
+                "base_date": base_date,
+                "delta": delta,
+                "delta_pct": delta_pct,
+            }
+        )
+
+    return {"dates": sorted(dates), "platforms": platforms}
+
+
 # --- Cruzamento cadastro CVM x prateleiras -----------------------------------
 
 _CVM_CROSS_TOP = 30
@@ -822,6 +871,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         "overlap": build_overlap_block(report),
         "cvm_cross": build_cvm_cross_block(report),
         "liquidity": build_liquidity_block(report),
+        "history": report.history or {"dates": [], "platforms": []},
         "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
