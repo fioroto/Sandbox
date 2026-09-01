@@ -1,9 +1,9 @@
 """Leitura dos CSVs da CVM para os modelos da base de mercado.
 
-Reusa `_decode_rows` e `_get` de collectors/cvm.py: o primeiro ja resolve o
-encoding (utf-8 antes de latin-1, senao um arquivo utf-8 vira mojibake sem
-erro), e o segundo casa nome de coluna tolerando caixa e acento - exatamente o
-que se precisa num schema que a CVM altera em producao.
+Reusa `_decode_rows` de collectors/cvm.py (utf-8 antes de latin-1, senao um
+arquivo utf-8 vira mojibake sem erro) e `get_column` de normalize, que casa
+nome de coluna tolerando caixa e acento - exatamente o que se precisa num
+schema que a CVM altera em producao.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 _READ_CHUNK = 1 << 20
 
-from shelf_monitor.collectors.cvm import _decode_rows, _get
+from shelf_monitor.collectors.cvm import _decode_rows
 from shelf_monitor.market.datasets import (
     REGISTRO_CLASSE_COLUMNS,
     REGISTRO_FUNDO_COLUMNS,
@@ -28,7 +28,12 @@ from shelf_monitor.market.models import (
     MarketSubclass,
     Origin,
 )
-from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
+from shelf_monitor.normalize import (
+    get_column,
+    normalize_cnpj,
+    normalize_text,
+    parse_number,
+)
 
 # A CVM publica datas em ISO na maior parte dos arquivos, mas o legado ainda
 # aparece em formato brasileiro em alguns campos.
@@ -124,33 +129,33 @@ def parse_funds(raw: bytes) -> tuple[list[MarketFund], list[str]]:
     funds: list[MarketFund] = []
 
     for row in rows:
-        registro_id = _get(row, "ID_Registro_Fundo")
-        name = _get(row, "Denominacao_Social")
+        registro_id = get_column(row, "ID_Registro_Fundo")
+        name = get_column(row, "Denominacao_Social")
         if not registro_id or not name:
             continue
 
         funds.append(
             MarketFund(
                 registro_id=registro_id,
-                cnpj=normalize_cnpj(_get(row, "CNPJ_Fundo")),
+                cnpj=normalize_cnpj(get_column(row, "CNPJ_Fundo")),
                 name=name,
                 origin=Origin.RCVM175,
-                cvm_code=_get(row, "Codigo_CVM"),
-                fund_type=_get(row, "Tipo_Fundo"),
-                situation=_get(row, "Situacao"),
-                situation_started_at=parse_date(_get(row, "Data_Inicio_Situacao")),
-                registered_at=parse_date(_get(row, "Data_Registro")),
-                constituted_at=parse_date(_get(row, "Data_Constituicao")),
-                cancelled_at=parse_date(_get(row, "Data_Cancelamento")),
-                adapted_at=parse_date(_get(row, "Data_Adaptacao_RCVM175")),
-                net_worth=parse_number(_get(row, "Patrimonio_Liquido")),
-                net_worth_at=parse_date(_get(row, "Data_Patrimonio_Liquido")),
-                director=_get(row, "Diretor"),
-                admin_name=_get(row, "Administrador"),
-                admin_cnpj=normalize_cnpj(_get(row, "CNPJ_Administrador")),
-                manager_name=_get(row, "Gestor"),
-                manager_cnpj=normalize_cnpj(_get(row, "CPF_CNPJ_Gestor")),
-                manager_person_type=_get(row, "Tipo_Pessoa_Gestor"),
+                cvm_code=get_column(row, "Codigo_CVM"),
+                fund_type=get_column(row, "Tipo_Fundo"),
+                situation=get_column(row, "Situacao"),
+                situation_started_at=parse_date(get_column(row, "Data_Inicio_Situacao")),
+                registered_at=parse_date(get_column(row, "Data_Registro")),
+                constituted_at=parse_date(get_column(row, "Data_Constituicao")),
+                cancelled_at=parse_date(get_column(row, "Data_Cancelamento")),
+                adapted_at=parse_date(get_column(row, "Data_Adaptacao_RCVM175")),
+                net_worth=parse_number(get_column(row, "Patrimonio_Liquido")),
+                net_worth_at=parse_date(get_column(row, "Data_Patrimonio_Liquido")),
+                director=get_column(row, "Diretor"),
+                admin_name=get_column(row, "Administrador"),
+                admin_cnpj=normalize_cnpj(get_column(row, "CNPJ_Administrador")),
+                manager_name=get_column(row, "Gestor"),
+                manager_cnpj=normalize_cnpj(get_column(row, "CPF_CNPJ_Gestor")),
+                manager_person_type=get_column(row, "Tipo_Pessoa_Gestor"),
             )
         )
 
@@ -163,9 +168,9 @@ def parse_classes(raw: bytes) -> tuple[list[MarketClass], list[str]]:
     classes: list[MarketClass] = []
 
     for row in rows:
-        classe_id = _get(row, "ID_Registro_Classe")
-        fundo_id = _get(row, "ID_Registro_Fundo")
-        name = _get(row, "Denominacao_Social")
+        classe_id = get_column(row, "ID_Registro_Classe")
+        fundo_id = get_column(row, "ID_Registro_Fundo")
+        name = get_column(row, "Denominacao_Social")
         if not classe_id or not fundo_id or not name:
             continue
 
@@ -173,36 +178,36 @@ def parse_classes(raw: bytes) -> tuple[list[MarketClass], list[str]]:
             MarketClass(
                 classe_id=classe_id,
                 fundo_id=fundo_id,
-                cnpj=normalize_cnpj(_get(row, "CNPJ_Classe")),
+                cnpj=normalize_cnpj(get_column(row, "CNPJ_Classe")),
                 name=name,
-                cvm_code=_get(row, "Codigo_CVM"),
-                class_type=_get(row, "Tipo_Classe"),
-                situation=_get(row, "Situacao"),
-                situation_started_at=parse_date(_get(row, "Data_Inicio_Situacao")),
-                registered_at=parse_date(_get(row, "Data_Registro")),
-                constituted_at=parse_date(_get(row, "Data_Constituicao")),
-                started_at=parse_date(_get(row, "Data_Inicio")),
-                cvm_classification=_get(row, "Classificacao"),
-                anbima_classification=_get(row, "Classificacao_Anbima"),
-                benchmark=_get(row, "Indicador_Desempenho"),
-                share_class=_get(row, "Classe_Cotas"),
-                long_term_taxation=_get(row, "Tributacao_Longo_Prazo"),
-                investment_entity=_get(row, "Entidade_Investimento"),
-                full_foreign_allowed=_get(
+                cvm_code=get_column(row, "Codigo_CVM"),
+                class_type=get_column(row, "Tipo_Classe"),
+                situation=get_column(row, "Situacao"),
+                situation_started_at=parse_date(get_column(row, "Data_Inicio_Situacao")),
+                registered_at=parse_date(get_column(row, "Data_Registro")),
+                constituted_at=parse_date(get_column(row, "Data_Constituicao")),
+                started_at=parse_date(get_column(row, "Data_Inicio")),
+                cvm_classification=get_column(row, "Classificacao"),
+                anbima_classification=get_column(row, "Classificacao_Anbima"),
+                benchmark=get_column(row, "Indicador_Desempenho"),
+                share_class=get_column(row, "Classe_Cotas"),
+                long_term_taxation=get_column(row, "Tributacao_Longo_Prazo"),
+                investment_entity=get_column(row, "Entidade_Investimento"),
+                full_foreign_allowed=get_column(
                     row, "Permitido_Aplicacao_CemPorCento_Exterior"
                 ),
-                esg=_get(row, "Classe_ESG"),
-                condominium=_get(row, "Forma_Condominio"),
-                exclusive=_get(row, "Exclusivo"),
-                target_audience=_get(row, "Publico_Alvo"),
-                net_worth=parse_number(_get(row, "Patrimonio_Liquido")),
-                net_worth_at=parse_date(_get(row, "Data_Patrimonio_Liquido")),
-                auditor_name=_get(row, "Auditor"),
-                auditor_cnpj=normalize_cnpj(_get(row, "CNPJ_Auditor")),
-                custodian_name=_get(row, "Custodiante"),
-                custodian_cnpj=normalize_cnpj(_get(row, "CNPJ_Custodiante")),
-                controller_name=_get(row, "Controlador"),
-                controller_cnpj=normalize_cnpj(_get(row, "CNPJ_Controlador")),
+                esg=get_column(row, "Classe_ESG"),
+                condominium=get_column(row, "Forma_Condominio"),
+                exclusive=get_column(row, "Exclusivo"),
+                target_audience=get_column(row, "Publico_Alvo"),
+                net_worth=parse_number(get_column(row, "Patrimonio_Liquido")),
+                net_worth_at=parse_date(get_column(row, "Data_Patrimonio_Liquido")),
+                auditor_name=get_column(row, "Auditor"),
+                auditor_cnpj=normalize_cnpj(get_column(row, "CNPJ_Auditor")),
+                custodian_name=get_column(row, "Custodiante"),
+                custodian_cnpj=normalize_cnpj(get_column(row, "CNPJ_Custodiante")),
+                controller_name=get_column(row, "Controlador"),
+                controller_cnpj=normalize_cnpj(get_column(row, "CNPJ_Controlador")),
             )
         )
 
@@ -215,9 +220,9 @@ def parse_subclasses(raw: bytes) -> tuple[list[MarketSubclass], list[str]]:
     subclasses: list[MarketSubclass] = []
 
     for row in rows:
-        subclasse_id = _get(row, "ID_Subclasse")
-        classe_id = _get(row, "ID_Registro_Classe")
-        name = _get(row, "Denominacao_Social")
+        subclasse_id = get_column(row, "ID_Subclasse")
+        classe_id = get_column(row, "ID_Registro_Classe")
+        name = get_column(row, "Denominacao_Social")
         if not subclasse_id or not classe_id or not name:
             continue
 
@@ -226,17 +231,17 @@ def parse_subclasses(raw: bytes) -> tuple[list[MarketSubclass], list[str]]:
                 subclasse_id=subclasse_id,
                 classe_id=classe_id,
                 name=name,
-                cvm_code=_get(row, "Codigo_CVM"),
-                situation=_get(row, "Situacao"),
-                situation_started_at=parse_date(_get(row, "Data_Inicio_Situacao")),
-                constituted_at=parse_date(_get(row, "Data_Constituicao")),
-                started_at=parse_date(_get(row, "Data_Inicio")),
-                condominium=_get(row, "Forma_Condominio"),
-                exclusive=_get(row, "Exclusivo"),
-                target_audience=_get(row, "Publico_Alvo"),
-                pension=_get(row, "Previdenciario"),
-                foreign_investor_only=_get(row, "Exclusivo_INR"),
-                pension_plan_only=_get(row, "Exclusivo_Previdencia_Complementar"),
+                cvm_code=get_column(row, "Codigo_CVM"),
+                situation=get_column(row, "Situacao"),
+                situation_started_at=parse_date(get_column(row, "Data_Inicio_Situacao")),
+                constituted_at=parse_date(get_column(row, "Data_Constituicao")),
+                started_at=parse_date(get_column(row, "Data_Inicio")),
+                condominium=get_column(row, "Forma_Condominio"),
+                exclusive=get_column(row, "Exclusivo"),
+                target_audience=get_column(row, "Publico_Alvo"),
+                pension=get_column(row, "Previdenciario"),
+                foreign_investor_only=get_column(row, "Exclusivo_INR"),
+                pension_plan_only=get_column(row, "Exclusivo_Previdencia_Complementar"),
             )
         )
 
@@ -254,8 +259,8 @@ def parse_legacy_funds(raw: bytes) -> list[MarketFund]:
     funds: list[MarketFund] = []
 
     for row in rows:
-        cnpj = normalize_cnpj(_get(row, "CNPJ_FUNDO", "CNPJ_Fundo"))
-        name = _get(row, "DENOM_SOCIAL", "Denominacao_Social")
+        cnpj = normalize_cnpj(get_column(row, "CNPJ_FUNDO", "CNPJ_Fundo"))
+        name = get_column(row, "DENOM_SOCIAL", "Denominacao_Social")
         if not cnpj or not name:
             continue
 
@@ -266,18 +271,18 @@ def parse_legacy_funds(raw: bytes) -> list[MarketFund]:
                 cnpj=cnpj,
                 name=name,
                 origin=Origin.LEGACY,
-                cvm_code=_get(row, "CD_CVM", "Codigo_CVM"),
-                fund_type=_get(row, "TP_FUNDO", "Tipo_Fundo"),
-                situation=_get(row, "SIT", "Situacao"),
-                registered_at=parse_date(_get(row, "DT_REG", "Data_Registro")),
-                constituted_at=parse_date(_get(row, "DT_CONST")),
-                cancelled_at=parse_date(_get(row, "DT_CANCEL")),
-                net_worth=parse_number(_get(row, "VL_PATRIM_LIQ")),
-                net_worth_at=parse_date(_get(row, "DT_PATRIM_LIQ")),
-                admin_name=_get(row, "ADMIN", "Administrador"),
-                admin_cnpj=normalize_cnpj(_get(row, "CNPJ_ADMIN")),
-                manager_name=_get(row, "GESTOR", "Gestor"),
-                manager_cnpj=normalize_cnpj(_get(row, "CPF_CNPJ_GESTOR")),
+                cvm_code=get_column(row, "CD_CVM", "Codigo_CVM"),
+                fund_type=get_column(row, "TP_FUNDO", "Tipo_Fundo"),
+                situation=get_column(row, "SIT", "Situacao"),
+                registered_at=parse_date(get_column(row, "DT_REG", "Data_Registro")),
+                constituted_at=parse_date(get_column(row, "DT_CONST")),
+                cancelled_at=parse_date(get_column(row, "DT_CANCEL")),
+                net_worth=parse_number(get_column(row, "VL_PATRIM_LIQ")),
+                net_worth_at=parse_date(get_column(row, "DT_PATRIM_LIQ")),
+                admin_name=get_column(row, "ADMIN", "Administrador"),
+                admin_cnpj=normalize_cnpj(get_column(row, "CNPJ_ADMIN")),
+                manager_name=get_column(row, "GESTOR", "Gestor"),
+                manager_cnpj=normalize_cnpj(get_column(row, "CPF_CNPJ_GESTOR")),
             )
         )
 
@@ -295,19 +300,19 @@ def legacy_class_fields(raw: bytes) -> dict[str, dict[str, str | None]]:
     index: dict[str, dict[str, str | None]] = {}
 
     for row in rows:
-        cnpj = normalize_cnpj(_get(row, "CNPJ_FUNDO", "CNPJ_Fundo"))
+        cnpj = normalize_cnpj(get_column(row, "CNPJ_FUNDO", "CNPJ_Fundo"))
         if not cnpj:
             continue
         index[cnpj] = {
-            "cvm_classification": _get(row, "CLASSE", "Classe"),
-            "anbima_classification": _get(row, "CLASSE_ANBIMA", "Classe_Anbima"),
-            "condominium": _get(row, "CONDOM"),
-            "exclusive": _get(row, "FUNDO_EXCLUSIVO"),
-            "share_class": _get(row, "FUNDO_COTAS"),
-            "admin_fee": _get(row, "TAXA_ADM"),
-            "performance_fee": _get(row, "TAXA_PERFM"),
-            "custodian_name": _get(row, "CUSTODIANTE"),
-            "auditor_name": _get(row, "AUDITOR"),
+            "cvm_classification": get_column(row, "CLASSE", "Classe"),
+            "anbima_classification": get_column(row, "CLASSE_ANBIMA", "Classe_Anbima"),
+            "condominium": get_column(row, "CONDOM"),
+            "exclusive": get_column(row, "FUNDO_EXCLUSIVO"),
+            "share_class": get_column(row, "FUNDO_COTAS"),
+            "admin_fee": get_column(row, "TAXA_ADM"),
+            "performance_fee": get_column(row, "TAXA_PERFM"),
+            "custodian_name": get_column(row, "CUSTODIANTE"),
+            "auditor_name": get_column(row, "AUDITOR"),
         }
 
     return index

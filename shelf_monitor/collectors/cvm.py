@@ -28,6 +28,7 @@ from shelf_monitor.http import SourceUnavailable, build_session, get
 from shelf_monitor.models import CvmFund, CvmSnapshot, SnapshotStatus
 from shelf_monitor.normalize import (
     cnpj_root,
+    get_column,
     normalize_cnpj,
     normalize_text,
     parse_number,
@@ -104,18 +105,9 @@ def _decode_rows(raw: bytes) -> list[dict]:
     raise SourceUnavailable("CSV da CVM vazio ou com separador inesperado")
 
 
-def _get(row: dict, *names: str) -> str | None:
-    """Busca uma coluna tolerando variacoes de caixa/acento entre versoes."""
-    for name in names:
-        if name in row and row[name] not in (None, ""):
-            return str(row[name]).strip()
-    lowered = {normalize_text(k): v for k, v in row.items() if k}
-    for name in names:
-        key = normalize_text(name)
-        value = lowered.get(key)
-        if value not in (None, ""):
-            return str(value).strip()
-    return None
+# A implementacao vive em normalize.get_column; o alias preserva chamadores
+# antigos deste modulo enquanto a busca tolerante serve tambem ao market.
+_get = get_column
 
 
 def download(config: Config, url: str, dest: Path) -> Path:

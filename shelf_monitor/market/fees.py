@@ -15,10 +15,10 @@ import re
 
 from pathlib import Path
 
-from shelf_monitor.collectors.cvm import _get
 from shelf_monitor.market.models import ClassFees, FeeUnit
 from shelf_monitor.market.parse import iter_rows, parse_date
 from shelf_monitor.normalize import (
+    get_column,
     normalize_cnpj,
     normalize_text,
     parse_money,
@@ -108,12 +108,12 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
 
     for row in iter_rows(source):
         cnpj = normalize_cnpj(
-            _get(row, "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo_Classe", "CNPJ_FUNDO", "CNPJ_Classe")
+            get_column(row, "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo_Classe", "CNPJ_FUNDO", "CNPJ_Classe")
         )
         if not cnpj:
             continue
 
-        reference = parse_date(_get(row, "DT_COMPTC", "Data_Competencia"))
+        reference = parse_date(get_column(row, "DT_COMPTC", "Data_Competencia"))
         existing = latest.get(cnpj)
         if existing is not None:
             if reference is None and existing.reference_date is None:
@@ -125,7 +125,7 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
             elif not _is_newer(reference, existing.reference_date):
                 continue
 
-        admin_fee, unit, admin_raw = resolve_admin_fee(_get(row, "TAXA_ADM"))
+        admin_fee, unit, admin_raw = resolve_admin_fee(get_column(row, "TAXA_ADM"))
 
         latest[cnpj] = ClassFees(
             cnpj=cnpj,
@@ -133,20 +133,20 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
             admin_fee=admin_fee,
             admin_fee_unit=unit,
             admin_fee_raw=admin_raw,
-            performance_fee=parse_number(_get(row, "TAXA_PERFM")),
-            performance_fee_benchmark=_get(row, "PARAM_TAXA_PERFM"),
-            has_performance_fee=_get(row, "EXISTE_TAXA_PERFM"),
-            entry_fee=parse_number(_get(row, "VL_TAXA_ENTRADA", "TAXA_ENTRADA")),
-            exit_fee=parse_number(_get(row, "VL_TAXA_SAIDA", "TAXA_SAIDA")),
+            performance_fee=parse_number(get_column(row, "TAXA_PERFM")),
+            performance_fee_benchmark=get_column(row, "PARAM_TAXA_PERFM"),
+            has_performance_fee=get_column(row, "EXISTE_TAXA_PERFM"),
+            entry_fee=parse_number(get_column(row, "VL_TAXA_ENTRADA", "TAXA_ENTRADA")),
+            exit_fee=parse_number(get_column(row, "VL_TAXA_SAIDA", "TAXA_SAIDA")),
             min_initial=parse_money(
-                _get(row, "INVEST_INICIAL_MIN", "VL_APLIC_MIN", "APLIC_MIN")
+                get_column(row, "INVEST_INICIAL_MIN", "VL_APLIC_MIN", "APLIC_MIN")
             ),
-            min_balance=parse_money(_get(row, "VL_SALDO_MIN", "SALDO_MIN")),
-            redemption_quotation_days=_parse_days(_get(row, "QT_DIA_CONVER_COTA")),
-            redemption_payment_days=_parse_days(_get(row, "QT_DIA_PAGTO_RESGATE")),
-            target_audience=_get(row, "PUBLICO_ALVO"),
-            investment_policy=_get(row, "POLIT_INVEST"),
-            long_term_taxation=_get(row, "TRIB_LPRAZO"),
+            min_balance=parse_money(get_column(row, "VL_SALDO_MIN", "SALDO_MIN")),
+            redemption_quotation_days=_parse_days(get_column(row, "QT_DIA_CONVER_COTA")),
+            redemption_payment_days=_parse_days(get_column(row, "QT_DIA_PAGTO_RESGATE")),
+            target_audience=get_column(row, "PUBLICO_ALVO"),
+            investment_policy=get_column(row, "POLIT_INVEST"),
+            long_term_taxation=get_column(row, "TRIB_LPRAZO"),
         )
 
     return latest

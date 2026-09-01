@@ -100,6 +100,25 @@ def normalize_text(text: str | None) -> str:
     return _SPACE_RE.sub(" ", cleaned).strip()
 
 
+def get_column(row: dict, *names: str) -> str | None:
+    """Busca uma coluna tolerando variacoes de caixa/acento entre versoes.
+
+    A CVM renomeia colunas em producao (CNPJ_FUNDO virou CNPJ_FUNDO_CLASSE na
+    RCVM 175); quem le os CSVs dela lista as variantes conhecidas e deixa esta
+    funcao achar a que o arquivo do dia usa.
+    """
+    for name in names:
+        if name in row and row[name] not in (None, ""):
+            return str(row[name]).strip()
+    lowered = {normalize_text(k): v for k, v in row.items() if k}
+    for name in names:
+        key = normalize_text(name)
+        value = lowered.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return None
+
+
 def name_slug(name: str | None) -> str:
     """Slug estavel de nome de fundo, sem tokens genericos de forma juridica."""
     normalized = normalize_text(name)
