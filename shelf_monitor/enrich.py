@@ -54,6 +54,19 @@ KEY_CAPT_JANELA = "captacao_janela_meses"
 KEY_CAPT_DATA = "captacao_data_base"  # ISO do ultimo informe visto
 KEY_PL_INFORME = "pl_informe"  # PL do informe - mais fresco que o do cadastro
 KEY_COTISTAS = "cotistas_informe"
+# Rentabilidade pela cota, em FRACAO (0.12 = 12%), sobre meses fechados e na
+# mesma serie de cota; a janela realmente coberta esta em KEY_RENT_JANELA.
+KEY_RENT_1M = "rentabilidade_1m"
+KEY_RENT_3M = "rentabilidade_3m"
+KEY_RENT_12M = "rentabilidade_12m"
+KEY_RENT_JANELA = "rentabilidade_janela_meses"
+KEY_VOL_12M = "volatilidade_12m"  # anualizada, fracao
+KEY_VOL_DIAS = "volatilidade_12m_dias"  # pares diarios que a sustentam
+KEY_TICKET = "ticket_medio"  # PL / cotistas do informe mais fresco
+KEY_COTISTAS_VAR_1M = "cotistas_var_1m"
+KEY_COTISTAS_VAR_3M = "cotistas_var_3m"
+KEY_COTISTAS_VAR_12M = "cotistas_var_12m"
+KEY_COTISTAS_VAR_PCT_12M = "cotistas_var_pct_12m"
 
 
 @dataclass
@@ -85,6 +98,7 @@ class EnrichmentStats:
     managers_from_cvm: int = 0
     managers_inferred: int = 0
     flows_matched: int = 0
+    returns_matched: int = 0
     by_platform: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -98,6 +112,7 @@ class EnrichmentStats:
             "managers_from_cvm": self.managers_from_cvm,
             "managers_inferred": self.managers_inferred,
             "flows_matched": self.flows_matched,
+            "returns_matched": self.returns_matched,
             "by_platform": self.by_platform,
         }
 
@@ -366,6 +381,11 @@ def _combined_flow_summary(
     mesmo produto. Campos ausentes em todas as classes ficam ausentes; o
     as_of e o MINIMO das datas - a serie combinada so esta completa ate onde
     a classe mais atrasada informou.
+
+    Retorno, volatilidade e cota NAO se combinam (cotas de classes diferentes
+    nao se somam nem se ponderam sem inventar uma cota) e ficam None. A
+    variacao de cotistas so sai quando TODAS as classes a tem: um None nao
+    distingue "a classe nao existia" de "o informe faltou".
     """
     parts = [summaries[cnpj] for cnpj in cnpjs if cnpj in summaries]
     if not parts:
@@ -373,7 +393,7 @@ def _combined_flow_summary(
     if len(parts) == 1:
         return parts[0]
 
-    combined = FlowSummary(cnpj=parts[0].cnpj)
+    combined = FlowSummary(cnpj=parts[0].cnpj, window_end=parts[0].window_end)
     for name in ("net_1m", "net_3m", "net_12m", "current_partial", "net_worth"):
         values = [
             getattr(part, name) for part in parts if getattr(part, name) is not None
@@ -384,6 +404,15 @@ def _combined_flow_summary(
     combined.months_12m = max(part.months_12m for part in parts)
     dates = [part.as_of for part in parts if part.as_of is not None]
     combined.as_of = min(dates) if dates else None
+    for name in (
+        "shareholders_delta_1m",
+        "shareholders_delta_3m",
+        "shareholders_delta_12m",
+        "shareholders_start_12m",
+    ):
+        values = [getattr(part, name) for part in parts]
+        if all(value is not None for value in values):
+            setattr(combined, name, sum(values))
     return combined
 
 
@@ -429,7 +458,46 @@ def _stamp_flows(offer: FundOffer, summary: FlowSummary) -> bool:
         offer.extra[KEY_COTISTAS] = summary.shareholders
     if summary.as_of is not None:
         offer.extra[KEY_CAPT_DATA] = summary.as_of.isoformat()
+
+    # Rentabilidade e risco: so o que existe; a janela rotula o que ha.
+    returns = (
+        (KEY_RENT_1M, summary.return_1m),
+        (KEY_RENT_3M, summary.return_3m),
+        (KEY_RENT_12M, summary.return_12m),
+    )
+    if any(value is not None for _, value in returns):
+        for key, value in returns:
+            if value is not None:
+                offer.extra[key] = value
+        offer.extra[KEY_RENT_JANELA] = summary.quota_months
+        stamped = True
+    if summary.vol_12m is not None:
+        offer.extra[KEY_VOL_12M] = summary.vol_12m
+        offer.extra[KEY_VOL_DIAS] = summary.vol_obs
+
+    # Cotistas e ticket.
+    ticket = summary.ticket
+    if ticket is not None:
+        offer.extra[KEY_TICKET] = ticket
+    for key, value in (
+        (KEY_COTISTAS_VAR_1M, summary.shareholders_delta_1m),
+        (KEY_COTISTAS_VAR_3M, summary.shareholders_delta_3m),
+        (KEY_COTISTAS_VAR_12M, summary.shareholders_delta_12m),
+    ):
+        if value is not None:
+            offer.extra[key] = value
+    if summary.shareholders_delta_12m is not None and summary.shareholders_start_12m:
+        offer.extra[KEY_COTISTAS_VAR_PCT_12M] = (
+            summary.shareholders_delta_12m / summary.shareholders_start_12m
+        )
     return stamped
+
+
+def has_return(summary: FlowSummary) -> bool:
+    return any(
+        value is not None
+        for value in (summary.return_1m, summary.return_3m, summary.return_12m)
+    )
 
 
 # Tokens juridicos/genericos que nao carregam a marca de uma gestora.
@@ -515,7 +583,7 @@ def enrich_snapshots(
     stats = EnrichmentStats()
     for snapshot in snapshots:
         per_platform = stats.by_platform.setdefault(
-            snapshot.platform, {"total": 0, "matched": 0, "flows": 0}
+            snapshot.platform, {"total": 0, "matched": 0, "flows": 0, "returns": 0}
         )
         for offer in snapshot.funds:
             stats.total += 1
@@ -545,6 +613,9 @@ def enrich_snapshots(
                 if summary is not None and _stamp_flows(offer, summary):
                     stats.flows_matched += 1
                     per_platform["flows"] += 1
+                    if has_return(summary):
+                        stats.returns_matched += 1
+                        per_platform["returns"] += 1
 
     # Segunda passada: fundos que sobraram sem gestora (tabela do Itau sem
     # CNPJ, por exemplo) tentam a marca no prefixo do nome. Depois do join,

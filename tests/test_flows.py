@@ -519,15 +519,18 @@ class TestFlowsEnrichment(unittest.TestCase):
     CAPTACAO = "\n".join(
         [
             "cnpj_classe;mes;captacao;resgates;captacao_liquida;pl_fim_mes;"
-            "cotistas_fim_mes;data_ultimo_informe;dias_informados;mes_parcial",
+            "cotistas_fim_mes;data_ultimo_informe;dias_informados;mes_parcial;"
+            "cota_fim_mes;cota_serie;ret_diario_soma;ret_diario_soma2;ret_diario_n",
+            "63.446.494/0001-52;2026-06;0.00;0.00;0.00;"
+            "11000000.00;1150;2026-06-30;21;N;1.00;;0.05;0.0005;20",
             "63.446.494/0001-52;2026-07;1000000.00;250000.00;750000.00;"
-            "11584330.36;1200;2026-07-31;22;N",
+            "11584330.36;1200;2026-07-31;22;N;1.05;;0.05;0.0005;21",
             "63.446.494/0001-52;2026-08;100000.00;0.00;100000.00;"
-            "11684330.36;1210;2026-08-03;2;S",
+            "11684330.36;1210;2026-08-03;2;S;1.06;;0.01;0.0001;1",
             "77.777.777/0001-77;2026-07;500000.00;0.00;500000.00;"
-            "5000000.00;100;2026-07-31;22;N",
+            "5000000.00;100;2026-07-31;22;N;2.0;;0;0;0",
             "88.888.888/0001-88;2026-07;0.00;200000.00;-200000.00;"
-            "7000000.00;50;2026-07-30;21;N",
+            "7000000.00;50;2026-07-30;21;N;3.0;;0;0;0",
         ]
     )
 
@@ -567,10 +570,27 @@ class TestFlowsEnrichment(unittest.TestCase):
 
         self.assertAlmostEqual(fund.extra["captacao_liquida_1m"], 750_000.0)
         self.assertAlmostEqual(fund.extra["captacao_liquida_12m"], 750_000.0)
-        self.assertEqual(fund.extra["captacao_janela_meses"], 1)
+        self.assertEqual(fund.extra["captacao_janela_meses"], 2)
         self.assertEqual(fund.extra["captacao_data_base"], "2026-08-03")
         self.assertEqual(stats.flows_matched, 1)
         self.assertEqual(stats.by_platform["btg"]["flows"], 1)
+
+    def test_class_match_stamps_returns_ticket_and_shareholders(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="btg", name="A1 D30", cnpj="63446494000152")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertAlmostEqual(fund.extra["rentabilidade_1m"], 0.05)
+        self.assertNotIn("rentabilidade_12m", fund.extra)  # sem cota-base
+        self.assertEqual(fund.extra["rentabilidade_janela_meses"], 2)
+        self.assertNotIn("volatilidade_12m", fund.extra)  # 41 pares < 60
+        self.assertAlmostEqual(fund.extra["ticket_medio"], 11_684_330.36 / 1210)
+        self.assertEqual(fund.extra["cotistas_var_1m"], 50)
+        self.assertNotIn("cotistas_var_12m", fund.extra)
+        self.assertEqual(stats.returns_matched, 1)
+        self.assertEqual(stats.by_platform["btg"]["returns"], 1)
 
     def test_informe_net_worth_is_fresher_than_the_registry_one(self):
         from shelf_monitor.enrich import enrich_snapshots
@@ -599,6 +619,13 @@ class TestFlowsEnrichment(unittest.TestCase):
         # classe mais atrasada informou.
         self.assertEqual(fund.extra["captacao_data_base"], "2026-07-30")
         self.assertEqual(stats.flows_matched, 1)
+        # Cotas de classes diferentes nao se combinam: sem retorno no envelope;
+        # cotistas somam e o ticket deriva do PL/cotistas combinados.
+        self.assertNotIn("rentabilidade_1m", fund.extra)
+        self.assertNotIn("rentabilidade_janela_meses", fund.extra)
+        self.assertEqual(fund.extra["cotistas_informe"], 150)
+        self.assertAlmostEqual(fund.extra["ticket_medio"], 12_000_000.0 / 150)
+        self.assertEqual(stats.returns_matched, 0)
 
     def test_without_captacao_base_nothing_is_stamped(self):
         from shelf_monitor.enrich import enrich_snapshots
