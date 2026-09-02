@@ -67,6 +67,8 @@ def render_deck(config: Config, report: RunReport) -> Path:
         _costs(prs, platforms)
     _movements(prs, report)
     _flows(prs, data)
+    _performance(prs, data)
+    _investors(prs, data)
     _cvm_radar(prs, data)
     _methodology(prs, report, data)
 
@@ -406,6 +408,93 @@ def _flows(prs, data: dict):
                  _brl(item["net_12m"]), ", ".join(item.get("platforms") or [])]
                 for kind, item in movers],
                col_widths=[1.0, 4.6, 2.6, 1.5, 2.0], size=9)
+
+
+def _pct(value: object, digits: int = 1) -> str:
+    if value is None:
+        return "-"
+    return f"{float(value) * 100:.{digits}f}%".replace(".", ",")
+
+
+def _int(value: object) -> str:
+    return "-" if value is None else _fmt(int(round(float(value))))
+
+
+def _performance(prs, data: dict):
+    perf = data.get("performance") or {}
+    if not perf.get("available"):
+        return
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    cdi = ((perf.get("cdi") or {}).get("windows") or {}).get("12m")
+    subtitle = "Retorno pela cota em meses fechados"
+    if perf.get("window_end"):
+        subtitle += f" ate {perf['window_end']}"
+    subtitle += (
+        f"; CDI 12m na mesma janela: {_pct(cdi, 2)}" if cdi is not None
+        else "; CDI indisponivel (sem '% do CDI')"
+    )
+    _title(slide, "Rentabilidade e risco (CVM) - pela cota", subtitle)
+
+    platforms = [p for p in perf.get("platforms") or [] if p.get("matched")]
+    if platforms:
+        _table(slide, 0.6, 1.7, 8.0,
+               ["Casa", "Retorno 12m (mediana)", "Vol. 12m", "Acima do CDI", "Cobertura"],
+               [[p["label"], _pct(p["return_median"]), _pct(p["vol_median"]),
+                 "-" if p.get("above_cdi") is None else f"{p['above_cdi']} de {p['matched']}",
+                 f"{p['matched']}/{p['total']}"] for p in platforms],
+               col_widths=[2.0, 1.8, 1.2, 1.4, 1.2], size=10)
+
+    movers = [("maior", item) for item in (perf.get("top") or [])[:3]]
+    movers += [("menor", item) for item in (perf.get("bottom") or [])[:3]]
+    if movers:
+        y = 1.7 + 0.32 * (len(platforms) + 1) + 0.4
+        _text(slide, 0.6, y, 12, 0.4, "Extremos da prateleira (retorno 12m)", 13, bold=True)
+        _table(slide, 0.6, y + 0.45, 12.1,
+               ["Tipo", "Fundo", "Classe", "Retorno 12m", "Vol. 12m", "% do CDI", "Prateleiras"],
+               [[kind, item["name"][:52], (item.get("category") or "-")[:28],
+                 _pct(item["return_12m"]), _pct(item.get("vol_12m")),
+                 _pct(item.get("pct_cdi"), 0), ", ".join(item.get("platforms") or [])]
+                for kind, item in movers],
+               col_widths=[0.8, 3.8, 2.2, 1.2, 1.0, 1.0, 2.0], size=9)
+
+
+def _investors(prs, data: dict):
+    inv = data.get("investors") or {}
+    if not inv.get("available"):
+        return
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    _title(slide, "Cotistas e ticket medio (CVM)",
+           "PL por cotista do informe mais fresco; cotistas somam por prateleira; "
+           "variacao sobre meses fechados")
+
+    platforms = [p for p in inv.get("platforms") or [] if p.get("matched")]
+    if platforms:
+        _table(slide, 0.6, 1.7, 9.0,
+               ["Casa", "Cotistas", "Ticket mediano", "Ticket < R$ 10 mil",
+                "Var. cotistas 12m", "Cobertura"],
+               [[p["label"], _int(p["shareholders"]), _brl(p["ticket_median"]),
+                 _pct(p["small_ticket_share"], 0) if p.get("small_ticket_share") is not None else "-",
+                 "-" if p.get("delta_12m") is None else (
+                     _int(p["delta_12m"])
+                     + (f" ({_pct(p['delta_12m_pct'])})" if p.get("delta_12m_pct") is not None else "")
+                 ),
+                 f"{p['matched']}/{p['total']}"] for p in platforms],
+               col_widths=[1.8, 1.2, 1.5, 1.5, 1.8, 1.2], size=10)
+
+    movers = [("ganho", item) for item in (inv.get("top_gain") or [])[:3]]
+    movers += [("perda", item) for item in (inv.get("top_loss") or [])[:3]]
+    if movers:
+        y = 1.7 + 0.32 * (len(platforms) + 1) + 0.4
+        _text(slide, 0.6, y, 12, 0.4, "Maiores movimentos de cotistas (12m)", 13, bold=True)
+        _table(slide, 0.6, y + 0.45, 12.1,
+               ["Tipo", "Fundo", "Gestora", "Cotistas", "Var. 12m", "Ticket", "Prateleiras"],
+               [[kind, item["name"][:52], (item.get("manager") or "-")[:30],
+                 _int(item["shareholders"]), _int(item["delta_12m"]),
+                 _brl(item.get("ticket")), ", ".join(item.get("platforms") or [])]
+                for kind, item in movers],
+               col_widths=[0.8, 3.8, 2.4, 1.0, 1.0, 1.3, 1.8], size=9)
 
 
 def _cvm_radar(prs, data: dict):

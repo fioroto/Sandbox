@@ -618,6 +618,11 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         )
         for snapshot in snapshots
     ]
+    try:
+        benchmarks = cdi_block(config, last_closed_month(config))
+    except Exception as exc:  # noqa: BLE001 - benchmark nunca derruba a planilha
+        console.print(f"[yellow]Benchmark CDI falhou:[/] {_short(str(exc))}")
+        benchmarks = None
     path = render_spreadsheet(
         config,
         snapshots,
@@ -625,6 +630,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         path=Path(args.output) if args.output else None,
         diffs=diffs,
         enrichment=enrichment,
+        benchmarks=benchmarks,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()

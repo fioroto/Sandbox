@@ -801,6 +801,239 @@ function signedBars(mount, rows) {
   document.getElementById("flows-coverage").textContent = parts.join(" ");
 })(DATA.flows);
 
+// --- Rentabilidade e risco (CVM) --------------------------------------------
+function formatPct(value, digits = 1) {
+  if (value === null || value === undefined) return "–";
+  return (value * 100).toLocaleString("pt-BR",
+    { minimumFractionDigits: digits, maximumFractionDigits: digits }) + "%";
+}
+function formatInt(value) {
+  if (value === null || value === undefined) return "–";
+  return Math.round(value).toLocaleString("pt-BR");
+}
+
+/* Rampa com sinal: positivo na sequencial azul-verde ja validada, negativo em
+   tons de laranja (--s2). O texto escolhe tinta pelo passo, nunca pela serie. */
+const NEG_STEPS = ["#fbe3d9", "#f6bda6", "#ef8f66", "#eb6834", "#c94d22"];
+function heatColorSigned(value, maxAbs) {
+  if (value === null || value === undefined) return null;
+  const steps = value >= 0 ? SEQ_STEPS : NEG_STEPS;
+  const idx = Math.min(steps.length - 1,
+    Math.floor((Math.abs(value) / Math.max(maxAbs, 1e-9)) * steps.length));
+  const dark = value >= 0 ? idx >= 3 : idx >= 3;
+  return { fill: steps[idx], ink: dark ? "#ffffff" : "#0b0b0b" };
+}
+
+function signedMatrix(mount, rows, platforms, format) {
+  if (!rows.length) {
+    mount.innerHTML = '<p class="empty">Sem cota casada para montar a matriz.</p>';
+    return;
+  }
+  const maxAbs = Math.max(1e-9, ...rows.flatMap(r =>
+    Object.values(r.medians).filter(v => v !== null).map(Math.abs)));
+  const table = document.createElement("table");
+  table.className = "matrix";
+  const head = table.createTHead().insertRow();
+  const corner = document.createElement("th");
+  corner.className = "rowh"; corner.textContent = "Classe ANBIMA";
+  head.appendChild(corner);
+  platforms.forEach(p => {
+    const th = document.createElement("th"); th.textContent = p.label; head.appendChild(th);
+  });
+  const body = table.createTBody();
+  rows.forEach(rowData => {
+    const row = body.insertRow();
+    const rowLabel = row.insertCell();
+    rowLabel.className = "rowlabel"; rowLabel.textContent = rowData.category;
+    rowLabel.title = rowData.category;
+    platforms.forEach(p => {
+      const cell = row.insertCell();
+      const value = rowData.medians[p.platform_id];
+      const span = document.createElement("span");
+      span.className = "cell";
+      if (value === null || value === undefined) {
+        span.className = "cell zero"; span.textContent = "–";
+      } else {
+        const heat = heatColorSigned(value, maxAbs);
+        span.style.background = heat.fill; span.style.color = heat.ink;
+        span.textContent = format(value);
+        span.title = `${p.label} - ${rowData.category}: ${format(value)} ` +
+          `(${rowData.counts[p.platform_id] || 0} fundos)`;
+      }
+      cell.appendChild(span);
+    });
+  });
+  mount.innerHTML = "";
+  mount.appendChild(table);
+}
+
+(function renderPerformance(perf) {
+  const section = document.getElementById("performance-section");
+  if (!perf || !perf.available) {
+    section.innerHTML =
+      `<h2>Rentabilidade e risco (CVM)</h2>
+       <div class="note-box">Rentabilidade indisponivel nesta execucao: importe o informe
+       diario com <code>python -m shelf_monitor market</code> (uma base importada antes
+       da cota esta incompleta - o doctor avisa).</div>`;
+    return;
+  }
+  const withReturns = (perf.platforms || []).filter(p => p.matched > 0);
+  const cdi = perf.cdi && perf.cdi.windows ? perf.cdi.windows : null;
+  const cdi12 = cdi ? cdi["12m"] : null;
+  const windowLabel = (perf.window_end ? `meses fechados ate ${perf.window_end}` : "meses fechados") +
+    (perf.window_months ? ` (ate ${perf.window_months} meses de cota)` : "");
+
+  const tiles = [];
+  tiles.push(["CDI 12m (BCB)", cdi12 !== null && cdi12 !== undefined ? formatPct(cdi12, 2) : "–",
+    cdi12 !== null && cdi12 !== undefined ? "mesma janela dos retornos" : "serie do CDI ausente"]);
+  if (withReturns.length) {
+    const leader = [...withReturns].sort((a, b) => (b.return_median || 0) - (a.return_median || 0))[0];
+    tiles.push(["Casa lider (retorno mediano 12m)", leader.label, formatPct(leader.return_median)]);
+    if (cdi12 !== null && cdi12 !== undefined) {
+      const above = withReturns.reduce((a, p) => a + (p.above_cdi || 0), 0);
+      const total = withReturns.reduce((a, p) => a + p.matched, 0);
+      tiles.push(["Fundos acima do CDI", `${above} de ${total}`, "vitrines somadas, 12m"]);
+    }
+    const lowVol = [...withReturns].filter(p => p.vol_median !== null)
+      .sort((a, b) => a.vol_median - b.vol_median)[0];
+    if (lowVol) tiles.push(["Menor volatilidade mediana", lowVol.label, formatPct(lowVol.vol_median)]);
+  }
+  document.getElementById("performance-tiles").innerHTML = tiles.map(([label, value, note]) =>
+    `<div class="tile"><div class="label">${escapeHtml(label)}</div>` +
+    `<div class="value" style="font-size:22px">${escapeHtml(value)}</div>` +
+    `<div class="note">${escapeHtml(note)}</div></div>`).join("");
+
+  signedBars(document.getElementById("chart-performance"),
+    withReturns.map(p => ({
+      label: p.label, value: p.return_median, color: platformColor[p.platform_id],
+      display: formatPct(p.return_median),
+    })).sort((a, b) => (b.value || 0) - (a.value || 0)));
+
+  const q = (quart, key) => quart ? formatPct(quart[key]) : "–";
+  table2(document.getElementById("table-performance"),
+    ["Casa", "Retorno q1", "mediana", "q3", "Vol. mediana", "Acima do CDI", "Cobertura"],
+    withReturns.map(p => [
+      p.label, q(p.return_quartiles, "q1"), formatPct(p.return_median),
+      q(p.return_quartiles, "q3"), formatPct(p.vol_median),
+      p.above_cdi === null || p.above_cdi === undefined ? "–" : `${p.above_cdi} de ${p.matched}`,
+      `${p.matched}/${p.total}`,
+    ]));
+
+  signedMatrix(document.getElementById("matrix-performance"), perf.matrix || [],
+    withReturns, v => formatPct(v));
+
+  const cols = [
+    { key: "name", label: "Fundo" }, { key: "category", label: "Classe" },
+    { key: "manager", label: "Gestora" }, { key: "ret", label: "Retorno 12m", num: true },
+    { key: "vol", label: "Vol. 12m", num: true }, { key: "cdi", label: "% do CDI", num: true },
+    { key: "houses", label: "Prateleiras" },
+  ];
+  const row = m => ({
+    name: m.name, category: m.category || "–", manager: m.manager || "–",
+    ret: formatPct(m.return_12m), vol: formatPct(m.vol_12m),
+    cdi: m.pct_cdi === null || m.pct_cdi === undefined ? "–" : formatPct(m.pct_cdi, 0),
+    houses: (m.platforms || []).join(", "),
+  });
+  table(document.getElementById("table-performance-top"), cols, (perf.top || []).map(row));
+  table(document.getElementById("table-performance-bottom"), cols, (perf.bottom || []).map(row));
+
+  const parts = [];
+  const coverage = (perf.platforms || []).filter(p => p.total)
+    .map(p => `${p.label} ${p.matched}/${p.total}`).join(" · ");
+  if (coverage) parts.push(`Fundos da vitrine com cota casada: ${coverage}.`);
+  parts.push(`Janela: ${windowLabel}; retorno so na mesma serie de cota, mes corrente fora.`);
+  if (cdi12 === null || cdi12 === undefined) {
+    parts.push("Sem a serie do CDI nao ha '% do CDI' - rode python -m shelf_monitor market.");
+  }
+  document.getElementById("performance-coverage").textContent = parts.join(" ");
+})(DATA.performance);
+
+// --- Cotistas e ticket (CVM) ------------------------------------------------
+(function renderInvestors(inv) {
+  const section = document.getElementById("investors-section");
+  if (!inv || !inv.available) {
+    section.innerHTML =
+      `<h2>Cotistas e ticket medio (CVM)</h2>
+       <div class="note-box">Cotistas indisponiveis nesta execucao: importe o informe
+       diario com <code>python -m shelf_monitor market</code>.</div>`;
+    return;
+  }
+  const withData = (inv.platforms || []).filter(p => p.matched > 0);
+  const managers = inv.managers;
+
+  const tiles = [];
+  if (withData.length) {
+    const total = withData.reduce((a, p) => a + (p.shareholders || 0), 0);
+    tiles.push(["Cotistas nas vitrines", formatInt(total), "somados por prateleira"]);
+    const cheapest = [...withData].filter(p => p.ticket_median !== null)
+      .sort((a, b) => a.ticket_median - b.ticket_median)[0];
+    if (cheapest) tiles.push(["Menor ticket mediano", cheapest.label, formatBRL(cheapest.ticket_median)]);
+    const grower = [...withData].filter(p => p.delta_12m !== null)
+      .sort((a, b) => (b.delta_12m || 0) - (a.delta_12m || 0))[0];
+    if (grower) tiles.push(["Maior ganho de cotistas (12m)", grower.label,
+      `${grower.delta_12m > 0 ? "+" : ""}${formatInt(grower.delta_12m)}` +
+      (grower.delta_12m_pct !== null ? ` (${formatPct(grower.delta_12m_pct)})` : "")]);
+  }
+  if (managers && managers.market && managers.market.shareholders) {
+    tiles.push(["Cotistas no mercado", formatInt(managers.market.shareholders),
+      `${formatInt(managers.market.classes)} classes com informe`]);
+  }
+  document.getElementById("investors-tiles").innerHTML = tiles.map(([label, value, note]) =>
+    `<div class="tile"><div class="label">${escapeHtml(label)}</div>` +
+    `<div class="value" style="font-size:22px">${escapeHtml(value)}</div>` +
+    `<div class="note">${escapeHtml(note)}</div></div>`).join("");
+
+  horizontalBars(document.getElementById("chart-investors"),
+    withData.map(p => ({
+      label: p.label, value: p.shareholders || 0, color: platformColor[p.platform_id],
+      display: formatInt(p.shareholders),
+    })).sort((a, b) => b.value - a.value),
+    { ariaLabel: "Cotistas da vitrine por casa" });
+
+  table2(document.getElementById("table-investors"),
+    ["Casa", "Cotistas", "Ticket mediano", "Ticket < R$ 10 mil", "Var. cotistas 12m", "Cobertura"],
+    withData.map(p => [
+      p.label, formatInt(p.shareholders), formatBRL(p.ticket_median),
+      p.small_ticket_share === null ? "–" : formatPct(p.small_ticket_share, 0),
+      p.delta_12m === null ? "–" : `${p.delta_12m > 0 ? "+" : ""}${formatInt(p.delta_12m)}` +
+        (p.delta_12m_pct !== null ? ` (${formatPct(p.delta_12m_pct)})` : ""),
+      `${p.matched}/${p.total}`,
+    ]));
+
+  const housesMount = document.getElementById("table-investors-houses");
+  if (managers && (managers.houses || []).length) {
+    table2(housesMount, ["Casa", "Cotistas", "Var. 12m", "Classes com base"],
+      managers.houses.map(h => [
+        h.label, formatInt(h.shareholders), formatInt(h.shareholders_delta_12m),
+        `${h.classes_with_delta || 0}/${h.classes}`,
+      ]));
+  } else {
+    housesMount.innerHTML = '<p class="empty">Visao de gestoras indisponivel.</p>';
+  }
+
+  const cols = [
+    { key: "name", label: "Fundo" }, { key: "manager", label: "Gestora" },
+    { key: "shareholders", label: "Cotistas", num: true },
+    { key: "delta", label: "Var. 12m", num: true }, { key: "ticket", label: "Ticket", num: true },
+    { key: "houses", label: "Prateleiras" },
+  ];
+  const row = m => ({
+    name: m.name, manager: m.manager || "–", shareholders: formatInt(m.shareholders),
+    delta: `${m.delta_12m > 0 ? "+" : ""}${formatInt(m.delta_12m)}` +
+      (m.delta_pct_12m !== null && m.delta_pct_12m !== undefined ? ` (${formatPct(m.delta_pct_12m)})` : ""),
+    ticket: formatBRL(m.ticket), houses: (m.platforms || []).join(", "),
+  });
+  table(document.getElementById("table-investors-gain"), cols, (inv.top_gain || []).map(row));
+  table(document.getElementById("table-investors-loss"), cols, (inv.top_loss || []).map(row));
+
+  const parts = [];
+  const coverage = (inv.platforms || []).filter(p => p.total)
+    .map(p => `${p.label} ${p.matched}/${p.total}`).join(" · ");
+  if (coverage) parts.push(`Fundos da vitrine com cotistas no informe: ${coverage}.`);
+  if (inv.as_of) parts.push(`Cotistas e ticket ate ${inv.as_of}; variacao sobre meses fechados.`);
+  document.getElementById("investors-coverage").textContent = parts.join(" ");
+})(DATA.investors);
+
 // --- Radar CVM --------------------------------------------------------------
 const cvm = DATA.cvm;
 if (cvm.available && cvm.houses && cvm.houses.length) {
@@ -1014,6 +1247,61 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <details><summary>Maiores resgates da prateleira (12m)</summary>
       <div id="table-flows-outflow"></div></details>
     <div class="coverage" id="flows-coverage"></div>
+  </section>
+
+  <section class="card" id="performance-section">
+    <h2>Rentabilidade e risco (CVM) &mdash; pela cota</h2>
+    <p class="card-sub">Retorno pela cota do informe diario em meses fechados, sobre a mesma
+      serie de cota; volatilidade anualizada dos retornos diarios. "% do CDI" so aparece
+      quando a serie do BCB esta em disco. Somente fundos da vitrine com cota casada
+      &mdash; a cobertura esta no rodape.</p>
+    <div class="tiles" id="performance-tiles"></div>
+    <div class="subgrid" style="margin-top:8px">
+      <div>
+        <h3>Retorno 12m mediano por casa</h3>
+        <p class="card-sub">Barras para a esquerda sao retorno negativo.</p>
+        <div class="chart-scroll" id="chart-performance"></div>
+      </div>
+      <div>
+        <h3>Retorno, risco e CDI por casa</h3>
+        <p class="card-sub">Mediana e quartis - a forma da prateleira, nao a media.</p>
+        <div id="table-performance"></div>
+      </div>
+    </div>
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Matriz casa &times; classe ANBIMA
+      &mdash; retorno 12m mediano</h3>
+    <p class="card-sub">Verde = retorno positivo, laranja = negativo; mais escuro = maior.</p>
+    <div class="matrix-scroll" id="matrix-performance"></div>
+    <details><summary>Maiores retornos da prateleira (12m)</summary>
+      <div id="table-performance-top"></div></details>
+    <details><summary>Menores retornos da prateleira (12m)</summary>
+      <div id="table-performance-bottom"></div></details>
+    <div class="coverage" id="performance-coverage"></div>
+  </section>
+
+  <section class="card" id="investors-section">
+    <h2>Cotistas e ticket medio (CVM)</h2>
+    <p class="card-sub">Cotistas e PL por cotista do informe diario: o porte real de cada
+      vitrine, independente do minimo anunciado. Cotistas somam por prateleira (o mesmo
+      fundo em duas casas conta nas duas); os extremos deduplicam por CNPJ.</p>
+    <div class="tiles" id="investors-tiles"></div>
+    <div class="subgrid" style="margin-top:8px">
+      <div>
+        <h3>Cotistas da vitrine por casa</h3>
+        <div class="chart-scroll" id="chart-investors"></div>
+      </div>
+      <div>
+        <h3>Ticket e variacao por casa</h3>
+        <div id="table-investors"></div>
+      </div>
+    </div>
+    <details><summary>Gestoras da watchlist &mdash; cotistas no mercado inteiro</summary>
+      <div id="table-investors-houses"></div></details>
+    <details><summary>Maiores ganhos de cotistas (12m)</summary>
+      <div id="table-investors-gain"></div></details>
+    <details><summary>Maiores perdas de cotistas (12m)</summary>
+      <div id="table-investors-loss"></div></details>
+    <div class="coverage" id="investors-coverage"></div>
   </section>
 
   <section class="card" id="cvm-section">

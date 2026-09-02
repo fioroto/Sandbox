@@ -1110,5 +1110,162 @@ class TestFlowsRendering(unittest.TestCase):
         self.assertTrue(any("Captacao (CVM)" in t for t in texts))
 
 
+class TestPerformanceRendering(unittest.TestCase):
+    """Rentabilidade e cotistas nas quatro superficies."""
+
+    def _snapshot(self, platform, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def _report(self, with_cdi=True):
+        from datetime import datetime
+
+        from shelf_monitor.diff import diff_shelf
+        from shelf_monitor.models import FundOffer, RunReport
+
+        funds = [
+            FundOffer(
+                platform="btg", name="Alpha Rentavel", cnpj="11111111000111",
+                manager_name="Gestora Alpha",
+                extra={
+                    "classificacao_anbima": "Multimercados Macro",
+                    "rentabilidade_1m": 0.01, "rentabilidade_12m": 0.15,
+                    "rentabilidade_janela_meses": 13, "volatilidade_12m": 0.08,
+                    "volatilidade_12m_dias": 240, "captacao_data_base": "2026-07-31",
+                    "captacao_janela_meses": 12, "pl_informe": 10_200_000.0,
+                    "cotistas_informe": 1200, "ticket_medio": 8_500.0,
+                    "cotistas_var_12m": 200, "cotistas_var_pct_12m": 0.2,
+                },
+            ),
+            FundOffer(
+                platform="btg", name="Beta Perdedor", cnpj="22222222000122",
+                extra={
+                    "classificacao_anbima": "Acoes Livre",
+                    "rentabilidade_12m": -0.05, "rentabilidade_janela_meses": 13,
+                    "captacao_data_base": "2026-07-31", "captacao_janela_meses": 12,
+                    "pl_informe": 36_000_000.0,
+                    "cotistas_informe": 300, "ticket_medio": 120_000.0,
+                    "cotistas_var_12m": -40, "cotistas_var_pct_12m": -40 / 340,
+                },
+            ),
+        ]
+        snapshot = self._snapshot("btg", funds)
+        managers = {
+            "as_of": "2026-08-29", "window_end": "2026-07", "window_months": 12,
+            "market": {"net_3m": 0, "net_12m": 0, "pl": 9e12, "classes": 70000,
+                       "shareholders": 30_000_000, "shareholders_delta_12m": 1_000_000,
+                       "classes_with_delta": 60000},
+            "houses": [{
+                "house": "btg", "label": "BTG Pactual", "net_3m": 0, "net_12m": 0, "pl": 3e11,
+                "classes": 900, "shareholders": 2_000_000, "shareholders_delta_12m": 50_000,
+                "classes_with_delta": 800, "managers": [],
+            }],
+            "coverage": {"classes_com_gestora": 68000, "classes_total": 70000},
+        }
+        benchmarks = (
+            {"source": "BCB SGS 12", "window_end": "2026-07", "last_rate": "2026-07-31",
+             "windows": {"1m": 0.009, "3m": 0.028, "12m": 0.11}}
+            if with_cdi else None
+        )
+        return RunReport(
+            generated_at=datetime(2026, 8, 31), snapshots=[snapshot],
+            shelf_diffs=[diff_shelf(snapshot, None)], flows=managers, benchmarks=benchmarks,
+        )
+
+    def test_markdown_has_both_sections_and_cdi_only_with_benchmark(self):
+        from shelf_monitor.report.digest import render_markdown
+
+        markdown = render_markdown(self._report())
+        self.assertIn("## Rentabilidade e risco (CVM)", markdown)
+        self.assertIn("## Cotistas e ticket (CVM)", markdown)
+        self.assertIn("Alpha Rentavel", markdown)
+        self.assertIn("do CDI", markdown)
+        self.assertIn("Acima do CDI", markdown)
+        self.assertIn("2.000.000", markdown)  # cotistas da watchlist
+
+        without = render_markdown(self._report(with_cdi=False))
+        self.assertIn("CDI indisponivel", without)
+        self.assertNotIn("Acima do CDI", without)
+
+    def test_digest_html_sections_have_no_script(self):
+        from shelf_monitor.report.digest import render_html
+
+        html = render_html(self._report())
+        self.assertIn("Rentabilidade e risco (CVM)", html)
+        self.assertIn("Cotistas e ticket (CVM)", html)
+        self.assertNotIn("<script", html)
+
+    def test_dashboard_embeds_both_blocks(self):
+        import json
+
+        from shelf_monitor.report.dashboard import render_dashboard
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        content = render_dashboard(config, self._report()).read_text(encoding="utf-8")
+        self.assertIn('id="performance-section"', content)
+        self.assertIn('id="investors-section"', content)
+        start = content.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(content[start:content.index("</script>", start)])
+        self.assertTrue(data["performance"]["available"])
+        self.assertAlmostEqual(data["performance"]["cdi"]["windows"]["12m"], 0.11)
+        self.assertTrue(data["investors"]["available"])
+        self.assertEqual(data["investors"]["platforms"][0]["shareholders"], 1500)
+
+    def test_spreadsheet_gains_the_performance_tab_and_columns(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        report = self._report()
+        path = render_spreadsheet(config, report.snapshots, benchmarks=report.benchmarks)
+        workbook = load_workbook(path)
+
+        self.assertIn("Rentabilidade", workbook.sheetnames)
+        sheet = workbook["Rentabilidade"]
+        self.assertAlmostEqual(sheet.cell(row=1, column=2).value, 0.11)
+        self.assertEqual(sheet.cell(row=6, column=2).value, "Alpha Rentavel")
+        self.assertTrue(str(sheet.cell(row=6, column=9).value).startswith("=IF("))
+        self.assertIn("$B$1", str(sheet.cell(row=6, column=9).value))
+
+        headers = [cell.value for cell in workbook["Consolidado"][1]]
+        for name in ("Rentab. 12m", "Vol. 12m", "Ticket medio (R$)", "Cotistas"):
+            self.assertIn(name, headers)
+        flows_headers = [cell.value for cell in workbook["Captacao"][1]]
+        self.assertIn("Cotistas var. 12m (%)", flows_headers)
+
+    def test_deck_renders_both_slides(self):
+        try:
+            from pptx import Presentation
+
+            from shelf_monitor.report.deck import render_deck
+        except ImportError:
+            self.skipTest("python-pptx nao instalado")
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        path = render_deck(config, self._report())
+        texts = []
+        for slide in Presentation(path).slides:
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    texts.append(shape.text_frame.text)
+        self.assertTrue(any("Rentabilidade e risco (CVM)" in t for t in texts))
+        self.assertTrue(any("Cotistas e ticket medio (CVM)" in t for t in texts))
+
+
 if __name__ == "__main__":
     unittest.main()

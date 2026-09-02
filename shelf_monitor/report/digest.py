@@ -18,7 +18,11 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
-from shelf_monitor.report.aggregate import build_flows_block
+from shelf_monitor.report.aggregate import (
+    build_flows_block,
+    build_investors_block,
+    build_performance_block,
+)
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -345,6 +349,173 @@ def _md_flows_section(report: RunReport) -> list[str]:
     return lines
 
 
+def _format_pct(value: float | None, digits: int = 1) -> str:
+    """Fracao -> percentual pt-BR: 0.1234 -> '12,3%'."""
+    if value is None:
+        return "-"
+    return f"{value * 100:.{digits}f}%".replace(".", ",")
+
+
+def _format_int(value: int | float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{int(round(value)):,}".replace(",", ".")
+
+
+def _performance_intro(block: dict) -> str:
+    intro = "Retorno pela cota do informe diario, em meses fechados"
+    if block.get("window_end"):
+        intro += f" ate {block['window_end']}"
+    if block.get("window_months"):
+        intro += f" (ate {block['window_months']} meses de cota)"
+    cdi = block.get("cdi") or {}
+    cdi_12m = (cdi.get("windows") or {}).get("12m")
+    if cdi_12m is not None:
+        intro += f". CDI de 12 meses na mesma janela: {_format_pct(cdi_12m, 2)} (BCB)."
+    else:
+        intro += ". CDI indisponivel: sem '% do CDI' nesta execucao."
+    return intro
+
+
+def _investors_intro(block: dict) -> str:
+    intro = "Cotistas e PL por cotista (ticket medio) do informe diario"
+    if block.get("as_of"):
+        intro += f", ate {block['as_of']}"
+    if block.get("window_months"):
+        intro += f"; variacao de cotistas sobre ate {block['window_months']} meses fechados"
+    return intro + "."
+
+
+def _mover_line(item: dict, value: str, extra: str = "") -> str:
+    manager = f" ({item['manager']})" if item.get("manager") else ""
+    houses = ", ".join(item.get("platforms") or [])
+    return f"- {item['name']}{manager}: {value}{extra} - {houses}"
+
+
+def _md_performance_section(report: RunReport) -> list[str]:
+    block = build_performance_block(report)
+    lines = ["## Rentabilidade e risco (CVM)", ""]
+
+    if not block["available"]:
+        lines += [
+            "Rentabilidade indisponivel: importe o informe diario com "
+            "`python -m shelf_monitor market` (uma base importada antes da cota "
+            "esta incompleta - o doctor avisa).",
+            "",
+        ]
+        return lines
+
+    lines += [_performance_intro(block), ""]
+    has_cdi = any(p.get("above_cdi") is not None for p in block["platforms"])
+    platforms = [p for p in block["platforms"] if p["matched"]]
+    if platforms:
+        header = "| Casa | Retorno 12m (mediana) | Vol. 12m (mediana) |"
+        divider = "|---|---:|---:|"
+        if has_cdi:
+            header += " Acima do CDI |"
+            divider += "---:|"
+        lines.append(header + " Cobertura |")
+        lines.append(divider + "---:|")
+        for p in platforms:
+            row = (
+                f"| {p['label']} | {_format_pct(p['return_median'])} | "
+                f"{_format_pct(p['vol_median'])} |"
+            )
+            if has_cdi:
+                row += f" {p['above_cdi']} de {p['matched']} |"
+            lines.append(row + f" {p['matched']}/{p['total']} |")
+        lines.append("")
+
+    for title, movers in (
+        ("**Maiores retornos da prateleira (12m)**", block["top"][:5]),
+        ("**Menores retornos da prateleira (12m)**", block["bottom"][:5]),
+    ):
+        if not movers:
+            continue
+        lines += [title, ""]
+        for item in movers:
+            extra = ""
+            if item.get("vol_12m") is not None:
+                extra += f", vol. {_format_pct(item['vol_12m'])}"
+            if item.get("pct_cdi") is not None:
+                extra += f", {_format_pct(item['pct_cdi'], 0)} do CDI"
+            lines.append(_mover_line(item, _format_pct(item["return_12m"]), extra))
+        lines.append("")
+
+    return lines
+
+
+def _md_investors_section(report: RunReport) -> list[str]:
+    block = build_investors_block(report)
+    lines = ["## Cotistas e ticket (CVM)", ""]
+
+    if not block["available"]:
+        lines += [
+            "Cotistas indisponiveis: importe o informe diario com "
+            "`python -m shelf_monitor market`.",
+            "",
+        ]
+        return lines
+
+    lines += [_investors_intro(block), ""]
+    platforms = [p for p in block["platforms"] if p["matched"]]
+    if platforms:
+        lines.append(
+            "| Casa | Cotistas | Ticket mediano | Ticket < R$ 10 mil | "
+            "Var. cotistas 12m | Cobertura |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|")
+        for p in platforms:
+            share = (
+                _format_pct(p["small_ticket_share"], 0)
+                if p["small_ticket_share"] is not None
+                else "-"
+            )
+            delta = "-"
+            if p["delta_12m"] is not None:
+                delta = _format_int(p["delta_12m"])
+                if p["delta_12m_pct"] is not None:
+                    delta += f" ({_format_pct(p['delta_12m_pct'])})"
+            lines.append(
+                f"| {p['label']} | {_format_int(p['shareholders'])} | "
+                f"{_format_brl(p['ticket_median'])} | {share} | {delta} | "
+                f"{p['matched']}/{p['total']} |"
+            )
+        lines.append("")
+
+    for title, movers in (
+        ("**Maiores ganhos de cotistas (12m)**", block["top_gain"][:5]),
+        ("**Maiores perdas de cotistas (12m)**", block["top_loss"][:5]),
+    ):
+        if not movers:
+            continue
+        lines += [title, ""]
+        for item in movers:
+            value = f"{'+' if item['delta_12m'] > 0 else ''}{_format_int(item['delta_12m'])} cotistas"
+            extra = ""
+            if item.get("delta_pct_12m") is not None:
+                extra += f" ({_format_pct(item['delta_pct_12m'])})"
+            if item.get("ticket") is not None:
+                extra += f", ticket {_format_brl(item['ticket'])}"
+            lines.append(_mover_line(item, value, extra))
+        lines.append("")
+
+    managers = block["managers"]
+    if managers and managers.get("houses"):
+        lines += ["**Gestoras da watchlist - cotistas no mercado inteiro**", ""]
+        lines.append("| Casa | Cotistas | Var. 12m | Classes com base |")
+        lines.append("|---|---:|---:|---:|")
+        for house in managers["houses"]:
+            lines.append(
+                f"| {house['label']} | {_format_int(house.get('shareholders'))} | "
+                f"{_format_int(house.get('shareholders_delta_12m'))} | "
+                f"{house.get('classes_with_delta', 0)}/{house['classes']} |"
+            )
+        lines.append("")
+
+    return lines
+
+
 def render_markdown(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
@@ -377,6 +548,8 @@ def render_markdown(report: RunReport) -> str:
     lines += _md_cvm_section(report.cvm_diff, report)
 
     lines += _md_flows_section(report)
+    lines += _md_performance_section(report)
+    lines += _md_investors_section(report)
 
     lines += ["## Prateleiras", ""]
     for diff in report.shelf_diffs:
@@ -645,6 +818,149 @@ def _html_flows_section(report: RunReport) -> str:
     return "".join(parts)
 
 
+def _html_table(headers: list[tuple[str, bool]], rows: list[list[str]]) -> str:
+    """Tabela de e-mail: (rotulo, numerico) por coluna; celulas ja escapadas."""
+    head = "".join(
+        f'<th style="{_TH}{"text-align:right;" if numeric else ""}">{_esc(label)}</th>'
+        for label, numeric in headers
+    )
+    body = "".join(
+        "<tr>"
+        + "".join(
+            f'<td style="{_TD}{"text-align:right;" if headers[i][1] else ""}">{cell}</td>'
+            for i, cell in enumerate(row)
+        )
+        + "</tr>"
+        for row in rows
+    )
+    return f'<table style="{_TABLE}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _html_movers(title: str, items: list[str]) -> str:
+    if not items:
+        return ""
+    return (
+        f'<p style="{_P}margin-bottom:6px;"><strong>{title}</strong></p>'
+        + _html_list(items, len(items))
+    )
+
+
+def _html_performance_section(report: RunReport) -> str:
+    block = build_performance_block(report)
+    parts = [f'<h2 style="{_H2}">Rentabilidade e risco (CVM)</h2>']
+    if not block["available"]:
+        parts.append(
+            f'<p style="{_P}">Rentabilidade indisponivel: importe o informe diario '
+            "com <code>python -m shelf_monitor market</code>.</p>"
+        )
+        return "".join(parts)
+
+    parts.append(f'<p style="{_P}">{_esc(_performance_intro(block))}</p>')
+    has_cdi = any(p.get("above_cdi") is not None for p in block["platforms"])
+    platforms = [p for p in block["platforms"] if p["matched"]]
+    if platforms:
+        headers = [("Casa", False), ("Retorno 12m (mediana)", True), ("Vol. 12m", True)]
+        if has_cdi:
+            headers.append(("Acima do CDI", True))
+        headers.append(("Cobertura", True))
+        rows = []
+        for p in platforms:
+            row = [_esc(p["label"]), _esc(_format_pct(p["return_median"])),
+                   _esc(_format_pct(p["vol_median"]))]
+            if has_cdi:
+                row.append(f"{p['above_cdi']} de {p['matched']}")
+            row.append(f"{p['matched']}/{p['total']}")
+            rows.append(row)
+        parts.append(_html_table(headers, rows))
+
+    for title, movers in (
+        ("Maiores retornos da prateleira (12m)", block["top"][:5]),
+        ("Menores retornos da prateleira (12m)", block["bottom"][:5]),
+    ):
+        items = []
+        for item in movers:
+            extra = ""
+            if item.get("vol_12m") is not None:
+                extra += f", vol. {_format_pct(item['vol_12m'])}"
+            if item.get("pct_cdi") is not None:
+                extra += f", {_format_pct(item['pct_cdi'], 0)} do CDI"
+            items.append(
+                _esc(item["name"])
+                + (f" ({_esc(item['manager'])})" if item.get("manager") else "")
+                + f": <strong>{_esc(_format_pct(item['return_12m']))}</strong>{_esc(extra)}"
+                + f" <span style='color:#898781;'>{_esc(', '.join(item['platforms']))}</span>"
+            )
+        parts.append(_html_movers(title, items))
+    return "".join(parts)
+
+
+def _html_investors_section(report: RunReport) -> str:
+    block = build_investors_block(report)
+    parts = [f'<h2 style="{_H2}">Cotistas e ticket (CVM)</h2>']
+    if not block["available"]:
+        parts.append(
+            f'<p style="{_P}">Cotistas indisponiveis: importe o informe diario '
+            "com <code>python -m shelf_monitor market</code>.</p>"
+        )
+        return "".join(parts)
+
+    parts.append(f'<p style="{_P}">{_esc(_investors_intro(block))}</p>')
+    platforms = [p for p in block["platforms"] if p["matched"]]
+    if platforms:
+        rows = []
+        for p in platforms:
+            delta = "-"
+            if p["delta_12m"] is not None:
+                delta = _format_int(p["delta_12m"])
+                if p["delta_12m_pct"] is not None:
+                    delta += f" ({_format_pct(p['delta_12m_pct'])})"
+            rows.append([
+                _esc(p["label"]), _format_int(p["shareholders"]),
+                _esc(_format_brl(p["ticket_median"])),
+                _format_pct(p["small_ticket_share"], 0) if p["small_ticket_share"] is not None else "-",
+                _esc(delta), f"{p['matched']}/{p['total']}",
+            ])
+        parts.append(_html_table(
+            [("Casa", False), ("Cotistas", True), ("Ticket mediano", True),
+             ("Ticket < R$ 10 mil", True), ("Var. cotistas 12m", True), ("Cobertura", True)],
+            rows,
+        ))
+
+    for title, movers in (
+        ("Maiores ganhos de cotistas (12m)", block["top_gain"][:5]),
+        ("Maiores perdas de cotistas (12m)", block["top_loss"][:5]),
+    ):
+        items = []
+        for item in movers:
+            sign = "+" if item["delta_12m"] > 0 else ""
+            extra = ""
+            if item.get("delta_pct_12m") is not None:
+                extra += f" ({_format_pct(item['delta_pct_12m'])})"
+            if item.get("ticket") is not None:
+                extra += f", ticket {_format_brl(item['ticket'])}"
+            items.append(
+                _esc(item["name"])
+                + (f" ({_esc(item['manager'])})" if item.get("manager") else "")
+                + f": <strong>{sign}{_format_int(item['delta_12m'])} cotistas</strong>{_esc(extra)}"
+                + f" <span style='color:#898781;'>{_esc(', '.join(item['platforms']))}</span>"
+            )
+        parts.append(_html_movers(title, items))
+
+    managers = block["managers"]
+    if managers and managers.get("houses"):
+        parts.append(
+            f'<p style="{_P}margin-bottom:6px;"><strong>Gestoras da watchlist &mdash; '
+            "cotistas no mercado inteiro</strong></p>"
+        )
+        parts.append(_html_table(
+            [("Casa", False), ("Cotistas", True), ("Var. 12m", True), ("Classes com base", True)],
+            [[_esc(h["label"]), _format_int(h.get("shareholders")),
+              _format_int(h.get("shareholders_delta_12m")),
+              f"{h.get('classes_with_delta', 0)}/{h['classes']}"] for h in managers["houses"]],
+        ))
+    return "".join(parts)
+
+
 def render_html(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     sentence, is_alert = _summary_sentence(report)
@@ -692,6 +1008,10 @@ def render_html(report: RunReport) -> str:
   {_html_cvm_section(report)}
 
   {_html_flows_section(report)}
+
+  {_html_performance_section(report)}
+
+  {_html_investors_section(report)}
 
   <h2 style="{_H2}">Prateleiras</h2>
   {shelf_sections}

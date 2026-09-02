@@ -25,10 +25,18 @@ from shelf_monitor.enrich import (
     KEY_CAPT_DATA,
     KEY_CAPT_JANELA,
     KEY_COTISTAS,
+    KEY_COTISTAS_VAR_12M,
+    KEY_COTISTAS_VAR_PCT_12M,
     KEY_CVM,
     KEY_GESTOR_OFICIAL,
     KEY_PL_INFORME,
+    KEY_RENT_1M,
+    KEY_RENT_3M,
+    KEY_RENT_12M,
+    KEY_RENT_JANELA,
     KEY_SITUACAO,
+    KEY_TICKET,
+    KEY_VOL_12M,
 )
 from shelf_monitor.models import (
     AssetClass,
@@ -90,7 +98,16 @@ _COLUMNS: list[tuple[str, int, object]] = [
     # de exclusividade deriva de len(_COLUMNS).
     ("Captacao liq. 3m (R$)", 20, lambda f: f.extra.get(KEY_CAPT_3M)),
     ("Captacao liq. 12m (R$)", 21, lambda f: f.extra.get(KEY_CAPT_12M)),
+    ("Rentab. 12m", 13, lambda f: f.extra.get(KEY_RENT_12M)),
+    ("Vol. 12m", 11, lambda f: f.extra.get(KEY_VOL_12M)),
+    ("Ticket medio (R$)", 18, lambda f: f.extra.get(KEY_TICKET)),
+    ("Cotistas", 12, lambda f: f.extra.get(KEY_COTISTAS)),
 ]
+
+
+def _col_index(header: str) -> int:
+    """Indice 1-based de uma coluna pelo cabecalho - imune a reordenacoes."""
+    return next(i for i, (name, _, _) in enumerate(_COLUMNS, start=1) if name == header)
 
 SOURCE_LABELS = {
     "open-finance": "Open Finance",
@@ -111,9 +128,14 @@ _COL_PERF_FEE = 11
 _COL_QUOTATION = 13
 _COL_PAYMENT = 14
 _COL_GRACE = 15
-_COL_CAPT_3M = len(_COLUMNS) - 1
-_COL_CAPT_12M = len(_COLUMNS)
+_COL_CAPT_3M = _col_index("Captacao liq. 3m (R$)")
+_COL_CAPT_12M = _col_index("Captacao liq. 12m (R$)")
+_COL_RENT_12M = _col_index("Rentab. 12m")
+_COL_VOL_12M = _col_index("Vol. 12m")
+_COL_TICKET = _col_index("Ticket medio (R$)")
+_COL_COTISTAS = _col_index("Cotistas")
 _COL_EXCLUSIVE = len(_COLUMNS) + 1
+_PCT_FRACTION = "0.00%"
 
 
 def _yes_no(value: bool | None) -> str:
@@ -218,8 +240,11 @@ def _style_row(sheet: Worksheet, row: int, columns: int) -> None:
     sheet.cell(row=row, column=_COL_PERF_FEE).number_format = _PCT
     for col in (_COL_QUOTATION, _COL_PAYMENT, _COL_GRACE):
         sheet.cell(row=row, column=col).number_format = _INT
-    for col in (_COL_CAPT_3M, _COL_CAPT_12M):
+    for col in (_COL_CAPT_3M, _COL_CAPT_12M, _COL_TICKET):
         sheet.cell(row=row, column=col).number_format = _MONEY
+    for col in (_COL_RENT_12M, _COL_VOL_12M):
+        sheet.cell(row=row, column=col).number_format = _PCT_FRACTION
+    sheet.cell(row=row, column=_COL_COTISTAS).number_format = _INT
 
 
 def _add_consolidated(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> int:
@@ -408,8 +433,9 @@ def _add_flows_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None
         "Plataforma", "Fundo", "CNPJ", "Gestora",
         "Captacao liq. 1m (R$)", "Captacao liq. 3m (R$)", "Captacao liq. 12m (R$)",
         "Janela (meses fechados)", "PL informe (R$)", "Cotistas", "Data-base",
+        "Ticket medio (R$)", "Cotistas var. 12m", "Cotistas var. 12m (%)",
     ]
-    widths = [20, 52, 20, 34, 20, 20, 21, 21, 20, 12, 12]
+    widths = [20, 52, 20, 34, 20, 20, 21, 21, 20, 12, 12, 18, 17, 19]
     for index, (name, width) in enumerate(zip(headers, widths), start=1):
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
@@ -427,15 +453,18 @@ def _add_flows_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None
             fund.extra.get(KEY_CAPT_12M), fund.extra.get(KEY_CAPT_JANELA),
             fund.extra.get(KEY_PL_INFORME), fund.extra.get(KEY_COTISTAS),
             fund.extra.get(KEY_CAPT_DATA) or "",
+            fund.extra.get(KEY_TICKET), fund.extra.get(KEY_COTISTAS_VAR_12M),
+            fund.extra.get(KEY_COTISTAS_VAR_PCT_12M),
         ]
         for index, value in enumerate(values, start=1):
             cell = sheet.cell(row=row, column=index, value=value)
             cell.font = _BODY_FONT
             cell.border = _BORDER
-        for col in (5, 6, 7, 9):
+        for col in (5, 6, 7, 9, 12):
             sheet.cell(row=row, column=col).number_format = _MONEY
-        for col in (8, 10):
+        for col in (8, 10, 13):
             sheet.cell(row=row, column=col).number_format = _INT
+        sheet.cell(row=row, column=14).number_format = _PCT_FRACTION
         row += 1
 
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row - 1}"
@@ -447,6 +476,88 @@ def _add_flows_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None
         "de classe. As janelas somam apenas MESES FECHADOS - o mes corrente e parcial e",
         "fica fora; 'Janela' diz quantos meses a serie realmente cobre. Fundo anunciado",
         "pelo CNPJ do envelope soma a captacao das classes dele.",
+    ):
+        sheet.cell(row=note, column=1, value=text).font = _NOTE_FONT
+        note += 1
+
+
+def _add_performance_sheet(
+    workbook: Workbook, snapshots: list[ShelfSnapshot], benchmarks: dict | None
+) -> None:
+    """Aba "Rentabilidade": retorno pela cota, risco e "% do CDI" como formula.
+
+    O CDI fica em celulas fixas no topo (B1:B3) e a coluna "% do CDI 12m" e
+    uma formula sobre elas: quem corrigir o CDI ou filtrar a aba ve o
+    percentual acompanhar. Sem benchmark as celulas ficam vazias e a formula
+    devolve vazio - nunca um numero inventado.
+    """
+    rows: list[tuple[str, FundOffer]] = []
+    for snapshot in snapshots:
+        retail, _ = split_by_profile(snapshot.funds)
+        for fund in retail:
+            if KEY_RENT_12M in fund.extra or KEY_RENT_1M in fund.extra:
+                rows.append((_platform_label(snapshot.platform), fund))
+    if not rows:
+        return
+
+    sheet = workbook.create_sheet("Rentabilidade")
+    windows = (benchmarks or {}).get("windows") or {}
+    for index, (label, key) in enumerate(
+        (("CDI 12m (BCB)", "12m"), ("CDI 3m", "3m"), ("CDI 1m", "1m")), start=1
+    ):
+        sheet.cell(row=index, column=1, value=label).font = _NOTE_FONT
+        cell = sheet.cell(row=index, column=2, value=windows.get(key))
+        cell.font = _BODY_FONT
+        cell.number_format = _PCT_FRACTION
+
+    header_row = 5
+    headers = [
+        "Plataforma", "Fundo", "CNPJ", "Gestora", "Classe ANBIMA",
+        "Rentab. 1m", "Rentab. 3m", "Rentab. 12m", "% do CDI 12m", "Vol. 12m",
+        "Janela (meses de cota)", "Ticket medio (R$)", "Cotistas", "Data-base",
+    ]
+    widths = [20, 52, 20, 34, 30, 12, 12, 12, 14, 11, 20, 18, 12, 12]
+    for index, (name, width) in enumerate(zip(headers, widths), start=1):
+        sheet.cell(row=header_row, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, header_row, len(headers))
+
+    rows.sort(key=lambda item: item[1].extra.get(KEY_RENT_12M) or float("-inf"), reverse=True)
+    row = header_row + 1
+    for label, fund in rows:
+        values = [
+            label, fund.name, format_cnpj(fund.cnpj) if fund.cnpj else "",
+            fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+            fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
+            fund.extra.get(KEY_RENT_1M), fund.extra.get(KEY_RENT_3M),
+            fund.extra.get(KEY_RENT_12M),
+            f'=IF(OR(H{row}="",$B$1=""),"",H{row}/$B$1)',
+            fund.extra.get(KEY_VOL_12M), fund.extra.get(KEY_RENT_JANELA),
+            fund.extra.get(KEY_TICKET), fund.extra.get(KEY_COTISTAS),
+            fund.extra.get(KEY_CAPT_DATA) or "",
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        for col in (6, 7, 8, 10):
+            sheet.cell(row=row, column=col).number_format = _PCT_FRACTION
+        sheet.cell(row=row, column=9).number_format = "0%"
+        sheet.cell(row=row, column=12).number_format = _MONEY
+        for col in (11, 13):
+            sheet.cell(row=row, column=col).number_format = _INT
+        row += 1
+
+    sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{row - 1}"
+    sheet.freeze_panes = sheet.cell(row=header_row + 1, column=3)
+
+    note = row + 1
+    for text in (
+        "Retorno pela cota do informe diario (dados.cvm.gov.br), sobre a MESMA serie de",
+        "cota e apenas em meses fechados; sem a cota-base exatamente k meses antes, a",
+        "janela fica vazia ('Janela' diz quantos meses de cota a serie tem). Volatilidade",
+        "= desvio-padrao dos retornos diarios x raiz(252), com pelo menos 60 pares.",
+        "'% do CDI' e formula sobre B1 (CDI 12m do BCB, serie 12) - vazio sem benchmark.",
     ):
         sheet.cell(row=note, column=1, value=text).font = _NOTE_FONT
         note += 1
@@ -845,6 +956,28 @@ def _add_methodology_sheet(
             "somam apenas meses FECHADOS - o mes corrente e parcial e fica "
             "fora das somas. Ver a aba 'Captacao'.",
         )
+        with_returns = sum(
+            1
+            for snapshot in snapshots
+            for fund in snapshot.funds
+            if KEY_RENT_12M in fund.extra or KEY_RENT_1M in fund.extra
+        )
+        row = line(
+            row, "Rentabilidade (CVM)",
+            f"Retorno pela cota do informe, sobre a mesma serie de cota e em meses "
+            f"fechados ({with_returns} fundos com cota casada). Estrito: sem a "
+            "cota-base exatamente k meses antes a janela fica vazia. Volatilidade "
+            "anualizada dos retornos diarios (minimo 60 pares). '% do CDI' compara "
+            "com a serie 12 do BCB na mesma janela; sem ela, nao aparece. Ver a "
+            "aba 'Rentabilidade'.",
+        )
+        row = line(
+            row, "Cotistas e ticket (CVM)",
+            "Cotistas e PL por cotista (ticket medio) do informe mais fresco; "
+            "variacao de cotistas sobre meses fechados. Fundo anunciado pelo "
+            "envelope soma os cotistas das classes e nao recebe retorno (cotas "
+            "diferentes nao se combinam). Colunas na aba 'Captacao'.",
+        )
     else:
         row = line(
             row, "Captacao (CVM)",
@@ -882,6 +1015,7 @@ def render_spreadsheet(
     path: Path | None = None,
     diffs: list[ShelfDiff] | None = None,
     enrichment: EnrichmentStats | None = None,
+    benchmarks: dict | None = None,
 ) -> Path:
     """Gera a planilha das prateleiras. Devolve o caminho do arquivo."""
     generated_at = generated_at or datetime.now()
@@ -895,6 +1029,7 @@ def render_spreadsheet(
         _add_movements_sheet(workbook, diffs)
     _add_platform_sheets(workbook, usable)
     _add_flows_sheet(workbook, usable)
+    _add_performance_sheet(workbook, usable, benchmarks)
     if cvm and cvm.funds:
         _add_cvm(workbook, cvm)
     _add_source_coverage(workbook, usable)
