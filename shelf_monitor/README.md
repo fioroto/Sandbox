@@ -224,8 +224,8 @@ Resolucao CVM 175 preservada.
 ```bash
 python -m shelf_monitor market                 # importa e escreve as tabelas
 python -m shelf_monitor market --skip-fees     # pula o extrato (~100 MB) - base sem taxas
-python -m shelf_monitor market --skip-flows    # pula o informe diario - base sem captacao
-python -m shelf_monitor market --flows-months 6  # janela menor de captacao (default: 13)
+python -m shelf_monitor market --skip-flows    # pula o informe diario e o CDI - base sem captacao/rentabilidade
+python -m shelf_monitor market --flows-months 6  # janela menor de captacao (default: 14 = 13 fechados + o corrente)
 python -m shelf_monitor market --force         # rebaixa mesmo sem mudanca na origem
 ```
 
@@ -272,8 +272,9 @@ classe: subclasses partilham CNPJ e carteira, entao herdam a mesma taxa.
 | `classes.csv` | 1 classe |
 | `subclasses.csv` | 1 subclasse |
 | `taxas.csv` | 1 classe (entrega mais recente do extrato) |
-| `captacao.csv` | 1 classe x mes - captacao, resgates, liquido, PL e cotistas do informe diario |
-| `_manifest.json` | contagens, fontes, e as colunas novas da CVM ainda nao mapeadas (secoes separadas para cadastro e captacao) |
+| `captacao.csv` | 1 classe x mes - captacao, resgates, liquido, PL, cotistas, cota de fim de mes (serie representativa) e somas dos retornos diarios |
+| `cdi.csv` | 1 dia util - taxa diaria do CDI (BCB, SGS 12), o benchmark das janelas |
+| `_manifest.json` | contagens, fontes, e as colunas novas da CVM ainda nao mapeadas (secoes separadas para cadastro, captacao e cdi) |
 
 ### Tres coisas que a base resolve e que quebram pipelines ingenuos
 
@@ -325,11 +326,40 @@ share de captacao das **gestoras da watchlist** sobre o mercado inteiro - indepe
 qual prateleira oferta cada fundo. E a visao "quem esta levando o dinheiro" que aparece
 nos relatorios.
 
+### Rentabilidade, risco, cotistas e ticket
+
+O mesmo informe traz a cota (`VL_QUOTA`) e os cotistas (`NR_COTST`), e deles saem duas
+leituras que a prateleira sozinha nao tem: **a curadoria de cada casa entrega retorno?** e
+**quem esta trazendo investidor, e de que porte?**
+
+- **Retorno k meses** = `cota(m0) / cota(mk) - 1`, com `m0` o ultimo mes fechado da base
+  e `mk` o mes k meses antes. E **estrito**: sem a cota-base exatamente k meses antes (ou
+  em outra serie), fica vazio - um "12m" que na verdade e 4 meses dentro de um ranking e
+  exatamente o ranking mentiroso que o modulo evita. Por isso a janela default e de 14
+  meses: o 13o mes fechado e a base do retorno e da variacao de cotistas de 12m.
+- **Serie representativa**: subclasses tem taxas e portanto cotas distintas; a classe
+  recebe a serie da subclasse de maior PL no ultimo dia do mes (`cota_serie` diz qual), e
+  o retorno so e calculado quando a serie e a mesma nos dois pontos. Fundo anunciado pelo
+  CNPJ do envelope soma cotistas e deriva o ticket, mas nao recebe retorno.
+- **Volatilidade 12m** = desvio-padrao dos log-retornos diarios (somados em streaming,
+  sem guardar a serie) x raiz de 252, com pelo menos 60 pares; o par de fronteira entre
+  meses fica de fora (~12 de ~250). Saltos acima de 0,7 em log (grupamento de cota, dado
+  sujo) sao descartados, nao suavizados.
+- **% do CDI** compara com a serie 12 do BCB acumulada na mesma janela (`cdi.csv`,
+  baixada pelo `market` e pelo auto-import do `run`); um mes com menos de 15 taxas zera
+  a janela. Sem `cdi.csv` os relatorios saem sem "% do CDI" - nunca com um inventado.
+- **Ticket medio** = PL / cotistas do informe mais fresco; **variacao de cotistas** =
+  `cot(m0) - cot(mk)`, tambem estrita.
+
+Um `captacao.csv` importado antes da cota continua servindo a captacao e ao ticket, mas o
+`doctor` o acusa como **incompleta** com o comando de remedio (`market --skip-fees`: os
+zips fechados voltam 304 e sao so re-parseados).
+
 ### Fora de escopo
 
 Composicao de carteira (CDA), lamina e balancete estao mapeados em
 `market/datasets.py` mas nao sao baixados: sao series temporais de dezenas de GB, e o uso hoje
-pede cadastro, taxas e o fluxo do informe diario.
+pede cadastro, taxas e o que o informe diario ja traz (fluxo, cota e cotistas).
 
 ## Area logada
 
