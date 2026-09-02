@@ -14,13 +14,19 @@ Duas decisoes governam o modulo:
 2. O mes corrente e sempre PARCIAL e fica fora das janelas moveis (1m/3m/12m):
    comparar um mes de 3 dias uteis com meses de 21 produziria um ranking
    mentiroso. Ele entra no CSV rotulado, para quem quiser a leitura quente.
+3. A cota (VL_QUOTA) e de UMA serie por classe - a subclasse representativa,
+   de maior PL no ultimo dia do mes. Subclasses tem taxas e cotas distintas;
+   misturar duas num par de dias produziria retorno-lixo. O retorno entre
+   meses so sai quando a serie e a mesma nos dois pontos.
 """
 from __future__ import annotations
 
 import csv
 import io
 import json
+import math
 import zipfile
+from array import array
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -42,9 +48,14 @@ from shelf_monitor.normalize import (
 
 FLOWS_FILENAME = "captacao.csv"
 
-# 12 meses fechados + o corrente (parcial). E o que uma janela de 12m pede
-# sem depender do dia do mes em que o comando roda.
-DEFAULT_MONTHS = 13
+# 13 meses fechados + o corrente (parcial). Retorno e variacao de cotistas de
+# 12 meses precisam do valor de fim do 13o mes fechado - a base da janela -
+# e nada disso pode depender do dia do mes em que o comando roda.
+DEFAULT_MONTHS = 14
+
+# Um log-retorno diario acima disto nao e mercado: e grupamento de cota ou
+# dado sujo da CVM. O par sai da conta em vez de virar volatilidade fantasma.
+_MAX_ABS_DAILY_LOG_RETURN = 0.7
 
 _HEADERS = (
     "cnpj_classe",
@@ -57,6 +68,11 @@ _HEADERS = (
     "data_ultimo_informe",
     "dias_informados",
     "mes_parcial",
+    "cota_fim_mes",
+    "cota_serie",
+    "ret_diario_soma",
+    "ret_diario_soma2",
+    "ret_diario_n",
 )
 
 
@@ -110,6 +126,11 @@ def parse_informe(
     needle = f"inf_diario_fi_{month.replace('-', '')}"
     flows: dict[str, MonthlyFlow] = {}
     day_masks: dict[str, int] = {}
+    # Cota por (classe, subclasse) e dia do mes. array('d') de 32 posicoes:
+    # ~25 MB transitorios para ~80 mil series, em vez dos ~80 MB de listas.
+    quotas: dict[tuple[str, str], array] = {}
+    # PL de cada serie na maior data dela - escolhe a serie representativa.
+    series_pl: dict[tuple[str, str], tuple[date, float]] = {}
     unknown: list[str] = []
 
     with zipfile.ZipFile(path) as archive:
@@ -165,7 +186,76 @@ def parse_informe(
                     if shareholders is not None:
                         flow.shareholders = (flow.shareholders or 0) + shareholders
 
+                # A cota e por serie (classe, subclasse) - nunca somada.
+                series = (cnpj, get_column(row, "ID_SUBCLASSE") or "")
+                quota = parse_number(get_column(row, "VL_QUOTA"))
+                if quota is not None and quota > 0:
+                    vector = quotas.get(series)
+                    if vector is None:
+                        vector = quotas[series] = array("d", [math.nan] * 32)
+                    vector[day.day] = quota
+                seen = series_pl.get(series)
+                if seen is None or day > seen[0]:
+                    series_pl[series] = (day, net_worth or 0.0)
+
+    _finish_quota_series(flows, quotas, series_pl)
     return flows, unknown
+
+
+def _finish_quota_series(
+    flows: dict[str, MonthlyFlow],
+    quotas: dict[tuple[str, str], array],
+    series_pl: dict[tuple[str, str], tuple[date, float]],
+) -> None:
+    """Escolhe a serie representativa de cada classe e fecha cota e retornos.
+
+    Representativa = a subclasse de maior PL na ultima data da classe (empate:
+    menor ID). Se ela nao tem cota nesse dia, `quota_end` fica None - um dia
+    de desalinhamento silencioso seria pior do que a lacuna declarada.
+    """
+    by_class: dict[str, list[tuple[str, tuple[str, str]]]] = {}
+    for series in quotas:
+        by_class.setdefault(series[0], []).append((series[1], series))
+
+    for cnpj, candidates in by_class.items():
+        flow = flows.get(cnpj)
+        if flow is None or flow.last_date is None:
+            continue
+        last = flow.last_date
+
+        def rank(item: tuple[str, tuple[str, str]]) -> tuple[float, str]:
+            sub_id, series = item
+            seen = series_pl.get(series)
+            pl = seen[1] if seen is not None and seen[0] == last else -1.0
+            return (-pl, sub_id)
+
+        sub_id, series = min(candidates, key=rank)
+        vector = quotas[series]
+        flow.quota_series = sub_id
+        end = vector[last.day]
+        flow.quota_end = None if math.isnan(end) else end
+        flow.ret_sum, flow.ret_sumsq, flow.ret_n = _daily_return_sums(vector)
+
+
+def _daily_return_sums(vector: array) -> tuple[float, float, int]:
+    """(soma, soma dos quadrados, n) dos log-retornos entre dias informados
+    consecutivos. Um salto acima do limite e descartado, nao suavizado."""
+    total = 0.0
+    total_sq = 0.0
+    count = 0
+    previous: float | None = None
+    for day in range(1, 32):
+        quota = vector[day]
+        if math.isnan(quota) or quota <= 0:
+            continue
+        if previous is not None:
+            log_return = math.log(quota / previous)
+            if abs(log_return) <= _MAX_ABS_DAILY_LOG_RETURN:
+                total += log_return
+                total_sq += log_return * log_return
+                count += 1
+        previous = quota
+    return total, total_sq, count
 
 
 def import_flows(
@@ -234,6 +324,12 @@ def _cell(value: float | None) -> str:
     return "" if value is None else f"{value:.2f}"
 
 
+def _precise_cell(value: float | None) -> str:
+    """Cota e somas de retorno precisam de todas as casas - 2 decimais
+    arredondariam um retorno diario inteiro para zero."""
+    return "" if value is None else format(value, ".12g")
+
+
 def _merge_manifest_section(config: Config, section: str, payload: dict) -> None:
     """Atualiza uma chave do _manifest.json preservando as demais.
 
@@ -285,6 +381,11 @@ def write_flows(config: Config, result: FlowsResult) -> Path:
                     ),
                     "dias_informados": str(flow.days),
                     "mes_parcial": "S" if flow.partial else "N",
+                    "cota_fim_mes": _precise_cell(flow.quota_end),
+                    "cota_serie": flow.quota_series,
+                    "ret_diario_soma": _precise_cell(flow.ret_sum),
+                    "ret_diario_soma2": _precise_cell(flow.ret_sumsq),
+                    "ret_diario_n": str(flow.ret_n),
                 }
             )
 

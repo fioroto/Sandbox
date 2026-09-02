@@ -961,7 +961,8 @@ def main() -> None:
         default=FLOWS_DEFAULT_MONTHS,
         help=(
             "Meses do informe diario a importar (default: "
-            f"{FLOWS_DEFAULT_MONTHS} = 12 fechados + o corrente)"
+            f"{FLOWS_DEFAULT_MONTHS} = 13 fechados + o corrente; o 13o e a base "
+            "das janelas de 12m)"
         ),
     )
     market_parser.add_argument(

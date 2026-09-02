@@ -49,10 +49,11 @@ class TestMonthWindow(unittest.TestCase):
             month_window(date(2026, 1, 15), 3), ["2025-11", "2025-12", "2026-01"]
         )
 
-    def test_default_window_is_12_closed_months_plus_the_current(self):
+    def test_default_window_is_13_closed_months_plus_the_current(self):
+        """O 13o mes fechado e a base das janelas de 12m (cota e cotistas)."""
         window = month_window(TODAY)
-        self.assertEqual(len(window), 13)
-        self.assertEqual(window[0], "2025-08")
+        self.assertEqual(len(window), 14)
+        self.assertEqual(window[0], "2025-07")
         self.assertEqual(window[-1], "2026-08")
 
 
@@ -93,13 +94,65 @@ class TestParseInforme(unittest.TestCase):
         self.assertEqual(self.unknown, ["ID_INFORME"])
 
     def test_old_schema_still_parses(self):
-        """Uma janela de 13 meses pode atravessar a virada da RCVM 175."""
+        """Uma janela de 14 meses pode atravessar a virada da RCVM 175."""
         flows, unknown = parse_informe(
             FIXTURES / "inf_diario_fi_202412.zip", "2024-12"
         )
         self.assertAlmostEqual(flows[BTG].inflow, 100_000.0)
         self.assertAlmostEqual(flows[VERDE].net, 3_000_000.0)
         self.assertEqual(unknown, [])
+        # Sem ID_SUBCLASSE a serie e a propria classe.
+        self.assertAlmostEqual(flows[BTG].quota_end, 1.4)
+        self.assertEqual(flows[BTG].quota_series, "")
+
+    def test_quota_comes_from_the_representative_series_not_a_sum(self):
+        """Subclasses tem cotas distintas: a classe recebe a de maior PL."""
+        flow = self.flows[BTG]
+        self.assertAlmostEqual(flow.quota_end, 1.523456)
+        self.assertEqual(flow.quota_series, "3001")
+
+    def test_daily_log_returns_are_accumulated_per_series(self):
+        import math
+
+        flow = self.flows[BTG]
+        self.assertEqual(flow.ret_n, 1)
+        self.assertAlmostEqual(flow.ret_sum, math.log(1.523456 / 1.522))
+        self.assertAlmostEqual(flow.ret_sumsq, math.log(1.523456 / 1.522) ** 2)
+        # Um unico dia informado nao forma par.
+        self.assertEqual(self.flows[KINEA].ret_n, 0)
+        self.assertAlmostEqual(self.flows[KINEA].quota_end, 2.1)
+
+    def test_dirty_quotas_leave_a_gap_instead_of_a_fake_return(self):
+        """Cota zero/vazia sai da serie; salto absurdo e descartado."""
+        import tempfile
+        import zipfile
+
+        header = "TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;ID_SUBCLASSE;DT_COMPTC;VL_TOTAL;VL_QUOTA;VL_PATRIM_LIQ;CAPTC_DIA;RESG_DIA;NR_COTST"
+        rows = [
+            # Serie com cota suja no ultimo dia: quota_end fica None.
+            "CLASSES - FIF;11111111000111;;2026-05-27;10;1.500000;10;0;0;1",
+            "CLASSES - FIF;11111111000111;;2026-05-28;10;0;10;0;0;1",
+            "CLASSES - FIF;11111111000111;;2026-05-29;10;;10;0;0;1",
+            # Serie com grupamento de cota: o salto nao vira volatilidade.
+            "CLASSES - FIF;22222222000122;;2026-05-28;10;1.000000;10;0;0;1",
+            "CLASSES - FIF;22222222000122;;2026-05-29;10;3.000000;10;0;0;1",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "inf_diario_fi_202605.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr(
+                    "inf_diario_fi_202605.csv", "\n".join([header, *rows])
+                )
+            flows, _ = parse_informe(path, "2026-05")
+
+        dirty = flows["11111111000111"]
+        self.assertIsNone(dirty.quota_end)
+        self.assertEqual(dirty.ret_n, 0)
+        self.assertEqual(dirty.days, 3)
+
+        jump = flows["22222222000122"]
+        self.assertAlmostEqual(jump.quota_end, 3.0)
+        self.assertEqual(jump.ret_n, 0)
 
 
 class TestImportFlows(unittest.TestCase):
@@ -107,21 +160,24 @@ class TestImportFlows(unittest.TestCase):
         self.config, self._tmp = temp_config()
         self.addCleanup(self._tmp.cleanup)
         self.result = import_flows(
-            self.config, months=3, local_dir=FIXTURES, today=TODAY
+            self.config, months=4, local_dir=FIXTURES, today=TODAY
         )
 
     def test_missing_month_is_a_note_not_an_exception(self):
         """O caso tipico: o zip do mes ainda nao publicado pela CVM."""
-        self.assertEqual(self.result.window, ["2026-06", "2026-07", "2026-08"])
-        self.assertEqual(self.result.missing_months, ["2026-06"])
+        self.assertEqual(
+            self.result.window, ["2026-05", "2026-06", "2026-07", "2026-08"]
+        )
+        self.assertEqual(self.result.missing_months, ["2026-05"])
 
     def test_current_month_is_partial_and_closed_months_are_not(self):
+        self.assertFalse(self.result.flows[(BTG, "2026-06")].partial)
         self.assertFalse(self.result.flows[(BTG, "2026-07")].partial)
         self.assertTrue(self.result.flows[(BTG, "2026-08")].partial)
 
     def test_counts_reflect_what_actually_came(self):
         counts = self.result.counts()
-        self.assertEqual(counts["meses"], 2)
+        self.assertEqual(counts["meses"], 3)
         self.assertEqual(counts["classes_com_captacao"], 2)
 
 
@@ -130,7 +186,7 @@ class TestWriteFlows(unittest.TestCase):
         self.config, self._tmp = temp_config()
         self.addCleanup(self._tmp.cleanup)
         self.result = import_flows(
-            self.config, months=3, local_dir=FIXTURES, today=TODAY
+            self.config, months=4, local_dir=FIXTURES, today=TODAY
         )
         self.path = write_flows(self.config, self.result)
 
@@ -144,13 +200,20 @@ class TestWriteFlows(unittest.TestCase):
         raw = self.path.read_bytes()
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
         self.assertIn(b"cnpj_classe;mes;captacao", raw)
+        self.assertIn(b"cota_fim_mes;cota_serie;ret_diario_soma", raw)
+
+    def test_quota_keeps_its_precision_in_the_csv(self):
+        """Duas casas decimais zerariam um retorno diario inteiro."""
+        text = self.path.read_text(encoding="utf-8-sig")
+        july = next(line for line in text.splitlines() if line.startswith("12.345.678/0001-91;2026-07"))
+        self.assertIn(";1.523456;3001;", july)
 
     def test_manifest_merge_preserves_the_registry_section(self):
         """Dois produtores, um manifesto: nenhum apaga a secao do outro."""
         manifest_path = self.config.market_dir / "_manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertIn("captacao", manifest)
-        self.assertEqual(manifest["captacao"]["missing_months"], ["2026-06"])
+        self.assertEqual(manifest["captacao"]["missing_months"], ["2026-05"])
 
         # A reimportacao do cadastro regrava o manifesto inteiro - e nao pode
         # perder a secao de captacao no processo.
@@ -183,8 +246,9 @@ class TestLoadSummaries(unittest.TestCase):
         """Mes de 3 dias uteis nao entra na mesma conta que meses de 21."""
         btg = self.summaries[BTG]
         self.assertAlmostEqual(btg.net_1m, 2_750_000.0)
-        self.assertAlmostEqual(btg.net_12m, 2_750_000.0)
-        self.assertEqual(btg.months_12m, 1)
+        # Junho (+50 mil) e julho (+2,75 mi) fechados; agosto parcial fora.
+        self.assertAlmostEqual(btg.net_12m, 2_800_000.0)
+        self.assertEqual(btg.months_12m, 2)
 
     def test_partial_month_is_exposed_separately(self):
         self.assertAlmostEqual(self.summaries[BTG].current_partial, 300_000.0)
@@ -214,7 +278,7 @@ class TestWatchlistManagers(unittest.TestCase):
 
     def test_houses_aggregate_their_managers_flows(self):
         houses = {h["house"]: h for h in self.summary["houses"]}
-        self.assertAlmostEqual(houses["btg"]["net_12m"], 2_750_000.0)
+        self.assertAlmostEqual(houses["btg"]["net_12m"], 2_800_000.0)
         self.assertAlmostEqual(houses["itau"]["net_12m"], -3_000_000.0)
         self.assertEqual(
             houses["itau"]["managers"][0]["name"], "KINEA INVESTIMENTOS LTDA"
@@ -223,7 +287,7 @@ class TestWatchlistManagers(unittest.TestCase):
     def test_market_totals_cover_every_class_with_flows(self):
         market = self.summary["market"]
         self.assertEqual(market["classes"], 2)
-        self.assertAlmostEqual(market["net_12m"], -250_000.0)
+        self.assertAlmostEqual(market["net_12m"], -200_000.0)
 
     def test_coverage_is_explicit(self):
         coverage = self.summary["coverage"]
@@ -232,7 +296,7 @@ class TestWatchlistManagers(unittest.TestCase):
 
     def test_as_of_labels_the_freshest_informe(self):
         self.assertEqual(self.summary["as_of"], "2026-08-03")
-        self.assertEqual(self.summary["window_months"], 1)
+        self.assertEqual(self.summary["window_months"], 2)
 
     def test_missing_either_base_returns_none(self):
         config, tmp = temp_config()

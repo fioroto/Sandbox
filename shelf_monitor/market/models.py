@@ -164,6 +164,11 @@ class MonthlyFlow:
     resgate somam trivialmente, e PL/cotistas somam apenas dentro do mesmo
     DT_COMPTC (as subclasses partilham a carteira, entao o PL da classe no dia
     e a soma das linhas daquele dia - somar dias diferentes inflaria tudo).
+
+    A cota NAO soma nem se mistura: subclasses tem taxas distintas e portanto
+    cotas distintas. A classe recebe a serie de UMA subclasse - a
+    representativa, de maior PL no ultimo dia - e `quota_series` diz qual, para
+    que o retorno entre meses so seja calculado sobre a mesma serie.
     """
 
     cnpj: str  # CNPJ da classe, 14 digitos
@@ -175,6 +180,14 @@ class MonthlyFlow:
     last_date: date | None = None  # maior DT_COMPTC vista no mes
     days: int = 0  # dias com informe - denuncia mes curto
     partial: bool = False  # mes corrente na data da importacao
+    quota_end: float | None = None  # VL_QUOTA da serie representativa na last_date
+    quota_series: str = ""  # ID_SUBCLASSE da serie ("" = classe sem subclasse)
+    # Somas dos log-retornos diarios aceitos no mes (pares de dias informados
+    # consecutivos da serie representativa) - a materia-prima da volatilidade,
+    # acumulada em streaming para nao guardar a serie diaria.
+    ret_sum: float = 0.0
+    ret_sumsq: float = 0.0
+    ret_n: int = 0
 
     @property
     def net(self) -> float:

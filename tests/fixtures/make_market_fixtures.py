@@ -201,6 +201,27 @@ INF_202607_ROWS = [
      "210", "900004"],
 ]
 
+# Mes fechado anterior, com cotas nos dois dias: e a cota-base do retorno de
+# julho. A subclasse 3002 tem cota DIFERENTE da 3001 (taxas distintas) e PL
+# menor - a representativa da classe e a 3001, e a 3002 nunca se mistura.
+INF_202606_ROWS = [
+    ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-06-29",
+     "880100000.00", "1.500000", "880000000.00", "50000.00", "0.00",
+     "9900", "900007"],
+    ["CLASSES - FIF", "12.345.678/0001-91", "3002", "2026-06-29",
+     "90100000.00", "1.480000", "90000000.00", "0.00", "0.00",
+     "850", "900008"],
+    ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-06-30",
+     "890100000.00", "1.510000", "890000000.00", "0.00", "0.00",
+     "9950", "900009"],
+    ["CLASSES - FIF", "12.345.678/0001-91", "3002", "2026-06-30",
+     "91100000.00", "1.489000", "91000000.00", "0.00", "0.00",
+     "860", "900010"],
+    ["CLASSES - FIF", "42345678000194", "", "2026-06-30",
+     "5095100000.00", "2.090000", "5095000000.00", "0.00", "0.00",
+     "215", "900011"],
+]
+
 # Mes corrente na data dos testes (2026-08-15): parcial por definicao.
 INF_202608_ROWS = [
     ["CLASSES - FIF", "12.345.678/0001-91", "3001", "2026-08-03",
@@ -251,6 +272,7 @@ def build(directory: Path = FIXTURES) -> Path:
     (directory / "cad_fi.csv").write_bytes(_csv(CAD_FI_COLUMNS, CAD_FI_ROWS))
     (directory / "extrato_fi.csv").write_bytes(_csv(EXTRATO_COLUMNS, EXTRATO_ROWS))
 
+    _informe_zip(directory, "202606", INF_DIARIO_COLUMNS, INF_202606_ROWS)
     _informe_zip(directory, "202607", INF_DIARIO_COLUMNS, INF_202607_ROWS)
     _informe_zip(directory, "202608", INF_DIARIO_COLUMNS, INF_202608_ROWS)
     _informe_zip(directory, "202412", INF_OLD_COLUMNS, INF_202412_ROWS)
