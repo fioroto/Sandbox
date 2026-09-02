@@ -755,6 +755,208 @@ class TestFlowsBlock(unittest.TestCase):
         self.assertIs(block["managers"], managers)
 
 
+class TestPerformanceBlock(unittest.TestCase):
+    """Rentabilidade e risco por casa e por classe, no payload unico."""
+
+    def _snapshot(self, platform, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def _offer(self, platform, name, cnpj, ret, vol=None, anbima="Multimercados Macro"):
+        from shelf_monitor.models import FundOffer
+
+        extra = {
+            "rentabilidade_12m": ret, "rentabilidade_janela_meses": 13,
+            "captacao_data_base": "2026-07-31", "classificacao_anbima": anbima,
+        }
+        if vol is not None:
+            extra["volatilidade_12m"] = vol
+        return FundOffer(platform=platform, name=name, cnpj=cnpj, extra=extra)
+
+    def _report(self, snapshots, benchmarks=None):
+        from datetime import datetime
+
+        from shelf_monitor.models import RunReport
+
+        return RunReport(
+            generated_at=datetime(2026, 8, 31), snapshots=snapshots,
+            benchmarks=benchmarks,
+        )
+
+    def test_platform_medians_and_cdi_share(self):
+        from shelf_monitor.report.aggregate import build_performance_block
+
+        funds = [
+            self._offer("btg", "A", "11111111000111", 0.15, vol=0.10),
+            self._offer("btg", "B", "22222222000122", 0.08, vol=0.05, anbima="RF DI"),
+            self._offer("btg", "C", "33333333000133", 0.12),
+        ]
+        cdi = {"window_end": "2026-07", "windows": {"12m": 0.10, "3m": None, "1m": 0.008}}
+        block = build_performance_block(self._report([self._snapshot("btg", funds)], cdi))
+
+        platform = block["platforms"][0]
+        self.assertAlmostEqual(platform["return_median"], 0.12)
+        self.assertAlmostEqual(platform["vol_median"], 0.075)
+        self.assertEqual(platform["above_cdi"], 2)
+        self.assertAlmostEqual(platform["above_cdi_share"], 2 / 3)
+        self.assertAlmostEqual(platform["median_pct_cdi"], 1.2)
+        self.assertEqual(block["window_end"], "2026-07")
+        self.assertEqual(block["window_months"], 13)
+        self.assertTrue(block["available"])
+
+    def test_without_benchmark_nothing_claims_to_beat_the_cdi(self):
+        from shelf_monitor.report.aggregate import build_performance_block
+
+        funds = [self._offer("btg", "A", "11111111000111", 0.15)]
+        block = build_performance_block(self._report([self._snapshot("btg", funds)]))
+        platform = block["platforms"][0]
+        self.assertIsNone(platform["above_cdi"])
+        self.assertIsNone(platform["median_pct_cdi"])
+        self.assertIsNone(block["top"][0]["pct_cdi"])
+
+    def test_matrix_carries_median_return_per_category_and_house(self):
+        from shelf_monitor.report.aggregate import build_performance_block
+
+        block = build_performance_block(
+            self._report(
+                [
+                    self._snapshot("btg", [
+                        self._offer("btg", "A", "11111111000111", 0.10, anbima="Acoes Livre"),
+                        self._offer("btg", "B", "22222222000122", 0.30, anbima="Acoes Livre"),
+                    ]),
+                    self._snapshot("xp", [
+                        self._offer("xp", "C", "33333333000133", -0.05, anbima="Acoes Livre"),
+                    ]),
+                ]
+            )
+        )
+        row = next(r for r in block["matrix"] if r["category"] == "Acoes Livre")
+        self.assertAlmostEqual(row["medians"]["btg"], 0.20)
+        self.assertAlmostEqual(row["medians"]["xp"], -0.05)
+        self.assertEqual(row["counts"], {"btg": 2, "xp": 1})
+
+    def test_top_and_bottom_dedupe_across_shelves(self):
+        from shelf_monitor.report.aggregate import build_performance_block
+
+        block = build_performance_block(
+            self._report(
+                [
+                    self._snapshot("btg", [self._offer("btg", "A", "11111111000111", 0.2)]),
+                    self._snapshot("xp", [
+                        self._offer("xp", "A", "11111111000111", 0.2),
+                        self._offer("xp", "Z", "99999999000199", -0.3),
+                    ]),
+                ]
+            )
+        )
+        self.assertEqual(len(block["top"]), 2)
+        self.assertEqual(block["top"][0]["cnpj"], "11111111000111")
+        self.assertEqual(sorted(block["top"][0]["platforms"]), ["BTG Pactual", "XP Investimentos"])
+        self.assertEqual(block["bottom"][0]["cnpj"], "99999999000199")
+
+    def test_without_returns_the_block_is_unavailable(self):
+        from shelf_monitor.models import FundOffer
+        from shelf_monitor.report.aggregate import build_performance_block
+
+        snapshot = self._snapshot("btg", [FundOffer(platform="btg", name="Sem cota")])
+        block = build_performance_block(self._report([snapshot]))
+        self.assertFalse(block["available"])
+        self.assertEqual(block["matrix"], [])
+
+
+class TestInvestorsBlock(unittest.TestCase):
+    """Cotistas e ticket medio por casa, no payload unico."""
+
+    def _snapshot(self, platform, funds):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy,
+            ShelfSnapshot,
+            SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.OPEN_FINANCE, status=SnapshotStatus.OK,
+            funds=funds,
+        )
+
+    def _offer(self, platform, name, cnpj, shareholders, ticket=None, delta=None):
+        from shelf_monitor.models import FundOffer
+
+        extra = {"cotistas_informe": shareholders, "captacao_janela_meses": 12}
+        if ticket is not None:
+            extra["ticket_medio"] = ticket
+        if delta is not None:
+            extra["cotistas_var_12m"] = delta
+            extra["cotistas_var_pct_12m"] = delta / (shareholders - delta)
+        return FundOffer(platform=platform, name=name, cnpj=cnpj, extra=extra)
+
+    def _report(self, snapshots, flows=None):
+        from datetime import datetime
+
+        from shelf_monitor.models import RunReport
+
+        return RunReport(generated_at=datetime(2026, 8, 31), snapshots=snapshots, flows=flows)
+
+    def test_platform_profile(self):
+        from shelf_monitor.report.aggregate import build_investors_block
+
+        funds = [
+            self._offer("btg", "A", "11111111000111", 1000, ticket=5_000.0, delta=100),
+            self._offer("btg", "B", "22222222000122", 200, ticket=50_000.0, delta=-50),
+            self._offer("btg", "C", "33333333000133", 300, ticket=8_000.0),
+        ]
+        block = build_investors_block(self._report([self._snapshot("btg", funds)]))
+        platform = block["platforms"][0]
+        self.assertEqual(platform["shareholders"], 1500)
+        self.assertAlmostEqual(platform["ticket_median"], 8_000.0)
+        self.assertAlmostEqual(platform["small_ticket_share"], 2 / 3)
+        self.assertEqual(platform["delta_12m"], 50)
+        self.assertEqual(platform["delta_12m_matched"], 2)
+        # base = (1000-100) + (200+50) = 1150
+        self.assertAlmostEqual(platform["delta_12m_pct"], 50 / 1150)
+        self.assertEqual(block["top_gain"][0]["cnpj"], "11111111000111")
+        self.assertEqual(block["top_loss"][0]["cnpj"], "22222222000122")
+        self.assertTrue(block["available"])
+
+    def test_gainers_dedupe_across_shelves(self):
+        from shelf_monitor.report.aggregate import build_investors_block
+
+        block = build_investors_block(
+            self._report(
+                [
+                    self._snapshot("btg", [self._offer("btg", "A", "11111111000111", 1000, delta=10)]),
+                    self._snapshot("xp", [self._offer("xp", "A", "11111111000111", 1000, delta=10)]),
+                ]
+            )
+        )
+        self.assertEqual(len(block["top_gain"]), 1)
+        # Por prateleira os cotistas contam nas duas casas - e o perfil de cada vitrine.
+        self.assertEqual([p["shareholders"] for p in block["platforms"]], [1000, 1000])
+
+    def test_managers_view_alone_keeps_the_block_available(self):
+        from shelf_monitor.report.aggregate import build_investors_block
+
+        managers = {"market": {"shareholders": 5_000_000}, "houses": []}
+        block = build_investors_block(self._report([], flows=managers))
+        self.assertTrue(block["available"])
+        block = build_investors_block(self._report([]))
+        self.assertFalse(block["available"])
+
+
 class TestFlowsRendering(unittest.TestCase):
     """A secao de captacao nas quatro superficies."""
 

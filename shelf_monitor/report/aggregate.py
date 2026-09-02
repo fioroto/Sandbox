@@ -12,9 +12,16 @@ from shelf_monitor.enrich import (
     KEY_CAPT_12M,
     KEY_CAPT_DATA,
     KEY_CAPT_JANELA,
+    KEY_COTISTAS,
+    KEY_COTISTAS_VAR_12M,
+    KEY_COTISTAS_VAR_PCT_12M,
     KEY_CVM,
     KEY_GESTOR_OFICIAL,
     KEY_PL_INFORME,
+    KEY_RENT_12M,
+    KEY_RENT_JANELA,
+    KEY_TICKET,
+    KEY_VOL_12M,
 )
 from shelf_monitor.normalize import normalize_text
 from shelf_monitor.profile import restriction_reason, split_by_profile
@@ -470,6 +477,209 @@ def build_flows_block(report: RunReport) -> dict:
     }
 
 
+# Abaixo deste ticket medio o fundo e de varejo de fato - e o corte que separa
+# uma prateleira de massa de uma de alta renda, independente do minimo anunciado.
+SMALL_TICKET_BRL = 10_000.0
+
+
+def _house_label(platform_id: str) -> str:
+    return PLATFORMS[platform_id].label if platform_id in PLATFORMS else platform_id
+
+
+def _mover_entry(
+    movers: dict[str, dict], snapshot: ShelfSnapshot, fund: FundOffer, **fields
+) -> dict:
+    """Entrada deduplicada por CNPJ: o mesmo fundo em duas prateleiras e um
+    fundo so no mercado; a lista de casas registra onde ele esta."""
+    key = fund.cnpj or f"{snapshot.platform}:{fund.name}"
+    entry = movers.setdefault(
+        key,
+        {
+            "name": fund.name,
+            "cnpj": fund.cnpj,
+            "manager": fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name,
+            "platforms": [],
+            **fields,
+        },
+    )
+    label = _house_label(snapshot.platform)
+    if label not in entry["platforms"]:
+        entry["platforms"].append(label)
+    return entry
+
+
+def build_performance_block(report: RunReport) -> dict:
+    """Rentabilidade e risco pela cota - fonte unica das superficies.
+
+    Por casa: mediana e quartis do retorno de 12 meses e da volatilidade dos
+    fundos da vitrine com cota casada, e quantos bateram o CDI da MESMA
+    janela (so quando o benchmark existe - sem cdi.csv nao ha "% do CDI").
+    A matriz casa x classe ANBIMA traz a mediana do retorno por categoria, e
+    os extremos (top/bottom) sao deduplicados por CNPJ.
+    """
+    cdi = report.benchmarks
+    cdi_12m = (cdi or {}).get("windows", {}).get("12m") if cdi else None
+    platforms: list[dict] = []
+    movers: dict[str, dict] = {}
+    by_category: dict[str, dict[str, list[float]]] = {}
+    category_counts: Counter = Counter()
+    as_of: str | None = None
+    window_months = 0
+
+    for snapshot in report.snapshots:
+        funds = retail_funds(snapshot)
+        matched = [f for f in funds if f.extra.get(KEY_RENT_12M) is not None]
+        returns = [f.extra[KEY_RENT_12M] for f in matched]
+        vols = [
+            f.extra[KEY_VOL_12M] for f in matched if f.extra.get(KEY_VOL_12M) is not None
+        ]
+        above = (
+            sum(1 for r in returns if r > cdi_12m) if cdi_12m is not None else None
+        )
+        pct_cdi = [r / cdi_12m for r in returns] if cdi_12m else []
+
+        for fund in matched:
+            date_base = fund.extra.get(KEY_CAPT_DATA)
+            if date_base and (as_of is None or date_base > as_of):
+                as_of = date_base
+            window_months = max(window_months, fund.extra.get(KEY_RENT_JANELA) or 0)
+            category = anbima_category(fund)
+            category_counts[category] += 1
+            by_category.setdefault(category, {}).setdefault(
+                snapshot.platform, []
+            ).append(fund.extra[KEY_RENT_12M])
+            _mover_entry(
+                movers, snapshot, fund,
+                category=category,
+                return_12m=fund.extra[KEY_RENT_12M],
+                vol_12m=fund.extra.get(KEY_VOL_12M),
+                pct_cdi=(fund.extra[KEY_RENT_12M] / cdi_12m) if cdi_12m else None,
+            )
+
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": _house_label(snapshot.platform),
+                "matched": len(matched),
+                "total": len(funds),
+                "coverage": (len(matched) / len(funds)) if funds else 0.0,
+                "return_median": _median(returns),
+                "return_quartiles": _quartiles(returns),
+                "vol_median": _median(vols),
+                "vol_quartiles": _quartiles(vols),
+                "above_cdi": above,
+                "above_cdi_share": (
+                    above / len(matched) if above is not None and matched else None
+                ),
+                "median_pct_cdi": _median(pct_cdi) if pct_cdi else None,
+            }
+        )
+
+    matrix = [
+        {
+            "category": category,
+            "medians": {
+                pid: _median(values) for pid, values in by_category[category].items()
+            },
+            "counts": {
+                pid: len(values) for pid, values in by_category[category].items()
+            },
+        }
+        for category, _ in category_counts.most_common(_MATRIX_CATEGORIES)
+    ]
+    ranked = sorted(movers.values(), key=lambda item: item["return_12m"], reverse=True)
+
+    return {
+        "available": bool(movers),
+        "as_of": as_of,
+        "window_end": (cdi or {}).get("window_end") or (report.flows or {}).get("window_end"),
+        "window_months": window_months,
+        "cdi": cdi,
+        "platforms": platforms,
+        "matrix": matrix,
+        "top": ranked[:10],
+        "bottom": list(reversed(ranked))[:10],
+    }
+
+
+def build_investors_block(report: RunReport) -> dict:
+    """Cotistas e ticket medio - o porte real de cada prateleira.
+
+    Cotistas por casa somam por prateleira (o mesmo fundo em duas casas conta
+    nas duas: e o perfil de cada vitrine, nao o total do mercado); os
+    extremos de ganho/perda de cotistas deduplicam por CNPJ. A visao de
+    gestoras da watchlist (report.flows) ja traz cotistas por casa.
+    """
+    platforms: list[dict] = []
+    movers: dict[str, dict] = {}
+    as_of: str | None = None
+    window_months = 0
+
+    for snapshot in report.snapshots:
+        funds = retail_funds(snapshot)
+        matched = [f for f in funds if f.extra.get(KEY_COTISTAS) is not None]
+        tickets = [
+            f.extra[KEY_TICKET] for f in matched if f.extra.get(KEY_TICKET) is not None
+        ]
+        small = sum(1 for ticket in tickets if ticket < SMALL_TICKET_BRL)
+        deltas = [
+            (f.extra[KEY_COTISTAS_VAR_12M], f.extra[KEY_COTISTAS])
+            for f in matched
+            if f.extra.get(KEY_COTISTAS_VAR_12M) is not None
+        ]
+        delta_12m = sum(delta for delta, _ in deltas)
+        base = sum(count - delta for delta, count in deltas)
+
+        for fund in matched:
+            date_base = fund.extra.get(KEY_CAPT_DATA)
+            if date_base and (as_of is None or date_base > as_of):
+                as_of = date_base
+            window_months = max(window_months, fund.extra.get(KEY_CAPT_JANELA) or 0)
+            _mover_entry(
+                movers, snapshot, fund,
+                shareholders=fund.extra[KEY_COTISTAS],
+                delta_12m=fund.extra.get(KEY_COTISTAS_VAR_12M),
+                delta_pct_12m=fund.extra.get(KEY_COTISTAS_VAR_PCT_12M),
+                ticket=fund.extra.get(KEY_TICKET),
+            )
+
+        platforms.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": _house_label(snapshot.platform),
+                "matched": len(matched),
+                "total": len(funds),
+                "coverage": (len(matched) / len(funds)) if funds else 0.0,
+                "shareholders": sum(f.extra[KEY_COTISTAS] for f in matched),
+                "ticket_median": _median(tickets),
+                "ticket_quartiles": _quartiles(tickets),
+                "with_ticket": len(tickets),
+                "small_ticket": small,
+                "small_ticket_share": (small / len(tickets)) if tickets else None,
+                "delta_12m": delta_12m if deltas else None,
+                "delta_12m_matched": len(deltas),
+                "delta_12m_pct": (delta_12m / base) if deltas and base > 0 else None,
+            }
+        )
+
+    with_delta = [m for m in movers.values() if m["delta_12m"] is not None]
+    ranked = sorted(with_delta, key=lambda item: item["delta_12m"], reverse=True)
+    managers = report.flows
+    managers_have_shareholders = bool(
+        managers and (managers.get("market") or {}).get("shareholders")
+    )
+
+    return {
+        "available": bool(movers) or managers_have_shareholders,
+        "as_of": as_of,
+        "window_months": window_months,
+        "platforms": platforms,
+        "top_gain": [m for m in ranked if m["delta_12m"] > 0][:10],
+        "top_loss": [m for m in reversed(ranked) if m["delta_12m"] < 0][:10],
+        "managers": managers,
+    }
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -562,4 +772,6 @@ def build_dashboard_data(report: RunReport) -> dict:
         ],
         "cvm": cvm_payload,
         "flows": build_flows_block(report),
+        "performance": build_performance_block(report),
+        "investors": build_investors_block(report),
     }
