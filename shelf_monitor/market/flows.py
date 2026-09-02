@@ -27,7 +27,7 @@ import json
 import math
 import zipfile
 from array import array
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -422,74 +422,218 @@ def run_flows_import(
 # --- leitura: janelas moveis por classe ---------------------------------------
 
 
+# Abaixo disto a volatilidade e ruido estatistico, nao risco: ~3 meses de
+# pares diarios e o minimo para o desvio-padrao dizer alguma coisa.
+_MIN_VOL_OBS = 60
+_TRADING_DAYS = 252
+# Distancias (em meses fechados a partir do window_end) que ancoram as
+# janelas: 0 = o proprio window_end; 1/3/12 = a base de cada janela.
+_ANCHORS = (0, 1, 3, 12)
+
+
 @dataclass
 class FlowSummary:
     """Janelas moveis pre-computadas por classe, prontas para o enrich.
 
-    As janelas cobrem apenas meses FECHADOS; months_12m diz quantos a base
-    realmente tem - uma serie recem-importada com 4 meses rotula a janela em
-    vez de se passar por 12m.
+    Todas as janelas sao ancoradas no MESMO mes - `window_end`, o ultimo mes
+    fechado da base - e nao no ultimo mes de cada classe: e o que permite
+    comparar o retorno de um fundo com o CDI da mesma janela e um fundo com
+    outro. Captacao soma o que ha (fluxo antes de existir e zero, legitimo);
+    retorno e variacao de cotistas sao ESTRITOS: sem o valor da base
+    exatamente k meses antes, ficam None, e `quota_months` explica o porque.
     """
 
     cnpj: str
+    window_end: str | None = None
     net_1m: float | None = None
     net_3m: float | None = None
     net_12m: float | None = None
-    months_12m: int = 0
+    months_12m: int = 0  # meses fechados presentes na janela de 12
     current_partial: float | None = None  # liquido do mes corrente, se presente
     net_worth: float | None = None  # PL do informe mais recente
     shareholders: int | None = None
     as_of: date | None = None  # data do ultimo informe visto
+    quota_months: int = 0  # meses fechados com cota valida (ate 13)
+    return_1m: float | None = None
+    return_3m: float | None = None
+    return_12m: float | None = None
+    vol_12m: float | None = None  # anualizada, sobre os retornos diarios
+    vol_obs: int = 0  # pares diarios que entraram na volatilidade
+    shareholders_delta_1m: int | None = None
+    shareholders_delta_3m: int | None = None
+    shareholders_delta_12m: int | None = None
+    shareholders_start_12m: int | None = None
+
+    @property
+    def ticket(self) -> float | None:
+        """PL por cotista do informe mais fresco - o porte do investidor."""
+        if self.net_worth is None or not self.shareholders:
+            return None
+        return self.net_worth / self.shareholders
 
 
-def load_summaries(config: Config) -> dict[str, FlowSummary] | None:
-    """Le captacao.csv e computa as janelas. None quando nao ha base."""
+@dataclass
+class _Accumulator:
+    """Estado por classe durante a leitura em streaming do captacao.csv."""
+
+    net_1m: float | None = None
+    net_3m: float | None = None
+    net_12m: float = 0.0
+    months_12m: int = 0
+    ret_sum: float = 0.0
+    ret_sumsq: float = 0.0
+    ret_n: int = 0
+    quota_months: int = 0
+    quotas: dict[int, tuple[float, str]] = field(default_factory=dict)
+    shareholders: dict[int, int] = field(default_factory=dict)
+    partial_net: float | None = None
+    latest: tuple[date, float | None, int | None] | None = None
+
+
+def _months_between(later: str, earlier: str) -> int:
+    """Meses de `earlier` ate `later` ("YYYY-MM"); negativo se invertidos."""
+    y1, m1 = later.split("-")
+    y2, m2 = earlier.split("-")
+    return (int(y1) * 12 + int(m1)) - (int(y2) * 12 + int(m2))
+
+
+def last_closed_month(config: Config) -> str | None:
+    """Ultimo mes FECHADO da base de captacao - a ancora de todas as janelas.
+
+    Le a secao `captacao` do manifesto: o `month_window` sempre termina no
+    mes corrente (parcial), entao o ultimo fechado e o ultimo dos anteriores
+    que nao esta em `missing_months`. Sem manifesto, varre o CSV.
+    """
+    manifest_path = config.market_dir / "_manifest.json"
+    if manifest_path.is_file():
+        try:
+            section = json.loads(manifest_path.read_text(encoding="utf-8")).get(
+                "captacao", {}
+            )
+        except (ValueError, OSError):
+            section = {}
+        window = list(section.get("window") or [])
+        missing = set(section.get("missing_months") or [])
+        closed = [month for month in window[:-1] if month not in missing]
+        if closed:
+            return closed[-1]
+
     path = config.market_dir / FLOWS_FILENAME
     if not path.is_file():
         return None
+    latest: str | None = None
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter=";"):
+            if (row.get("mes_parcial") or "").strip().upper() == "S":
+                continue
+            month = (row.get("mes") or "").strip()
+            if month and (latest is None or month > latest):
+                latest = month
+    return latest
 
-    closed: dict[str, dict[str, float]] = {}
-    partial_net: dict[str, float] = {}
-    latest: dict[str, tuple[date, float | None, int | None]] = {}
 
+def load_summaries(config: Config) -> dict[str, FlowSummary] | None:
+    """Le captacao.csv em streaming e computa as janelas. None sem base.
+
+    Um acumulador pequeno por classe, nunca o dicionario classe x mes: com
+    seis campos por mes e ~1 milhao de linhas, materializar custaria
+    centenas de MB. Colunas ausentes (captacao.csv importado antes da cota)
+    viram None nos retornos; captacao, ticket e cotistas seguem normais.
+    """
+    path = config.market_dir / FLOWS_FILENAME
+    if not path.is_file():
+        return None
+    window_end = last_closed_month(config)
+
+    accumulators: dict[str, _Accumulator] = {}
     with path.open(encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle, delimiter=";"):
             cnpj = normalize_cnpj(row.get("cnpj_classe"))
             month = (row.get("mes") or "").strip()
             if not cnpj or not month:
                 continue
+            acc = accumulators.get(cnpj)
+            if acc is None:
+                acc = accumulators[cnpj] = _Accumulator()
+
             net = parse_number(row.get("captacao_liquida")) or 0.0
             if (row.get("mes_parcial") or "").strip().upper() == "S":
-                partial_net[cnpj] = net
-            else:
-                closed.setdefault(cnpj, {})[month] = net
+                acc.partial_net = net
+            elif window_end is not None:
+                k = _months_between(window_end, month)
+                if 0 <= k <= 11:
+                    acc.net_12m += net
+                    acc.months_12m += 1
+                    if k == 0:
+                        acc.net_1m = net
+                    if k <= 2:
+                        acc.net_3m = (acc.net_3m or 0.0) + net
+                    acc.ret_sum += parse_number(row.get("ret_diario_soma")) or 0.0
+                    acc.ret_sumsq += parse_number(row.get("ret_diario_soma2")) or 0.0
+                    acc.ret_n += parse_int(row.get("ret_diario_n")) or 0
+                if 0 <= k <= 12:
+                    quota = parse_number(row.get("cota_fim_mes"))
+                    if quota is not None and quota > 0:
+                        acc.quota_months += 1
+                        if k in _ANCHORS:
+                            acc.quotas[k] = (quota, (row.get("cota_serie") or "").strip())
+                    if k in _ANCHORS:
+                        shareholders = parse_int(row.get("cotistas_fim_mes"))
+                        if shareholders is not None:
+                            acc.shareholders[k] = shareholders
 
             as_of = parse_date(row.get("data_ultimo_informe"))
-            if as_of is not None:
-                seen = latest.get(cnpj)
-                if seen is None or as_of > seen[0]:
-                    latest[cnpj] = (
-                        as_of,
-                        parse_number(row.get("pl_fim_mes")),
-                        parse_int(row.get("cotistas_fim_mes")),
-                    )
+            if as_of is not None and (acc.latest is None or as_of > acc.latest[0]):
+                acc.latest = (
+                    as_of,
+                    parse_number(row.get("pl_fim_mes")),
+                    parse_int(row.get("cotistas_fim_mes")),
+                )
 
-    summaries: dict[str, FlowSummary] = {}
-    for cnpj in set(closed) | set(partial_net):
-        summary = FlowSummary(cnpj=cnpj)
-        months = sorted(closed.get(cnpj, {}), reverse=True)
-        if months:
-            summary.net_1m = closed[cnpj][months[0]]
-            summary.net_3m = sum(closed[cnpj][m] for m in months[:3])
-            last12 = months[:12]
-            summary.net_12m = sum(closed[cnpj][m] for m in last12)
-            summary.months_12m = len(last12)
-        summary.current_partial = partial_net.get(cnpj)
-        seen = latest.get(cnpj)
-        if seen is not None:
-            summary.as_of, summary.net_worth, summary.shareholders = seen
-        summaries[cnpj] = summary
-    return summaries
+    return {
+        cnpj: _finish_summary(cnpj, acc, window_end)
+        for cnpj, acc in accumulators.items()
+    }
+
+
+def _finish_summary(cnpj: str, acc: _Accumulator, window_end: str | None) -> FlowSummary:
+    """Deriva as janelas do acumulador - as formulas moram aqui."""
+    summary = FlowSummary(cnpj=cnpj, window_end=window_end)
+    summary.net_1m = acc.net_1m
+    summary.net_3m = acc.net_3m
+    summary.net_12m = acc.net_12m if acc.months_12m else None
+    summary.months_12m = acc.months_12m
+    summary.current_partial = acc.partial_net
+    summary.quota_months = acc.quota_months
+    if acc.latest is not None:
+        summary.as_of, summary.net_worth, summary.shareholders = acc.latest
+
+    # Retorno: cota do window_end sobre a cota-base, so na MESMA serie.
+    end = acc.quotas.get(0)
+    for k, attr in ((1, "return_1m"), (3, "return_3m"), (12, "return_12m")):
+        base = acc.quotas.get(k)
+        if end is not None and base is not None and end[1] == base[1]:
+            setattr(summary, attr, end[0] / base[0] - 1.0)
+
+    # Volatilidade: desvio-padrao pooled dos log-retornos diarios, anualizado.
+    summary.vol_obs = acc.ret_n
+    if acc.ret_n >= _MIN_VOL_OBS:
+        variance = (acc.ret_sumsq - acc.ret_sum * acc.ret_sum / acc.ret_n) / (
+            acc.ret_n - 1
+        )
+        summary.vol_12m = math.sqrt(max(0.0, variance)) * math.sqrt(_TRADING_DAYS)
+
+    current = acc.shareholders.get(0)
+    for k, attr in (
+        (1, "shareholders_delta_1m"),
+        (3, "shareholders_delta_3m"),
+        (12, "shareholders_delta_12m"),
+    ):
+        base_count = acc.shareholders.get(k)
+        if current is not None and base_count is not None:
+            setattr(summary, attr, current - base_count)
+    summary.shareholders_start_12m = acc.shareholders.get(12)
+    return summary
 
 
 # --- visao de mercado: captacao por gestora e por casa ------------------------
@@ -524,25 +668,41 @@ def summarize_watchlist_managers(config: Config) -> dict | None:
                 )
 
     def _empty() -> dict:
-        return {"net_3m": 0.0, "net_12m": 0.0, "pl": 0.0, "classes": 0}
+        return {
+            "net_3m": 0.0,
+            "net_12m": 0.0,
+            "pl": 0.0,
+            "classes": 0,
+            "shareholders": 0,
+            # Variacao de cotistas em 12m, somada so nas classes que tem a
+            # base - classes_with_delta diz sobre quantas o numero fala.
+            "shareholders_delta_12m": 0,
+            "classes_with_delta": 0,
+        }
 
     def _add(bucket: dict, summary: FlowSummary) -> None:
         bucket["net_3m"] += summary.net_3m or 0.0
         bucket["net_12m"] += summary.net_12m or 0.0
         bucket["pl"] += summary.net_worth or 0.0
         bucket["classes"] += 1
+        bucket["shareholders"] += summary.shareholders or 0
+        if summary.shareholders_delta_12m is not None:
+            bucket["shareholders_delta_12m"] += summary.shareholders_delta_12m
+            bucket["classes_with_delta"] += 1
 
     market = _empty()
     by_manager: dict[str, dict] = {}
     matched_classes = 0
     as_of: date | None = None
     window_months = 0
+    window_end: str | None = None
 
     for cnpj, summary in summaries.items():
         _add(market, summary)
         if summary.as_of and (as_of is None or summary.as_of > as_of):
             as_of = summary.as_of
         window_months = max(window_months, summary.months_12m)
+        window_end = window_end or summary.window_end
 
         manager_name, manager_cnpj = managers_by_class.get(cnpj, (None, None))
         if not manager_name and not manager_cnpj:
@@ -570,10 +730,11 @@ def summarize_watchlist_managers(config: Config) -> dict | None:
                 "managers": [],
             },
         )
-        entry["net_3m"] += bucket["net_3m"]
-        entry["net_12m"] += bucket["net_12m"]
-        entry["pl"] += bucket["pl"]
-        entry["classes"] += bucket["classes"]
+        for key in (
+            "net_3m", "net_12m", "pl", "classes", "shareholders",
+            "shareholders_delta_12m", "classes_with_delta",
+        ):
+            entry[key] += bucket[key]
         entry["managers"].append(
             {
                 "name": bucket["name"],
@@ -582,6 +743,9 @@ def summarize_watchlist_managers(config: Config) -> dict | None:
                 "net_12m": bucket["net_12m"],
                 "pl": bucket["pl"],
                 "classes": bucket["classes"],
+                "shareholders": bucket["shareholders"],
+                "shareholders_delta_12m": bucket["shareholders_delta_12m"],
+                "classes_with_delta": bucket["classes_with_delta"],
             }
         )
 
@@ -596,6 +760,7 @@ def summarize_watchlist_managers(config: Config) -> dict | None:
 
     return {
         "as_of": as_of.isoformat() if as_of else None,
+        "window_end": window_end,
         "window_months": window_months,
         "market": market,
         "houses": ordered,

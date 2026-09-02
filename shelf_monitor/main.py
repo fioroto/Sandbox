@@ -90,8 +90,23 @@ def flows_base_status(config: Config) -> tuple[str, str]:
     Mesmo contrato do market_base_status; a idade vem da secao `captacao` do
     manifesto, que o modulo flows mantem separada da secao do cadastro.
     """
-    if not (config.market_dir / "captacao.csv").is_file():
+    flows_path = config.market_dir / "captacao.csv"
+    if not flows_path.is_file():
         return "ausente", "informe diario nao importado"
+
+    # A primeira linha do CSV e a verdade sobre o que a base tem: um
+    # captacao.csv importado antes da cota nao serve a rentabilidade.
+    try:
+        with flows_path.open(encoding="utf-8-sig") as handle:
+            header = handle.readline()
+    except OSError:
+        header = ""
+    if "cota_fim_mes" not in header:
+        return (
+            "incompleta",
+            "captacao.csv sem as colunas de cota (importado antes da rentabilidade) "
+            "- rode: python -m shelf_monitor market --skip-fees",
+        )
 
     try:
         manifest = json.loads(
@@ -285,6 +300,10 @@ def build_report(
         warn_market_missing()
     else:
         report.enrichment = stats.to_dict()
+
+    flows_state, flows_detail = flows_base_status(config)
+    if flows_state == "incompleta":
+        console.print(f"[yellow]Base de captacao incompleta:[/] {flows_detail}")
 
     try:
         # Captacao por gestora sobre o mercado inteiro; None sem as bases.

@@ -261,10 +261,133 @@ class TestLoadSummaries(unittest.TestCase):
         self.assertEqual(btg.as_of, date(2026, 8, 3))
         self.assertEqual(btg.shareholders, 11_050)
 
+    def test_windows_are_anchored_on_the_last_closed_month(self):
+        self.assertEqual(self.summaries[BTG].window_end, "2026-07")
+        # net_3m cobre junho e julho (k=1 e k=0).
+        self.assertAlmostEqual(self.summaries[BTG].net_3m, 2_800_000.0)
+
+    def test_return_needs_the_base_quota_exactly_k_months_before(self):
+        """Estrito: sem a cota-base, None - nunca um '12m' que e 2 meses."""
+        btg = self.summaries[BTG]
+        self.assertAlmostEqual(btg.return_1m, 1.523456 / 1.51 - 1)
+        self.assertIsNone(btg.return_3m)
+        self.assertIsNone(btg.return_12m)
+        self.assertEqual(btg.quota_months, 2)
+
+    def test_volatility_needs_enough_daily_pairs(self):
+        btg = self.summaries[BTG]
+        self.assertEqual(btg.vol_obs, 2)  # 1 par em junho + 1 em julho
+        self.assertIsNone(btg.vol_12m)
+
+    def test_ticket_and_shareholder_deltas(self):
+        btg = self.summaries[BTG]
+        self.assertAlmostEqual(btg.ticket, 1_001_000_000.0 / 11_050)
+        self.assertEqual(btg.shareholders_delta_1m, 11_000 - 10_810)
+        self.assertIsNone(btg.shareholders_delta_12m)
+        self.assertEqual(self.summaries[KINEA].shareholders_delta_1m, -5)
+
     def test_missing_base_returns_none(self):
         config, tmp = temp_config()
         self.addCleanup(tmp.cleanup)
         self.assertIsNone(load_summaries(config))
+
+
+class TestSummaryWindows(unittest.TestCase):
+    """Formulas e bordas da leitura, com CSV inline (sem manifesto)."""
+
+    HEADER = (
+        "cnpj_classe;mes;captacao;resgates;captacao_liquida;pl_fim_mes;"
+        "cotistas_fim_mes;data_ultimo_informe;dias_informados;mes_parcial;"
+        "cota_fim_mes;cota_serie;ret_diario_soma;ret_diario_soma2;ret_diario_n"
+    )
+
+    def _load(self, rows: list[str], header: str | None = None):
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        (config.market_dir / "captacao.csv").write_text(
+            "\n".join([header or self.HEADER, *rows]) + "\n", encoding="utf-8-sig"
+        )
+        return load_summaries(config)
+
+    def test_volatility_is_the_pooled_daily_stdev_annualized(self):
+        import math
+
+        rows = [
+            f"11111111000111;2026-0{m};0;0;0;100;10;2026-0{m}-28;20;N;1.0;;0.1;0.002;100"
+            for m in (5, 6, 7)
+        ]
+        summary = self._load(rows)["11111111000111"]
+        n, s1, s2 = 300, 0.3, 0.006
+        expected = math.sqrt((s2 - s1 * s1 / n) / (n - 1)) * math.sqrt(252)
+        self.assertEqual(summary.vol_obs, 300)
+        self.assertAlmostEqual(summary.vol_12m, expected)
+
+    def test_too_few_pairs_give_no_volatility(self):
+        rows = ["11111111000111;2026-07;0;0;0;100;10;2026-07-31;20;N;1.0;;0.1;0.002;59"]
+        self.assertIsNone(self._load(rows)["11111111000111"].vol_12m)
+
+    def test_return_12m_uses_the_13th_closed_month_as_base(self):
+        rows = [
+            "11111111000111;2025-07;0;0;0;100;10;2025-07-31;20;N;1.00;;0;0;0",
+            "11111111000111;2026-04;0;0;0;100;10;2026-04-30;20;N;1.05;;0;0;0",
+            "11111111000111;2026-06;0;0;0;100;10;2026-06-30;20;N;1.08;;0;0;0",
+            "11111111000111;2026-07;0;0;0;100;12;2026-07-31;20;N;1.10;;0;0;0",
+        ]
+        summary = self._load(rows)["11111111000111"]
+        self.assertAlmostEqual(summary.return_12m, 0.10)
+        self.assertAlmostEqual(summary.return_3m, 1.10 / 1.05 - 1)
+        self.assertAlmostEqual(summary.return_1m, 1.10 / 1.08 - 1)
+        self.assertEqual(summary.shareholders_delta_12m, 2)
+        self.assertEqual(summary.shareholders_start_12m, 10)
+
+    def test_a_different_series_never_produces_a_return(self):
+        """A representativa mudou de subclasse: cotas incomparaveis."""
+        rows = [
+            "11111111000111;2026-06;0;0;0;100;10;2026-06-30;20;N;1.00;3001;0;0;0",
+            "11111111000111;2026-07;0;0;0;100;10;2026-07-31;20;N;1.10;3002;0;0;0",
+        ]
+        self.assertIsNone(self._load(rows)["11111111000111"].return_1m)
+
+    def test_class_without_the_anchor_month_has_no_1m_window(self):
+        """Janela ancorada na base, nao no ultimo mes de cada classe."""
+        rows = [
+            "11111111000111;2026-07;0;0;0;100;10;2026-07-31;20;N;1.10;;0;0;0",
+            "22222222000122;2026-06;100;0;100;100;10;2026-06-30;20;N;1.00;;0;0;0",
+        ]
+        summaries = self._load(rows)
+        stale = summaries["22222222000122"]
+        self.assertEqual(stale.window_end, "2026-07")
+        self.assertIsNone(stale.net_1m)
+        self.assertAlmostEqual(stale.net_12m, 100.0)
+        self.assertIsNone(stale.return_1m)
+
+    def test_old_csv_without_quota_columns_still_loads(self):
+        """Base importada antes da cota: captacao e ticket seguem, retorno nao."""
+        header = (
+            "cnpj_classe;mes;captacao;resgates;captacao_liquida;pl_fim_mes;"
+            "cotistas_fim_mes;data_ultimo_informe;dias_informados;mes_parcial"
+        )
+        rows = ["11111111000111;2026-07;500;0;500;1000;10;2026-07-31;20;N"]
+        summary = self._load(rows, header)["11111111000111"]
+        self.assertAlmostEqual(summary.net_1m, 500.0)
+        self.assertAlmostEqual(summary.ticket, 100.0)
+        self.assertIsNone(summary.return_1m)
+        self.assertEqual(summary.quota_months, 0)
+
+
+class TestFlowsBaseStatus(unittest.TestCase):
+    def test_csv_without_quota_columns_is_incomplete(self):
+        from shelf_monitor.main import flows_base_status
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        self.assertEqual(flows_base_status(config)[0], "ausente")
+        (config.market_dir / "captacao.csv").write_text(
+            "cnpj_classe;mes;captacao\n", encoding="utf-8-sig"
+        )
+        state, detail = flows_base_status(config)
+        self.assertEqual(state, "incompleta")
+        self.assertIn("market --skip-fees", detail)
 
 
 class TestWatchlistManagers(unittest.TestCase):
@@ -297,6 +420,15 @@ class TestWatchlistManagers(unittest.TestCase):
     def test_as_of_labels_the_freshest_informe(self):
         self.assertEqual(self.summary["as_of"], "2026-08-03")
         self.assertEqual(self.summary["window_months"], 2)
+        self.assertEqual(self.summary["window_end"], "2026-07")
+
+    def test_houses_carry_their_shareholders(self):
+        houses = {h["house"]: h for h in self.summary["houses"]}
+        self.assertEqual(houses["btg"]["shareholders"], 11_050)
+        self.assertEqual(houses["itau"]["shareholders"], 208)
+        self.assertEqual(self.summary["market"]["shareholders"], 11_258)
+        # Sem a base de 12 meses, o delta nao fala por ninguem.
+        self.assertEqual(houses["btg"]["classes_with_delta"], 0)
 
     def test_missing_either_base_returns_none(self):
         config, tmp = temp_config()
