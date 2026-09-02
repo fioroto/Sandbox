@@ -330,12 +330,12 @@ def _precise_cell(value: float | None) -> str:
     return "" if value is None else format(value, ".12g")
 
 
-def _merge_manifest_section(config: Config, section: str, payload: dict) -> None:
+def merge_manifest_section(config: Config, section: str, payload: dict) -> None:
     """Atualiza uma chave do _manifest.json preservando as demais.
 
-    O manifesto e escrito por dois produtores (cadastro e captacao); cada um
-    regrava apenas a propria secao, senao a importacao de um apagaria o
-    registro do outro.
+    O manifesto e escrito por varios produtores (cadastro, captacao, CDI);
+    cada um regrava apenas a propria secao, senao a importacao de um apagaria
+    o registro do outro.
     """
     path = config.market_dir / "_manifest.json"
     manifest: dict = {}
@@ -389,7 +389,7 @@ def write_flows(config: Config, result: FlowsResult) -> Path:
                 }
             )
 
-    _merge_manifest_section(
+    merge_manifest_section(
         config,
         "captacao",
         {
@@ -490,11 +490,18 @@ class _Accumulator:
     latest: tuple[date, float | None, int | None] | None = None
 
 
-def _months_between(later: str, earlier: str) -> int:
+def months_between(later: str, earlier: str) -> int:
     """Meses de `earlier` ate `later` ("YYYY-MM"); negativo se invertidos."""
     y1, m1 = later.split("-")
     y2, m2 = earlier.split("-")
     return (int(y1) * 12 + int(m1)) - (int(y2) * 12 + int(m2))
+
+
+def shift_month(month: str, delta: int) -> str:
+    """"2026-07" - 3 -> "2026-04"; o inverso de months_between."""
+    year, mon = month.split("-")
+    index = int(year) * 12 + int(mon) - 1 + delta
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
 
 
 def last_closed_month(config: Config) -> str | None:
@@ -560,7 +567,7 @@ def load_summaries(config: Config) -> dict[str, FlowSummary] | None:
             if (row.get("mes_parcial") or "").strip().upper() == "S":
                 acc.partial_net = net
             elif window_end is not None:
-                k = _months_between(window_end, month)
+                k = months_between(window_end, month)
                 if 0 <= k <= 11:
                     acc.net_12m += net
                     acc.months_12m += 1

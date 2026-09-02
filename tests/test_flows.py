@@ -375,6 +375,83 @@ class TestSummaryWindows(unittest.TestCase):
         self.assertEqual(summary.quota_months, 0)
 
 
+class TestCdi(unittest.TestCase):
+    """A serie do CDI como benchmark, do JSON do SGS ao acumulado por janela."""
+
+    def setUp(self):
+        from shelf_monitor.market.benchmarks import run_cdi_import
+
+        self.config, self._tmp = temp_config()
+        self.addCleanup(self._tmp.cleanup)
+        self.path, self.notes = run_cdi_import(
+            self.config, months=4, local_dir=FIXTURES, today=TODAY
+        )
+
+    def test_import_writes_the_series_and_its_manifest_section(self):
+        from shelf_monitor.market.benchmarks import load_cdi
+
+        self.assertTrue(self.path.is_file())
+        rates = load_cdi(self.config)
+        self.assertEqual(len(rates), 22 + 23)  # dias uteis de jun + jul/2026
+        self.assertAlmostEqual(rates[date(2026, 7, 31)], 0.05)
+        manifest = json.loads(
+            (self.config.market_dir / "_manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["cdi"]["count"], 45)
+        self.assertEqual(manifest["cdi"]["last"], "2026-07-31")
+
+    def test_window_accumulates_only_complete_months(self):
+        from shelf_monitor.market.benchmarks import cdi_block
+
+        block = cdi_block(self.config, "2026-07")
+        self.assertAlmostEqual(block["windows"]["1m"], 1.0005**23 - 1)
+        # Maio nao existe na fixture: 3m e 12m nao saem pela metade.
+        self.assertIsNone(block["windows"]["3m"])
+        self.assertIsNone(block["windows"]["12m"])
+        self.assertEqual(block["window_end"], "2026-07")
+        self.assertEqual(block["last_rate"], "2026-07-31")
+
+    def test_no_series_or_no_window_end_means_no_benchmark(self):
+        from shelf_monitor.market.benchmarks import cdi_block
+
+        self.assertIsNone(cdi_block(self.config, None))
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        self.assertIsNone(cdi_block(config, "2026-07"))
+
+    def test_unreachable_source_keeps_the_previous_series(self):
+        from shelf_monitor.market.benchmarks import load_cdi, run_cdi_import
+
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        path, notes = run_cdi_import(
+            self.config, months=4, local_dir=Path(empty.name),
+            today=date(2026, 9, 15),
+        )
+        self.assertEqual(path, self.path)
+        self.assertEqual(len(load_cdi(self.config)), 45)
+        self.assertTrue(any("mantido" in note for note in notes))
+
+    def test_nothing_on_disk_and_no_source_returns_none(self):
+        from shelf_monitor.market.benchmarks import run_cdi_import
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        path, notes = run_cdi_import(config, months=4, local_dir=Path(empty.name))
+        self.assertIsNone(path)
+        self.assertTrue(notes)
+
+    def test_series_up_to_date_skips_the_fetch(self):
+        from shelf_monitor.market.benchmarks import run_cdi_import
+
+        _, notes = run_cdi_import(
+            self.config, months=4, local_dir=FIXTURES, today=date(2026, 7, 31)
+        )
+        self.assertTrue(any("em dia" in note for note in notes))
+
+
 class TestFlowsBaseStatus(unittest.TestCase):
     def test_csv_without_quota_columns_is_incomplete(self):
         from shelf_monitor.main import flows_base_status

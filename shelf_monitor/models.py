@@ -486,6 +486,9 @@ class RunReport:
     # (market.flows.summarize_watchlist_managers); None sem as bases em disco.
     # Calculada no build_report, que tem Config em maos - os renderers nao tem.
     flows: dict | None = None
+    # CDI acumulado nas janelas de meses fechados (market.benchmarks.cdi_block);
+    # None sem cdi.csv em disco - e nenhuma superficie inventa "% do CDI".
+    benchmarks: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

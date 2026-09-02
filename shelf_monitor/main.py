@@ -43,8 +43,10 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.market.benchmarks import cdi_block, run_cdi_import
 from shelf_monitor.market.flows import (
     DEFAULT_MONTHS as FLOWS_DEFAULT_MONTHS,
+    last_closed_month,
     run_flows_import,
     summarize_watchlist_managers,
 )
@@ -253,24 +255,33 @@ def ensure_market_base(config: Config) -> None:
             return
 
     # A captacao segue a mesma regra da base: so o AUSENTE dispara download no
-    # meio de uma coleta; base velha e assunto do doctor.
+    # meio de uma coleta; base velha ou incompleta e assunto do doctor.
     flows_state, _ = flows_base_status(config)
-    if flows_state != "ausente":
-        return
+    if flows_state == "ausente":
+        console.print(
+            "[bold]Captacao ausente - importando o informe diario da CVM...[/]"
+        )
+        try:
+            result, path = run_flows_import(config)
+        except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
+            console.print(f"[yellow]Falha ao importar a captacao: {_short(str(exc))}[/]")
+            return
 
-    console.print(
-        "[bold]Captacao ausente - importando o informe diario da CVM...[/]"
-    )
-    try:
-        result, path = run_flows_import(config)
-    except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
-        console.print(f"[yellow]Falha ao importar a captacao: {_short(str(exc))}[/]")
-        return
+        for note in result.notes:
+            console.print(f"  [dim]{_short(note)}[/]")
+        if path is None:
+            console.print("[yellow]Nenhum mes do informe diario respondeu.[/]")
 
-    for note in result.notes:
-        console.print(f"  [dim]{_short(note)}[/]")
-    if path is None:
-        console.print("[yellow]Nenhum mes do informe diario respondeu.[/]")
+    # O CDI e uma requisicao de alguns KB: ausente, entra junto.
+    if not (config.market_dir / "cdi.csv").is_file():
+        console.print("[bold]CDI ausente - importando a serie do BCB...[/]")
+        try:
+            _, notes = run_cdi_import(config)
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]Falha ao importar o CDI: {_short(str(exc))}[/]")
+            return
+        for note in notes:
+            console.print(f"  [dim]{_short(note)}[/]")
 
 
 def enrichment_coverage_line(stats: EnrichmentStats) -> str:
@@ -310,6 +321,12 @@ def build_report(
         report.flows = summarize_watchlist_managers(config)
     except Exception as exc:  # noqa: BLE001 - a visao de gestora nunca derruba o report
         console.print(f"[yellow]Visao de captacao por gestora falhou:[/] {_short(str(exc))}")
+
+    try:
+        # CDI das mesmas janelas; None sem a serie em disco.
+        report.benchmarks = cdi_block(config, last_closed_month(config))
+    except Exception as exc:  # noqa: BLE001 - benchmark nunca derruba o report
+        console.print(f"[yellow]Benchmark CDI falhou:[/] {_short(str(exc))}")
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
@@ -667,9 +684,10 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
         for table_name, columns in database.unknown_columns.items():
             console.print(f"  {table_name}: {', '.join(columns)}")
 
-    flows_path = None
+    flows_path = cdi_path = None
     if not args.skip_flows:
         flows_path = _import_flows_step(config, args.flows_months, local_dir, args.force)
+        cdi_path = _import_cdi_step(config, args.flows_months, local_dir, args.force)
 
     console.print()
     console.print("[bold]Tabelas geradas[/]")
@@ -680,6 +698,24 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
             console.print(f"  {key:10} {paths[key]}")
     if flows_path is not None:
         console.print(f"  {'captacao':10} {flows_path}")
+    if cdi_path is not None:
+        console.print(f"  {'cdi':10} {cdi_path}")
+
+
+def _import_cdi_step(
+    config: Config, months: int, local_dir: Path | None, force: bool
+) -> Path | None:
+    """Importa a serie do CDI (BCB) e imprime as notas. None quando nada veio."""
+    console.print()
+    console.print("[bold]Importando o CDI (BCB, serie 12)...[/]")
+    path, notes = run_cdi_import(config, months=months, local_dir=local_dir, force=force)
+    for note in notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+    if path is None:
+        console.print(
+            "[yellow]Serie do CDI nao veio - os relatorios saem sem '% do CDI'.[/]"
+        )
+    return path
 
 
 def _import_flows_step(

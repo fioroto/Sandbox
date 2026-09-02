@@ -246,6 +246,21 @@ INF_202412_ROWS = [
 ]
 
 
+# --- CDI (BCB SGS 12) -----------------------------------------------------------
+# Dias uteis de junho e julho/2026 a 0,05% a.d., no formato que o SGS devolve.
+# Maio falta de proposito: a janela de 3 meses tem de sair None.
+def _cdi_payload() -> list[dict[str, str]]:
+    from datetime import date, timedelta
+
+    rows = []
+    day = date(2026, 6, 1)
+    while day <= date(2026, 7, 31):
+        if day.weekday() < 5:
+            rows.append({"data": day.strftime("%d/%m/%Y"), "valor": "0.050000"})
+        day += timedelta(days=1)
+    return rows
+
+
 def _csv(header: list[str], rows: list[list[str]]) -> bytes:
     lines = [";".join(header)]
     lines.extend(";".join(row) for row in rows)
@@ -276,6 +291,12 @@ def build(directory: Path = FIXTURES) -> Path:
     _informe_zip(directory, "202607", INF_DIARIO_COLUMNS, INF_202607_ROWS)
     _informe_zip(directory, "202608", INF_DIARIO_COLUMNS, INF_202608_ROWS)
     _informe_zip(directory, "202412", INF_OLD_COLUMNS, INF_202412_ROWS)
+
+    import json
+
+    (directory / "cdi.json").write_text(
+        json.dumps(_cdi_payload(), indent=1), encoding="utf-8"
+    )
     return directory
 
 
