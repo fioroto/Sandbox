@@ -1101,6 +1101,33 @@ class TestDeck(unittest.TestCase):
             path = render_deck(config, self._report(with_listing=False))
             self.assertGreaterEqual(len(Presentation(path).slides), 4)
 
+    def test_gap_slide_appears_with_xp_baseline(self):
+        import tempfile
+        from datetime import datetime
+
+        from pptx import Presentation
+
+        from shelf_monitor.models import FundOffer, ShelfSnapshot
+        from shelf_monitor.models import CollectorStrategy, SnapshotStatus
+        from shelf_monitor.report.deck import render_deck
+
+        report = self._report()
+        xp_fund = FundOffer(platform="xp", name="XP Unico FIC FIM",
+                            cnpj="99000000000199")
+        xp_fund.sources = ["playwright"]
+        report.snapshots.insert(0, ShelfSnapshot(
+            platform="xp", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.PLAYWRIGHT, status=SnapshotStatus.OK,
+            funds=[xp_fund],
+        ))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(data_dir=tmp)
+            path = render_deck(config, report)
+            # capa, numeros, gaps (os 6 fundos BTG estao fora da vitrine XP),
+            # arquitetura, custo, movimentos, metodologia
+            self.assertEqual(len(Presentation(path).slides), 7)
+
 
 class TestFundEnvelopeJoin(TestEnrichment):
     """Prateleira anuncia o CNPJ do envelope; o registro tem os das classes.
