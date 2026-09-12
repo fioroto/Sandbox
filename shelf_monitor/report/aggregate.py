@@ -6,8 +6,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from shelf_monitor.config import PLATFORMS, WATCHLIST
-from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL
-from shelf_monitor.normalize import normalize_text
+from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
+from shelf_monitor.normalize import format_cnpj, name_slug, normalize_text
 from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
     AssetClass,
@@ -153,9 +153,30 @@ def _listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
     return [f for f in retail_funds(snapshot) if f.on_listing]
 
 
+def _listing_presence(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
+    """CNPJ -> casas em cuja vitrine de varejo o fundo aparece.
+
+    A regra de pertinencia (varejo + vitrine + CNPJ) mora aqui, uma unica vez:
+    e a mesma para exclusivos, shared e gaps.
+    """
+    presence: dict[str, set[str]] = {}
+    for snapshot in snapshots:
+        for fund in _listing_funds(snapshot):
+            if fund.cnpj:
+                presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
+    return presence
+
+
 # Quantas categorias ANBIMA aparecem por extenso na matriz; o resto agrega em
 # "Outras" para a tabela caber numa tela de comite.
 _MATRIX_CATEGORIES = 12
+
+# Idem para o bloco de gaps, que tende a ter cauda longa de categorias.
+_GAP_CATEGORIES = 15
+
+# Fundos de gap embutidos no JSON do dashboard/deck; a planilha recebe a lista
+# completa chamando build_gap_block diretamente.
+_GAP_FUNDS_EMBEDDED = 150
 
 
 def build_listing_block(report: RunReport) -> dict:
@@ -171,15 +192,9 @@ def build_listing_block(report: RunReport) -> dict:
         if s.status != SnapshotStatus.UNAVAILABLE and s.funds
     ]
 
-    presence: dict[str, set[str]] = {}
+    presence = _listing_presence(usable)
     platforms: list[dict] = []
     category_totals: Counter = Counter()
-
-    for snapshot in usable:
-        listing = _listing_funds(snapshot)
-        for fund in listing:
-            if fund.cnpj:
-                presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
 
     for snapshot in usable:
         listing = _listing_funds(snapshot)
@@ -296,6 +311,275 @@ def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
         if len(platforms) == 1:
             exclusive[next(iter(platforms))].add(cnpj)
     return exclusive
+
+
+def _platform_label(platform_id: str) -> str:
+    return PLATFORMS[platform_id].label if platform_id in PLATFORMS else platform_id
+
+
+def _canonical_order(platform_ids: set[str]) -> list[str]:
+    """Ordem canonica das casas (a mesma das cores dos graficos)."""
+    ordered = [pid for pid in PLATFORMS if pid in platform_ids]
+    ordered.extend(sorted(platform_ids - set(PLATFORMS)))
+    return ordered
+
+
+def _offer_manager(fund: FundOffer) -> str | None:
+    manager = fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name
+    return manager.strip() if manager else None
+
+
+def build_gap_block(
+    snapshots: list[ShelfSnapshot], baseline_id: str | None = None
+) -> dict:
+    """Gaps de prateleira do baseline: o que as vitrines concorrentes ofertam
+    de varejo e a vitrine da XP nao tem.
+
+    A base e sempre a vitrine, dos dois lados (vitrine x vitrine): o catalogo
+    Open Finance nao entra em nenhum ponto da conta - nem para desqualificar um
+    gap, nem nas contagens por categoria. Um fundo que a XP so tem via Open
+    Finance conta como gap, porque o cliente nao o ve na vitrine.
+
+    Protecoes anti-falso-alarme, na mesma linha de _exclusive_cnpjs:
+    - baseline ausente, indisponivel ou sem vitrine -> bloco suprimido com
+      motivo (tudo pareceria gap);
+    - baseline PARTIAL com vitrine -> renderiza com aviso (gaps podem estar
+      superestimados);
+    - concorrente indisponivel ou sem vitrine -> fora do universo, listado em
+      "excluded" com motivo (vitrine parcial so subestima gaps, entao PARTIAL
+      permanece).
+    """
+    if baseline_id is None:
+        baseline_id = next(
+            (p.platform_id for p in PLATFORMS.values() if p.is_baseline), None
+        )
+    if baseline_id is None:
+        return {"available": False, "reason": "nenhuma casa baseline configurada"}
+
+    label = _platform_label(baseline_id)
+    baseline = next((s for s in snapshots if s.platform == baseline_id), None)
+    if baseline is None:
+        return {
+            "available": False,
+            "reason": f"snapshot da {label} ausente desta execucao",
+            "baseline_id": baseline_id,
+            "baseline_label": label,
+        }
+    if baseline.status == SnapshotStatus.UNAVAILABLE or not baseline.funds:
+        detail = f": {baseline.error}" if baseline.error else ""
+        return {
+            "available": False,
+            "reason": f"coleta da {label} indisponivel{detail}",
+            "baseline_id": baseline_id,
+            "baseline_label": label,
+        }
+
+    baseline_listing = _listing_funds(baseline)
+    if not baseline_listing:
+        return {
+            "available": False,
+            "reason": (
+                f"{label} sem vitrine coletada nesta execucao "
+                f"(estrategia: {baseline.strategy.value}); o catalogo "
+                "Open Finance nao conta como vitrine"
+            ),
+            "baseline_id": baseline_id,
+            "baseline_label": label,
+        }
+
+    baseline_warning = None
+    if baseline.status == SnapshotStatus.PARTIAL:
+        detail = f" ({baseline.error})" if baseline.error else ""
+        baseline_warning = (
+            f"coleta da {label} parcial{detail}; gaps podem estar superestimados"
+        )
+
+    competitors: list[dict] = []
+    competitor_snaps: list[ShelfSnapshot] = []
+    excluded: list[dict] = []
+    for snapshot in snapshots:
+        if snapshot.platform == baseline_id:
+            continue
+        comp_label = _platform_label(snapshot.platform)
+        if snapshot.status == SnapshotStatus.UNAVAILABLE or not snapshot.funds:
+            excluded.append(
+                {
+                    "platform_id": snapshot.platform,
+                    "label": comp_label,
+                    "reason": "coleta indisponivel nesta execucao",
+                }
+            )
+            continue
+        listing = _listing_funds(snapshot)
+        if not listing:
+            excluded.append(
+                {
+                    "platform_id": snapshot.platform,
+                    "label": comp_label,
+                    "reason": (
+                        "sem vitrine publica coletada; o catalogo "
+                        "Open Finance nao conta como oferta"
+                    ),
+                }
+            )
+            continue
+        competitor_snaps.append(snapshot)
+        competitors.append(
+            {
+                "platform_id": snapshot.platform,
+                "label": comp_label,
+                "listing_total": len(listing),
+                "partial": snapshot.status == SnapshotStatus.PARTIAL,
+            }
+        )
+
+    baseline_cnpjs = {f.cnpj for f in baseline_listing if f.cnpj}
+
+    # Indices da vitrine baseline para as colunas heuristicas (D3). Sao sinais
+    # informativos - nunca removem um fundo da lista de gaps.
+    baseline_managers = {
+        normalize_text(m)
+        for m in (_offer_manager(f) for f in baseline_listing)
+        if m
+    }
+    baseline_slugs: dict[str, str] = {}
+    for fund in baseline_listing:
+        slug = name_slug(fund.name)
+        if slug:
+            baseline_slugs.setdefault(slug, fund.name)
+
+    # Exemplares por CNPJ de gap: (casa, fundo) de cada vitrine concorrente.
+    offers_by_cnpj: dict[str, list[tuple[str, FundOffer]]] = {}
+    for snapshot in competitor_snaps:
+        for fund in _listing_funds(snapshot):
+            if fund.cnpj and fund.cnpj not in baseline_cnpjs:
+                offers_by_cnpj.setdefault(fund.cnpj, []).append(
+                    (snapshot.platform, fund)
+                )
+
+    funds: list[dict] = []
+    gap_categories: Counter = Counter()
+    for cnpj, offers in offers_by_cnpj.items():
+        houses = _canonical_order({platform for platform, _ in offers})
+        # Exemplar de maior confianca: classificacao oficial primeiro, depois
+        # quem apareceu em mais fontes da propria casa.
+        rep = max(
+            (fund for _, fund in offers),
+            key=lambda f: (
+                bool(f.extra.get(KEY_ANBIMA) or f.extra.get(KEY_CVM)),
+                len(f.sources),
+            ),
+        )
+        category = anbima_category(rep)
+        gap_categories[category] += 1
+
+        manager = next(
+            (m for m in (_offer_manager(f) for _, f in offers) if m), None
+        )
+        minimums = [f.min_initial for _, f in offers if f.min_initial is not None]
+        fees = [f.admin_fee_pct for _, f in offers if f.admin_fee_pct is not None]
+        pl = next(
+            (
+                f.extra.get(KEY_PL)
+                for _, f in offers
+                if f.extra.get(KEY_PL) is not None
+            ),
+            None,
+        )
+        funds.append(
+            {
+                "cnpj": cnpj,
+                "cnpj_display": format_cnpj(cnpj),
+                "name": rep.name,
+                "category": category,
+                "manager": manager,
+                "houses": houses,
+                "houses_label": ", ".join(_platform_label(h) for h in houses),
+                "houses_count": len(houses),
+                "min_initial": min(minimums) if minimums else None,
+                "admin_fee_pct": min(fees) if fees else None,
+                "pl_cvm": pl,
+                "manager_on_xp": (
+                    normalize_text(manager) in baseline_managers
+                    if manager
+                    else None
+                ),
+                "possible_xp_equivalent": baseline_slugs.get(name_slug(rep.name)),
+            }
+        )
+
+    funds.sort(key=lambda f: (-f["houses_count"], -(f["pl_cvm"] or 0), f["name"]))
+
+    # Cobertura por categoria: vitrine XP vs. vitrine de cada concorrente.
+    baseline_by_category: Counter = Counter(
+        anbima_category(f) for f in baseline_listing
+    )
+    competitor_by_category: dict[str, Counter] = {
+        s.platform: Counter(anbima_category(f) for f in _listing_funds(s))
+        for s in competitor_snaps
+    }
+
+    top_categories = [c for c, _ in gap_categories.most_common(_GAP_CATEGORIES)]
+    categories: list[dict] = []
+    for category in top_categories:
+        by_platform = {
+            pid: counter.get(category, 0)
+            for pid, counter in competitor_by_category.items()
+        }
+        best_id = max(by_platform, key=lambda pid: by_platform[pid])
+        categories.append(
+            {
+                "category": category,
+                "xp": baseline_by_category.get(category, 0),
+                "by_platform": by_platform,
+                "best_competitor": {
+                    "platform_id": best_id,
+                    "label": _platform_label(best_id),
+                    "count": by_platform[best_id],
+                },
+                "gap_count": gap_categories[category],
+            }
+        )
+    other_gaps = sum(
+        n for cat, n in gap_categories.items() if cat not in top_categories
+    )
+    if other_gaps:
+        categories.append(
+            {
+                "category": "Outras",
+                "xp": sum(
+                    n
+                    for cat, n in baseline_by_category.items()
+                    if cat not in top_categories
+                ),
+                "by_platform": {
+                    pid: sum(
+                        n
+                        for cat, n in counter.items()
+                        if cat not in top_categories
+                    )
+                    for pid, counter in competitor_by_category.items()
+                },
+                "best_competitor": None,
+                "gap_count": other_gaps,
+            }
+        )
+
+    return {
+        "available": True,
+        "reason": None,
+        "baseline_id": baseline_id,
+        "baseline_label": label,
+        "baseline_status": baseline.status.value,
+        "baseline_warning": baseline_warning,
+        "baseline_listing_total": len(baseline_listing),
+        "competitors": competitors,
+        "excluded": excluded,
+        "total_gaps": len(funds),
+        "multi_house_gaps": sum(1 for f in funds if f["houses_count"] >= 2),
+        "funds": funds,
+        "categories": categories,
+    }
 
 
 def summarize_platform(
@@ -440,9 +724,19 @@ def build_dashboard_data(report: RunReport) -> dict:
         if any(ASSET_CLASS_LABELS[c] in s.by_class for s in summaries)
     ]
 
+    # A lista completa de gaps vai a planilha (que chama build_gap_block
+    # direto); o HTML embute so o topo para o payload nao inchar.
+    gaps = build_gap_block(report.snapshots)
+    gap_funds = gaps.get("funds") or []
+
     return {
         "generated_at": report.generated_at.isoformat(),
         "listing": build_listing_block(report),
+        "gaps": {
+            **gaps,
+            "funds": gap_funds[:_GAP_FUNDS_EMBEDDED],
+            "funds_truncated": max(0, len(gap_funds) - _GAP_FUNDS_EMBEDDED),
+        },
         "restricted": build_restricted_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
