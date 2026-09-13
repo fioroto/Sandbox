@@ -1,0 +1,4 @@
+id_subclasse;id_classe;denominacao;codigo_cvm;situacao;inicio_situacao;data_constituicao;data_inicio;forma_condominio;exclusivo;publico_alvo;previdenciario;exclusivo_inr;exclusivo_previdencia_complementar
+S1;C1;A1 D30 - VAREJO;S777;EM FUNCIONAMENTO NORMAL;2025-11-10;2025-10-01;2025-11-20;A;N;Investidores em geral;N;N;N
+S2;C4;MULTI CLASSE A - PREVIDENCIA;COL1;EM FUNCIONAMENTO NORMAL;2024-01-01;2023-12-01;2024-02-01;A;N;Investidores em geral;S;N;S
+S3;C99;SUBCLASSE ORFA;S999;EM FUNCIONAMENTO NORMAL;2024-01-01;2023-12-01;2024-02-01;A;N;Investidores em geral;N;N;N

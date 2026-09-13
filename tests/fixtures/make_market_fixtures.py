@@ -114,7 +114,7 @@ SUBCLASSES = [
 ]
 
 CAD_FI_COLUMNS = [
-    "TP_FUNDO", "CNPJ_FUNDO", "DENOM_SOCIAL", "DT_REG", "SIT", "CLASSE",
+    "TP_FUNDO", "CNPJ_FUNDO", "CD_CVM", "DENOM_SOCIAL", "DT_REG", "SIT", "CLASSE",
     "CLASSE_ANBIMA", "CONDOM", "FUNDO_COTAS", "FUNDO_EXCLUSIVO", "TAXA_PERFM",
     "TAXA_ADM", "VL_PATRIM_LIQ", "DT_PATRIM_LIQ", "ADMIN", "CNPJ_ADMIN",
     "GESTOR", "CUSTODIANTE", "AUDITOR",
@@ -122,18 +122,18 @@ CAD_FI_COLUMNS = [
 
 CAD_FI_ROWS = [
     # Fundo que ainda nao migrou: so existe aqui, nao no registro.
-    ["FI", "70345678000170", "VERDE AM SCENA FIC FIM", "2020-02-02",
+    ["FI", "70345678000170", "444070", "VERDE AM SCENA FIC FIM", "2020-02-02",
      "EM FUNCIONAMENTO NORMAL", "Fundo Multimercado", "Multimercados Livre",
      "Aberto", "S", "N", "20.00", "1.90", "9100000000.00", "2026-08-25",
      "BEM DTVM LTDA", "59281253000123", "VERDE ASSET MANAGEMENT S.A.",
      "CUSTODIANTE Y", "AUDITORA X"],
-    ["FI", "80345678000180", "SPX NIMITZ FIC FIM", "2019-08-08",
+    ["FI", "80345678000180", "444080", "SPX NIMITZ FIC FIM", "2019-08-08",
      "EM FUNCIONAMENTO NORMAL", "Fundo Multimercado", "Multimercados Macro",
      "Aberto", "S", "N", "20.00", "2.00", "8300000000.00", "2026-08-25",
      "BEM DTVM LTDA", "59281253000123", "SPX GESTAO DE RECURSOS LTDA",
      "CUSTODIANTE Y", "AUDITORA X"],
     # Ja adaptado: aparece nos dois arquivos e nao pode ser contado duas vezes.
-    ["FIF", "12345678000191", "BTG PACTUAL DIGITAL FIF", "2024-03-12",
+    ["FIF", "12345678000191", "555001", "BTG PACTUAL DIGITAL FIF", "2024-03-12",
      "EM FUNCIONAMENTO NORMAL", "Fundo de Renda Fixa", "Renda Fixa Duracao Livre",
      "Aberto", "N", "N", "", "0.50", "1850000000.00", "2026-08-25",
      "BEM DTVM LTDA", "59281253000123", "BTG PACTUAL ASSET MANAGEMENT S.A. DTVM",

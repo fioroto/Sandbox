@@ -21,6 +21,7 @@ from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import (
     classify_asset_class,
     normalize_cnpj,
+    normalize_cvm_code,
     normalize_text,
     parse_number,
 )
@@ -31,6 +32,12 @@ KEY_ANBIMA = "classificacao_anbima"
 KEY_CVM = "classificacao_cvm"
 KEY_GESTOR_OFICIAL = "gestor_oficial"
 KEY_CNPJ_GESTOR = "cnpj_gestor"
+# O que a casa dizia antes de a CVM prevalecer - a divergencia e informacao.
+KEY_GESTOR_CASA = "gestor_casa"
+KEY_CNPJ_GESTOR_CASA = "cnpj_gestor_casa"
+# Por qual chave o fundo casou com o cadastro: cnpj, codigo_subclasse,
+# codigo_classe ou codigo_fundo.
+KEY_MATCH = "match_cvm"
 KEY_SITUACAO = "situacao_cvm"
 KEY_PL = "pl_cvm"
 KEY_PUBLICO = "publico_alvo_cvm"
@@ -60,8 +67,11 @@ class EnrichmentStats:
 
     total: int = 0
     with_cnpj: int = 0
+    with_cvm_code: int = 0
     matched: int = 0
+    matched_by_cvm_code: int = 0
     anbima_filled: int = 0
+    managers_from_cvm: int = 0
     managers_inferred: int = 0
     by_platform: dict[str, dict[str, int]] = field(default_factory=dict)
 
@@ -69,17 +79,21 @@ class EnrichmentStats:
         return {
             "total": self.total,
             "with_cnpj": self.with_cnpj,
+            "with_cvm_code": self.with_cvm_code,
             "matched": self.matched,
+            "matched_by_cvm_code": self.matched_by_cvm_code,
             "anbima_filled": self.anbima_filled,
+            "managers_from_cvm": self.managers_from_cvm,
             "managers_inferred": self.managers_inferred,
             "by_platform": self.by_platform,
         }
 
 
 class MarketLookup:
-    """Indice por CNPJ do mercado.csv gerado pelo modulo market.
+    """Indice do mercado.csv gerado pelo modulo market, por CNPJ e por codigo.
 
-    Dois indices, porque as prateleiras anunciam dois CNPJs diferentes:
+    Dois indices por CNPJ, porque as prateleiras anunciam dois CNPJs
+    diferentes:
 
     - o da **classe** (e o que o informe e a distribuicao usam) - indice direto;
     - o do **fundo** (o envelope; e o que o Open Finance publica em cnpjNumber).
@@ -91,16 +105,25 @@ class MarketLookup:
     No indice por fundo, gestor e situacao valem sempre (sao do envelope);
     classificacao so quando as classes do fundo concordam - atribuir ao
     envelope a classe de uma unica filha seria inventar dado.
+
+    O terceiro indice e por **codigo CVM**, para as fontes que identificam o
+    produto sem publicar CNPJ. Ele cobre os tres niveis da RCVM 175, e em
+    colisao vence o mais especifico (subclasse > classe > fundo): quem anuncia
+    um codigo de subclasse esta apontando o produto comercial exato. A
+    subclasse partilha CNPJ e carteira com a classe, entao ela resolve para o
+    registro da classe-mae - que e onde moram gestora e classificacao.
     """
 
     def __init__(
         self,
         records: dict[str, MarketRecord],
         fund_records: dict[str, MarketRecord],
+        cvm_codes: dict[str, tuple[MarketRecord, str]],
         source: Path,
     ):
         self._records = records
         self._fund_records = fund_records
+        self._cvm_codes = cvm_codes
         self.source = source
 
     def __len__(self) -> int:
@@ -110,6 +133,29 @@ class MarketLookup:
         if not cnpj:
             return None
         return self._records.get(cnpj) or self._fund_records.get(cnpj)
+
+    def get_by_cvm_code(self, code: object) -> tuple[MarketRecord, str] | None:
+        """Registro e nivel do codigo (subclasse, classe ou fundo)."""
+        normalized = normalize_cvm_code(code)
+        if not normalized:
+            return None
+        return self._cvm_codes.get(normalized)
+
+    def resolve(self, offer: FundOffer) -> tuple[MarketRecord, str] | None:
+        """Acha o registro oficial da oferta e diz por qual chave casou.
+
+        CNPJ primeiro (classe e depois envelope): e a chave mais confiavel e a
+        que os feeds regulados publicam. O codigo CVM e a rede para quem nao
+        publica CNPJ nenhum.
+        """
+        record = self.get(offer.cnpj)
+        if record is not None:
+            return record, "cnpj"
+        hit = self.get_by_cvm_code(offer.cvm_code)
+        if hit is not None:
+            record, level = hit
+            return record, f"codigo_{level}"
+        return None
 
     def managers(self) -> list[str]:
         """Todos os nomes de gestor da base - materia-prima do indice de marcas."""
@@ -130,6 +176,11 @@ class MarketLookup:
 
         records: dict[str, MarketRecord] = {}
         by_fund: dict[str, list[dict]] = {}
+        # Materia-prima do indice por codigo, montado depois que os registros
+        # de envelope existirem.
+        by_classe_id: dict[str, MarketRecord] = {}
+        class_codes: list[tuple[str, MarketRecord, str]] = []
+        fund_codes: dict[str, str] = {}
         with path.open(encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle, delimiter=";"):
                 cnpj = normalize_cnpj(row.get("cnpj"))
@@ -153,12 +204,63 @@ class MarketLookup:
                 if fund_cnpj:
                     by_fund.setdefault(fund_cnpj, []).append(row)
 
+                # `codigo_cvm` e da classe nas linhas RCVM175 e do proprio
+                # fundo nas legadas, que nao tem classe.
+                classe_id = (row.get("id_classe") or "").strip()
+                if classe_id:
+                    by_classe_id.setdefault(classe_id, records[cnpj])
+                code = normalize_cvm_code(row.get("codigo_cvm"))
+                if code:
+                    level = "classe" if classe_id else "fundo"
+                    class_codes.append((code, records[cnpj], level))
+                fund_code = normalize_cvm_code(row.get("codigo_cvm_fundo"))
+                if fund_code and fund_cnpj:
+                    fund_codes.setdefault(fund_cnpj, fund_code)
+
         fund_records: dict[str, MarketRecord] = {}
         for fund_cnpj, rows in by_fund.items():
             if fund_cnpj in records:
                 continue  # envelope com CNPJ de classe ja resolve pelo direto
             fund_records[fund_cnpj] = _fund_level_record(fund_cnpj, rows)
-        return cls(records, fund_records, path)
+
+        cvm_codes: dict[str, tuple[MarketRecord, str]] = {}
+        # Ordem = precedencia: o primeiro a reivindicar o codigo fica.
+        for code, record in _subclass_codes(config, by_classe_id):
+            cvm_codes.setdefault(code, (record, "subclasse"))
+        for code, record, level in class_codes:
+            cvm_codes.setdefault(code, (record, level))
+        for fund_cnpj, code in fund_codes.items():
+            record = records.get(fund_cnpj) or fund_records.get(fund_cnpj)
+            if record is not None:
+                cvm_codes.setdefault(code, (record, "fundo"))
+
+        return cls(records, fund_records, cvm_codes, path)
+
+
+def _subclass_codes(
+    config: Config, by_classe_id: dict[str, MarketRecord]
+) -> list[tuple[str, MarketRecord]]:
+    """Codigos de subclasse apontando para o registro da classe-mae.
+
+    A subclasse nao tem CNPJ nem carteira propria - ela segrega publico-alvo e
+    condicoes comerciais dentro da classe. Entao gestora e classificacao dela
+    sao as da classe, e casar pelo codigo da subclasse e legitimo.
+
+    Base antiga em disco pode nao ter `subclasses.csv`: sem ele o indice fica
+    sem esse nivel e o resto do lookup segue funcionando.
+    """
+    path = config.market_dir / "subclasses.csv"
+    if not path.is_file():
+        return []
+
+    codes: list[tuple[str, MarketRecord]] = []
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter=";"):
+            code = normalize_cvm_code(row.get("codigo_cvm"))
+            record = by_classe_id.get((row.get("id_classe") or "").strip())
+            if code and record is not None:
+                codes.append((code, record))
+    return codes
 
 
 def _unanimous(values: list[str]) -> str | None:
@@ -189,6 +291,13 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
 
     A classificacao da casa nao se perde: se divergir da oficial, vai para
     `classificacao_anbima_casa` - a divergencia em si e informacao.
+
+    Na gestora o registro da CVM prevalece: casa a casa o mesmo fundo aparecia
+    com o nome comercial, a razao social ou ate o gestor pessoa fisica, e
+    contar "gestoras distintas" somava a mesma empresa varias vezes. O que a
+    casa dizia fica em `gestor_casa` quando diverge. Uma politica de so
+    preencher lacuna seria condicionar as duas atribuicoes abaixo a
+    `offer.manager_name is None` / `offer.manager_cnpj is None`.
     """
     house_value = offer.extra.get(KEY_ANBIMA)
     if record.anbima:
@@ -199,12 +308,18 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
         offer.extra.setdefault(KEY_CVM, record.cvm)
     if record.gestor:
         offer.extra[KEY_GESTOR_OFICIAL] = record.gestor
-        if offer.manager_name is None:
-            offer.manager_name = record.gestor
+        # Grafia diferente da mesma razao social ("... LTDA" vs "... Ltda")
+        # nao e divergencia - guardar isso so poluiria o relatorio.
+        if offer.manager_name and normalize_text(offer.manager_name) != normalize_text(
+            record.gestor
+        ):
+            offer.extra.setdefault(KEY_GESTOR_CASA, offer.manager_name)
+        offer.manager_name = record.gestor
     if record.cnpj_gestor:
-        offer.extra.setdefault(KEY_CNPJ_GESTOR, record.cnpj_gestor)
-        if offer.manager_cnpj is None:
-            offer.manager_cnpj = record.cnpj_gestor
+        offer.extra[KEY_CNPJ_GESTOR] = record.cnpj_gestor
+        if offer.manager_cnpj and offer.manager_cnpj != record.cnpj_gestor:
+            offer.extra.setdefault(KEY_CNPJ_GESTOR_CASA, offer.manager_cnpj)
+        offer.manager_cnpj = record.cnpj_gestor
     if record.situacao:
         offer.extra[KEY_SITUACAO] = record.situacao
     if record.pl is not None:
@@ -307,16 +422,23 @@ def enrich_snapshots(
         for offer in snapshot.funds:
             stats.total += 1
             per_platform["total"] += 1
-            if not offer.cnpj:
+            if offer.cnpj:
+                stats.with_cnpj += 1
+            if offer.cvm_code:
+                stats.with_cvm_code += 1
+            resolved = lookup.resolve(offer)
+            if resolved is None:
                 continue
-            stats.with_cnpj += 1
-            record = lookup.get(offer.cnpj)
-            if record is None:
-                continue
+            record, matched_by = resolved
             stats.matched += 1
             per_platform["matched"] += 1
+            if matched_by != "cnpj":
+                stats.matched_by_cvm_code += 1
             had_anbima = bool(offer.extra.get(KEY_ANBIMA))
             enrich_offer(offer, record)
+            offer.extra[KEY_MATCH] = matched_by
+            if record.gestor:
+                stats.managers_from_cvm += 1
             if not had_anbima and offer.extra.get(KEY_ANBIMA):
                 stats.anbima_filled += 1
 

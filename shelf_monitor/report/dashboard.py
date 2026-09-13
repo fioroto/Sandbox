@@ -484,10 +484,21 @@ function renderVitrine(listing) {
   if (missing.length) {
     parts.push("Sem vitrine alcancavel: " + missing.map(p => p.label).join(", ") + ".");
   }
-  if (DATA.enrichment && DATA.enrichment.with_cnpj) {
+  const identifiable = DATA.enrichment
+    ? Math.max(DATA.enrichment.with_cnpj || 0, DATA.enrichment.with_cvm_code || 0)
+    : 0;
+  if (identifiable) {
     const e = DATA.enrichment;
-    parts.push(`Normalizacao ANBIMA: ${e.matched} de ${e.with_cnpj} fundos com CNPJ ` +
-      `casaram com o registro oficial CVM (${Math.round(100 * e.matched / e.with_cnpj)}%).`);
+    parts.push(`Normalizacao ANBIMA: ${e.matched} de ${identifiable} fundos com CNPJ ` +
+      `ou codigo CVM casaram com o registro oficial ` +
+      `(${Math.round(100 * e.matched / identifiable)}%).`);
+    if (e.managers_from_cvm) {
+      parts.push(`${e.managers_from_cvm} fundos tiveram a gestora carimbada pelo ` +
+        `registro oficial da CVM.`);
+    }
+    if (e.matched_by_cvm_code) {
+      parts.push(`${e.matched_by_cvm_code} casaram pelo codigo CVM, sem CNPJ na fonte.`);
+    }
     if (e.managers_inferred) {
       parts.push(`${e.managers_inferred} gestoras inferidas pelo prefixo do nome ` +
         `(marcadas como inferidas, nunca como oficiais).`);

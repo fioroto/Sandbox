@@ -266,6 +266,7 @@ def parse_legacy_funds(raw: bytes) -> list[MarketFund]:
                 cnpj=cnpj,
                 name=name,
                 origin=Origin.LEGACY,
+                cvm_code=_get(row, "CD_CVM", "Codigo_CVM"),
                 fund_type=_get(row, "TP_FUNDO", "Tipo_Fundo"),
                 situation=_get(row, "SIT", "Situacao"),
                 registered_at=parse_date(_get(row, "DT_REG", "Data_Registro")),

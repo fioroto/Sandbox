@@ -160,6 +160,7 @@ class OpenFinanceFunds:
         offers: list[FundOffer] = []
         page = 1
         total_pages = 1
+        exhausted_early = False
         while page <= _MAX_PAGES:
             payload = get_json(
                 self.session,
@@ -184,10 +185,19 @@ class OpenFinanceFunds:
                 # quando se pediu 500 itens por pagina.
                 self.effective_page_size = len(items)
                 self.total_records = parse_int(meta.get("totalRecords"))
-            total_pages = parse_int(meta.get("totalPages")) or 1
+
+            # O total nunca diminui: uma pagina do meio que omita `totalPages`
+            # encerraria o laco como se a paginacao tivesse acabado, e as
+            # paginas restantes sumiriam com o snapshot saindo OK.
+            declared = parse_int(meta.get("totalPages"))
+            if declared and declared > total_pages:
+                total_pages = declared
             self.pages_read = page
 
-            if page >= total_pages or not items:
+            if not items:
+                exhausted_early = page < total_pages
+                break
+            if page >= total_pages:
                 break
             page += 1
 
@@ -199,6 +209,18 @@ class OpenFinanceFunds:
                 f"paginacao truncada em {_MAX_PAGES} paginas de {total_pages} "
                 f"(page-size efetivo {self.effective_page_size}); "
                 f"{len(offers)} de {self.total_records or '?'} fundos coletados"
+            )
+        elif exhausted_early and (
+            self.total_records is None or len(offers) < self.total_records
+        ):
+            # Paginas acabaram antes do total anunciado: ou a instituicao mentiu
+            # no `totalPages`, ou a listagem parou no meio. Nos dois casos a
+            # prateleira coletada nao e a inteira.
+            self.truncated = True
+            self.warnings.append(
+                f"paginacao terminou na pagina {self.pages_read} de {total_pages} "
+                f"anunciadas; {len(offers)} de {self.total_records or '?'} "
+                "fundos coletados"
             )
 
         return offers

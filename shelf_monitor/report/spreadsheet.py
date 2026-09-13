@@ -883,18 +883,28 @@ def _add_methodology_sheet(
         "demais preenchem lacunas.",
     )
     if enrichment is not None:
+        identifiable = max(enrichment.with_cnpj, enrichment.with_cvm_code)
         pct = (
-            f"{100 * enrichment.matched / enrichment.with_cnpj:.0f}%"
-            if enrichment.with_cnpj
-            else "n/a"
+            f"{100 * enrichment.matched / identifiable:.0f}%" if identifiable else "n/a"
         )
         row = line(
             row, "Normalizacao ANBIMA",
-            f"Join por CNPJ com a base oficial CVM ({enrichment.matched} de "
-            f"{enrichment.with_cnpj} fundos com CNPJ casaram - {pct}). Classe "
+            f"Join com a base oficial CVM pelo CNPJ da classe, pelo CNPJ do fundo "
+            f"e pelo codigo CVM da subclasse ({enrichment.matched} de "
+            f"{identifiable} fundos identificaveis casaram - {pct}; "
+            f"{enrichment.matched_by_cvm_code} deles so pelo codigo). Classe "
             "ANBIMA, gestor e situacao vem do registro oficial; a classificacao "
             "publicada pela casa, quando diverge, fica na coluna "
             "classificacao_anbima_casa.",
+        )
+        row = line(
+            row, "Gestora",
+            f"Vem do registro da CVM sempre que o fundo casa com a base "
+            f"({enrichment.managers_from_cvm} fundos nesta geracao) - e o que "
+            "faz a mesma gestora ter um nome so nas cinco casas. O nome "
+            "publicado pela casa, quando diverge, fica em gestor_casa. Sem "
+            f"match, {enrichment.managers_inferred} gestoras foram inferidas "
+            "pelo prefixo do nome do fundo e vao marcadas como inferidas.",
         )
     else:
         row = line(
