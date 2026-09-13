@@ -758,6 +758,90 @@ class TestReports(unittest.TestCase):
         html = html_path.read_text(encoding="utf-8")
         self.assertNotIn("<script", html, "digest de e-mail nao deve conter JS")
 
+    def _listing_report(self):
+        """Report com vitrines de verdade: XP via navegador, BTG via API.
+
+        Os snapshots do setUp nao tem sources (vitrine vazia), entao o bloco
+        de gaps sai suprimido neles - este report exercita o caminho com dado.
+        """
+        now = datetime.now()
+        xp_fund = offer("xp", "XP Macro FIC FIM", "10345678000110",
+                        manager_name="XP Gestao")
+        xp_fund.sources = ["playwright"]
+        btg_shared = offer("btg", "XP Macro FIC FIM", "10345678000110")
+        btg_shared.sources = ["api-json"]
+        btg_gap = offer("btg", "Kapitalo Zeta FIC FIM", "40345678000140",
+                        manager_name="Kapitalo Gestao")
+        btg_gap.sources = ["api-json"]
+        xp = snapshot_for("xp", [xp_fund], now)
+        btg = snapshot_for("btg", [btg_shared, btg_gap], now)
+        return RunReport(
+            generated_at=now, snapshots=[xp, btg],
+            shelf_diffs=[diff_shelf(xp, None), diff_shelf(btg, None)],
+        )
+
+    def test_dashboard_embeds_gap_block(self):
+        content = render_dashboard(
+            self.config, self._listing_report()
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="gaps-section"', content)
+        self.assertEqual(content.count("<script"), 2)
+        start = content.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(content[start:content.index("</script>", start)])
+        self.assertTrue(data["gaps"]["available"])
+        self.assertEqual(data["gaps"]["total_gaps"], 1)
+        self.assertEqual(data["gaps"]["funds"][0]["cnpj"], "40345678000140")
+
+        # Sem vitrine da XP (snapshots do setUp), o bloco vem suprimido com
+        # motivo - nunca com numeros.
+        suppressed = render_dashboard(self.config, self.report).read_text(
+            encoding="utf-8"
+        )
+        start = suppressed.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(suppressed[start:suppressed.index("</script>", start)])
+        self.assertFalse(data["gaps"]["available"])
+        self.assertIn("vitrine", data["gaps"]["reason"])
+
+    def test_spreadsheet_gap_tabs_and_bounded_formula(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        report = self._listing_report()
+        path = render_spreadsheet(self.config, report.snapshots)
+        workbook = load_workbook(path)
+        self.assertIn("Gaps XP", workbook.sheetnames)
+        self.assertIn("Gaps por categoria", workbook.sheetnames)
+
+        gaps = workbook["Gaps XP"]
+        self.assertEqual(gaps.cell(row=2, column=1).value, "Kapitalo Zeta FIC FIM")
+        formula = gaps.cell(row=2, column=12).value
+        self.assertTrue(formula.startswith("=IF("))
+        self.assertIn("COUNTIFS('Vitrine varejo'!$A$2:$A$", formula)
+        self.assertNotIn("$A:$A", formula)
+        self.assertNotIn("$C:$C", formula)
+
+        # Sem vitrine da XP: a aba existe so para dizer por que nao ha numeros.
+        suppressed_path = render_spreadsheet(
+            self.config, [self.xp, self.btg, self.nu],
+            path=self.config.reports_dir / "suprimida.xlsx",
+        )
+        suppressed = load_workbook(suppressed_path)
+        self.assertIn("Gaps XP", suppressed.sheetnames)
+        self.assertNotIn("Gaps por categoria", suppressed.sheetnames)
+        self.assertIn("suprimida", suppressed["Gaps XP"].cell(row=3, column=1).value)
+
+    def test_digest_gap_section_and_suppression(self):
+        markdown = render_markdown(self._listing_report())
+        self.assertIn("Gaps de prateleira da XP", markdown)
+        self.assertIn("Kapitalo Zeta FIC FIM", markdown)
+        self.assertIn("vitrine x vitrine", markdown)
+
+        suppressed = render_markdown(self.report)
+        self.assertIn("Gaps de prateleira da XP", suppressed)
+        self.assertIn("suprimida", suppressed)
+        self.assertNotIn("Kapitalo", suppressed)
+
 
 if __name__ == "__main__":
     unittest.main()

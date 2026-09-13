@@ -33,7 +33,11 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import split_by_profile
-from shelf_monitor.report.aggregate import ASSET_CLASS_LABELS, is_own_product
+from shelf_monitor.report.aggregate import (
+    ASSET_CLASS_LABELS,
+    build_gap_block,
+    is_own_product,
+)
 
 FONT = "Arial"
 
@@ -476,12 +480,13 @@ def _add_collection_health(
 _OWN_LABELS = {True: "Propria", False: "Terceiros", None: "-"}
 
 
-def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
+def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> int:
     """Aba "Vitrine varejo": so o que o cliente ve no canal de cada casa.
 
     E a aba para tabela dinamica: classe ANBIMA oficial (quando a base de
     mercado foi importada), gestora, produto proprio vs terceiros, custo e
     ticket - tudo no mesmo grao, uma linha por fundo por vitrine.
+    Devolve a ultima linha com dado - a aba de gaps aponta formulas para ca.
     """
     from openpyxl.formatting.rule import ColorScaleRule
 
@@ -560,6 +565,156 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> No
             ),
         )
     sheet.freeze_panes = "A2"
+    return row
+
+
+def _add_gaps_sheets(
+    workbook: Workbook, snapshots: list[ShelfSnapshot], listing_last_row: int
+) -> None:
+    """Abas "Gaps XP" e "Gaps por categoria": vitrine concorrente x vitrine XP.
+
+    Os numeros vem de build_gap_block - os mesmos do dashboard, digest e deck.
+    A coluna de verificacao e formula sobre a aba "Vitrine varejo" (intervalo
+    limitado as linhas de dado): reage a correcoes manuais na vitrine sem
+    reexportar.
+    """
+    block = build_gap_block(snapshots)
+
+    sheet = workbook.create_sheet("Gaps XP")
+    if not block.get("available"):
+        sheet.column_dimensions["A"].width = 110
+        sheet.cell(row=1, column=1, value="Gaps de prateleira da XP").font = _TITLE_FONT
+        sheet.cell(
+            row=3, column=1,
+            value=f"Analise suprimida nesta execucao: {block.get('reason')}.",
+        ).font = _ALERT_FONT
+        sheet.cell(
+            row=4, column=1,
+            value="Sem a vitrine da XP coletada, todo fundo concorrente pareceria "
+            "gap - o bloco prefere se calar a inventar numero.",
+        ).font = _NOTE_FONT
+        return
+
+    headers = [
+        ("Fundo", 52), ("CNPJ", 20), ("Categoria oficial", 34), ("Gestora", 34),
+        ("Nº casas", 10), ("Casas", 30), ("Menor minimo (R$)", 18),
+        ("Menor taxa adm (%)", 17), ("PL CVM (R$)", 18),
+        ("Gestora na vitrine XP", 20), ("Possivel equivalente XP (heuristica)", 40),
+        ("Verificacao vs. Vitrine varejo", 26),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    baseline_label = block["baseline_label"].replace('"', "")
+    row = 1
+    for fund in block["funds"]:
+        row += 1
+        values = [
+            fund["name"],
+            fund["cnpj_display"],
+            fund["category"],
+            fund["manager"] or "",
+            fund["houses_count"],
+            fund["houses_label"],
+            fund["min_initial"],
+            fund["admin_fee_pct"],
+            fund["pl_cvm"],
+            _yes_no(fund["manager_on_xp"]),
+            fund["possible_xp_equivalent"] or "",
+            None,  # formula abaixo
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        sheet.cell(row=row, column=5).number_format = _INT
+        sheet.cell(row=row, column=7).number_format = _MONEY
+        sheet.cell(row=row, column=8).number_format = _PCT
+        sheet.cell(row=row, column=9).number_format = _MONEY
+        if listing_last_row > 1:
+            plat_range = f"'Vitrine varejo'!$A$2:$A${listing_last_row}"
+            cnpj_range = f"'Vitrine varejo'!$C$2:$C${listing_last_row}"
+            sheet.cell(
+                row=row, column=12,
+                value=(
+                    f'=IF($B{row}="","",IF(COUNTIFS({plat_range},'
+                    f'"{baseline_label}",{cnpj_range},$B{row})=0,'
+                    f'"Confirma gap","{baseline_label} vitrina - revisar"))'
+                ),
+            )
+            sheet.cell(row=row, column=12).font = _BODY_FONT
+            sheet.cell(row=row, column=12).border = _BORDER
+
+    if row > 1:
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row}"
+    else:
+        sheet.cell(
+            row=2, column=1,
+            value="Nenhum gap identificado: toda vitrine concorrente coletada "
+            "esta contida na vitrine da XP.",
+        ).font = _NOTE_FONT
+    note_row = row + 2
+    sheet.cell(
+        row=note_row, column=1,
+        value="Gap = fundo de varejo na vitrine de 1+ concorrente e fora da "
+        "vitrine da XP (por CNPJ). Comparacao vitrine x vitrine: o catalogo "
+        "Open Finance nao conta em nenhum dos lados. As colunas de gestora e "
+        "equivalente sao heuristicas - informam, nunca removem um fundo.",
+    ).font = _NOTE_FONT
+    if block["baseline_warning"]:
+        note_row += 1
+        sheet.cell(
+            row=note_row, column=1, value=f"Atencao: {block['baseline_warning']}."
+        ).font = _ALERT_FONT
+    if block["excluded"]:
+        note_row += 1
+        out = "; ".join(f"{e['label']} ({e['reason']})" for e in block["excluded"])
+        sheet.cell(
+            row=note_row, column=1, value=f"Fora do universo: {out}."
+        ).font = _NOTE_FONT
+    sheet.freeze_panes = "A2"
+
+    cat_sheet = workbook.create_sheet("Gaps por categoria")
+    competitors = block["competitors"]
+    cat_headers = (
+        [("Categoria", 34), (f"{block['baseline_label']} (vitrine)", 20)]
+        + [(c["label"], 16) for c in competitors]
+        + [("Melhor concorrente", 24), ("Fundos de gap", 14)]
+    )
+    for index, (name, width) in enumerate(cat_headers, start=1):
+        cat_sheet.cell(row=1, column=index, value=name)
+        cat_sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(cat_sheet, 1, len(cat_headers))
+
+    row = 1
+    for entry in block["categories"]:
+        row += 1
+        best = entry["best_competitor"]
+        values = (
+            [entry["category"], entry["xp"]]
+            + [entry["by_platform"].get(c["platform_id"], 0) for c in competitors]
+            + [
+                f"{best['label']} ({best['count']})" if best else "-",
+                entry["gap_count"],
+            ]
+        )
+        for index, value in enumerate(values, start=1):
+            cell = cat_sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+    if row == 1:
+        cat_sheet.cell(
+            row=2, column=1, value="Nenhum gap por categoria nesta execucao."
+        ).font = _NOTE_FONT
+    cat_sheet.cell(
+        row=row + 2, column=1,
+        value="Contagens por vitrine (varejo) de cada casa na categoria; "
+        "'Fundos de gap' = quantos gaps da aba 'Gaps XP' caem na categoria. "
+        "Categorias ordenadas por gaps; alem das primeiras, agregadas em 'Outras'.",
+    ).font = _NOTE_FONT
+    cat_sheet.freeze_panes = "A2"
 
 
 def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
@@ -713,6 +868,15 @@ def _add_methodology_sheet(
         "'Restritos (auxiliar)' com o motivo. Qualificado nao e motivo de corte.",
     )
     row = line(
+        row, "Gaps XP",
+        "Gap = fundo de varejo na vitrine de 1+ concorrente e fora da vitrine "
+        "da XP, por CNPJ. Vitrine x vitrine: o catalogo Open Finance nao conta "
+        "em nenhum dos lados. XP indisponivel ou sem vitrine suprime a analise; "
+        "XP parcial gera aviso; concorrente indisponivel ou sem vitrine sai do "
+        "universo com motivo. 'Gestora na vitrine XP' e 'Possivel equivalente "
+        "XP' sao heuristicas informativas - nunca removem um fundo da lista.",
+    )
+    row = line(
         row, "Precedencia de fontes",
         "Open Finance > area logada > API do portal > navegador > HTML. Quando "
         "duas fontes discordam de um campo, vence a de maior confianca; as "
@@ -778,7 +942,10 @@ def render_spreadsheet(
 
     workbook = Workbook()
     last_row = _add_consolidated(workbook, usable)
-    _add_listing_sheet(workbook, usable)
+    listing_last_row = _add_listing_sheet(workbook, usable)
+    # Gaps recebem os snapshots completos: o proprio bloco decide quem entra
+    # no universo e lista os excluidos com motivo.
+    _add_gaps_sheets(workbook, snapshots, listing_last_row)
     _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)

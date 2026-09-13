@@ -862,6 +862,191 @@ class TestListingBlock(unittest.TestCase):
         self.assertEqual(block["shared_all"], 1)
 
 
+class TestGapBlock(unittest.TestCase):
+    """Gaps da XP: vitrine x vitrine, com supressao em vez de numero falso."""
+
+    def _fund(self, platform, name, cnpj, sources, manager=None, extra=None,
+              min_initial=None, fee=None):
+        from shelf_monitor.models import FundOffer
+
+        f = FundOffer(platform=platform, name=name, cnpj=cnpj,
+                      manager_name=manager, min_initial=min_initial,
+                      admin_fee_pct=fee)
+        f.sources = list(sources)
+        if extra:
+            f.extra.update(extra)
+        return f
+
+    def _snap(self, platform, funds, status=None, strategy=None, error=None):
+        from datetime import datetime
+
+        from shelf_monitor.models import (
+            CollectorStrategy, ShelfSnapshot, SnapshotStatus,
+        )
+
+        return ShelfSnapshot(
+            platform=platform, collected_at=datetime(2026, 8, 31),
+            strategy=strategy or CollectorStrategy.PLAYWRIGHT,
+            status=status or SnapshotStatus.OK,
+            funds=funds, error=error,
+        )
+
+    def _xp(self):
+        return self._snap("xp", [
+            self._fund("xp", "XP Macro FIC FIM", "10000000000101",
+                       ["playwright"], manager="XP GESTAO",
+                       extra={"classificacao_anbima": "Multimercado Macro"}),
+            self._fund("xp", "Compartilhado RF", "20000000000202",
+                       ["playwright", "open-finance"],
+                       extra={"classificacao_anbima": "Renda Fixa Duracao Baixa"}),
+            self._fund("xp", "XP So Catalogo", "30000000000303",
+                       ["open-finance"]),
+        ])
+
+    def _btg(self):
+        return self._snap("btg", [
+            self._fund("btg", "Compartilhado RF", "20000000000202", ["api-json"],
+                       extra={"classificacao_anbima": "Renda Fixa Duracao Baixa"}),
+            self._fund("btg", "Kapitalo Zeta FIC FIM", "40000000000404",
+                       ["api-json"], manager="KAPITALO GESTAO",
+                       extra={"classificacao_anbima": "Multimercado Macro"},
+                       min_initial=5000.0, fee=2.0),
+            self._fund("btg", "XP So Catalogo", "30000000000303", ["api-json"]),
+            self._fund("btg", "BTG Restrito", "50000000000505", ["api-json"],
+                       extra={"exclusivo_cvm": "S"}),
+            self._fund("btg", "BTG Sem CNPJ", None, ["api-json"]),
+        ])
+
+    def _itau(self):
+        return self._snap("itau", [
+            self._fund("itau", "Kapitalo Zeta FIC FIM", "40000000000404",
+                       ["playwright"],
+                       extra={"classificacao_anbima": "Multimercado Macro"},
+                       min_initial=1000.0, fee=1.5),
+        ])
+
+    def test_competitor_listing_fund_missing_from_xp_listing_is_a_gap(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        block = build_gap_block([self._xp(), self._btg(), self._itau()])
+        self.assertTrue(block["available"])
+        cnpjs = [f["cnpj"] for f in block["funds"]]
+        # Kapitalo (2 vitrines) e "XP So Catalogo" (1 vitrine); o compartilhado
+        # esta na vitrine da XP e fica fora.
+        self.assertEqual(block["total_gaps"], 2)
+        self.assertEqual(block["multi_house_gaps"], 1)
+        self.assertNotIn("20000000000202", cnpjs)
+        kapitalo = block["funds"][0]
+        self.assertEqual(kapitalo["cnpj"], "40000000000404")
+        self.assertEqual(kapitalo["houses_count"], 2)
+        self.assertEqual(kapitalo["houses_label"], "BTG Pactual, Itau (Ion)")
+        # Melhores condicoes entre as casas que vitrinam.
+        self.assertEqual(kapitalo["min_initial"], 1000.0)
+        self.assertEqual(kapitalo["admin_fee_pct"], 1.5)
+
+    def test_fund_only_in_xp_catalog_still_counts_as_gap(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        block = build_gap_block([self._xp(), self._btg()])
+        cnpjs = [f["cnpj"] for f in block["funds"]]
+        # A XP tem o fundo, mas so via Open Finance: a base e a vitrine.
+        self.assertIn("30000000000303", cnpjs)
+
+    def test_xp_without_listing_suppresses_block(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        xp = self._snap("xp", [
+            self._fund("xp", "XP So Catalogo", "30000000000303",
+                       ["open-finance"]),
+        ])
+        block = build_gap_block([xp, self._btg()])
+        self.assertFalse(block["available"])
+        self.assertIn("vitrine", block["reason"])
+
+    def test_missing_or_unavailable_xp_suppresses_the_block(self):
+        from shelf_monitor.models import SnapshotStatus
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        without_xp = build_gap_block([self._btg(), self._itau()])
+        self.assertFalse(without_xp["available"])
+
+        xp = self._snap("xp", [], status=SnapshotStatus.UNAVAILABLE,
+                        error="timeout")
+        unavailable = build_gap_block([xp, self._btg()])
+        self.assertFalse(unavailable["available"])
+        self.assertIn("indisponivel", unavailable["reason"])
+
+    def test_partial_xp_keeps_block_with_warning(self):
+        from shelf_monitor.models import SnapshotStatus
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        xp = self._xp()
+        xp.status = SnapshotStatus.PARTIAL
+        xp.error = "playwright caiu na pagina 3"
+        block = build_gap_block([xp, self._btg()])
+        self.assertTrue(block["available"])
+        self.assertIn("superestimados", block["baseline_warning"])
+
+    def test_unavailable_competitor_leaves_the_universe(self):
+        from shelf_monitor.models import SnapshotStatus
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        itau = self._snap("itau", [], status=SnapshotStatus.UNAVAILABLE)
+        block = build_gap_block([self._xp(), self._btg(), itau])
+        self.assertIn("itau", [e["platform_id"] for e in block["excluded"]])
+        for fund in block["funds"]:
+            self.assertNotIn("itau", fund["houses"])
+
+    def test_catalog_only_competitor_is_excluded_with_reason(self):
+        from shelf_monitor.models import CollectorStrategy
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        nu = self._snap("nu", [
+            self._fund("nu", "Nu Reserva", "60000000000606", ["open-finance"]),
+        ], strategy=CollectorStrategy.OPEN_FINANCE)
+        block = build_gap_block([self._xp(), nu])
+        excluded = next(e for e in block["excluded"] if e["platform_id"] == "nu")
+        self.assertIn("Open Finance", excluded["reason"])
+        self.assertEqual(block["total_gaps"], 0)
+
+    def test_restricted_and_cnpjless_funds_stay_out(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        block = build_gap_block([self._xp(), self._btg()])
+        cnpjs = [f["cnpj"] for f in block["funds"]]
+        names = [f["name"] for f in block["funds"]]
+        self.assertNotIn("50000000000505", cnpjs)
+        self.assertNotIn("BTG Sem CNPJ", names)
+
+    def test_category_block_compares_xp_to_best_competitor(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        block = build_gap_block([self._xp(), self._btg(), self._itau()])
+        macro = next(
+            c for c in block["categories"] if c["category"] == "Multimercado Macro"
+        )
+        self.assertEqual(macro["xp"], 1)            # XP Macro FIC FIM
+        self.assertEqual(macro["gap_count"], 1)     # Kapitalo
+        self.assertEqual(macro["best_competitor"]["count"], 1)
+        self.assertEqual(macro["by_platform"], {"btg": 1, "itau": 1})
+
+    def test_manager_and_slug_heuristics_never_remove(self):
+        from shelf_monitor.report.aggregate import build_gap_block
+
+        btg = self._btg()
+        btg.funds.append(self._fund(
+            "btg", "XP Macro Fundo de Investimento em Cotas Multimercado",
+            "70000000000707", ["api-json"], manager="XP GESTAO",
+        ))
+        block = build_gap_block([self._xp(), btg])
+        feeder = next(f for f in block["funds"] if f["cnpj"] == "70000000000707")
+        # O sinal aparece, mas o fundo continua na lista.
+        self.assertEqual(feeder["possible_xp_equivalent"], "XP Macro FIC FIM")
+        self.assertTrue(feeder["manager_on_xp"])
+        kapitalo = next(f for f in block["funds"] if f["cnpj"] == "40000000000404")
+        self.assertFalse(kapitalo["manager_on_xp"])
+
+
 class TestDeck(unittest.TestCase):
     """O deck abre e tem os slides que os dados pedem - nem mais, nem menos."""
 
@@ -915,6 +1100,33 @@ class TestDeck(unittest.TestCase):
             config = Config(data_dir=tmp)
             path = render_deck(config, self._report(with_listing=False))
             self.assertGreaterEqual(len(Presentation(path).slides), 4)
+
+    def test_gap_slide_appears_with_xp_baseline(self):
+        import tempfile
+        from datetime import datetime
+
+        from pptx import Presentation
+
+        from shelf_monitor.models import FundOffer, ShelfSnapshot
+        from shelf_monitor.models import CollectorStrategy, SnapshotStatus
+        from shelf_monitor.report.deck import render_deck
+
+        report = self._report()
+        xp_fund = FundOffer(platform="xp", name="XP Unico FIC FIM",
+                            cnpj="99000000000199")
+        xp_fund.sources = ["playwright"]
+        report.snapshots.insert(0, ShelfSnapshot(
+            platform="xp", collected_at=datetime(2026, 8, 31),
+            strategy=CollectorStrategy.PLAYWRIGHT, status=SnapshotStatus.OK,
+            funds=[xp_fund],
+        ))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(data_dir=tmp)
+            path = render_deck(config, report)
+            # capa, numeros, gaps (os 6 fundos BTG estao fora da vitrine XP),
+            # arquitetura, custo, movimentos, metodologia
+            self.assertEqual(len(Presentation(path).slides), 7)
 
 
 class TestFundEnvelopeJoin(TestEnrichment):

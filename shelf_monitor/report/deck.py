@@ -1,6 +1,6 @@
 """Deck executivo (.pptx) gerado a cada coleta.
 
-O dashboard e para explorar; o deck e para decidir: 8 slides com a leitura
+O dashboard e para explorar; o deck e para decidir: ate 9 slides com a leitura
 competitiva das vitrines, prontos para forum ou comite. Consome os mesmos
 agregados do dashboard (build_dashboard_data) - um numero nunca diverge entre
 as duas superficies.
@@ -62,6 +62,11 @@ def render_deck(config: Config, report: RunReport) -> Path:
     _headline(prs, data, platforms)
     if matrix:
         _matrix(prs, {**listing, "matrix": matrix}, platforms)
+    gaps = data.get("gaps") or {}
+    # Slide de gaps so quando ha o que decidir: baseline com vitrine e ao
+    # menos um gap. A supressao ja aparece no dashboard e no digest.
+    if gaps.get("available") and gaps.get("total_gaps"):
+        _gaps(prs, gaps)
     if platforms:
         _architecture(prs, platforms)
         _costs(prs, platforms)
@@ -243,6 +248,79 @@ def _matrix(prs, listing: dict, platforms: list[dict]):
     ]
     _table(slide, 0.6, 1.6, 12.1, headers, rows,
            col_widths=[3.2, *([1.0] * len(platforms))], size=10)
+
+
+def _gaps(prs, gaps: dict):
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    _title(slide, "Gaps de prateleira - o que os concorrentes vitrinam e a XP nao",
+           "Fundo de varejo na vitrine de 1+ concorrente e fora da vitrine da XP "
+           "(por CNPJ); o catalogo Open Finance nao conta em nenhum dos lados")
+
+    tiles = [
+        ("Fundos de gap", _fmt(gaps["total_gaps"]), "fora da vitrine XP"),
+        ("Em 2+ vitrines", _fmt(gaps["multi_house_gaps"]), "mais de uma casa"),
+        ("Vitrine da XP", _fmt(gaps["baseline_listing_total"]), "base de comparacao"),
+    ]
+    width = 2.85
+    for index, (label, value, note) in enumerate(tiles):
+        x = 0.6 + index * (width + 0.25)
+        _rect(slide, x, 1.55, width, 1.35, "FFFFFF", line=True)
+        _text(slide, x + 0.2, 1.68, width - 0.4, 0.35, label.upper(), 10.5,
+              color=_INK_SOFT)
+        _text(slide, x + 0.2, 2.02, width - 0.4, 0.6, value, 26, bold=True)
+        _text(slide, x + 0.2, 2.6, width - 0.4, 0.3, note, 10, color=_MUTED)
+
+    def money(value):
+        return f"R$ {_fmt(value)}" if value is not None else "-"
+
+    def pct(value):
+        return f"{_fmt(value)}%" if value is not None else "-"
+
+    def clip(name: str) -> str:
+        return name if len(name) <= 60 else name[:57] + "..."
+
+    funds = gaps.get("funds") or []
+    if funds:
+        _text(slide, 0.6, 3.1, 7.5, 0.35, "Maiores gaps (por presenca)", 13, bold=True)
+        _table(
+            slide, 0.6, 3.5, 7.5,
+            ["Fundo", "Categoria", "Casas", "Menor min", "Menor taxa"],
+            [
+                [clip(f["name"]), f["category"], f["houses_label"],
+                 money(f["min_initial"]), pct(f["admin_fee_pct"])]
+                for f in funds[:8]
+            ],
+            col_widths=[3.2, 1.7, 1.4, 1.0, 0.9], size=10,
+        )
+
+    categories = gaps.get("categories") or []
+    if categories:
+        _text(slide, 8.4, 3.1, 4.3, 0.35, "Categorias em deficit", 13, bold=True)
+
+        def best_label(entry):
+            best = entry["best_competitor"]
+            return f"{best['label']} ({best['count']})" if best else "-"
+
+        _table(
+            slide, 8.4, 3.5, 4.3,
+            ["Categoria", "XP", "Melhor conc.", "Gaps"],
+            [
+                [entry["category"], _fmt(entry["xp"]), best_label(entry),
+                 _fmt(entry["gap_count"])]
+                for entry in categories[:5]
+            ],
+            col_widths=[1.8, 0.5, 1.4, 0.6], size=10,
+        )
+
+    notes = []
+    if gaps.get("baseline_warning"):
+        notes.append(f"Atencao: {gaps['baseline_warning']}.")
+    if gaps.get("excluded"):
+        out = "; ".join(f"{e['label']} ({e['reason']})" for e in gaps["excluded"])
+        notes.append(f"Fora do universo: {out}.")
+    notes.append("Lista completa na planilha (aba Gaps XP).")
+    _text(slide, 0.6, 6.95, 12.1, 0.4, " ".join(notes), 9.5, color=_MUTED)
 
 
 def _architecture(prs, platforms: list[dict]):
