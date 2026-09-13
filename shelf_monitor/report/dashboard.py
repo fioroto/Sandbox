@@ -560,6 +560,145 @@ function table2(mount, columns, rows) {
 
 renderVitrine(DATA.listing);
 
+/* --- Gaps de prateleira da XP ---------------------------------------------
+   Leitura XP-centrica dos mesmos dados da vitrine: o que os concorrentes
+   vitrinam e a vitrine da XP nao tem. Sem baseline utilizavel o bloco vira
+   uma frase de supressao - nunca um numero falso. */
+function renderGaps(gaps) {
+  const section = document.getElementById("gaps-section");
+  if (!gaps || !gaps.available) {
+    section.innerHTML =
+      `<h2>Gaps de prateleira da XP</h2>
+       <p class="card-sub">Fundos de varejo nas vitrines concorrentes e fora da vitrine
+       da XP (por CNPJ).</p>
+       <div class="note-box">Analise de gaps suprimida nesta execucao: ` +
+      `${escapeHtml((gaps && gaps.reason) || "dados insuficientes")}.</div>`;
+    return;
+  }
+
+  const money = v => v === undefined || v === null ? "–"
+    : "R$ " + v.toLocaleString("pt-BR");
+  const pct = v => v === undefined || v === null ? "–"
+    : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+
+  const tiles = document.getElementById("gaps-tiles");
+  tiles.innerHTML = "";
+  [
+    ["Fundos de gap", gaps.total_gaps, "em vitrine concorrente, fora da vitrine XP"],
+    ["Em 2+ vitrines", gaps.multi_house_gaps, "gap confirmado por mais de uma casa"],
+    ["Vitrine da XP", gaps.baseline_listing_total, "a base de comparacao"],
+    ["Concorrentes no universo", gaps.competitors.length,
+     gaps.competitors.map(c => c.label).join(", ") || "nenhum"],
+  ].forEach(([label, value, note]) => {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const l = document.createElement("div"); l.className = "label"; l.textContent = label;
+    const v = document.createElement("div"); v.className = "value";
+    v.textContent = Number(value).toLocaleString("pt-BR");
+    const n = document.createElement("div"); n.className = "note"; n.textContent = note;
+    tile.append(l, v, n);
+    tiles.appendChild(tile);
+  });
+
+  // Categorias em deficit: vitrine XP vs. vitrine de cada concorrente, mais a
+  // coluna de quantos gaps caem na categoria.
+  const mount = document.getElementById("matrix-gaps");
+  const categories = gaps.categories || [];
+  if (categories.length) {
+    const houses = [{ platform_id: gaps.baseline_id, label: gaps.baseline_label }]
+      .concat(gaps.competitors);
+    const max = Math.max(1, ...categories.flatMap(c =>
+      [c.xp || 0, ...Object.values(c.by_platform || {})]));
+    const tbl = document.createElement("table");
+    tbl.className = "matrix";
+    const head = tbl.createTHead().insertRow();
+    const corner = document.createElement("th");
+    corner.className = "rowh"; corner.textContent = "Categoria";
+    head.appendChild(corner);
+    houses.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h.label; head.appendChild(th);
+    });
+    const gapTh = document.createElement("th");
+    gapTh.textContent = "Gaps"; head.appendChild(gapTh);
+    const body = tbl.createTBody();
+    categories.forEach(c => {
+      const row = body.insertRow();
+      const rowLabel = row.insertCell();
+      rowLabel.className = "rowlabel";
+      rowLabel.textContent = c.category; rowLabel.title = c.category;
+      houses.forEach(h => {
+        const cell = row.insertCell();
+        const value = h.platform_id === gaps.baseline_id
+          ? (c.xp || 0) : (c.by_platform || {})[h.platform_id] || 0;
+        const span = document.createElement("span");
+        if (value) {
+          const heat = heatColor(value, max);
+          span.className = "cell";
+          span.style.background = heat.fill; span.style.color = heat.ink;
+          span.textContent = value.toLocaleString("pt-BR");
+          span.title = `${h.label} - ${c.category}: ${value}`;
+        } else {
+          span.className = "cell zero"; span.textContent = "–";
+        }
+        cell.appendChild(span);
+      });
+      const gapCell = row.insertCell();
+      const gapSpan = document.createElement("span");
+      gapSpan.className = "cell";
+      gapSpan.textContent = (c.gap_count || 0).toLocaleString("pt-BR");
+      gapCell.appendChild(gapSpan);
+    });
+    mount.innerHTML = "";
+    mount.appendChild(tbl);
+  } else {
+    mount.innerHTML =
+      '<p class="empty">Nenhum gap por categoria nesta execucao.</p>';
+  }
+
+  // A lista nominal - o insumo de trabalho.
+  table(
+    document.getElementById("table-gaps"),
+    [{ key: "name", label: "Fundo" }, { key: "cnpj_display", label: "CNPJ" },
+     { key: "category", label: "Categoria" }, { key: "manager", label: "Gestora" },
+     { key: "houses_label", label: "Casas" },
+     { key: "min", label: "Menor minimo", num: true },
+     { key: "fee", label: "Menor taxa", num: true },
+     { key: "pl", label: "PL CVM", num: true },
+     { key: "mgr", label: "Gestora na XP" },
+     { key: "equiv", label: "Possivel equivalente XP" }],
+    (gaps.funds || []).map(f => ({
+      name: f.name, cnpj_display: f.cnpj_display, category: f.category,
+      manager: f.manager || "–", houses_label: f.houses_label,
+      min: money(f.min_initial), fee: pct(f.admin_fee_pct), pl: money(f.pl_cvm),
+      mgr: f.manager_on_xp === null ? "–" : (f.manager_on_xp ? "Sim" : "Nao"),
+      equiv: f.possible_xp_equivalent || "–",
+    }))
+  );
+
+  // Proveniencia - o rodape que evita a leitura errada.
+  const parts = ["Comparacao vitrine x vitrine: o catalogo Open Finance nao conta " +
+    "em nenhum dos lados."];
+  if (gaps.baseline_warning) parts.push(gaps.baseline_warning + ".");
+  const partial = gaps.competitors.filter(c => c.partial);
+  if (partial.length) {
+    parts.push("Coleta parcial (gaps podem estar subestimados): " +
+      partial.map(c => c.label).join(", ") + ".");
+  }
+  if (gaps.excluded && gaps.excluded.length) {
+    parts.push("Fora do universo: " +
+      gaps.excluded.map(e => `${e.label} (${e.reason})`).join("; ") + ".");
+  }
+  if (gaps.funds_truncated) {
+    parts.push(`Lista limitada aos ${gaps.funds.length} primeiros gaps; ` +
+      `os ${gaps.funds_truncated} restantes estao na planilha.`);
+  }
+  parts.push("Gestora na XP e Possivel equivalente XP sao sinais heuristicos - " +
+    "informam, nunca removem um fundo da lista.");
+  document.getElementById("gaps-coverage").textContent = parts.join(" ");
+}
+renderGaps(DATA.gaps);
+
 (function renderRestricted(block) {
   const mount = document.getElementById("table-restricted");
   const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
@@ -799,6 +938,22 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
     <details><summary>Ver a matriz como tabela</summary><div id="table-vitrine"></div></details>
     <div class="coverage" id="vitrine-coverage"></div>
+  </section>
+
+  <section class="card" id="gaps-section">
+    <h2>Gaps de prateleira da XP</h2>
+    <p class="card-sub">Fundos de varejo presentes na vitrine de ao menos um concorrente e
+      ausentes da vitrine da XP (por CNPJ). Comparacao vitrine &times; vitrine: o catalogo
+      Open Finance nao conta em nenhum dos lados.</p>
+    <div class="tiles" id="gaps-tiles"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Onde a vitrine da XP esta rasa</h3>
+    <p class="card-sub">Categorias com mais fundos de gap; cada celula conta a vitrine da casa
+      na categoria. Mais escuro = mais fundos.</p>
+    <div class="matrix-scroll" id="matrix-gaps"></div>
+
+    <details><summary>Ver os fundos de gap</summary><div id="table-gaps"></div></details>
+    <div class="coverage" id="gaps-coverage"></div>
   </section>
 
   <section class="card">
