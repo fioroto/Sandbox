@@ -42,9 +42,15 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.market.etf_flow import run_etf_flow_pipeline
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
+from shelf_monitor.report.etf_report import (
+    export_etf_csv,
+    export_etf_excel,
+    print_etf_summary,
+)
 from shelf_monitor.report.mailer import build_subject, send_digest
 from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
@@ -546,6 +552,34 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
     )
 
 
+def cmd_etf(config: Config, args: argparse.Namespace) -> None:
+    """Monitora a captação semanal dos ETFs registrados na CVM."""
+    config.ensure_dirs()
+    console.print(f"[bold]Analisando a captação dos ETFs na CVM (últimos {args.months} meses)...[/]")
+
+    catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(
+        config, months_count=args.months, force_download=args.force
+    )
+
+    if not weekly_flows:
+        console.print("[red]Nenhum dado de captação semanal foi gerado.[/]")
+        return
+
+    print_etf_summary(weekly_flows, category_summaries, catalog)
+
+    if args.export or args.output:
+        xlsx_path = Path(args.output) if args.output else (config.reports_dir / "etf_captacao_semanal.xlsx")
+        csv_path = config.reports_dir / "etf_weekly_flow.csv"
+
+        saved_xlsx = export_etf_excel(weekly_flows, category_summaries, catalog, xlsx_path)
+        saved_csv = export_etf_csv(weekly_flows, csv_path)
+
+        console.print()
+        console.print("[green]Arquivos de fluxo semanal exportados com sucesso:[/]")
+        console.print(f"  Planilha Excel: {saved_xlsx}")
+        console.print(f"  Arquivo CSV:   {saved_csv}")
+
+
 def main() -> None:
     # --data-dir vale antes ou depois do subcomando: exigir uma das duas ordens
     # e uma pegadinha desnecessaria na linha de comando. O SUPPRESS e o que
@@ -672,6 +706,32 @@ def main() -> None:
     discover_parser.add_argument("--limit", type=int, default=30)
     discover_parser.add_argument("--local-zip", help="Usar um zip local em vez de baixar")
     discover_parser.set_defaults(func=cmd_watchlist_discover)
+
+    etf_parser = subparsers.add_parser(
+        "etf",
+        help="Monitorar a captação semanal de todos os ETFs cadastrados na CVM",
+        parents=[common],
+    )
+    etf_parser.add_argument(
+        "--months",
+        type=int,
+        default=3,
+        help="Quantidade de meses recentes do INF_DIARIO a analisar (default: 3)",
+    )
+    etf_parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Exportar resultados para planilha Excel (.xlsx) e arquivo CSV",
+    )
+    etf_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Forçar re-download dos arquivos da CVM mesmo se existirem no cache",
+    )
+    etf_parser.add_argument(
+        "-o", "--output", help="Caminho personalizado para salvar a planilha .xlsx"
+    )
+    etf_parser.set_defaults(func=cmd_etf)
 
     args = parser.parse_args()
     if not getattr(args, "func", None):

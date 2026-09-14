@@ -161,6 +161,7 @@ class ItauCollector(PlatformCollector):
             channel=self.config.browser_channel,
             on_page=_paginate_rentability_table,
             payload_mapper=_map_rentability_payload,
+            warnings=self.warnings,
         )
         self.source_urls.extend(urls)
         return offers
@@ -179,29 +180,35 @@ def _paginate_rentability_table(page) -> list[tuple[str, Any]]:
     pages: list[list[list[str]]] = []
 
     for _ in range(_MAX_TABLE_PAGES):
-        rows = page.evaluate(_TABLE_ROWS_JS)
+        try:
+            rows = page.evaluate(_TABLE_ROWS_JS)
+        except Exception:
+            break
         if not rows:
             break
         pages.append(rows)
 
-        arrow = page.query_selector(_NEXT_SELECTOR)
-        if arrow is None or arrow.is_disabled():
-            break
-
-        previous = _first_data_cell(rows)
-        arrow.click()
-
-        waited = 0
-        changed = False
-        while waited < _PAGE_CHANGE_TIMEOUT_MS:
-            page.wait_for_timeout(_PAGE_CHANGE_POLL_MS)
-            waited += _PAGE_CHANGE_POLL_MS
-            if _first_data_cell(page.evaluate(_TABLE_ROWS_JS)) != previous:
-                changed = True
+        try:
+            arrow = page.query_selector(_NEXT_SELECTOR)
+            if arrow is None or arrow.is_disabled():
                 break
-        if not changed:
-            # Botao habilitado mas conteudo parado: fim de fato (ou pagina
-            # travada) - parar aqui evita acumular a mesma pagina para sempre.
+
+            previous = _first_data_cell(rows)
+            arrow.click()
+
+            waited = 0
+            changed = False
+            while waited < _PAGE_CHANGE_TIMEOUT_MS:
+                page.wait_for_timeout(_PAGE_CHANGE_POLL_MS)
+                waited += _PAGE_CHANGE_POLL_MS
+                if _first_data_cell(page.evaluate(_TABLE_ROWS_JS)) != previous:
+                    changed = True
+                    break
+            if not changed:
+                # Botao habilitado mas conteudo parado: fim de fato (ou pagina
+                # travada) - parar aqui evita acumular a mesma pagina para sempre.
+                break
+        except Exception:
             break
 
     if not pages:

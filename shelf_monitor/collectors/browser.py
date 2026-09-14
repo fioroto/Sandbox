@@ -38,6 +38,13 @@ from shelf_monitor.normalize import (
     parse_number,
 )
 
+try:
+    from playwright.sync_api import sync_playwright
+    _PLAYWRIGHT_ERROR: str | None = None
+except Exception as _exc:  # noqa: BLE001
+    sync_playwright = None  # type: ignore[assignment]
+    _PLAYWRIGHT_ERROR = str(_exc)
+
 _NAV_TIMEOUT_MS = 60_000
 _IDLE_TIMEOUT_MS = 20_000
 # Teto para a espera por conteudo. A espera real termina assim que a lista
@@ -633,12 +640,11 @@ def render_page(
     serve para paginar uma API interna com os cookies da sessao; o que devolver
     (lista de (url, payload)) entra em capture.payloads.
     """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
+    if sync_playwright is None:
+        detail = f": {_PLAYWRIGHT_ERROR}" if _PLAYWRIGHT_ERROR else ""
         raise SourceUnavailable(
-            "playwright nao instalado: pip install playwright"
-        ) from exc
+            f"playwright nao instalado ou com erro: pip install playwright{detail}"
+        )
 
     responses: list[CapturedResponse] = []
     payloads: list[tuple[str, Any]] = []
@@ -650,21 +656,24 @@ def render_page(
     pending_bodies: list[tuple[Any, CapturedResponse]] = []
 
     def on_response(response) -> None:
-        headers = response.headers or {}
-        content_type = headers.get("content-type", "")
-        is_json = "json" in content_type.lower()
+        try:
+            headers = response.headers or {}
+            content_type = headers.get("content-type", "")
+            is_json = "json" in content_type.lower()
 
-        record = CapturedResponse(
-            url=response.url,
-            status=response.status,
-            content_type=content_type,
-            size=_declared_size(headers),
-            resource_type=getattr(response.request, "resource_type", ""),
-            is_json=is_json,
-        )
-        responses.append(record)
-        if is_json and len(pending_bodies) < _MAX_JSON_RESPONSES:
-            pending_bodies.append((response, record))
+            record = CapturedResponse(
+                url=response.url,
+                status=response.status,
+                content_type=content_type,
+                size=_declared_size(headers),
+                resource_type=getattr(response.request, "resource_type", ""),
+                is_json=is_json,
+            )
+            responses.append(record)
+            if is_json and len(pending_bodies) < _MAX_JSON_RESPONSES:
+                pending_bodies.append((response, record))
+        except Exception:
+            pass
 
     def drain_bodies() -> None:
         """Le os corpos com a navegacao ja assentada, quando estao completos."""
@@ -852,6 +861,7 @@ def collect_via_browser(
     channel: str | None = None,
     on_page=None,
     payload_mapper=None,
+    warnings: list[str] | None = None,
 ) -> tuple[list[FundOffer], list[str]]:
     """Renderiza a pagina e extrai os fundos por JSON, estado embutido e DOM.
 
@@ -871,6 +881,11 @@ def collect_via_browser(
         channel=channel,
         on_page=on_page,
     )
+
+    if warnings is not None:
+        for resp in capture.responses:
+            if resp.resource_type == "hook":
+                warnings.append(f"falha no gancho on_page: {resp.url}")
 
     if debug_dir is not None:
         dump_capture(debug_dir, platform_id, capture)

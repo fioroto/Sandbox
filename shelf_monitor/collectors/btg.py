@@ -216,7 +216,10 @@ class BtgCollector(PlatformCollector):
                 return payload
 
             # O retorno vai para capture.payloads; o mapper abaixo le de la.
-            paginate_btg_api(fetch, self._base_url)
+            try:
+                paginate_btg_api(fetch, self._base_url)
+            except Exception:
+                pass
             return collected
 
         def mapper(url: str, payload: Any) -> list[FundOffer] | None:
@@ -238,6 +241,7 @@ class BtgCollector(PlatformCollector):
             channel=self.config.browser_channel,
             on_page=paginate_in_page,
             payload_mapper=mapper,
+            warnings=self.warnings,
         )
         self.source_urls.extend(urls)
         return offers

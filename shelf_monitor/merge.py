@@ -46,6 +46,13 @@ def source_rank(source: str) -> int:
         return len(_SOURCE_PRECEDENCE)
 
 
+def _serialize(value: object) -> object:
+    """Converte para um tipo seguro para JSON (extra dict)."""
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    return value
+
+
 def _best_source(offer: FundOffer) -> int:
     if not offer.sources:
         return len(_SOURCE_PRECEDENCE)
@@ -149,6 +156,9 @@ def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
                 target_identity = by_slug[fuzzy_slug]
                 provenance = f"nome aproximado ({slug} ~ {fuzzy_slug})"
         if not target_identity or target_identity == identity:
+            offer.extra.setdefault(
+                "reconciliacao", "nao reconciliado (sem CNPJ correspondente)"
+            )
             continue
 
         # O registro com CNPJ absorve o sem-CNPJ, que sai da prateleira:
@@ -161,15 +171,29 @@ def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
 
 
 def _absorb(target: FundOffer, other: FundOffer, source: str) -> None:
-    """Incorpora `other` em `target`, preenchendo apenas o que falta."""
+    """Incorpora `other` em `target`, preenchendo apenas o que falta.
+
+    Quando ambas as fontes tem um valor para o mesmo campo e eles divergem,
+    registra em extra["divergencias"] - e informacao competitiva que o merge
+    antigo descartava em silencio.
+    """
     if source not in target.sources:
         target.sources.append(source)
 
     for name in _MERGED_FIELDS:
-        if getattr(target, name) is None:
-            value = getattr(other, name)
-            if value is not None:
-                setattr(target, name, value)
+        target_value = getattr(target, name)
+        other_value = getattr(other, name)
+        if target_value is None:
+            if other_value is not None:
+                setattr(target, name, other_value)
+        elif other_value is not None and target_value != other_value:
+            divergencias = target.extra.setdefault("divergencias", {})
+            divergencias[name] = {
+                "valor_usado": _serialize(target_value),
+                "fonte_usada": target.sources[0] if target.sources else "?",
+                "valor_alternativo": _serialize(other_value),
+                "fonte_alternativa": source,
+            }
 
     # A classe nunca e None (tem default OUTROS), entao a regra e outra: uma
     # classificacao concreta vinda de qualquer fonte vale mais que "outros".
