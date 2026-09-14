@@ -32,6 +32,7 @@ from shelf_monitor.models import FundOffer
 from shelf_monitor.normalize import (
     classify_asset_class,
     normalize_cnpj,
+    normalize_cvm_code,
     normalize_text,
     parse_int,
     parse_money,
@@ -62,6 +63,7 @@ _MAX_JSON_BYTES = 12 * 1024 * 1024
 # Chaves que costumam carregar os campos de interesse, em varias grafias.
 _NAME_KEYS = ("name", "nome", "fundname", "nomefundo", "displayname", "razaosocial")
 _CNPJ_KEYS = ("cnpj", "cnpjnumber", "cnpjfundo", "documentnumber")
+_CVM_CODE_KEYS = ("codigocvm", "cdcvm", "codcvm", "codigofundocvm", "cvmcode")
 _CATEGORY_KEYS = ("category", "categoria", "classe", "class", "anbimacategory", "tipo")
 _MANAGER_KEYS = ("manager", "gestor", "gestora", "fundmanager", "assetmanager")
 _ADMIN_KEYS = ("admin", "administrador", "administrator")
@@ -167,6 +169,9 @@ def to_offer(platform_id: str, item: dict, base_url: str | None = None) -> FundO
         platform=platform_id,
         name=name,
         cnpj=normalize_cnpj(_as_text(_pick(item, _CNPJ_KEYS))),
+        # Sem _as_text: o codigo costuma vir como numero e normalize_cvm_code
+        # aceita o tipo cru.
+        cvm_code=normalize_cvm_code(_pick(item, _CVM_CODE_KEYS)),
         manager_name=_as_text(_pick(item, _MANAGER_KEYS)),
         admin_name=_as_text(_pick(item, _ADMIN_KEYS)),
         asset_class=classify_asset_class(category, name),

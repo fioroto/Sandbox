@@ -125,12 +125,15 @@ def offer_from_btg_item(item: dict) -> FundOffer | None:
 
 
 def paginate_btg_api(
-    fetch_json: Callable[[str], Any], base_url: str
+    fetch_json: Callable[[str], Any],
+    base_url: str,
+    warnings: list[str] | None = None,
 ) -> tuple[list[FundOffer], list[str]]:
     """Percorre o funds/list/v2 inteiro com a funcao de fetch que for dada.
 
     A mesma logica serve ao caminho HTTP direto e ao caminho por dentro do
-    navegador - so muda quem executa o GET.
+    navegador - so muda quem executa o GET. Quem passar `warnings` recebe o
+    aviso de teto atingido, que rebaixa o snapshot para parcial.
     """
     offers: list[FundOffer] = []
     seen: set[str] = set()
@@ -168,6 +171,15 @@ def paginate_btg_api(
                 offers.append(offer)
         page += 1
 
+    if warnings is not None and total_pages > _MAX_PAGES:
+        # Mesmo tratamento do Open Finance: prateleira cortada nao pode sair
+        # como coleta inteira.
+        warnings.append(
+            f"paginacao do funds/list/v2 truncada em {_MAX_PAGES} de "
+            f"{total_pages} paginas ({len(offers)} fundos coletados) - "
+            "prateleira incompleta"
+        )
+
     return offers, urls
 
 
@@ -189,7 +201,7 @@ class BtgCollector(PlatformCollector):
         def fetch(url: str):
             return get_json(self.session, url, self.config)
 
-        offers, urls = paginate_btg_api(fetch, self._base_url)
+        offers, urls = paginate_btg_api(fetch, self._base_url, self.warnings)
         self.source_urls.extend(urls)
         return offers
 

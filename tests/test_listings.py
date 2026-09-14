@@ -12,7 +12,11 @@ from __future__ import annotations
 import unittest
 
 from shelf_monitor.collectors import open_finance as of
-from shelf_monitor.collectors.browser import extract_from_dom, looks_like_fund_name
+from shelf_monitor.collectors.browser import (
+    extract_from_dom,
+    looks_like_fund_name,
+    to_offer,
+)
 from shelf_monitor.collectors.inter import _SITEMAP_URLS
 from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import PLATFORMS, Config
@@ -126,6 +130,23 @@ class TestFundNameHeuristic(unittest.TestCase):
     def test_a_cnpj_is_not_a_name(self):
         """Sem isso o proprio numero viraria o nome do fundo."""
         self.assertFalse(looks_like_fund_name("CNPJ: 12.345.678/0001-90", has_cnpj=True))
+
+
+class TestJsonExtraction(unittest.TestCase):
+    def test_reads_the_cvm_code_however_the_feed_spells_it(self):
+        """O codigo costuma vir como numero, e a grafia varia por casa."""
+        for key, raw in (
+            ("codigoCVM", 555001),
+            ("cd_cvm", "0555001"),
+            ("codCvm", "555001"),
+        ):
+            item = {"nomeFundo": "Fundo A", "cnpj": "12.345.678/0001-91", key: raw}
+            fund = to_offer("itau", item)
+            self.assertEqual(fund.cvm_code, "555001", key)
+
+    def test_a_fund_without_cvm_code_keeps_it_empty(self):
+        fund = to_offer("itau", {"nomeFundo": "Fundo A", "cnpj": "12345678000191"})
+        self.assertIsNone(fund.cvm_code)
 
 
 class TestDomExtraction(unittest.TestCase):
@@ -349,6 +370,54 @@ class TestOpenFinancePagination(unittest.TestCase):
         self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
         self.assertIn("truncada", snapshot.error)
 
+    def test_missing_meta_midway_does_not_end_pagination(self):
+        """A instituicao que omite `totalPages` numa pagina do meio nao pode
+        encerrar o laco como se a paginacao tivesse acabado."""
+        def fake_get_json(session, url, config, params=None):
+            page = (params or {}).get("page", 1)
+            meta = (
+                {"totalPages": 4, "totalRecords": 40} if page == 1 else {}
+            )
+            return {
+                "data": [
+                    {"name": f"Fundo {page}-{i}", "cnpjNumber": f"{page:07d}{i:07d}"}
+                    for i in range(10)
+                ],
+                "meta": meta,
+            }
+
+        of.get_json = fake_get_json
+        client = self._client()
+        offers = client.fetch()
+
+        self.assertEqual(client.pages_read, 4)
+        self.assertEqual(len(offers), 40)
+        self.assertFalse(client.truncated)
+        self.assertEqual(client.warnings, [])
+
+    def test_pages_exhausted_before_declared_total_is_reported(self):
+        """Itens acabaram antes do total anunciado: a prateleira nao e a inteira."""
+        def fake_get_json(session, url, config, params=None):
+            page = (params or {}).get("page", 1)
+            data = (
+                [
+                    {"name": f"Fundo {page}-{i}", "cnpjNumber": f"{page:07d}{i:07d}"}
+                    for i in range(10)
+                ]
+                if page < 4
+                else []
+            )
+            return {"data": data, "meta": {"totalPages": 10, "totalRecords": 100}}
+
+        of.get_json = fake_get_json
+        client = self._client()
+        offers = client.fetch()
+
+        self.assertEqual(len(offers), 30)
+        self.assertTrue(client.truncated)
+        self.assertEqual(len(client.warnings), 1)
+        self.assertIn("de 10", client.warnings[0])
+
 
 class TestPlatformSources(unittest.TestCase):
     """As URLs que o usuario indicou, e a estrategia que as alcanca."""
@@ -521,6 +590,43 @@ class TestBtgApi(unittest.TestCase):
                 lambda url: {"error": "maintenance"}, "https://exemplo.invalido"
             )
 
+    def test_page_cap_overflow_is_reported(self):
+        """Prateleira cortada pelo teto nao pode sair como coleta inteira."""
+        from unittest import mock
+
+        from shelf_monitor.collectors import btg as btg_mod
+        from shelf_monitor.collectors.btg import paginate_btg_api
+
+        def fetch(url):
+            page = int(url.split("page=")[1].split("&")[0])
+            return {
+                "items": [{"Name": f"Fundo {page} FIC FIM", "CNPJ": f"{page:014d}"}],
+                "total": 5,
+                "page": page,
+                "total_pages": 5,
+            }
+
+        warnings: list[str] = []
+        with mock.patch.object(btg_mod, "_MAX_PAGES", 2):
+            offers, _ = paginate_btg_api(
+                fetch, "https://exemplo.invalido", warnings
+            )
+
+        self.assertEqual(len(offers), 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("truncada", warnings[0])
+
+    def test_pagination_without_warnings_list_still_works(self):
+        """O parametro e opcional: quem nao passa a lista nao quebra."""
+        from shelf_monitor.collectors.btg import paginate_btg_api
+
+        def fetch(url):
+            return {"items": [{"Name": "Fundo A FIC FIM", "CNPJ": "1" * 14}],
+                    "total": 1, "page": 1, "total_pages": 1}
+
+        offers, _ = paginate_btg_api(fetch, "https://exemplo.invalido")
+        self.assertEqual(len(offers), 1)
+
 
 class TestInterCollector(unittest.TestCase):
     def test_cap_overflow_becomes_a_warning_not_silence(self):
@@ -547,6 +653,81 @@ class TestInterCollector(unittest.TestCase):
         self.assertEqual(len(snapshot.funds), 3)
         self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
         self.assertIn("teto", snapshot.error)
+
+    def _collector_over(self, url_count: int, failing: set[int],
+                        page_data_fails: bool = False):
+        """Coletor do Inter sobre `url_count` paginas, com `failing` caindo.
+
+        Stubba o `get` (e nao `_parse_fund_page`) para os contadores rodarem de
+        verdade - e o caminho que perdia fundo em silencio.
+        """
+        from unittest import mock
+
+        from shelf_monitor.collectors import inter as inter_mod
+        from shelf_monitor.collectors.inter import InterCollector
+        from shelf_monitor.http import SourceUnavailable
+
+        prefix = "https://inter.co/pra-voce/investimentos/fundos-de-investimento/"
+        urls = [f"{prefix}f{i}/" for i in range(url_count)]
+
+        class FakeResponse:
+            def __init__(self, text):
+                self.text = text
+
+            def json(self):
+                raise ValueError("sem json")
+
+        def fake_get(session, url, config, **kwargs):
+            if "/page-data/" in url:
+                if page_data_fails:
+                    raise SourceUnavailable("page-data fora do ar")
+                return FakeResponse("{}")
+            index = int(url.rstrip("/").rsplit("f", 1)[1])
+            if index in failing:
+                raise SourceUnavailable("HTTP 503")
+            return FakeResponse(
+                f"<html><h1>Inter Fundo {index} FIC FIM</h1>"
+                f"<p>11.111.{index:03d}/0001-11</p></html>"
+            )
+
+        config = Config(data_dir="/tmp/nao-usado")
+        collector = InterCollector(config, config.platform("inter"))
+        collector._discover_fund_urls = lambda: urls
+        collector._collect_open_finance = lambda: []
+        return collector, mock.patch.object(inter_mod, "get", fake_get)
+
+    def test_mass_page_failures_downgrade_to_partial(self):
+        """Pagina que nao abre e fundo perdido: sem aviso, o diff de amanha le
+        a perda como saida da prateleira."""
+        collector, patched = self._collector_over(20, failing=set(range(10)))
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 10)
+        self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
+        self.assertIn("paginas de fundo falharam", snapshot.error)
+
+    def test_single_page_failure_does_not_downgrade(self):
+        """Uma falha isolada e ruido de rede, nao prateleira incompleta."""
+        collector, patched = self._collector_over(20, failing={3})
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 19)
+        self.assertEqual(snapshot.status, SnapshotStatus.OK)
+        self.assertEqual(collector.warnings, [])
+
+    def test_page_data_mass_failure_is_a_note_not_partial(self):
+        """A prateleira esta inteira; o que faltou foram os fatos."""
+        collector, patched = self._collector_over(
+            20, failing=set(), page_data_fails=True
+        )
+        with patched:
+            snapshot = collector.collect()
+
+        self.assertEqual(len(snapshot.funds), 20)
+        self.assertEqual(snapshot.status, SnapshotStatus.OK)
+        self.assertIn("page-data.json falhou", snapshot.error)
 
     def test_fill_missing_keeps_html_identity(self):
         """page-data completa o que falta; nome e CNPJ do HTML prevalecem."""
@@ -719,10 +900,9 @@ class TestEnrichment(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = Config(data_dir=self.tmp.name)
         self.config.market_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(
-            Path(__file__).parent / "fixtures" / "enrich" / "mercado.csv",
-            self.config.market_dir / "mercado.csv",
-        )
+        fixtures = Path(__file__).parent / "fixtures" / "enrich"
+        for name in ("mercado.csv", "subclasses.csv"):
+            shutil.copy(fixtures / name, self.config.market_dir / name)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -794,6 +974,225 @@ class TestEnrichment(unittest.TestCase):
         self.assertEqual(stats.with_cnpj, 1)
         self.assertEqual(stats.matched, 0)
         self.assertNotIn("classificacao_anbima", fund.extra)
+
+    def test_official_manager_wins_over_what_the_house_publishes(self):
+        """Sem isso, a mesma gestora aparece com tres nomes e o total infla."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="btg", name="A1 D30", cnpj="63446494000152",
+            manager_name="Asset1", manager_cnpj="99999999000199",
+        )
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.manager_cnpj, "41287689000164")
+        self.assertEqual(fund.extra["gestor_casa"], "Asset1")
+        self.assertEqual(fund.extra["cnpj_gestor_casa"], "99999999000199")
+        self.assertEqual(stats.managers_from_cvm, 1)
+
+    def test_same_manager_written_differently_is_not_a_divergence(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="btg", name="A1 D30", cnpj="63446494000152",
+            manager_name="Asset1 Crédito Investimentos Ltda.",
+        )
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertNotIn("gestor_casa", fund.extra)
+
+    def test_a_shelf_without_managers_is_filled_from_the_registry(self):
+        """O sintoma que motivou o lookup: prateleira inteira sem gestora."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        funds = [
+            FundOffer(platform="inter", name="A1 D30", cnpj="63446494000152"),
+            FundOffer(platform="inter", name="Privilege DI", cnpj="11111111000111"),
+            FundOffer(platform="inter", name="Legado", cnpj="99999999000199"),
+        ]
+        stats = enrich_snapshots(self.config, [self._snapshot(funds)])
+
+        self.assertTrue(all(f.manager_name for f in funds))
+        self.assertEqual(stats.managers_from_cvm, 3)
+
+
+class TestMarketBaseBootstrap(TestEnrichment):
+    """A base ausente era falha silenciosa: sem ela nao ha gestora nenhuma."""
+
+    def test_existing_base_is_not_downloaded_again(self):
+        from unittest import mock
+
+        from shelf_monitor import main
+
+        with mock.patch.object(main, "run_import") as run_import:
+            main.ensure_market_base(self.config)
+        run_import.assert_not_called()
+
+    def test_missing_base_triggers_the_import(self):
+        from unittest import mock
+
+        from datetime import datetime
+
+        from shelf_monitor import main
+        from shelf_monitor.market.models import MarketDatabase
+
+        (self.config.market_dir / "mercado.csv").unlink()
+        empty = (MarketDatabase(imported_at=datetime.now()), {})
+        with mock.patch.object(main, "run_import", return_value=empty) as run_import:
+            main.ensure_market_base(self.config)
+        run_import.assert_called_once()
+
+    def test_a_failed_import_does_not_bring_the_run_down(self):
+        """A coleta do dia vale mais que a base: o relatorio sai com o aviso."""
+        from unittest import mock
+
+        from shelf_monitor import main
+
+        (self.config.market_dir / "mercado.csv").unlink()
+        with mock.patch.object(main, "run_import", side_effect=OSError("sem rede")):
+            main.ensure_market_base(self.config)  # nao pode levantar
+
+
+class TestCvmCodeLookup(TestEnrichment):
+    """Casamento pelo codigo CVM - a chave de quem nao publica CNPJ."""
+
+    def test_matches_by_class_code(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="A1 D30", cvm_code="C100")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_classe")
+        self.assertEqual(stats.matched_by_cvm_code, 1)
+        self.assertEqual(stats.with_cvm_code, 1)
+        self.assertEqual(stats.with_cnpj, 0)
+
+    def test_matches_by_subclass_code_through_the_parent_class(self):
+        """A subclasse partilha CNPJ e carteira: a resposta e a da classe-mae."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="A1 D30 Varejo", cvm_code="S777")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["classificacao_anbima"], "RF duração livre crédito livre")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_subclasse")
+
+    def test_matches_by_fund_code_of_a_multi_class_envelope(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fundo Multi", cvm_code="400400")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA MULTI LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_fundo")
+        # As duas classes concordam, entao a classificacao desce ao envelope.
+        self.assertEqual(fund.extra["classificacao_anbima"], "Multimercados Livre")
+
+    def test_envelope_code_does_not_invent_a_classification(self):
+        """Classes que discordam: gestora desce, classificacao nao."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fundo Diverge", cvm_code="600600")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA DIVERGE")
+        self.assertNotIn("classificacao_anbima", fund.extra)
+
+    def test_legacy_fund_code_also_matches(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Legado", cvm_code="999099")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA LEGADA LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_fundo")
+
+    def test_cnpj_is_tried_before_the_code(self):
+        """Com as duas chaves, vale a mais confiavel."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(
+            platform="itau", name="A1 D30", cnpj="63446494000152", cvm_code="C200",
+        )
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "ASSET1 CREDITO INVESTIMENTOS LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "cnpj")
+        self.assertEqual(stats.matched_by_cvm_code, 0)
+
+    def test_the_most_specific_level_wins_a_code_collision(self):
+        """COL1 e codigo de uma subclasse de C4 e de outra classe."""
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Colidido", cvm_code="COL1")
+        enrich_snapshots(self.config, [self._snapshot([fund])])
+
+        self.assertEqual(fund.manager_name, "GESTORA MULTI LTDA")
+        self.assertEqual(fund.extra["match_cvm"], "codigo_subclasse")
+
+    def test_code_normalization_crosses_the_join(self):
+        """Zero a esquerda e numero cru sao o mesmo codigo dos dois lados."""
+        from shelf_monitor.enrich import MarketLookup
+
+        lookup = MarketLookup.load(self.config)
+        for value in ("400400", "0400400", 400400, 400400.0):
+            hit = lookup.get_by_cvm_code(value)
+            self.assertIsNotNone(hit, repr(value))
+            self.assertEqual(hit[0].gestor, "GESTORA MULTI LTDA")
+
+    def test_unknown_code_is_not_forced_into_a_match(self):
+        from shelf_monitor.enrich import enrich_snapshots
+        from shelf_monitor.models import FundOffer
+
+        fund = FundOffer(platform="itau", name="Fora da base", cvm_code="Z999")
+        stats = enrich_snapshots(self.config, [self._snapshot([fund])])
+        self.assertEqual(stats.matched, 0)
+        self.assertIsNone(fund.manager_name)
+
+    def test_a_base_without_subclasses_still_loads(self):
+        """Base importada antes desta versao nao tem o arquivo - nao pode quebrar."""
+        from shelf_monitor.enrich import MarketLookup
+
+        (self.config.market_dir / "subclasses.csv").unlink()
+        lookup = MarketLookup.load(self.config)
+
+        self.assertIsNone(lookup.get_by_cvm_code("S777"))
+        self.assertIsNotNone(lookup.get_by_cvm_code("C100"))
+        self.assertIsNotNone(lookup.get("63446494000152"))
+
+    def test_a_base_without_the_code_columns_still_loads(self):
+        """mercado.csv antigo: sem as colunas, o indice fica vazio e so."""
+        import csv
+
+        from shelf_monitor.enrich import MarketLookup
+
+        path = self.config.market_dir / "mercado.csv"
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter=";"))
+        headers = [h for h in rows[0] if not h.startswith("codigo_cvm")]
+        with path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=headers, delimiter=";", extrasaction="ignore"
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+        lookup = MarketLookup.load(self.config)
+        self.assertIsNone(lookup.get_by_cvm_code("C100"))
+        self.assertIsNotNone(lookup.get("63446494000152"))
 
 
 class TestListingBlock(unittest.TestCase):

@@ -13,6 +13,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from shelf_monitor import main as main_mod
 from shelf_monitor.collectors.cvm import (
     CvmCollector,
     WatchlistMatcher,
@@ -28,6 +29,7 @@ from shelf_monitor.merge import merge_offers, source_summary
 from shelf_monitor.models import (
     AssetClass,
     CollectorStrategy,
+    CvmFund,
     CvmSnapshot,
     FundOffer,
     RunReport,
@@ -39,6 +41,7 @@ from shelf_monitor.normalize import (
     format_cnpj,
     name_slug,
     normalize_cnpj,
+    normalize_cvm_code,
     normalize_text,
     parse_money,
     parse_number,
@@ -47,7 +50,12 @@ from shelf_monitor.report.aggregate import build_dashboard_data
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest, render_markdown
 from shelf_monitor.report.mailer import build_subject, send_digest
-from shelf_monitor.storage import latest_shelf_snapshot, save_shelf_snapshot
+from shelf_monitor.storage import (
+    latest_cvm_snapshot,
+    latest_shelf_snapshot,
+    save_cvm_snapshot,
+    save_shelf_snapshot,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CVM_ZIP = FIXTURES / "cvm" / "registro_fundo_classe.zip"
@@ -67,6 +75,20 @@ class TestNormalize(unittest.TestCase):
         self.assertEqual(normalize_cnpj(12345678000191), "12345678000191")
         self.assertIsNone(normalize_cnpj(None))
         self.assertEqual(format_cnpj("12345678000191"), "12.345.678/0001-91")
+
+    def test_cvm_code_normalization_survives_the_type_of_the_source(self):
+        """O CSV traz texto com zero a esquerda; o JSON da casa traz numero."""
+        self.assertEqual(normalize_cvm_code("0555001"), "555001")
+        self.assertEqual(normalize_cvm_code(555001), "555001")
+        self.assertEqual(normalize_cvm_code(555001.0), "555001")
+        self.assertEqual(normalize_cvm_code(" c-555.001 "), "C555001")
+        # Codigo alfanumerico nao perde o zero: ele nao e zero a esquerda de
+        # numero, e parte do identificador.
+        self.assertEqual(normalize_cvm_code("S001"), "S001")
+
+    def test_cvm_code_refuses_what_is_not_a_code(self):
+        for value in (None, "", "   ", "000", "-", True, float("nan")):
+            self.assertIsNone(normalize_cvm_code(value), repr(value))
 
     def test_slug_collapses_legal_form_tokens(self):
         self.assertEqual(
@@ -239,6 +261,16 @@ class TestSourceMerge(unittest.TestCase):
             ],
         })
         self.assertEqual(merged[0].asset_class, AssetClass.ACOES)
+
+    def test_cvm_code_is_merged_like_the_other_identifiers(self):
+        """O codigo que so a via do navegador viu sobrevive a uniao."""
+        merged = merge_offers({
+            "open-finance": [offer("itau", "Fundo A", "11111111000191")],
+            "playwright": [
+                offer("itau", "Fundo A", "11111111000191", cvm_code="555001"),
+            ],
+        })
+        self.assertEqual(merged[0].cvm_code, "555001")
 
     def test_summary_counts_what_each_source_alone_saw(self):
         groups = {
@@ -446,6 +478,74 @@ class TestShelfDiff(unittest.TestCase):
         self.assertEqual(current.status, SnapshotStatus.PARTIAL)
         self.assertIn("tratada como parcial", current.error)
 
+    def _pair_with_lost_source(self, prev_count: int, curr_count: int):
+        """Baseline de duas fontes contra uma coleta em que a segunda caiu."""
+        previous = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(prev_count)],
+            self.yesterday,
+        )
+        previous.strategies = ["open-finance", "playwright"]
+        previous.source_counts = {"open-finance": prev_count, "playwright": 30}
+        current = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(curr_count)],
+            self.today,
+        )
+        current.strategies = ["open-finance"]
+        current.source_counts = {"open-finance": curr_count}
+        return previous, current
+
+    def test_missing_source_marks_diff_suspect_even_with_mild_shrink(self):
+        """O caso BTG: 9.950 -> 9.818 nao dispara o limiar de encolhimento, mas
+        a vitrine comercial inteira sumiu junto com o navegador."""
+        previous, current = self._pair_with_lost_source(200, 198)
+
+        diff = diff_shelf(current, previous)
+        self.assertTrue(diff.suspect)
+        self.assertIn("playwright", diff.suspect_reason)
+        self.assertEqual(diff.removed, [], "saida de fonte nao vira saida de fundo")
+
+    def test_missing_source_downgrades_snapshot_to_partial(self):
+        previous, current = self._pair_with_lost_source(200, 198)
+        current.error = "fontes indisponiveis -> playwright: bloqueado"
+
+        assess_quality(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.PARTIAL)
+        self.assertIn("tratada como parcial", current.error)
+        self.assertIn("bloqueado", current.error, "a causa original e preservada")
+
+    def test_legacy_baseline_without_strategies_stays_calm(self):
+        """Snapshot anterior a coluna de fontes: nada a comparar, nada a acusar."""
+        previous = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(200)],
+            self.yesterday,
+        )
+        current = snapshot_for(
+            "btg", [offer("btg", f"F{i}", f"{i:014d}") for i in range(198)],
+            self.today,
+        )
+        current.strategies = ["open-finance"]
+
+        assess_quality(current, previous)
+        diff = diff_shelf(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.OK)
+        self.assertFalse(diff.suspect)
+
+    def test_missing_source_without_shrink_is_not_suspect(self):
+        """A uniao compensou: nao ha cobertura perdida a proteger."""
+        previous, current = self._pair_with_lost_source(200, 200)
+
+        assess_quality(current, previous)
+        diff = diff_shelf(current, previous)
+        self.assertEqual(current.status, SnapshotStatus.OK)
+        self.assertFalse(diff.suspect)
+
+    def test_empty_source_in_baseline_is_not_a_loss(self):
+        previous, current = self._pair_with_lost_source(200, 198)
+        previous.source_counts["playwright"] = 0
+
+        diff = diff_shelf(current, previous)
+        self.assertFalse(diff.suspect, "fonte que nao trouxe nada nao e perda")
+
     def test_different_funds_are_not_merged_as_a_rename(self):
         previous = snapshot_for("btg", [offer("btg", "Verde AM Scena")], self.yesterday)
         current = snapshot_for("btg", [offer("btg", "SPX Nimitz")], self.today)
@@ -535,6 +635,27 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(loaded.funds[0].cnpj, "11111111000191")
         self.assertEqual(loaded.funds[0].asset_class, AssetClass.RENDA_FIXA)
 
+    def test_roundtrip_preserves_the_cvm_code(self):
+        snapshot = snapshot_for("itau", [
+            offer("itau", "Fundo A", None, cvm_code="555001"),
+        ], datetime.now())
+        save_shelf_snapshot(self.config, snapshot)
+
+        loaded = latest_shelf_snapshot(self.config, "itau")
+        self.assertEqual(loaded.funds[0].cvm_code, "555001")
+
+    def test_snapshot_written_before_the_cvm_code_still_loads(self):
+        """Historico gravado sem a chave nova continua comparavel."""
+        legacy = {
+            "platform": "btg",
+            "name": "Fundo A",
+            "cnpj": "11111111000191",
+            "sources": ["open-finance"],
+        }
+        restored = FundOffer.from_dict(legacy)
+        self.assertIsNone(restored.cvm_code)
+        self.assertEqual(restored.identity, "11111111000191")
+
     def test_unavailable_snapshot_is_not_used_as_baseline(self):
         old = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")],
                            datetime.now() - timedelta(days=2))
@@ -545,6 +666,35 @@ class TestStorage(unittest.TestCase):
 
         baseline = latest_shelf_snapshot(self.config, "btg", before=datetime.now().date())
         self.assertEqual(len(baseline.funds), 1)
+
+    def _cvm_snapshot(self, count: int, status=SnapshotStatus.OK) -> CvmSnapshot:
+        return CvmSnapshot(
+            collected_at=datetime.now(),
+            status=status,
+            funds=[
+                CvmFund(cnpj=f"{i:014d}", name=f"Fundo {i}", house="btg",
+                        matched_by="regex")
+                for i in range(count)
+            ],
+        )
+
+    def test_worse_cvm_extract_does_not_overwrite_same_day(self):
+        """Um retry da tarde que pegou a CVM fora do ar nao pode apagar o
+        extrato bom da manha - ele viraria a baseline do radar amanha."""
+        save_cvm_snapshot(self.config, self._cvm_snapshot(3))
+        refused = save_cvm_snapshot(
+            self.config, self._cvm_snapshot(0, SnapshotStatus.UNAVAILABLE)
+        )
+
+        self.assertIsNone(refused)
+        self.assertEqual(len(latest_cvm_snapshot(self.config).funds), 3)
+
+    def test_better_cvm_extract_overwrites_same_day(self):
+        save_cvm_snapshot(self.config, self._cvm_snapshot(1, SnapshotStatus.PARTIAL))
+        stored = save_cvm_snapshot(self.config, self._cvm_snapshot(3))
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(len(latest_cvm_snapshot(self.config).funds), 3)
 
 
 class TestMailer(unittest.TestCase):

@@ -230,6 +230,20 @@ class TestExport(unittest.TestCase):
             "BTG PACTUAL ASSET MANAGEMENT S.A. DTVM",
         )
 
+    def test_consolidated_carries_the_cvm_code_of_both_levels(self):
+        """A classe traz o codigo dela; o do envelope vem na coluna do fundo."""
+        rows = {r["cnpj"]: r for r in self._read("mercado")}
+        btg = rows["12.345.678/0001-91"]
+        self.assertEqual(btg["codigo_cvm"], "C555001")
+        self.assertEqual(btg["codigo_cvm_fundo"], "555001")
+
+    def test_legacy_row_carries_the_fund_code_in_the_class_column(self):
+        """Sem classe, o codigo do proprio fundo ocupa a coluna - sem duplicar."""
+        rows = {r["cnpj"]: r for r in self._read("mercado")}
+        legacy = rows["70.345.678/0001-70"]
+        self.assertEqual(legacy["codigo_cvm"], "444070")
+        self.assertEqual(legacy["codigo_cvm_fundo"], "")
+
     def test_subclass_count_is_visible_per_class(self):
         rows = {r["cnpj"]: r for r in self._read("mercado")}
         self.assertEqual(rows["12.345.678/0001-91"]["subclasses"], "2")

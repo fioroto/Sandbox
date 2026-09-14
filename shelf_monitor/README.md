@@ -23,6 +23,11 @@ python -m shelf_monitor doctor       # PRIMEIRO: checa acesso as fontes
 python -m shelf_monitor run          # coleta tudo, gera digest e dashboard
 ```
 
+Na primeira execucao o `run` tambem importa a base de mercado da CVM (~126 MB),
+que e de onde vem a gestora oficial e a classificacao comparavel entre casas.
+Depois disso o cache condicional resolve com um 304. Para pular, `--no-market` -
+mas os relatorios saem sem gestora oficial, e o console avisa.
+
 Saidas de cada execucao:
 
 | Arquivo | O que e |
@@ -46,6 +51,7 @@ python -m shelf_monitor report                    # re-renderiza os relatorios
 python -m shelf_monitor watchlist-discover "BTG"  # refina a watchlist de gestoras
 python -m shelf_monitor run --git-commit          # commita snapshots e relatorios
 python -m shelf_monitor run --send-email          # envia o digest por SMTP
+python -m shelf_monitor run --no-market           # nao importar a base se faltar
 ```
 
 ### Planilha
@@ -252,6 +258,7 @@ classe: subclasses partilham CNPJ e carteira, entao herdam a mesma taxa.
 | Arquivo | Grao |
 |---|---|
 | `mercado.csv` | **o consolidado** - uma linha por classe, mais os fundos legados. E o que se abre direto |
+| | traz `codigo_cvm` (da classe; do proprio fundo nas linhas legadas) e `codigo_cvm_fundo` (do envelope) |
 | `hierarquia.csv` | a visao normalizada completa - uma linha por **subclasse**, com fundo, classe e subclasse lado a lado |
 | `fundos.csv` | 1 fundo |
 | `classes.csv` | 1 classe |
@@ -370,13 +377,32 @@ filtro por minimo sobre o catalogo nao aproxima a vitrine (no BTG marcaria 5.415
 fundos "varejo" quando a vitrine tem 693; na XP deixaria 9).
 
 **Normalizacao ANBIMA.** Cada casa descreve categoria do seu jeito ("Credito Pos"
-no BTG, "baixo risco" no Itau). Com a base de mercado importada
-(`python -m shelf_monitor market`), todo fundo com CNPJ e carimbado com a
-classificacao ANBIMA e CVM oficial, gestor, situacao e PL do registro - e a
-comparacao por classe passa a significar a mesma coisa nas cinco casas. A
-classificacao publicada pela casa, quando diverge, e preservada
-(`classificacao_anbima_casa`): a divergencia em si e informacao. A cobertura do
-join sai no rodape de cada superficie.
+no BTG, "baixo risco" no Itau). Com a base de mercado importada (o `run` a importa
+sozinho quando ela falta; `python -m shelf_monitor market` faz o mesmo a mao),
+todo fundo identificavel e carimbado com a classificacao ANBIMA e CVM oficial,
+gestor, situacao e PL do registro - e a comparacao por classe passa a significar a
+mesma coisa nas cinco casas. A classificacao publicada pela casa, quando diverge,
+e preservada (`classificacao_anbima_casa`): a divergencia em si e informacao. A
+cobertura do join sai no rodape de cada superficie.
+
+**Como um fundo da prateleira encontra seu registro.** Tres chaves, tentadas nesta
+ordem: o **CNPJ da classe** (o que o informe e a distribuicao usam), o **CNPJ do
+fundo** (o envelope, que e o que o Open Finance publica - num fundo multi-classes
+ele nao e o CNPJ de nenhuma classe) e o **codigo CVM**, para quem nao publica CNPJ
+nenhum. O codigo cobre os tres niveis da RCVM 175 e, em colisao, vence o mais
+especifico: subclasse antes de classe, classe antes de fundo. Como a subclasse
+partilha CNPJ e carteira com a classe, o codigo dela resolve para o registro da
+classe-mae. Cada fundo sai dizendo por qual chave casou, em `match_cvm`.
+
+**A gestora vem da CVM.** Quando o fundo casa com a base, `gestor` e `cnpj_gestor`
+do registro prevalecem sobre o que a casa publicou. Isso existe porque a mesma
+gestora aparecia com tres identidades: nome comercial numa casa, razao social
+noutra, e ate o gestor pessoa fisica numa terceira ("MARCO AURELIO VIRZI" onde o
+registro diz "BTG PACTUAL GESTAO E CONSULTORIA") - contar "gestoras distintas"
+somava a mesma empresa varias vezes. O nome da casa nao se perde: vai para
+`gestor_casa` quando diverge de fato (grafia diferente da mesma razao social nao
+conta). Sem base importada nada disso roda, e o console avisa - antes ele nao
+avisava, e prateleira inteira saia sem gestora em silencio.
 
 | Superficie | Comando | Para quem |
 |---|---|---|
@@ -420,8 +446,10 @@ quatro superficies com os mesmos numeros; a lista completa mora na aba "Gaps XP"
 da planilha, com coluna de verificacao em formula contra a aba "Vitrine varejo".
 
 **Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
-Tres vias, na ordem de confianca: (1) o join por CNPJ quando a reconciliacao por
-nome encontra o gemeo no Open Finance - exata pelo slug, ou aproximada com razao
+Quatro vias, na ordem de confianca: (0) o join com o registro da CVM, pelo CNPJ ou
+pelo codigo CVM que a fonte publicar - e a via que resolve o caso geral, e a unica
+que devolve dado oficial; (1) o join por CNPJ quando a reconciliacao por nome
+encontra o gemeo no Open Finance - exata pelo slug, ou aproximada com razao
 >= 0,95, candidato unico por margem e bloqueio de tokens que distinguem
 master/feeder/espelho (a proveniencia fica em `reconciliacao`); (2) inferencia pela
 marca no prefixo do nome ("Bahia AM Muta..." -> Bahia AM), contra um indice de
@@ -429,7 +457,9 @@ marcas construido das gestoras da base CVM - so marcas inequivocas entram ("ITAU
 fica de fora porque aponta para Itau Asset, Itau DTVM e Intrag), e o dado sai
 marcado `gestor_inferido`, nunca como oficial; (3) o XHR de ~1,5 MB do gateway do
 Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
-parser pendente de evidencia parseavel.
+parser pendente de evidencia parseavel. O campo `cvm_code` da oferta ja existe e o
+extrator generico de JSON o captura, entao quando esse parser chegar o caminho ate
+o registro ja esta pronto.
 
 ## Como o monitor evita falso alarme
 

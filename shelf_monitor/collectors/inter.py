@@ -32,6 +32,11 @@ _CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
 # deles em silencio. O teto existe so contra um sitemap desgovernado - e quando
 # for atingido a coleta avisa e o snapshot sai PARTIAL.
 _MAX_FUNDS = 1_000
+# Uma pagina que falha em 574 e ruido de rede. A partir desta fracao (com um
+# piso absoluto, para nao rebaixar uma coleta pequena por duas falhas) a
+# prateleira coletada deixa de ser confiavel como baseline.
+_MAX_LOST_PAGE_RATIO = 0.05
+_MIN_LOST_PAGES = 5
 
 # Termos que indicam que o fundo foi encerrado ou esta em liquidacao.
 # O sitemap continua publicando a URL, mas o fundo nao faz parte da
@@ -49,6 +54,9 @@ def _detect_closed_fund(text: str) -> bool:
 
 
 class InterCollector(PlatformCollector):
+    _fetch_failures = 0
+    _page_data_failures = 0
+
     def _collect_web(self) -> list[FundOffer]:
         urls = self._discover_fund_urls()
         if not urls:
@@ -60,11 +68,39 @@ class InterCollector(PlatformCollector):
                 "(teto de seguranca) - prateleira incompleta"
             )
 
+        # Zerados aqui, e nao no __init__, para que uma segunda estrategia da
+        # mesma casa nao herde a contagem da primeira.
+        self._fetch_failures = 0
+        self._page_data_failures = 0
+
         offers: list[FundOffer] = []
         for url in urls[:_MAX_FUNDS]:
             offer = self._parse_fund_page(url)
             if offer:
                 offers.append(offer)
+
+        total = min(len(urls), _MAX_FUNDS)
+        if (
+            self._fetch_failures >= _MIN_LOST_PAGES
+            and self._fetch_failures / total >= _MAX_LOST_PAGE_RATIO
+        ):
+            # Pagina que nao abriu e fundo perdido: sem isto a prateleira encolhe
+            # em silencio e o diff do dia seguinte le a perda como saida.
+            self.warnings.append(
+                f"{self._fetch_failures} de {total} paginas de fundo falharam na "
+                "coleta - prateleira incompleta"
+            )
+        if total and self._page_data_failures >= total // 2:
+            # Aqui a prateleira esta inteira: o que faltou foram os fatos. Vira
+            # observacao, nao rebaixamento - senao uma mudanca no Gatsby
+            # bloquearia baseline confiavel por tempo indeterminado.
+            note = (
+                f"page-data.json falhou em {self._page_data_failures} de {total} "
+                "paginas - fatos (taxa, minimo, gestor) incompletos"
+            )
+            self.partial_reason = (
+                f"{self.partial_reason} | {note}" if self.partial_reason else note
+            )
         return offers
 
     def _discover_fund_urls(self) -> list[str]:
@@ -118,6 +154,7 @@ class InterCollector(PlatformCollector):
         try:
             response = get(self.session, url, self.config)
         except SourceUnavailable:
+            self._fetch_failures += 1
             return None
 
         offer = self._offer_from_html(url, response.text)
@@ -146,6 +183,7 @@ class InterCollector(PlatformCollector):
             response = get(self.session, page_data_url, self.config)
             payload = response.json()
         except (SourceUnavailable, ValueError):
+            self._page_data_failures += 1
             return None
 
         for item in extract_fund_dicts(payload):

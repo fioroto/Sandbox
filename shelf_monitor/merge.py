@@ -31,7 +31,8 @@ _SOURCE_PRECEDENCE: list[str] = [
 
 # Campos escalares resolvidos por precedencia de fonte.
 _MERGED_FIELDS = (
-    "cnpj", "isin", "manager_name", "manager_cnpj", "admin_name", "raw_category",
+    "cnpj", "isin", "cvm_code", "manager_name", "manager_cnpj", "admin_name",
+    "raw_category",
     "min_initial", "admin_fee_pct", "performance_fee", "redemption_quotation_days",
     "redemption_payment_days", "grace_days", "taxation", "closed_for_investment",
     "detail_url",

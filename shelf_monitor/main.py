@@ -14,9 +14,10 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -79,6 +80,52 @@ def _short(message: str, limit: int = 220) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
+# A CVM publica o cadastro todo dia util; uma base mais velha que isso nao e
+# atraso da fonte, e um `market` que ninguem rodou.
+_MARKET_STALE_DAYS = 45
+
+
+def market_base_status(config: Config) -> tuple[str, str]:
+    """Estado da base de mercado: ('ok'|'ausente'|'sem-manifesto'|'velha', detalhe).
+
+    So leitura - serve ao `doctor`, que responde por que uma analise saiu sem
+    classificacao ANBIMA antes de o operador descobrir isso no relatorio.
+    """
+    if not (config.market_dir / "mercado.csv").is_file():
+        return "ausente", "base de mercado nao importada"
+
+    try:
+        manifest = json.loads(
+            (config.market_dir / "_manifest.json").read_text(encoding="utf-8")
+        )
+        imported = date.fromisoformat(str(manifest.get("imported_at", "")))
+    except (OSError, ValueError):
+        return (
+            "sem-manifesto",
+            "base presente, mas _manifest.json ilegivel (idade desconhecida)",
+        )
+
+    age = (date.today() - imported).days
+    if age > _MARKET_STALE_DAYS:
+        return "velha", f"base importada ha {age} dias ({imported.isoformat()})"
+    return "ok", f"base importada ha {age} dias"
+
+
+def warn_market_missing() -> None:
+    """Sem a base, a analise degrada em silencio - este e o aviso que faltava.
+
+    Nao e so a classificacao ANBIMA que some: a gestora deixa de vir do
+    registro (fica so o que a casa publicou, quando publicou), a particao
+    varejo/restrito passa a depender so dos sinais fracos (flag da casa e token
+    no nome), e todo numero principal muda de significado sem dizer nada.
+    """
+    console.print(
+        "[yellow]Base de mercado ausente:[/] analises degradam para sinais fracos "
+        "(sem classificacao ANBIMA nem gestora oficial). "
+        "Rode 'python -m shelf_monitor market' (ou 'market --skip-fees', mais leve)."
+    )
+
+
 def collect_platforms(
     config: Config, platform_ids: list[str], stop_at_first_source: bool = False
 ) -> list[ShelfSnapshot]:
@@ -120,7 +167,7 @@ def collect_platforms(
 def collect_cvm(config: Config, local_zip: Path | None = None) -> CvmSnapshot:
     console.print("[bold]Coletando cadastro da CVM...[/]")
     snapshot = CvmCollector(config).collect(local_zip=local_zip)
-    save_cvm_snapshot(config, snapshot)
+    stored = save_cvm_snapshot(config, snapshot)
 
     pre_op = sum(1 for f in snapshot.funds if f.is_pre_operational)
     console.print(
@@ -129,7 +176,39 @@ def collect_cvm(config: Config, local_zip: Path | None = None) -> CvmSnapshot:
     )
     if snapshot.error:
         console.print(f"  [dim]{snapshot.error}[/]")
+    if stored is None:
+        console.print(
+            "  [dim]extrato do dia preservado: a coleta anterior era melhor[/]"
+        )
     return snapshot
+
+
+def ensure_market_base(config: Config) -> None:
+    """Importa a base de mercado quando ela ainda nao existe em disco.
+
+    O download completo so acontece na primeira vez: depois o cache
+    condicional do modulo market resolve com um 304. Uma falha aqui nunca
+    derruba a coleta - o relatorio sai sem enriquecimento, com o aviso.
+
+    Base velha nao e reimportada aqui: quem denuncia a idade e o `doctor`, e
+    decidir por conta propria baixar 126 MB no meio de uma coleta seria uma
+    surpresa cara.
+    """
+    state, _ = market_base_status(config)
+    if state != "ausente":
+        return
+
+    console.print("[bold]Base de mercado ausente - importando da CVM...[/]")
+    try:
+        database, paths = run_import(config)
+    except Exception as exc:  # noqa: BLE001 - a coleta do dia vale mais
+        console.print(f"[yellow]Falha ao importar a base: {_short(str(exc))}[/]")
+        return
+
+    for note in database.notes:
+        console.print(f"  [dim]{_short(note)}[/]")
+    if not paths:
+        console.print("[yellow]Nenhuma fonte da CVM respondeu.[/]")
 
 
 def build_report(
@@ -142,7 +221,9 @@ def build_report(
     # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
     # "classe ANBIMA" significar a mesma coisa nas cinco casas.
     stats = enrich_snapshots(config, snapshots)
-    if stats is not None:
+    if stats is None:
+        warn_market_missing()
+    else:
         report.enrichment = stats.to_dict()
 
     for snapshot in snapshots:
@@ -161,9 +242,29 @@ def build_report(
 
 def render_outputs(
     config: Config, report: RunReport, send_email: bool = False
-) -> None:
-    md_path, html_path = render_digest(config, report)
-    dashboard_path = render_dashboard(config, report)
+) -> list[str]:
+    """Renderiza as superficies e devolve as falhas das essenciais.
+
+    Um renderer nao pode derrubar os outros nem o que vem depois dele: quando o
+    dashboard quebra, o digest, o e-mail e o commit de uma coleta que levou
+    dezenas de minutos ainda tem de acontecer. As falhas voltam para virar
+    codigo de saida em vez de sumirem no console.
+    """
+    failures: list[str] = []
+
+    md_path = html_path = dashboard_path = None
+    digest_note = dashboard_note = ""
+    try:
+        md_path, html_path = render_digest(config, report)
+    except Exception as exc:  # noqa: BLE001 - um renderer nao derruba os demais
+        digest_note = f"digest: {_short(str(exc))}"
+        failures.append(digest_note)
+    try:
+        dashboard_path = render_dashboard(config, report)
+    except Exception as exc:  # noqa: BLE001
+        dashboard_note = f"dashboard: {_short(str(exc))}"
+        failures.append(dashboard_note)
+
     deck_path = None
     try:
         from shelf_monitor.report.deck import render_deck
@@ -175,9 +276,15 @@ def render_outputs(
         deck_note = f"falha ao gerar o deck: {_short(str(exc))}"
     console.print()
     console.print("[bold]Relatorios gerados[/]")
-    console.print(f"  digest markdown: {md_path}")
-    console.print(f"  digest e-mail:   {html_path}")
-    console.print(f"  dashboard:       {dashboard_path}")
+    if md_path:
+        console.print(f"  digest markdown: {md_path}")
+        console.print(f"  digest e-mail:   {html_path}")
+    else:
+        console.print(f"  digest:          [red]{digest_note}[/]")
+    if dashboard_path:
+        console.print(f"  dashboard:       {dashboard_path}")
+    else:
+        console.print(f"  dashboard:       [red]{dashboard_note}[/]")
     if deck_path:
         console.print(f"  deck executivo:  {deck_path}")
     else:
@@ -189,6 +296,40 @@ def render_outputs(
             console.print(f"[bold]E-mail:[/] {send_digest(config, report)}")
         except Exception as exc:  # noqa: BLE001 - envio nao derruba a execucao
             console.print(f"[red]Falha no envio do digest:[/] {_short(str(exc))}")
+
+    return failures
+
+
+def run_outcome(
+    report: RunReport, cvm_requested: bool, report_failures: list[str]
+) -> tuple[str, int]:
+    """Linha final da execucao e o codigo de saida que ela justifica.
+
+    Sem isto o `run` sai 0 com as cinco casas bloqueadas, e o job aparece verde
+    no cron. Uma casa PARTIAL trouxe fundos e conta como coletada; a CVM caida
+    entra na linha mas nao derruba a execucao, que ainda entrega a prateleira.
+    """
+    total = len(report.snapshots)
+    collected = sum(
+        1 for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE
+    )
+
+    if not cvm_requested:
+        cvm_note = "CVM pulada"
+    elif report.cvm_snapshot and report.cvm_snapshot.status != SnapshotStatus.UNAVAILABLE:
+        cvm_note = "CVM ok"
+    else:
+        cvm_note = "CVM falhou"
+
+    report_note = (
+        "relatorios ok"
+        if not report_failures
+        else f"{len(report_failures)} relatorio(s) falharam"
+    )
+
+    line = f"{collected} de {total} casas coletadas, {cvm_note}, {report_note}"
+    exit_code = 1 if (total and collected == 0) or report_failures else 0
+    return line, exit_code
 
 
 def print_summary(report: RunReport) -> None:
@@ -248,19 +389,26 @@ def git_commit(config: Config) -> None:
 # --- subcomandos -------------------------------------------------------------
 
 
-def cmd_run(config: Config, args: argparse.Namespace) -> None:
+def cmd_run(config: Config, args: argparse.Namespace) -> int:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
 
     snapshots = collect_platforms(config, platform_ids, args.first_source_only)
     cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
 
+    if not args.no_market:
+        ensure_market_base(config)
+
     report = build_report(config, snapshots, cvm_snapshot)
     print_summary(report)
-    render_outputs(config, report, send_email=args.send_email)
+    failures = render_outputs(config, report, send_email=args.send_email)
 
     if args.git_commit:
         git_commit(config)
+
+    line, exit_code = run_outcome(report, not args.skip_cvm, failures)
+    console.print(f"[{'red' if exit_code else 'green'}]{line}[/]")
+    return exit_code
 
 
 def cmd_collect(config: Config, args: argparse.Namespace) -> None:
@@ -350,6 +498,8 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
             return
 
     enrichment = enrich_snapshots(config, snapshots)
+    if enrichment is None:
+        warn_market_missing()
     diffs = [
         diff_shelf(
             snapshot,
@@ -511,6 +661,16 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
             "de rodar `run`."
         )
 
+    state, detail = market_base_status(config)
+    if state == "ok":
+        console.print(f"[green]base de mercado disponivel[/] ({detail})")
+    else:
+        console.print(
+            f"[yellow]base de mercado {state}[/] - {detail}. Sem ela a comparacao "
+            "perde a classificacao ANBIMA oficial e a particao varejo/restrito "
+            "cai nos sinais fracos. Rode: python -m shelf_monitor market"
+        )
+
     try:
         import playwright  # noqa: F401
 
@@ -621,6 +781,11 @@ def main() -> None:
     add_platform_arg(run_parser)
     add_collect_args(run_parser)
     run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
+    run_parser.add_argument(
+        "--no-market",
+        action="store_true",
+        help="Nao importar a base de mercado quando ela faltar (sai sem gestora oficial)",
+    )
     run_parser.add_argument(
         "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
     )
@@ -746,7 +911,10 @@ def main() -> None:
             console.print(f"  - {error}")
         sys.exit(1)
 
-    args.func(config, args)
+    # So o `run` devolve codigo; os demais subcomandos seguem saindo 0.
+    exit_code = args.func(config, args)
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

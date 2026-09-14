@@ -163,6 +163,9 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "origem": Origin.RCVM175.value,
                 "cnpj": format_cnpj(item.cnpj) if item.cnpj else "",
                 "denominacao": item.name,
+                # Codigo CVM da classe - a chave que a distribuicao usa quando
+                # anuncia o produto sem CNPJ.
+                "codigo_cvm": item.cvm_code or "",
                 "tipo": item.class_type or "",
                 "situacao": item.situation or "",
                 "classificacao_cvm": item.cvm_classification or "",
@@ -181,6 +184,7 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "custodiante": item.custodian_name or "",
                 "fundo_denominacao": (fund.name if fund else "") or "",
                 "cnpj_fundo": format_cnpj(fund.cnpj) if fund and fund.cnpj else "",
+                "codigo_cvm_fundo": (fund.cvm_code if fund else "") or "",
                 "id_fundo": item.fundo_id,
                 "id_classe": item.classe_id,
                 "subclasses": subclass_count.get(item.classe_id, 0),
@@ -209,6 +213,9 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "origem": Origin.LEGACY.value,
                 "cnpj": format_cnpj(fund.cnpj) if fund.cnpj else "",
                 "denominacao": fund.name,
+                # No legado nao ha classe: o codigo do proprio fundo ocupa a
+                # coluna, e `codigo_cvm_fundo` fica vazio para nao duplica-lo.
+                "codigo_cvm": fund.cvm_code or "",
                 "tipo": fund.fund_type or "",
                 "situacao": fund.situation or "",
                 "classificacao_cvm": extra.get("cvm_classification") or "",
@@ -227,6 +234,7 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "custodiante": extra.get("custodian_name") or "",
                 "fundo_denominacao": fund.name,
                 "cnpj_fundo": format_cnpj(fund.cnpj) if fund.cnpj else "",
+                "codigo_cvm_fundo": "",
                 "id_fundo": fund.registro_id,
                 "id_classe": "",
                 "subclasses": 0,

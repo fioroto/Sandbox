@@ -75,8 +75,12 @@ class PlatformCollector(BaseCollector):
 
         # Fontes que falharam viram observacao, nao erro: a coleta deu certo,
         # mas saber que uma das vias caiu explica um numero abaixo do esperado.
+        # Concatena para nao apagar a nota que o coletor concreto ja gravou.
         if errors:
-            self.partial_reason = "fontes indisponiveis -> " + " | ".join(errors)
+            reason = "fontes indisponiveis -> " + " | ".join(errors)
+            self.partial_reason = (
+                f"{self.partial_reason} | {reason}" if self.partial_reason else reason
+            )
         return merged
 
     def _min_funds_for(self, strategy: CollectorStrategy) -> int:
