@@ -301,6 +301,58 @@ Informe diario, composicao de carteira (CDA), lamina e balancete estao mapeados 
 `market/datasets.py` mas nao sao baixados: sao series temporais de dezenas de GB, e o uso hoje
 pede so cadastro e taxas.
 
+## Monitoramento de ETFs (`etf`)
+
+```bash
+python -m shelf_monitor etf                 # catalogo completo + fluxo semanal (o que houver)
+python -m shelf_monitor etf --export        # idem, gravando planilha .xlsx e CSV
+python -m shelf_monitor run --with-etf      # roda junto da coleta normal (opt-in - baixa ~33MB/mes extra)
+```
+
+**ETF e o tipo estrutural FIIM, nao uma palavra no nome.** Na CVM, ETF e Fundo de
+Investimento em Indice de Mercado (FIIM) - um tipo proprio de `Tipo_Fundo` (cadastro legado) ou
+`Tipo_Classe` (RCVM 175, `"Classes de Cotas de Fundos FIIM"`). Catalogar por palavra-chave no nome
+("ETF", "Fundo de Indice") erra nos dois sentidos: perde ETFs de nome abreviado ("BTGP B3
+IBOVESPA F DE INDICE") e confunde com *feeders* - FIFs comuns que so replicam um ETF ("BTG
+PACTUAL REFERENCE ETF FIA" e um FIF, nao um ETF). Por isso `market/etf.py` decide pelo tipo
+primeiro e usa palavra-chave so como sinal secundario (obrigatorio no cadastro legado, que nao
+tem `Tipo_Classe`; e o que marca um feeder). Todo registro sai com um `kind` explicito -
+`"etf"` ou `"feeder"` - e os dois nunca somam juntos: seria contar o mesmo dinheiro duas vezes.
+
+**Categoria vem do benchmark, nao do nome comercial.** `Indicador_Desempenho` (o que o ETF
+replica - IBOVESPA, IMA-B, S&P 500...) e testado antes do nome e da classificacao CVM/ANBIMA -
+e o dado mais confiavel para separar Renda Fixa (IMA-B, IRF-M, LFT, CDI...) de Acoes Brasil
+(IBOVESPA, SMLL, IDIV...), Internacional (S&P 500, NASDAQ, MSCI...), Cripto e Multimercado.
+
+**Cobertura de fluxo e parcial - e o console diz o quanto.** O INF_DIARIO da CVM (`inf_diario_fi`)
+e o informe de FI/FIF; fundos de indice (FIIM) tem arquivos proprios (`cda_fiim` na carteira,
+balancete em "Fundos Estruturados"), fora do escopo desta versao. Na pratica isso significa que a
+captacao diaria de um ETF de verdade normalmente nao aparece no INF_DIARIO - so a dos *feeders*
+aparece, por serem FI/FIF normais. Por isso o comando sempre mostra primeiro o **catalogo completo**
+(todo ETF cadastrado, por categoria - a resposta a "o monitor enxerga todos os ETFs do mercado,
+incluindo os de Renda Fixa?") e so depois o fluxo semanal, com uma linha de cobertura explicita
+("N de M ETFs com fluxo no INF_DIARIO") em vez de deixar a lacuna passar em silencio. Fechar essa
+lacuna de verdade exige uma fonte que cubra FIIM (B3: cotas emitidas e cota patrimonial por ETF) -
+nao implementado nesta versao por falta de acesso a essa fonte para descobrir o formato real.
+
+**Rentabilidade implausivel e descartada, nao publicada.** O informe mensal e "atualizado
+diariamente com retificacoes" (a propria CVM documenta isso), entao o mesmo CNPJ pode aparecer
+duas vezes na mesma data dentro do arquivo do mes - sem tratar isso, duas versoes do mesmo dia
+eram lidas como dois pregoes e a cota comparava valores incompativeis. `etf_flow.py` agora
+deduplica por (CNPJ, data) e, mesmo assim, descarta (marca `data_suspeita`) qualquer retorno
+semanal acima de um teto plausivel por categoria (heuristica, nao fato de mercado) em vez de
+publicar um numero que nao e real.
+
+A planilha (`etf --export`) traz o catalogo completo numa aba propria ("Catalogo FIIM", com
+Renda Fixa incluida) e a coluna "Tipo" (ETF/Feeder) nas demais abas de fluxo.
+
+**Ticker de negociacao.** O cadastro da CVM nao traz o codigo de negociacao em bolsa (BOVA11,
+IVVB11...), e a maioria dos ETFs tambem nao o escreve no proprio nome cadastral - so `extract_ticker`
+consegue algo como "IT NOW IVVB11 FI EM COTAS DE ETF". Para os demais, `data/etf/tickers.csv`
+(`cnpj;ticker`) e um override manual, versionado e vazio por padrao: preenche-lo com um CNPJ ou
+ticker errado, sem uma fonte para validar, contaminaria a categorizacao rio abaixo - por isso ele
+nao vem pre-populado com uma lista escrita de memoria.
+
 ## Area logada
 
 A v1 usa apenas fontes publicas. A arquitetura preve coletores autenticados sem
@@ -500,4 +552,6 @@ python -m unittest discover -s tests -v
 
 Os testes rodam contra fixtures (`tests/fixtures/`) que reproduzem o formato real das
 fontes, entao passam mesmo sem acesso de rede. Para regerar as fixtures:
-`python tests/fixtures/make_fixtures.py`.
+`python tests/fixtures/make_fixtures.py` (prateleiras), `python tests/fixtures/make_market_fixtures.py`
+(base de mercado) e `python tests/fixtures/etf/make_etf_fixtures.py` (catalogo de ETF - fixture
+propria, separada da de mercado para nao acoplar aos asserts de contagem de `test_market.py`).

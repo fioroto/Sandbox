@@ -57,6 +57,9 @@ echo ============================================================
 echo.
 
 REM --- Run: coleta, diff, digest e dashboard -----------------------------
+REM Para tambem catalogar ETFs (todas as categorias, incl. Renda Fixa) e o
+REM fluxo semanal, adicione --with-etf abaixo (opt-in: baixa dados extra da
+REM CVM). Ou rode em separado: python -m shelf_monitor etf --export
 python -m shelf_monitor run
 
 echo.
@@ -70,6 +73,9 @@ if errorlevel 1 (
     echo   - dashboard.html    ^(Dashboard comparativo^)
     echo   - prateleiras-*.xlsx ^(Planilha consolidada^)
     echo   - digest-*.md/.html  ^(Resumo de mudancas^)
+    echo.
+    echo   Catalogo de ETFs ^(incl. Renda Fixa^) e fluxo semanal: rode
+    echo   python -m shelf_monitor etf --export ^(ou use --with-etf acima^)
 )
 echo ============================================================
 echo.

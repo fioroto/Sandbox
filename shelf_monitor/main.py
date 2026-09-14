@@ -43,7 +43,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
-from shelf_monitor.market.etf_flow import run_etf_flow_pipeline
+from shelf_monitor.market.etf_flow import flow_coverage, run_etf_flow_pipeline
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
@@ -389,6 +389,28 @@ def git_commit(config: Config) -> None:
 # --- subcomandos -------------------------------------------------------------
 
 
+def run_etf_monitor(config: Config) -> None:
+    """Catálogo + fluxo de ETF, chamado por `run --with-etf` e por `etf`.
+
+    Opt-in no `run` (não roda por padrão): baixa até 3 meses de INF_DIARIO -
+    tráfego extra que a coleta diária de prateleiras não pedia antes. Uma
+    falha aqui não derruba a coleta - mesmo contrato de `render_outputs`.
+    """
+    try:
+        console.print()
+        console.print("[bold]Catalogando ETFs na CVM e analisando fluxo...[/]")
+        catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(config)
+        coverage = flow_coverage(catalog, weekly_flows)
+        print_etf_summary(weekly_flows, category_summaries, catalog, coverage=coverage)
+        export_etf_excel(
+            weekly_flows, category_summaries, catalog,
+            config.reports_dir / "etf_captacao_semanal.xlsx",
+        )
+        export_etf_csv(weekly_flows, config.reports_dir / "etf_weekly_flow.csv")
+    except Exception as exc:  # noqa: BLE001 - ETF e opcional, nao pode derrubar o run
+        console.print(f"[yellow]Falha no monitoramento de ETF:[/] {_short(str(exc))}")
+
+
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
@@ -402,6 +424,9 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
     report = build_report(config, snapshots, cvm_snapshot)
     print_summary(report)
     failures = render_outputs(config, report, send_email=args.send_email)
+
+    if args.with_etf:
+        run_etf_monitor(config)
 
     if args.git_commit:
         git_commit(config)
@@ -713,19 +738,22 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
 
 
 def cmd_etf(config: Config, args: argparse.Namespace) -> None:
-    """Monitora a captação semanal dos ETFs registrados na CVM."""
+    """Monitora os ETFs registrados na CVM: catálogo completo (todas as
+    categorias, incluindo Renda Fixa) + a captação semanal que a fonte
+    disponível de fato cobre.
+    """
     config.ensure_dirs()
-    console.print(f"[bold]Analisando a captação dos ETFs na CVM (últimos {args.months} meses)...[/]")
+    console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {args.months} meses)...[/]")
 
     catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(
         config, months_count=args.months, force_download=args.force
     )
+    coverage = flow_coverage(catalog, weekly_flows)
 
-    if not weekly_flows:
-        console.print("[red]Nenhum dado de captação semanal foi gerado.[/]")
-        return
-
-    print_etf_summary(weekly_flows, category_summaries, catalog)
+    # O catálogo sai sempre - é a resposta a "o monitor enxerga todos os
+    # ETFs?" - mesmo quando a captação semanal (fonte à parte, com cobertura
+    # própria) não tem nada a mostrar.
+    print_etf_summary(weekly_flows, category_summaries, catalog, coverage=coverage)
 
     if args.export or args.output:
         xlsx_path = Path(args.output) if args.output else (config.reports_dir / "etf_captacao_semanal.xlsx")
@@ -735,9 +763,9 @@ def cmd_etf(config: Config, args: argparse.Namespace) -> None:
         saved_csv = export_etf_csv(weekly_flows, csv_path)
 
         console.print()
-        console.print("[green]Arquivos de fluxo semanal exportados com sucesso:[/]")
-        console.print(f"  Planilha Excel: {saved_xlsx}")
-        console.print(f"  Arquivo CSV:   {saved_csv}")
+        console.print("[green]Arquivos exportados com sucesso:[/]")
+        console.print(f"  Planilha Excel (catálogo completo + fluxo): {saved_xlsx}")
+        console.print(f"  Arquivo CSV (fluxo semanal):                {saved_csv}")
 
 
 def main() -> None:
@@ -793,6 +821,15 @@ def main() -> None:
         "--send-email",
         action="store_true",
         help="Enviar o digest por SMTP (requer SMTP_HOST, SMTP_FROM e SMTP_TO)",
+    )
+    run_parser.add_argument(
+        "--with-etf",
+        action="store_true",
+        help=(
+            "Tambem catalogar ETFs (todas as categorias, incl. Renda Fixa) e "
+            "analisar fluxo semanal - opt-in: baixa ate 3 meses de INF_DIARIO "
+            "alem da coleta normal"
+        ),
     )
     run_parser.set_defaults(func=cmd_run)
 

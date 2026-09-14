@@ -260,6 +260,19 @@ class Config:
     def reports_dir(self) -> Path:
         return self.data_dir / "reports"
 
+    @property
+    def etf_dir(self) -> Path:
+        """Metadados de ETF mantidos a mao ou por uma coleta futura - pequeno,
+        versionado (ao contrario de market/, que e so tabela derivada). Hoje so
+        `tickers.csv` (override do codigo de negociacao por CNPJ, que o cadastro
+        da CVM nao traz).
+        """
+        return self.data_dir / "etf"
+
+    @property
+    def etf_tickers_path(self) -> Path:
+        return self.etf_dir / "tickers.csv"
+
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
 
@@ -267,6 +280,7 @@ class Config:
         for path in (
             self.snapshots_dir,
             self.cvm_raw_dir,
+            self.etf_dir,
             self.cvm_extract_dir,
             self.cache_dir,
             self.reports_dir,
