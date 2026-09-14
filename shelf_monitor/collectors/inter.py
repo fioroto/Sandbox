@@ -38,6 +38,20 @@ _MAX_FUNDS = 1_000
 _MAX_LOST_PAGE_RATIO = 0.05
 _MIN_LOST_PAGES = 5
 
+# Termos que indicam que o fundo foi encerrado ou esta em liquidacao.
+# O sitemap continua publicando a URL, mas o fundo nao faz parte da
+# prateleira ativa - entra como closed_for_investment=True.
+_CLOSED_FUND_RE = re.compile(
+    r"(?:fundo\s+)?(?:encerrado|em\s+liquidac[aã]o|resgate\s+total"
+    r"|encerramento|descontinuado|fundo\s+fechado\s+para\s+aplicac[aã]o)",
+    re.IGNORECASE,
+)
+
+
+def _detect_closed_fund(text: str) -> bool:
+    """Detecta se a pagina indica um fundo encerrado ou em liquidacao."""
+    return _CLOSED_FUND_RE.search(text) is not None
+
 
 class InterCollector(PlatformCollector):
     _fetch_failures = 0
@@ -191,6 +205,7 @@ class InterCollector(PlatformCollector):
         text = soup.get_text(" ", strip=True)
         cnpj_match = _CNPJ_RE.search(text)
         facts = _extract_facts(soup)
+        closed = _detect_closed_fund(text)
 
         return FundOffer(
             platform=self.platform_id,
@@ -210,6 +225,7 @@ class InterCollector(PlatformCollector):
             redemption_payment_days=parse_int(
                 facts.get("liquidacao do resgate") or facts.get("pagamento do resgate")
             ),
+            closed_for_investment=closed if closed else None,
             detail_url=url,
         )
 

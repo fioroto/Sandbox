@@ -133,6 +133,7 @@ class PlatformCollector(BaseCollector):
             debug_dir=self.config.debug_dir if self.config.browser_debug else None,
             headed=self.config.browser_headed,
             channel=self.config.browser_channel,
+            warnings=self.warnings,
         )
         self.source_urls.extend(urls)
         return offers
