@@ -348,10 +348,58 @@ Renda Fixa incluida) e a coluna "Tipo" (ETF/Feeder) nas demais abas de fluxo.
 
 **Ticker de negociacao.** O cadastro da CVM nao traz o codigo de negociacao em bolsa (BOVA11,
 IVVB11...), e a maioria dos ETFs tambem nao o escreve no proprio nome cadastral - so `extract_ticker`
-consegue algo como "IT NOW IVVB11 FI EM COTAS DE ETF". Para os demais, `data/etf/tickers.csv`
-(`cnpj;ticker`) e um override manual, versionado e vazio por padrao: preenche-lo com um CNPJ ou
-ticker errado, sem uma fonte para validar, contaminaria a categorizacao rio abaixo - por isso ele
-nao vem pre-populado com uma lista escrita de memoria.
+consegue algo como "IT NOW IVVB11 FI EM COTAS DE ETF". `data/etf/tickers.csv` (`cnpj;ticker;...;fonte`)
+e o join CNPJ -> ticker: a coleta da B3 (abaixo) o preenche com `fonte=b3`, e linhas escritas a mao
+(qualquer outra `fonte`) nunca sao sobrescritas por uma coleta. Ele vem vazio de proposito - uma
+lista de CNPJ/ticker escrita de memoria, sem fonte para validar, contaminaria tudo rio abaixo.
+
+### As fontes que cobrem ETF de verdade (`etf --probe-sources`)
+
+O INF_DIARIO nao e o fim da linha. Tres fontes publicas, sem autenticacao, cobrem o que ele nao
+cobre - cada uma um pedaco:
+
+| Fonte | O que da | Frequencia | Modulo |
+|---|---|---|---|
+| **Fundos.NET** (`fnet.bmfbovespa.com.br`) | o **informe diario do ETF**: PL, cota, cotas emitidas, cotistas - e o canal pelo qual fundos de indice entregam documentos a CVM, com tipos de fundo `ETF` (3) e `ETF RF` (4) | diaria | `market/fundosnet.py` |
+| **B3 fundos listados** (`sistemaswebb3-listados.b3.com.br`) | ticker, CNPJ, classificacao, cotas aprovadas de cada ETF listado - e o que preenche `tickers.csv` | cadastro | `market/b3_funds.py` |
+| **COTAHIST** (`bvmf.bmfbovespa.com.br/InstDados/SerHist/`) | preco, volume financeiro, negocios e quantidade por pregao - liquidez, nao patrimonio | diaria | `market/cotahist.py` |
+
+Fora do escopo desta versao, mapeadas: o **balancete mensal de FIIM** da CVM (dataset "Fundos
+Estruturados: Balancete", peso contabil, mensal), a **carteira mensal** (`cda_fiim_AAAAMM.csv`, o
+que cada ETF de RF carrega), o **Boletim de Fundos da ANBIMA** (captacao liquida de ETF por tipo,
+mensal, planilha) e a API de ETFs da ANBIMA Developers (comercial). Sites de terceiros (StatusInvest
+e afins) ficam de fora: nao sao fonte oficial e o uso automatizado depende dos termos deles.
+
+**Evidencia, nao suposicao.** Os endpoints, parametros e formatos de resposta da B3 e do Fundos.NET
+vem do codigo aberto da biblioteca [`mercados`](https://github.com/PythonicCafe/mercados) (Pythonic
+Cafe), que usa exatamente esses caminhos para FII, FIP, FI-Infra e FI-Agro; o layout do COTAHIST
+tambem. Duas coisas **nao** tem evidencia e a sondagem existe para fecha-las: o `typeFund` dos ETFs na
+B3 (descoberto varrendo candidatos e reconhecendo o tipo pelo CNPJ contra o catalogo FIIM) e o
+esquema do XML do informe diario de ETF (o parser e tolerante: reconhece os nomes do padrao XML de
+informe diario da CVM - `VL_PATRIM_LIQ`, `VL_QUOTA`, `CAPTC_DIA`, `RESG_DIA`, `NR_COTST` - e
+variantes, e devolve o resto em `unknown_tags`, como o importador de mercado faz com colunas novas).
+Nada disso pode ser exercitado contra a fonte real no ambiente em que foi escrito (rede bloqueada).
+
+```bash
+python -m shelf_monitor etf --probe-sources                 # 1. sonda as tres fontes, grava a evidencia
+python -m shelf_monitor etf --collect-sources b3,fnet,cotahist   # 2. foto do dia (tickers, informes, cotacoes)
+python -m shelf_monitor etf --flow-source fnet --export     # 3. fluxo semanal a partir dos informes
+```
+
+A sondagem grava tudo em `data/cache/debug/etf-sources/` (`diagnostico-etf.json` consolida) e
+responde, linha a linha: o INF_DIARIO em cache tem alguma linha de FIIM (fase 0 do diagnostico); o
+Fundos.NET lista `ETF`/`ETF RF` e qual e o id do "Informe Diario" para eles; quantos informes sairam
+nos ultimos dias e, dos XML baixados, **quais campos o parser reconheceu e quais tags ficaram sem
+mapa**; quais `typeFund` da B3 devolvem ETF; e quantas cotas de fundo o COTAHIST do ultimo pregao
+traz. Se a linha `fundosnet/xml` vier com `unknown_tags` e sem `pl`/`cota`, o mapa de tags em
+`market/fundosnet.py` (`_TAG_MAP`) e o unico lugar a mexer - com o XML salvo ao lado.
+
+A coleta grava fotos versionaveis e pequenas: `data/etf/b3/<data>.json`, `data/etf/fnet/<data>.csv`
+(um informe por ETF por data-base; o XML bruto fica no cache) e `data/etf/cotahist/<data>.csv` (so
+os tickers conhecidos). Com `--flow-source fnet`, o fluxo semanal passa a vir desses informes - com
+captacao e resgate publicados quando o informe os traz, ou derivados de `(cotas hoje - cotas ontem)
+x cota` quando so ha cotas emitidas (a coluna `flow_source` do registro diz qual foi a via) - e o
+resto do pipeline (semanas, categorias, planilha, guarda de sanidade) e o mesmo.
 
 ## Area logada
 

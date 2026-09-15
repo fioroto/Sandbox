@@ -43,7 +43,14 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
-from shelf_monitor.market.etf_flow import flow_coverage, run_etf_flow_pipeline
+from shelf_monitor.market import etf_sources, fundosnet
+from shelf_monitor.market.etf import build_etf_catalog
+from shelf_monitor.market.etf_flow import (
+    aggregate_category_weekly_flows,
+    aggregate_etf_weekly_flows,
+    flow_coverage,
+    run_etf_flow_pipeline,
+)
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
@@ -737,23 +744,78 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
     )
 
 
+def print_probes(probes: list) -> None:
+    """Tabela de sondagens, no mesmo formato do `diagnose` das prateleiras."""
+    table = Table(title="Sondagem das fontes de ETF", title_style="bold")
+    table.add_column("Fonte")
+    table.add_column("OK")
+    table.add_column("O que veio", overflow="fold")
+    for probe in probes:
+        table.add_row(
+            probe.source,
+            "[green]sim[/]" if probe.ok else "[red]nao[/]",
+            _short(probe.detail, 160),
+        )
+    console.print()
+    console.print(table)
+    failing = [p for p in probes if not p.ok]
+    if failing:
+        console.print(f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado útil.[/]")
+    console.print()
+
+
 def cmd_etf(config: Config, args: argparse.Namespace) -> None:
     """Monitora os ETFs registrados na CVM: catálogo completo (todas as
     categorias, incluindo Renda Fixa) + a captação semanal que a fonte
     disponível de fato cobre.
     """
     config.ensure_dirs()
-    console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {args.months} meses)...[/]")
 
-    catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(
-        config, months_count=args.months, force_download=args.force
-    )
+    if args.probe_sources:
+        console.print("[bold]Sondando as fontes que cobrem ETF (Fundos.NET, B3, COTAHIST)...[/]")
+        console.print(f"  [dim]evidência bruta em {config.etf_sources_debug_dir}[/]")
+        probes = etf_sources.run_probes(config, build_etf_catalog(config))
+        print_probes(probes)
+        console.print(
+            "[dim]Próximo passo: com as sondagens OK, `etf --collect-sources b3,fnet,cotahist` "
+            "grava a foto do dia e `etf --flow-source fnet` agrega o fluxo a partir dela.[/]"
+        )
+        return
+
+    if args.collect_sources:
+        sources = [s.strip() for s in args.collect_sources.split(",") if s.strip()]
+        console.print(f"[bold]Coletando fontes de ETF: {', '.join(sources)}...[/]")
+        summary = etf_sources.collect_sources(config, build_etf_catalog(config), sources)
+        for name, info in summary.items():
+            style = "red" if "erro" in info else "green"
+            console.print(f"  [{style}]{name}[/]: {info}")
+        console.print()
+
+    if args.flow_source == "fnet":
+        console.print("[bold]Agregando o fluxo a partir dos informes diários do Fundos.NET...[/]")
+        catalog = build_etf_catalog(config)
+        records = fundosnet.records_from_informes(fundosnet.read_fnet_csvs(config))
+        if not records:
+            console.print(
+                "[yellow]Nenhum informe coletado em data/etf/fnet/. Rode "
+                "`etf --collect-sources fnet` (depois de `etf --probe-sources`).[/]"
+            )
+        weekly_flows = aggregate_etf_weekly_flows(catalog, records)
+        category_summaries = aggregate_category_weekly_flows(weekly_flows)
+    else:
+        console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {args.months} meses)...[/]")
+        catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(
+            config, months_count=args.months, force_download=args.force
+        )
     coverage = flow_coverage(catalog, weekly_flows)
 
     # O catálogo sai sempre - é a resposta a "o monitor enxerga todos os
     # ETFs?" - mesmo quando a captação semanal (fonte à parte, com cobertura
     # própria) não tem nada a mostrar.
-    print_etf_summary(weekly_flows, category_summaries, catalog, coverage=coverage)
+    print_etf_summary(
+        weekly_flows, category_summaries, catalog, coverage=coverage,
+        source_label="Fundos.NET" if args.flow_source == "fnet" else "INF_DIARIO",
+    )
 
     if args.export or args.output:
         xlsx_path = Path(args.output) if args.output else (config.reports_dir / "etf_captacao_semanal.xlsx")
@@ -932,6 +994,31 @@ def main() -> None:
     )
     etf_parser.add_argument(
         "-o", "--output", help="Caminho personalizado para salvar a planilha .xlsx"
+    )
+    etf_parser.add_argument(
+        "--probe-sources",
+        action="store_true",
+        help=(
+            "Sondar as fontes que cobrem ETF de verdade (Fundos.NET, B3 listados, "
+            "COTAHIST) e gravar a evidencia bruta em data/cache/debug/etf-sources/"
+        ),
+    )
+    etf_parser.add_argument(
+        "--collect-sources",
+        metavar="FONTES",
+        help=(
+            "Coletar a foto do dia das fontes indicadas, separadas por virgula: "
+            "b3 (tickers/CNPJ), fnet (informe diario), cotahist (cotacao/liquidez)"
+        ),
+    )
+    etf_parser.add_argument(
+        "--flow-source",
+        choices=["inf_diario", "fnet"],
+        default="inf_diario",
+        help=(
+            "De onde vem o fluxo semanal: inf_diario (CVM; so cobre feeders) ou "
+            "fnet (informes diarios coletados do Fundos.NET, que cobrem FIIM)"
+        ),
     )
     etf_parser.set_defaults(func=cmd_etf)
 

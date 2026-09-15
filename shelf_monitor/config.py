@@ -273,6 +273,26 @@ class Config:
     def etf_tickers_path(self) -> Path:
         return self.etf_dir / "tickers.csv"
 
+    @property
+    def etf_fnet_dir(self) -> Path:
+        """Informes diarios de ETF extraidos do Fundos.NET - um CSV por dia, versionado."""
+        return self.etf_dir / "fnet"
+
+    @property
+    def etf_b3_dir(self) -> Path:
+        """Cadastro de ETFs listados na B3 - um JSON por dia, versionado."""
+        return self.etf_dir / "b3"
+
+    @property
+    def etf_cotahist_dir(self) -> Path:
+        """Cotacoes diarias dos ETFs (COTAHIST filtrado) - um CSV por dia, versionado."""
+        return self.etf_dir / "cotahist"
+
+    @property
+    def etf_sources_debug_dir(self) -> Path:
+        """Evidencia bruta da sondagem das fontes de ETF - gitignored."""
+        return self.debug_dir / "etf-sources"
+
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
 

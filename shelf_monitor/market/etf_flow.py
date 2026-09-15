@@ -55,6 +55,10 @@ class EtfDailyRecord:
     # Rótulo bruto da coluna TP_FUNDO_CLASSE (v4 do informe), quando presente.
     # Usado só para desempatar duas linhas do mesmo CNPJ na mesma data.
     tp_fundo_classe: str | None = None
+    # De onde veio o fluxo do dia: "informe" (captação/resgate publicados) ou
+    # "delta_cotas" (derivado de cotas emitidas x cota, ver market/fundosnet.py).
+    # None no INF_DIARIO, que sempre publica captação e resgate.
+    flow_source: str | None = None
 
     @property
     def net_inflow(self) -> float:

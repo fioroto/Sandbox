@@ -65,6 +65,7 @@ def print_etf_summary(
     category_summaries: list[CategoryWeeklySummary],
     catalog: dict[str, EtfMetadata],
     coverage: FlowCoverage | None = None,
+    source_label: str = "INF_DIARIO",
 ) -> None:
     """Exibe no terminal a visão resumida da captação de ETFs.
 
@@ -73,8 +74,12 @@ def print_etf_summary(
     fluxo semanal para mostrar. Sem essa separação, uma falha no download do
     INF_DIARIO parecia "não há ETF nenhum", quando na verdade o catálogo
     estava completo e só a captação é que não veio.
+
+    `source_label` diz de onde o fluxo veio (INF_DIARIO ou Fundos.NET): a
+    ressalva de cobertura do INF_DIARIO só faz sentido para ele.
     """
     console = Console()
+    is_inf_diario = source_label.upper() == "INF_DIARIO"
 
     counts = catalog_counts(catalog)
     console.print()
@@ -90,12 +95,17 @@ def print_etf_summary(
 
     if coverage is not None and coverage.etfs_no_catalogo:
         pct = coverage.etf_coverage_ratio * 100
-        console.print(
-            f"[yellow]Cobertura de fluxo (INF_DIARIO): {coverage.etfs_com_fluxo} de "
-            f"{coverage.etfs_no_catalogo} ETFs ({pct:.0f}%).[/] [dim]O informe diário cobre "
-            "FI/FIF, não FIIM - a maior parte da captação de ETF de verdade não está "
-            "nesta fonte (ver docstring de market/etf_flow.py).[/]"
+        style = "yellow" if pct < 50 else "green"
+        line = (
+            f"[{style}]Cobertura de fluxo ({source_label}): {coverage.etfs_com_fluxo} de "
+            f"{coverage.etfs_no_catalogo} ETFs ({pct:.0f}%).[/]"
         )
+        if is_inf_diario:
+            line += (
+                " [dim]O informe diário cobre FI/FIF, não FIIM - a captação de ETF de "
+                "verdade vem do Fundos.NET (`etf --probe-sources`).[/]"
+            )
+        console.print(line)
         if coverage.feeders_no_catalogo:
             console.print(
                 f"[dim]Feeders com fluxo: {coverage.feeders_com_fluxo} de "
@@ -109,7 +119,7 @@ def print_etf_summary(
         console.print()
 
     if not weekly_flows:
-        console.print("[yellow]Nenhum dado de captação semanal encontrado (fluxo do INF_DIARIO).[/]")
+        console.print(f"[yellow]Nenhum dado de captação semanal encontrado (fluxo: {source_label}).[/]")
         return
 
     # Descobrir a última semana disponível
