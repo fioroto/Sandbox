@@ -18,7 +18,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
-from shelf_monitor.report.aggregate import build_gap_block
+from shelf_monitor.report.aggregate import build_captacao_block, build_gap_block
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -316,6 +316,87 @@ def _md_gaps_section(gaps: dict) -> list[str]:
     return lines
 
 
+_CAPTACAO_JANELA = "semana"
+_CAPTACAO_LISTADOS = 5
+
+
+def _money_br(value: float) -> str:
+    """Formata em reais no padrao BR (milhar com ponto, decimal com virgula)."""
+    sign = "-" if value < 0 else ""
+    return f"R$ {sign}{abs(value):,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _captacao_footnotes(captacao: dict) -> list[str]:
+    """Proveniencia do bloco de captacao - mesmas frases em md e html."""
+    notes = [captacao["nota"]]
+    cob = captacao.get("cobertura") or {}
+    notes.append(
+        f"Cobertura: {cob.get('total_com_fluxo', 0)} de {cob.get('total_fundos', 0)} "
+        "fundos da vitrine encontrados no INF_DIARIO da CVM."
+    )
+    if cob.get("meses_faltantes"):
+        notes.append(
+            "Meses sem dado no cache local: " + ", ".join(cob["meses_faltantes"]) + "."
+        )
+    if captacao.get("excluded"):
+        notes.append(
+            "Fora do universo: "
+            + "; ".join(f"{e['label']} ({e['reason']})" for e in captacao["excluded"])
+            + "."
+        )
+    if captacao.get("universo") == "catalogo":
+        notes.append("Universo ampliado ao catalogo Open Finance (--universo catalogo).")
+    return notes
+
+
+def _md_captacao_section(captacao: dict) -> list[str]:
+    lines = ["## Captacao liquida dos fundos das vitrines", ""]
+    if not captacao.get("available"):
+        lines += [f"Analise suprimida nesta execucao: {captacao.get('reason')}.", ""]
+        return lines
+
+    janela = next(
+        (j for j in captacao["janelas"] if j["chave"] == _CAPTACAO_JANELA), captacao["janelas"][0]
+    )
+    lines.append(f"Janela: {janela['rotulo']}.")
+    lines.append("")
+
+    consolidado = captacao["rankings"][janela["chave"]]["consolidado"]
+    if consolidado["top"]:
+        lines += ["**Top captadores (consolidado, todas as vitrines)**", ""]
+        for fundo in consolidado["top"][:_CAPTACAO_LISTADOS]:
+            lines.append(
+                f"- {fundo['nome']} ({fundo['cnpj_display']}) - {fundo['classificacao']} - "
+                f"{_money_br(fundo['captacao_liquida'])} - vitrines: {', '.join(fundo['plataformas'])}"
+            )
+        lines.append("")
+    if consolidado["bottom"]:
+        lines += ["**Maiores saidas liquidas (consolidado)**", ""]
+        for fundo in consolidado["bottom"][:_CAPTACAO_LISTADOS]:
+            lines.append(
+                f"- {fundo['nome']} ({fundo['cnpj_display']}) - {fundo['classificacao']} - "
+                f"{_money_br(fundo['captacao_liquida'])} - vitrines: {', '.join(fundo['plataformas'])}"
+            )
+        lines.append("")
+
+    classificacao = captacao["classificacao"].get(janela["chave"], [])
+    todas = [linha for linha in classificacao if linha["platform_id"] == "__todas__"]
+    if todas:
+        lines.append("| Classificacao ANBIMA/CVM | Captacao liquida (todas as vitrines) |")
+        lines.append("|---|---:|")
+        for linha in sorted(todas, key=lambda l: l["captacao_liquida"], reverse=True)[:10]:
+            lines.append(f"| {linha['classificacao']} | {_money_br(linha['captacao_liquida'])} |")
+        lines.append("")
+
+    lines.append("Demais janelas (mes, mes anterior, YTD) e o detalhamento por plataforma estao no dashboard e na planilha.")
+    lines.append("")
+
+    for note in _captacao_footnotes(captacao):
+        lines.append(f"_{note}_")
+    lines.append("")
+    return lines
+
+
 def render_markdown(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
@@ -347,6 +428,8 @@ def render_markdown(report: RunReport) -> str:
 
     # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
     lines += _md_gaps_section(build_gap_block(report.snapshots))
+
+    lines += _md_captacao_section(build_captacao_block(report))
 
     lines += _md_cvm_section(report.cvm_diff, report)
 
@@ -590,6 +673,66 @@ def _html_gaps_section(gaps: dict) -> str:
     return "".join(parts)
 
 
+def _html_captacao_section(captacao: dict) -> str:
+    parts = [f'<h2 style="{_H2}">Captacao liquida dos fundos das vitrines</h2>']
+    if not captacao.get("available"):
+        parts.append(
+            f'<p style="{_P}"><strong>Analise suprimida nesta execucao:</strong> '
+            f"{_esc(captacao.get('reason'))}.</p>"
+        )
+        return "".join(parts)
+
+    janela = next(
+        (j for j in captacao["janelas"] if j["chave"] == _CAPTACAO_JANELA), captacao["janelas"][0]
+    )
+    parts.append(f'<p style="{_P}">Janela: {_esc(janela["rotulo"])}.</p>')
+
+    consolidado = captacao["rankings"][janela["chave"]]["consolidado"]
+
+    def _fundo_li(fundo: dict) -> str:
+        return (
+            f'<li style="{_LI}">{_esc(fundo["nome"])} ({_esc(fundo["cnpj_display"])}) '
+            f'- {_esc(fundo["classificacao"])} - {_money_br(fundo["captacao_liquida"])} '
+            f'- vitrines: {_esc(", ".join(fundo["plataformas"]))}</li>'
+        )
+
+    if consolidado["top"]:
+        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>Top captadores (consolidado)</strong></p>')
+        items = "".join(_fundo_li(f) for f in consolidado["top"][:_CAPTACAO_LISTADOS])
+        parts.append(f'<ul style="margin:0 0 14px;padding-left:20px;">{items}</ul>')
+
+    if consolidado["bottom"]:
+        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>Maiores saidas liquidas (consolidado)</strong></p>')
+        items = "".join(_fundo_li(f) for f in consolidado["bottom"][:_CAPTACAO_LISTADOS])
+        parts.append(f'<ul style="margin:0 0 14px;padding-left:20px;">{items}</ul>')
+
+    classificacao = captacao["classificacao"].get(janela["chave"], [])
+    todas = sorted(
+        (linha for linha in classificacao if linha["platform_id"] == "__todas__"),
+        key=lambda linha: linha["captacao_liquida"], reverse=True,
+    )[:10]
+    if todas:
+        rows = "".join(
+            f'<tr><td style="{_TD}">{_esc(linha["classificacao"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_money_br(linha["captacao_liquida"])}</td></tr>'
+            for linha in todas
+        )
+        parts.append(
+            f'<table style="{_TABLE}"><thead><tr>'
+            f'<th style="{_TH}">Classificacao</th>'
+            f'<th style="{_TH}text-align:right;">Captacao liquida</th>'
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+
+    parts.append(
+        f'<p style="{_P}">Demais janelas e o detalhamento por plataforma estao no '
+        "dashboard e na planilha.</p>"
+    )
+    notes = " ".join(_esc(note) for note in _captacao_footnotes(captacao))
+    parts.append(f'<p style="font-size:12px;color:#898781;margin:0 0 12px;">{notes}</p>')
+    return "".join(parts)
+
+
 def render_html(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     sentence, is_alert = _summary_sentence(report)
@@ -635,6 +778,8 @@ def render_html(report: RunReport) -> str:
   </tr></thead><tbody>{rows}</tbody></table>
 
   {_html_gaps_section(build_gap_block(report.snapshots))}
+
+  {_html_captacao_section(build_captacao_block(report))}
 
   {_html_cvm_section(report)}
 

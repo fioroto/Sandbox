@@ -7,6 +7,7 @@ Uso:
     python -m shelf_monitor diff
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
     python -m shelf_monitor market                 # base geral do mercado (CVM)
+    python -m shelf_monitor captacao                # captacao liquida das vitrines (INF_DIARIO)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
@@ -23,6 +24,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from shelf_monitor.captacao import ResultadoCaptacao, run_captacao_pipeline
 from shelf_monitor.collectors import build_collector
 from shelf_monitor.collectors.cvm import (
     CvmCollector,
@@ -45,6 +47,7 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.market.etf_flow import flow_coverage, run_etf_flow_pipeline
 from shelf_monitor.market.importer import run_import
+from shelf_monitor.report.captacao_report import export_captacao_excel, print_captacao_summary
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.etf_report import (
@@ -55,8 +58,10 @@ from shelf_monitor.report.etf_report import (
 from shelf_monitor.report.mailer import build_subject, send_digest
 from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
+    latest_captacao,
     latest_cvm_snapshot,
     latest_shelf_snapshot,
+    save_captacao,
     save_cvm_snapshot,
     save_shelf_snapshot,
 )
@@ -365,6 +370,7 @@ def git_commit(config: Config) -> None:
         str(config.snapshots_dir),
         str(config.cvm_extract_dir),
         str(config.reports_dir),
+        str(config.flows_dir),
     ]
     try:
         subprocess.run(["git", "add", *paths], check=True, capture_output=True, text=True)
@@ -411,6 +417,35 @@ def run_etf_monitor(config: Config) -> None:
         console.print(f"[yellow]Falha no monitoramento de ETF:[/] {_short(str(exc))}")
 
 
+def run_captacao(
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    *,
+    universo: str = "vitrine",
+    months: int | None = None,
+    force: bool = False,
+    download: bool = True,
+) -> ResultadoCaptacao | None:
+    """Roda o monitor de captacao, salva o resultado e imprime o resumo.
+
+    Opt-in no `run` (`--with-captacao`): baixa ate ~9 zips mensais do
+    INF_DIARIO (o YTD inteiro) alem da coleta normal. Uma falha aqui nao
+    derruba o `run` nem o `git_commit` - mesmo contrato de `run_etf_monitor`.
+    """
+    try:
+        console.print()
+        console.print("[bold]Calculando captacao liquida das vitrines...[/]")
+        resultado = run_captacao_pipeline(
+            config, snapshots, universo=universo, months=months, force=force, download=download
+        )
+        save_captacao(config, resultado)
+        print_captacao_summary(resultado)
+        return resultado
+    except Exception as exc:  # noqa: BLE001 - captacao e opcional, nao pode derrubar o run
+        console.print(f"[yellow]Falha no monitoramento de captacao:[/] {_short(str(exc))}")
+        return None
+
+
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
@@ -423,6 +458,10 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
 
     report = build_report(config, snapshots, cvm_snapshot)
     print_summary(report)
+
+    if args.with_captacao:
+        report.captacao = run_captacao(config, snapshots, universo=args.universo)
+
     failures = render_outputs(config, report, send_email=args.send_email)
 
     if args.with_etf:
@@ -495,6 +534,7 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
         return
 
     report = build_report(config, snapshots, latest_cvm_snapshot(config))
+    report.captacao = latest_captacao(config)
     print_summary(report)
     render_outputs(config, report, send_email=getattr(args, "send_email", False))
 
@@ -542,6 +582,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         path=Path(args.output) if args.output else None,
         diffs=diffs,
         enrichment=enrichment,
+        captacao=latest_captacao(config),
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()
@@ -768,6 +809,47 @@ def cmd_etf(config: Config, args: argparse.Namespace) -> None:
         console.print(f"  Arquivo CSV (fluxo semanal):                {saved_csv}")
 
 
+def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
+    """Monitora a captacao liquida dos fundos das vitrines coletadas.
+
+    Sempre sobre a vitrine de varejo dos ultimos snapshots em disco (mesma
+    fonte de `report`/`export`) - nao coleta prateleira, so o INF_DIARIO.
+    """
+    config.ensure_dirs()
+    platform_ids = args.platforms or list(PLATFORMS)
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in platform_ids:
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+
+    if not snapshots:
+        console.print("[yellow]Nenhum snapshot encontrado. Rode `run` ou `collect` antes.[/]")
+        return
+
+    enrichment = enrich_snapshots(config, snapshots)
+    if enrichment is None:
+        warn_market_missing()
+
+    resultado = run_captacao_pipeline(
+        config,
+        snapshots,
+        universo=args.universo,
+        months=args.months,
+        force=args.force,
+        download=not args.no_download,
+    )
+    save_captacao(config, resultado)
+    print_captacao_summary(resultado)
+
+    output_path = Path(args.output) if args.output else (
+        config.reports_dir / f"captacao-{resultado.gerado_em.date().isoformat()}.xlsx"
+    )
+    saved = export_captacao_excel(resultado, output_path)
+    console.print()
+    console.print(f"[green]Planilha de captacao gerada:[/] {saved}")
+
+
 def main() -> None:
     # --data-dir vale antes ou depois do subcomando: exigir uma das duas ordens
     # e uma pegadinha desnecessaria na linha de comando. O SUPPRESS e o que
@@ -829,6 +911,25 @@ def main() -> None:
             "Tambem catalogar ETFs (todas as categorias, incl. Renda Fixa) e "
             "analisar fluxo semanal - opt-in: baixa ate 3 meses de INF_DIARIO "
             "alem da coleta normal"
+        ),
+    )
+    run_parser.add_argument(
+        "--with-captacao",
+        action="store_true",
+        help=(
+            "Tambem calcular a captacao liquida dos fundos das vitrines - "
+            "opt-in: baixa o INF_DIARIO do ano corrente (~9 zips mensais) "
+            "alem da coleta normal"
+        ),
+    )
+    run_parser.add_argument(
+        "--universo",
+        choices=["vitrine", "catalogo"],
+        default="vitrine",
+        help=(
+            "Universo do monitor de captacao (com --with-captacao): 'vitrine' "
+            "(default) so o que a casa vende de varejo; 'catalogo' amplia ao "
+            "que o Open Finance publica (tudo que a casa administra)"
         ),
     )
     run_parser.set_defaults(func=cmd_run)
@@ -934,6 +1035,35 @@ def main() -> None:
         "-o", "--output", help="Caminho personalizado para salvar a planilha .xlsx"
     )
     etf_parser.set_defaults(func=cmd_etf)
+
+    captacao_parser = subparsers.add_parser(
+        "captacao",
+        help="Monitorar a captacao liquida dos fundos das vitrines coletadas",
+        parents=[common],
+    )
+    add_platform_arg(captacao_parser)
+    captacao_parser.add_argument(
+        "--universo",
+        choices=["vitrine", "catalogo"],
+        default="vitrine",
+        help="'vitrine' (default) so o que a casa vende; 'catalogo' amplia ao Open Finance",
+    )
+    captacao_parser.add_argument(
+        "--months",
+        type=int,
+        default=None,
+        help="Limitar aos N meses mais recentes do INF_DIARIO (default: YTD inteiro)",
+    )
+    captacao_parser.add_argument(
+        "--force", action="store_true", help="Forcar re-download dos zips mesmo se existirem no cache"
+    )
+    captacao_parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="Nao baixar nada - usar so os zips ja presentes em data/market/raw/",
+    )
+    captacao_parser.add_argument("-o", "--output", help="Caminho personalizado para a planilha .xlsx")
+    captacao_parser.set_defaults(func=cmd_captacao)
 
     args = parser.parse_args()
     if not getattr(args, "func", None):

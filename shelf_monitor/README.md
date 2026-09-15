@@ -353,6 +353,79 @@ consegue algo como "IT NOW IVVB11 FI EM COTAS DE ETF". Para os demais, `data/etf
 ticker errado, sem uma fonte para validar, contaminaria a categorizacao rio abaixo - por isso ele
 nao vem pre-populado com uma lista escrita de memoria.
 
+## Monitoramento de captacao (`captacao`)
+
+Responde a terceira pergunta que faltava ao monitor: depois de "o que cada casa
+oferta" e "o que esta prestes a lancar", esta e "para onde o dinheiro esta indo
+nos fundos que cada vitrine oferece" - top e bottom de captacao liquida, por
+plataforma e consolidado, sempre sobre a vitrine de varejo.
+
+```bash
+python -m shelf_monitor captacao                    # YTD inteiro (~9 zips mensais)
+python -m shelf_monitor captacao --months 2          # so os 2 meses mais recentes
+python -m shelf_monitor captacao --no-download       # so os zips ja em data/market/raw/
+python -m shelf_monitor captacao --universo catalogo # amplia ao catalogo Open Finance
+python -m shelf_monitor run --with-captacao          # roda junto da coleta normal (opt-in)
+```
+
+> **O numero e do fundo, nao da plataforma.** A fonte e o INF_DIARIO da CVM, que
+> publica a captacao **do fundo** somando todos os distribuidores - nao existe,
+> nesta base, "quanto a XP captou" separado de "quanto o BTG captou" no mesmo
+> fundo. O monitor mede a captacao dos fundos que cada vitrine oferece: um fundo
+> presente em tres vitrines mostra o **mesmo numero** nas tres. Essa ressalva
+> (`NOTA_FUNDO_NIVEL` em `captacao.py`) vai no rodape de toda superficie.
+
+**Janelas de calendario**, ancoradas na data mais recente com dado no informe:
+`semana` (ultima semana ISO completa, segunda a domingo), `mes` (do dia 1 ate a
+ultima data, month-to-date), `mes_anterior` (o mes fechado anterior) e `ano`
+(YTD, 1/janeiro ate a ultima data). `--months` corta quantos meses sao lidos -
+util para testar rapido; quando corta o inicio de uma janela, ela sai marcada
+com `dados_desde` (rotulo "YTD parcial desde ...").
+
+**Universo = vitrine.** Mesma regra de `on_listing` + perfil de varejo que o
+resto do monitor usa para gaps e listagem: uma casa sem vitrine coletada nesta
+execucao sai do universo, listada em `excluded` com o motivo (o catalogo Open
+Finance nao conta como vitrine). `--universo catalogo` amplia deliberadamente a
+esse catalogo, e toda superficie rotula "catalogo (nao vitrine)" quando ligado.
+
+**Mapeamento de CNPJ.** O informe diario reporta a **classe** (RCVM175) ou o
+proprio fundo (legado); uma oferta pode anunciar o CNPJ do **envelope** (o que
+o Open Finance publica) em vez do de uma classe. Com a base de mercado
+importada (`python -m shelf_monitor market`), o envelope expande para as
+classes que ele contem e a captacao das duas e somada (`agregado_por_fundo`);
+sem a base, o monitor usa o proprio CNPJ da oferta - funciona para fundos
+legados e classes unicas, mas um envelope multi-classe sai sem fluxo. A
+cobertura de cada execucao ("N de M fundos da vitrine com fluxo no informe")
+esta sempre visivel, nunca escondida atras de um numero zerado em silencio.
+
+**Classificacao**: ANBIMA oficial (join com a CVM, `extra["classificacao_anbima"]`)
+sempre que disponivel; senao a classificacao CVM; senao a heuristica de
+nome/categoria do proprio monitor. O nivel usado (`anbima`/`cvm`/`heuristica`)
+acompanha cada fundo, para nao confundir dado oficial com aproximacao.
+
+**Analise cruzada entre players**: fundos captando em 2+ vitrines ao mesmo
+tempo (tendencia confirmada por mais de uma casa) e os maiores captadores
+exclusivos de uma unica vitrine; concentracao do fluxo positivo por
+classificacao (qual casa domina a captacao de Renda Fixa, por exemplo);
+momentum - fundos com entrada (ou saida) liquida nas 4 ultimas semanas ISO
+completas seguidas; e o hook XP-centrico de maiores captadores presentes numa
+vitrine concorrente e ausentes da vitrine da XP.
+
+Saidas de cada execucao:
+
+| Arquivo | O que e |
+|---|---|
+| `data/flows/captacao-<data>.json` | O `ResultadoCaptacao` completo, persistido - `report`/`export` reusam sem refazer a pipeline |
+| `data/reports/captacao-<data>.xlsx` | Planilha dedicada: rankings por janela, classificacao, cruzada, cobertura e metodologia |
+| Abas em `prateleiras-<data>.xlsx` | "Captacao rankings", "Captacao ANBIMA", "Captacao cruzada", "Captacao cobertura" - mesmos numeros, via `export`/`run` |
+| Card no `dashboard.html`, secao no digest, slide no deck | As mesmas quatro superficies do resto do monitor |
+
+O custo de rede e maior que o das demais coletas: o YTD inteiro sao ate 9 zips
+mensais de ~30 MB cada (menos perto de janeiro), cacheados em `data/market/raw/`
+com o mesmo mecanismo condicional da base de mercado - rodar de novo no mesmo
+dia nao rebaixa nada. Por isso e opt-in tanto no `run` (`--with-captacao`)
+quanto como subcomando proprio.
+
 ## Area logada
 
 A v1 usa apenas fontes publicas. A arquitetura preve coletores autenticados sem
@@ -553,5 +626,8 @@ python -m unittest discover -s tests -v
 Os testes rodam contra fixtures (`tests/fixtures/`) que reproduzem o formato real das
 fontes, entao passam mesmo sem acesso de rede. Para regerar as fixtures:
 `python tests/fixtures/make_fixtures.py` (prateleiras), `python tests/fixtures/make_market_fixtures.py`
-(base de mercado) e `python tests/fixtures/etf/make_etf_fixtures.py` (catalogo de ETF - fixture
-propria, separada da de mercado para nao acoplar aos asserts de contagem de `test_market.py`).
+(base de mercado), `python tests/fixtures/etf/make_etf_fixtures.py` (catalogo de ETF - fixture
+propria, separada da de mercado para nao acoplar aos asserts de contagem de `test_market.py`)
+e `python tests/fixtures/make_inf_diario_fixture.py` (informe diario sintetico do monitor de
+captacao - dias uteis de 07/2026 a 09/2026, com fluxo constante por CNPJ para somas
+verificaveis a mao e uma retificacao deliberada para testar o dedupe).

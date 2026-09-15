@@ -4,6 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from shelf_monitor.captacao import ResultadoCaptacao
 
 
 class CollectorStrategy(str, Enum):
@@ -34,6 +38,21 @@ class AssetClass(str, Enum):
     INTERNACIONAL = "internacional"
     PREVIDENCIA = "previdencia"
     OUTROS = "outros"
+
+
+# Rotulos de exibicao - fonte unica para quem precisa deles (report/aggregate.py
+# reexporta para manter `from shelf_monitor.report.aggregate import
+# ASSET_CLASS_LABELS` funcionando; captacao.py importa daqui direto, para nao
+# depender de report/aggregate.py e evitar ciclo de import).
+ASSET_CLASS_LABELS: dict[AssetClass, str] = {
+    AssetClass.RENDA_FIXA: "Renda Fixa",
+    AssetClass.MULTIMERCADO: "Multimercado",
+    AssetClass.ACOES: "Acoes",
+    AssetClass.CAMBIAL: "Cambial",
+    AssetClass.INTERNACIONAL: "Internacional",
+    AssetClass.PREVIDENCIA: "Previdencia",
+    AssetClass.OUTROS: "Outros",
+}
 
 
 @dataclass
@@ -482,6 +501,10 @@ class RunReport:
     # Cobertura do join com a base oficial (enrich.EnrichmentStats.to_dict());
     # None quando a base de mercado nao esta importada.
     enrichment: dict | None = None
+    # Resultado do monitor de captacao (captacao.run_captacao_pipeline);
+    # None quando a execucao nao pediu (--with-captacao) e nao ha resultado
+    # anterior em disco para `report`/`export` reaproveitarem.
+    captacao: "ResultadoCaptacao | None" = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

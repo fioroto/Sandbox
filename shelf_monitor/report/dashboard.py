@@ -699,6 +699,226 @@ function renderGaps(gaps) {
 }
 renderGaps(DATA.gaps);
 
+/* --- Captacao liquida das vitrines -----------------------------------------
+   Sempre no nivel do fundo (INF_DIARIO da CVM soma todos os distribuidores) -
+   ver DATA.captacao.nota, que vai no rodape em toda janela. */
+function renderCaptacao(captacao) {
+  const section = document.getElementById("captacao-section");
+  if (!captacao || !captacao.available) {
+    section.innerHTML =
+      `<h2>Captacao liquida dos fundos das vitrines</h2>
+       <p class="card-sub">Top e bottom de captacao liquida por plataforma e consolidado,
+       sempre sobre a vitrine de varejo de cada casa.</p>
+       <div class="note-box">Captacao suprimida nesta execucao: ` +
+      `${escapeHtml((captacao && captacao.reason) || "dados insuficientes")}.</div>`;
+    return;
+  }
+
+  const money = v => v === undefined || v === null ? "–"
+    : "R$ " + Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  const pct = v => v === undefined || v === null ? "–"
+    : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+  const platformLabel = id => {
+    const found = (captacao.plataformas || []).find(p => p.platform_id === id);
+    return found ? found.label : id;
+  };
+
+  const janelaByKey = Object.fromEntries((captacao.janelas || []).map(j => [j.chave, j]));
+  let currentJanela = captacao.janela_padrao || (captacao.janelas[0] || {}).chave;
+
+  const tiles = document.getElementById("captacao-tiles");
+  tiles.innerHTML = "";
+  const cob = captacao.cobertura || {};
+  [
+    ["Universo", captacao.rotulo_universo, `${(captacao.plataformas || []).length} vitrine(s) analisada(s)`],
+    ["Ultima data no informe", captacao.ultima_data || "–", "CVM INF_DIARIO"],
+    ["Fundos com fluxo", `${cob.total_com_fluxo || 0} de ${cob.total_fundos || 0}`,
+     "fundos da vitrine encontrados no informe diario"],
+    ["Meses lidos", (cob.meses_lidos || []).length,
+     (cob.meses_faltantes || []).length ? `${cob.meses_faltantes.length} mes(es) ausente(s)` : "cobertura completa"],
+  ].forEach(([label, value, note]) => {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const l = document.createElement("div"); l.className = "label"; l.textContent = label;
+    const v = document.createElement("div"); v.className = "value"; v.textContent = String(value);
+    const n = document.createElement("div"); n.className = "note"; n.textContent = note;
+    tile.append(l, v, n);
+    tiles.appendChild(tile);
+  });
+
+  function fundoRows(list, tipo) {
+    return (list || []).map((f, i) => ({
+      tipo, posicao: i + 1, nome: f.nome, cnpj_display: f.cnpj_display,
+      classificacao: f.classificacao, n_vitrines: f.n_vitrines,
+      plataformas: (f.plataformas || []).map(platformLabel).join(", "),
+      bruta: money(f.captacao_bruta), resgates: money(f.resgates),
+      liquida: money(f.captacao_liquida), pct: pct(f.captacao_liquida_pct_pl),
+    }));
+  }
+
+  const FUNDO_COLS = [
+    { key: "tipo", label: "Tipo" }, { key: "posicao", label: "#", num: true },
+    { key: "nome", label: "Fundo" }, { key: "cnpj_display", label: "CNPJ" },
+    { key: "classificacao", label: "Classificacao" },
+    { key: "n_vitrines", label: "Nº vitrines", num: true },
+    { key: "plataformas", label: "Vitrines" },
+    { key: "bruta", label: "Captacao bruta", num: true },
+    { key: "resgates", label: "Resgates", num: true },
+    { key: "liquida", label: "Captacao liquida", num: true },
+    { key: "pct", label: "Liquida / PL", num: true },
+  ];
+
+  function renderJanelaTabs() {
+    const mount = document.getElementById("captacao-janelas");
+    mount.innerHTML = "";
+    (captacao.janelas || []).forEach(j => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = j.rotulo;
+      btn.className = "tab-button" + (j.chave === currentJanela ? " active" : "");
+      btn.style.cssText = "margin:2px 6px 2px 0;padding:5px 10px;border-radius:6px;" +
+        "border:1px solid var(--border,#ccc);cursor:pointer;font:inherit;" +
+        (j.chave === currentJanela ? "background:var(--accent,#1f3864);color:#fff;" : "background:transparent;");
+      btn.addEventListener("click", () => { currentJanela = j.chave; renderAll(); });
+      mount.appendChild(btn);
+    });
+  }
+
+  function renderRankings() {
+    const ranking = (captacao.rankings || {})[currentJanela] || {};
+    const consolidado = ranking.consolidado || {};
+    table(
+      document.getElementById("table-captacao-consolidado"),
+      FUNDO_COLS,
+      [...fundoRows(consolidado.top, "Top"), ...fundoRows(consolidado.bottom, "Bottom")]
+    );
+
+    const porPlataforma = ranking.por_plataforma || {};
+    const rows = [];
+    Object.keys(porPlataforma).sort().forEach(pid => {
+      const bloco = porPlataforma[pid];
+      const label = platformLabel(pid);
+      fundoRows(bloco.top, "Top").forEach(r => rows.push({ ...r, plataforma: label }));
+      fundoRows(bloco.bottom, "Bottom").forEach(r => rows.push({ ...r, plataforma: label }));
+    });
+    table(
+      document.getElementById("table-captacao-plataforma"),
+      [{ key: "plataforma", label: "Plataforma" }, ...FUNDO_COLS],
+      rows
+    );
+  }
+
+  function renderClassificacao() {
+    const linhas = (captacao.classificacao || {})[currentJanela] || [];
+    table(
+      document.getElementById("table-captacao-classificacao"),
+      [
+        { key: "label", label: "Plataforma" }, { key: "classificacao", label: "Classificacao" },
+        { key: "qtd_fundos", label: "Fundos", num: true },
+        { key: "qtd_com_fluxo", label: "Com fluxo", num: true },
+        { key: "bruta", label: "Captacao bruta", num: true },
+        { key: "resgates", label: "Resgates", num: true },
+        { key: "liquida", label: "Captacao liquida", num: true },
+      ],
+      linhas.map(l => ({
+        label: l.label, classificacao: l.classificacao, qtd_fundos: l.qtd_fundos,
+        qtd_com_fluxo: l.qtd_com_fluxo, bruta: money(l.captacao_bruta),
+        resgates: money(l.resgates), liquida: money(l.captacao_liquida),
+      }))
+    );
+  }
+
+  function renderCruzada() {
+    const mount = document.getElementById("captacao-cruzada");
+    const cruzada = (captacao.cruzada || {})[currentJanela];
+    if (!cruzada) {
+      mount.innerHTML = '<p class="card-sub">Analise cruzada calculada apenas para a ' +
+        'janela semanal e o YTD - troque de janela acima para ve-la.</p>';
+      return;
+    }
+    mount.innerHTML =
+      '<h4 style="font-size:12.5px;font-weight:600;margin:10px 0 4px">Maiores captadores em 2+ vitrines</h4>' +
+      '<div id="captacao-compartilhados"></div>' +
+      '<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">Maiores captadores exclusivos de uma vitrine</h4>' +
+      '<div id="captacao-exclusivos"></div>' +
+      '<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">Concentracao por classificacao</h4>' +
+      '<div id="captacao-concentracao"></div>' +
+      '<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">Momentum (4 semanas seguidas no mesmo sentido)</h4>' +
+      '<div id="captacao-momentum"></div>' +
+      '<div id="captacao-ausentes"></div>';
+
+    table(document.getElementById("captacao-compartilhados"), FUNDO_COLS.filter(c => c.key !== "tipo" && c.key !== "posicao"),
+      fundoRows(cruzada.compartilhados_top, "").map(({ tipo, posicao, ...rest }) => rest));
+    table(document.getElementById("captacao-exclusivos"), FUNDO_COLS.filter(c => c.key !== "tipo" && c.key !== "posicao"),
+      fundoRows(cruzada.exclusivos_top, "").map(({ tipo, posicao, ...rest }) => rest));
+
+    table(
+      document.getElementById("captacao-concentracao"),
+      [{ key: "classificacao", label: "Classificacao" }, { key: "label", label: "Lider" },
+       { key: "share", label: "Share do fluxo positivo", num: true },
+       { key: "total", label: "Captacao liquida total", num: true }],
+      (cruzada.concentracao_por_classificacao || []).map(c => ({
+        classificacao: c.classificacao, label: c.label, share: pct(c.share_pct),
+        total: money(c.captacao_liquida_total),
+      }))
+    );
+
+    const momentumRows = (cruzada.momentum_positivo || []).map(e => ({
+      nome: e.nome, classificacao: e.classificacao,
+      plataformas: (e.plataformas || []).map(platformLabel).join(", "), sinal: "Entrada seguida",
+    })).concat((cruzada.sangria || []).map(e => ({
+      nome: e.nome, classificacao: e.classificacao,
+      plataformas: (e.plataformas || []).map(platformLabel).join(", "), sinal: "Saida seguida",
+    })));
+    table(
+      document.getElementById("captacao-momentum"),
+      [{ key: "sinal", label: "Sinal" }, { key: "nome", label: "Fundo" },
+       { key: "classificacao", label: "Classificacao" }, { key: "plataformas", label: "Vitrines" }],
+      momentumRows
+    );
+
+    const ausentesMount = document.getElementById("captacao-ausentes");
+    const ausentes = cruzada.ausentes_na_baseline || {};
+    if (!ausentes.available) {
+      ausentesMount.innerHTML = '<p class="card-sub">Captadores fora da baseline: ' +
+        `${escapeHtml(ausentes.reason || "nao disponivel")}.</p>`;
+    } else {
+      ausentesMount.innerHTML = `<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">` +
+        `Maiores captadores fora da vitrine da ${escapeHtml(ausentes.baseline_label)}</h4>` +
+        '<div id="captacao-ausentes-tabela"></div>';
+      table(document.getElementById("captacao-ausentes-tabela"),
+        FUNDO_COLS.filter(c => c.key !== "tipo" && c.key !== "posicao"),
+        fundoRows(ausentes.fundos, "").map(({ tipo, posicao, ...rest }) => rest));
+    }
+  }
+
+  function renderCoverage() {
+    const parts = [captacao.nota];
+    const janela = janelaByKey[currentJanela];
+    if (janela && janela.dados_desde) {
+      parts.push(`Janela cortada nesta execucao: dado disponivel so a partir de ${janela.dados_desde}.`);
+    }
+    if ((cob.meses_faltantes || []).length) {
+      parts.push(`Meses sem dado no cache local: ${cob.meses_faltantes.join(", ")}.`);
+    }
+    if ((captacao.excluded || []).length) {
+      parts.push("Fora do universo: " +
+        captacao.excluded.map(e => `${e.label} (${e.reason})`).join("; ") + ".");
+    }
+    document.getElementById("captacao-coverage").textContent = parts.join(" ");
+  }
+
+  function renderAll() {
+    renderJanelaTabs();
+    renderRankings();
+    renderClassificacao();
+    renderCruzada();
+    renderCoverage();
+  }
+  renderAll();
+}
+renderCaptacao(DATA.captacao);
+
 (function renderRestricted(block) {
   const mount = document.getElementById("table-restricted");
   const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
@@ -954,6 +1174,29 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
     <details><summary>Ver os fundos de gap</summary><div id="table-gaps"></div></details>
     <div class="coverage" id="gaps-coverage"></div>
+  </section>
+
+  <section class="card" id="captacao-section">
+    <h2>Captacao liquida dos fundos das vitrines</h2>
+    <p class="card-sub">Top e bottom de captacao liquida por plataforma e consolidado,
+      sempre sobre a vitrine de varejo de cada casa.</p>
+    <div class="tiles" id="captacao-tiles"></div>
+
+    <div id="captacao-janelas" style="margin:14px 0 6px"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Ranking consolidado</h3>
+    <div id="table-captacao-consolidado"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Ranking por plataforma</h3>
+    <div id="table-captacao-plataforma"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Consolidacao por classificacao ANBIMA</h3>
+    <div id="table-captacao-classificacao"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Analise cruzada entre players</h3>
+    <div id="captacao-cruzada"></div>
+
+    <div class="coverage" id="captacao-coverage"></div>
   </section>
 
   <section class="card">

@@ -120,11 +120,17 @@ class MarketLookup:
         fund_records: dict[str, MarketRecord],
         cvm_codes: dict[str, tuple[MarketRecord, str]],
         source: Path,
+        fund_classes: dict[str, list[str]] | None = None,
     ):
         self._records = records
         self._fund_records = fund_records
         self._cvm_codes = cvm_codes
         self.source = source
+        # CNPJ do envelope -> CNPJs de classe. Usado por quem precisa expandir
+        # um envelope RCVM175 (o que o Open Finance publica em cnpjNumber) nas
+        # classes que de fato tem CNPJ proprio e recebem informe diario - o
+        # monitor de captacao e o consumidor de hoje.
+        self._fund_classes = fund_classes or {}
 
     def __len__(self) -> int:
         return len(self._records)
@@ -133,6 +139,17 @@ class MarketLookup:
         if not cnpj:
             return None
         return self._records.get(cnpj) or self._fund_records.get(cnpj)
+
+    def is_class(self, cnpj: str | None) -> bool:
+        """True quando `cnpj` e o CNPJ de uma classe (indexado diretamente)."""
+        return bool(cnpj) and cnpj in self._records
+
+    def classes_of_fund(self, fund_cnpj: str | None) -> list[str]:
+        """CNPJs de classe de um envelope RCVM175; lista vazia se desconhecido
+        ou se o fundo nao tiver classes com CNPJ proprio (legado)."""
+        if not fund_cnpj:
+            return []
+        return list(self._fund_classes.get(fund_cnpj, ()))
 
     def get_by_cvm_code(self, code: object) -> tuple[MarketRecord, str] | None:
         """Registro e nivel do codigo (subclasse, classe ou fundo)."""
@@ -176,6 +193,7 @@ class MarketLookup:
 
         records: dict[str, MarketRecord] = {}
         by_fund: dict[str, list[dict]] = {}
+        fund_classes: dict[str, list[str]] = {}
         # Materia-prima do indice por codigo, montado depois que os registros
         # de envelope existirem.
         by_classe_id: dict[str, MarketRecord] = {}
@@ -203,6 +221,11 @@ class MarketLookup:
                 fund_cnpj = normalize_cnpj(row.get("cnpj_fundo"))
                 if fund_cnpj:
                     by_fund.setdefault(fund_cnpj, []).append(row)
+                    if fund_cnpj != cnpj:
+                        # So classes RCVM175 tem CNPJ proprio distinto do
+                        # envelope; legado repete o mesmo CNPJ nas duas
+                        # colunas e nao entra aqui (nao ha o que expandir).
+                        fund_classes.setdefault(fund_cnpj, []).append(cnpj)
 
                 # `codigo_cvm` e da classe nas linhas RCVM175 e do proprio
                 # fundo nas legadas, que nao tem classe.
@@ -234,7 +257,7 @@ class MarketLookup:
             if record is not None:
                 cvm_codes.setdefault(code, (record, "fundo"))
 
-        return cls(records, fund_records, cvm_codes, path)
+        return cls(records, fund_records, cvm_codes, path, fund_classes=fund_classes)
 
 
 def _subclass_codes(

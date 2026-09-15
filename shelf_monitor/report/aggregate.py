@@ -10,22 +10,13 @@ from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
 from shelf_monitor.normalize import format_cnpj, name_slug, normalize_text
 from shelf_monitor.profile import restriction_reason, split_by_profile
 from shelf_monitor.models import (
+    ASSET_CLASS_LABELS,
     AssetClass,
     FundOffer,
     RunReport,
     ShelfSnapshot,
     SnapshotStatus,
 )
-
-ASSET_CLASS_LABELS: dict[AssetClass, str] = {
-    AssetClass.RENDA_FIXA: "Renda Fixa",
-    AssetClass.MULTIMERCADO: "Multimercado",
-    AssetClass.ACOES: "Acoes",
-    AssetClass.CAMBIAL: "Cambial",
-    AssetClass.INTERNACIONAL: "Internacional",
-    AssetClass.PREVIDENCIA: "Previdencia",
-    AssetClass.OUTROS: "Outros",
-}
 
 # Faixas de aplicacao minima - separam varejo de alta renda e private.
 MIN_BANDS: list[tuple[str, float, float]] = [
@@ -631,6 +622,100 @@ def summarize_platform(
     )
 
 
+_CAPTACAO_LIMITE = 10
+_CAPTACAO_JANELA_DIGEST = "semana"
+
+
+def build_captacao_block(report: RunReport, limite: int = _CAPTACAO_LIMITE) -> dict:
+    """O monitor de captacao: rankings, consolidacao por classificacao e
+    analise cruzada, a partir de `report.captacao` (ver `shelf_monitor.captacao`).
+
+    Segue a mesma convencao de supressao de `build_gap_block`: quando o
+    resultado nao existe, ou existe mas nenhuma vitrine entrou no universo, o
+    bloco sai com `available: False` e o motivo - nunca com numeros parciais
+    sem dizer o que falta.
+    """
+    from shelf_monitor.captacao import (
+        NOTA_FUNDO_NIVEL,
+        analise_cruzada,
+        consolidar_por_classificacao,
+        ranking_consolidado,
+        ranking_por_plataforma,
+    )
+
+    resultado = report.captacao
+    if resultado is None:
+        return {
+            "available": False,
+            "reason": (
+                "captacao nao calculada nesta execucao (rode 'run "
+                "--with-captacao' ou 'python -m shelf_monitor captacao')"
+            ),
+        }
+
+    base = {
+        "universo": resultado.universo,
+        "rotulo_universo": resultado.rotulo_universo,
+        "nota": NOTA_FUNDO_NIVEL,
+        "gerado_em": resultado.gerado_em.isoformat(),
+        "excluded": resultado.excluded,
+    }
+
+    if not resultado.plataformas:
+        return {
+            **base,
+            "available": False,
+            "reason": (
+                "nenhuma vitrine entrou no universo desta execucao; o "
+                "catalogo Open Finance nao conta como vitrine"
+            ),
+        }
+
+    if resultado.cobertura.total_com_fluxo == 0:
+        return {
+            **base,
+            "available": False,
+            "reason": (
+                "nenhum fundo da vitrine foi encontrado no INF_DIARIO da CVM "
+                f"(meses lidos: {', '.join(resultado.cobertura.meses_lidos) or 'nenhum'})"
+            ),
+        }
+
+    janelas_chaves = [j.chave for j in resultado.janelas]
+    rankings = {
+        chave: {
+            "consolidado": ranking_consolidado(resultado, chave, limite),
+            "por_plataforma": ranking_por_plataforma(resultado, chave, limite),
+        }
+        for chave in janelas_chaves
+    }
+    classificacao = {chave: consolidar_por_classificacao(resultado, chave) for chave in janelas_chaves}
+    cruzada = {
+        chave: analise_cruzada(resultado, chave=chave, limite=limite)
+        for chave in janelas_chaves
+        if chave == _CAPTACAO_JANELA_DIGEST or chave == "ano"
+    }
+
+    return {
+        **base,
+        "available": True,
+        "ultima_data": (
+            resultado.cobertura.ultima_data.isoformat()
+            if resultado.cobertura.ultima_data
+            else None
+        ),
+        "janelas": [j.to_dict() for j in resultado.janelas],
+        "janela_padrao": _CAPTACAO_JANELA_DIGEST,
+        "plataformas": [
+            {"platform_id": pid, **info} for pid, info in resultado.cobertura.por_plataforma.items()
+        ],
+        "rankings": rankings,
+        "classificacao": classificacao,
+        "cruzada": cruzada,
+        "cobertura": resultado.cobertura.to_dict(),
+    }
+
+
 def build_restricted_block(report: RunReport) -> dict:
     """O relatorio auxiliar: quem ficou fora da analise de varejo, e por que."""
     platforms: list[dict] = []
@@ -738,6 +823,7 @@ def build_dashboard_data(report: RunReport) -> dict:
             "funds_truncated": max(0, len(gap_funds) - _GAP_FUNDS_EMBEDDED),
         },
         "restricted": build_restricted_block(report),
+        "captacao": build_captacao_block(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],

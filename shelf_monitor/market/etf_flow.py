@@ -14,17 +14,26 @@ ver `flow_coverage` e o aviso que `print_etf_summary` imprime quando ela é baix
 """
 from __future__ import annotations
 
-import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date
 
 from shelf_monitor.config import Config
-from shelf_monitor.market.datasets import Dataset
 from shelf_monitor.market.etf import EtfMetadata
-from shelf_monitor.market.fetch import fetch
-from shelf_monitor.normalize import parse_number
+from shelf_monitor.market.inf_diario import (
+    DailyRecord,
+    dedupe_by_day,
+    fetch_inf_diario_month,
+    get_recent_months,
+    read_daily_records,
+)
+
+# Aliases de compatibilidade: o parser generico do INF_DIARIO mudou de nome e
+# de modulo (shelf_monitor.market.inf_diario), mas ETFs continuam usando esta
+# mesma leitura - so o alvo de CNPJs (o catalogo de ETF, nao a vitrine) muda.
+EtfDailyRecord = DailyRecord
+_dedupe_by_day = dedupe_by_day
+read_etf_daily_records = read_daily_records
 
 # Heurística, não fato de mercado: um ETF/feeder que varie mais que isso em
 # cota numa única semana quase sempre denuncia descontinuidade nos dados (duas
@@ -38,27 +47,6 @@ _MAX_PLAUSIBLE_WEEKLY_RETURN_PCT: dict[str, float] = {
     "Renda Fixa": 8.0,
 }
 _DEFAULT_MAX_PLAUSIBLE_WEEKLY_RETURN_PCT = 30.0
-
-
-@dataclass
-class EtfDailyRecord:
-    """Registro de informe diário de um ETF (ou feeder) numa data-base."""
-
-    cnpj: str
-    dt_comptc: date
-    vl_total: float = 0.0
-    vl_quota: float = 0.0
-    vl_patrim_liq: float = 0.0
-    captc_dia: float = 0.0
-    resg_dia: float = 0.0
-    nr_cotst: int = 0
-    # Rótulo bruto da coluna TP_FUNDO_CLASSE (v4 do informe), quando presente.
-    # Usado só para desempatar duas linhas do mesmo CNPJ na mesma data.
-    tp_fundo_classe: str | None = None
-
-    @property
-    def net_inflow(self) -> float:
-        return self.captc_dia - self.resg_dia
 
 
 @dataclass
@@ -104,177 +92,6 @@ class CategoryWeeklySummary:
     captacao_liquida: float
     pl_total: float
     qtd_etfs: int
-
-
-def get_recent_months(count: int = 3, ref_date: date | None = None) -> list[str]:
-    """Gera lista de sufixos YYYYMM para os últimos `count` meses."""
-    ref = ref_date or date.today()
-    months = []
-    curr_year = ref.year
-    curr_month = ref.month
-
-    for _ in range(count):
-        months.append(f"{curr_year:04d}{curr_month:02d}")
-        curr_month -= 1
-        if curr_month == 0:
-            curr_month = 12
-            curr_year -= 1
-
-    months.reverse()
-    return months
-
-
-def fetch_inf_diario_month(config: Config, yyyymm: str, force: bool = False) -> Path | None:
-    """Baixa o zip mensal do INF_DIARIO da CVM com cache condicional."""
-    filename = f"inf_diario_fi_{yyyymm}.zip"
-    dest = config.market_raw_dir / filename
-    if dest.exists() and not force:
-        return dest
-
-    url = f"https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{yyyymm}.zip"
-
-    ds = Dataset(
-        key=f"inf_diario_{yyyymm}",
-        url=url,
-        filename=filename,
-        description=f"Informe diário CVM {yyyymm}",
-        members={"inf_diario": f"inf_diario_fi_{yyyymm}.csv"},
-        approx_mb=11,
-    )
-
-    try:
-        res = fetch(config, ds, force=force)
-        return res.path
-    except Exception:  # noqa: BLE001
-        return None
-
-
-_CNPJ_TRANS = str.maketrans("", "", "./- ")
-
-
-def read_etf_daily_records(
-    zip_path: Path, target_cnpjs: set[str]
-) -> list[EtfDailyRecord]:
-    """Lê o CSV do zip mensal do INF_DIARIO filtrando apenas os CNPJs alvo."""
-    if not zip_path or not zip_path.exists() or not zipfile.is_zipfile(zip_path):
-        return []
-
-    records: list[EtfDailyRecord] = []
-
-    with zipfile.ZipFile(zip_path) as archive:
-        csv_names = [n for n in archive.namelist() if n.lower().endswith(".csv")]
-        if not csv_names:
-            return []
-
-        raw_bytes = archive.read(csv_names[0])
-        text = raw_bytes.decode("utf-8-sig", errors="replace")
-        lines = text.splitlines()
-
-        if not lines:
-            return []
-
-        header = lines[0].split(";")
-        header_map = {col.strip().upper(): idx for idx, col in enumerate(header)}
-
-        def find_col(*names: str) -> int | None:
-            for name in names:
-                if name.upper() in header_map:
-                    return header_map[name.upper()]
-            return None
-
-        idx_cnpj = find_col("CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO", "CNPJ_CLASSE", "CNPJ_FUNDO")
-        idx_dt = find_col("DT_COMPTC")
-        idx_total = find_col("VL_TOTAL")
-        idx_quota = find_col("VL_QUOTA")
-        idx_pl = find_col("VL_PATRIM_LIQ")
-        idx_captc = find_col("CAPTC_DIA")
-        idx_resg = find_col("RESG_DIA")
-        idx_cotst = find_col("NR_COTST")
-        idx_tipo = find_col("TP_FUNDO_CLASSE", "TP_FUNDO")
-
-        if idx_cnpj is None or idx_dt is None:
-            return []
-
-        for line in lines[1:]:
-            if not line:
-                continue
-            cols = line.split(";")
-            if len(cols) <= idx_cnpj:
-                continue
-            cnpj_raw = cols[idx_cnpj]
-            if not cnpj_raw:
-                continue
-
-            cnpj_clean = cnpj_raw.translate(_CNPJ_TRANS)
-            if len(cnpj_clean) < 14:
-                cnpj_clean = cnpj_clean.zfill(14)
-
-            if cnpj_clean not in target_cnpjs:
-                continue
-
-            dt_str = cols[idx_dt] if len(cols) > idx_dt else None
-            if not dt_str:
-                continue
-            try:
-                dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d").date()
-            except ValueError:
-                continue
-
-            vl_total = parse_number(cols[idx_total]) if idx_total is not None and len(cols) > idx_total else 0.0
-            vl_quota = parse_number(cols[idx_quota]) if idx_quota is not None and len(cols) > idx_quota else 0.0
-            vl_pl = parse_number(cols[idx_pl]) if idx_pl is not None and len(cols) > idx_pl else 0.0
-            captc = parse_number(cols[idx_captc]) if idx_captc is not None and len(cols) > idx_captc else 0.0
-            resg = parse_number(cols[idx_resg]) if idx_resg is not None and len(cols) > idx_resg else 0.0
-            tipo = cols[idx_tipo].strip() if idx_tipo is not None and len(cols) > idx_tipo else None
-
-            cotst_raw = cols[idx_cotst] if idx_cotst is not None and len(cols) > idx_cotst else None
-            try:
-                cotst = int(float(cotst_raw)) if cotst_raw else 0
-            except (ValueError, TypeError):
-                cotst = 0
-
-            records.append(
-                EtfDailyRecord(
-                    cnpj=cnpj_clean,
-                    dt_comptc=dt,
-                    vl_total=vl_total or 0.0,
-                    vl_quota=vl_quota or 0.0,
-                    vl_patrim_liq=vl_pl or 0.0,
-                    captc_dia=captc or 0.0,
-                    resg_dia=resg or 0.0,
-                    nr_cotst=cotst,
-                    tp_fundo_classe=tipo,
-                )
-            )
-
-    return records
-
-
-def _dedupe_by_day(records: list[EtfDailyRecord]) -> list[EtfDailyRecord]:
-    """Uma linha por (CNPJ, data).
-
-    O arquivo mensal do INF_DIARIO é "atualizado diariamente com retificações"
-    (a própria CVM documenta isso) - o mesmo mês pode conter mais de uma linha
-    para o mesmo CNPJ na mesma data quando uma retificação foi publicada. Sem
-    dedupe, o agregador via duas datas iguais como dois dias de uma semana e a
-    cota comparava valores de duas versões do mesmo dia - a causa mais provável
-    de uma "rentabilidade semanal" de -90%. Quando as duas linhas trazem
-    TP_FUNDO_CLASSE, a que tiver "CLASSE" no rótulo vence (é o grão que a base
-    de mercado usa); sem esse sinal, fica a última ocorrência lida - a
-    retificação, no arquivo real, vem depois da linha original.
-    """
-    best: dict[tuple[str, date], EtfDailyRecord] = {}
-    for rec in records:
-        key = (rec.cnpj, rec.dt_comptc)
-        current = best.get(key)
-        if current is None:
-            best[key] = rec
-            continue
-        current_is_classe = bool(current.tp_fundo_classe) and "CLASSE" in current.tp_fundo_classe.upper()
-        new_is_classe = bool(rec.tp_fundo_classe) and "CLASSE" in rec.tp_fundo_classe.upper()
-        if new_is_classe or not current_is_classe:
-            best[key] = rec
-    return list(best.values())
 
 
 def aggregate_etf_weekly_flows(

@@ -5,6 +5,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+from shelf_monitor.captacao import ResultadoCaptacao
 from shelf_monitor.config import Config
 from shelf_monitor.models import CvmSnapshot, ShelfSnapshot, SnapshotStatus
 
@@ -136,3 +137,28 @@ def latest_cvm_snapshot(
         if snapshot.funds:
             return snapshot
     return None
+
+
+# --- captacao ------------------------------------------------------------
+
+
+def save_captacao(config: Config, resultado: ResultadoCaptacao) -> Path:
+    """Grava o resultado do dia em data/flows/ - pequeno o bastante para nao
+    precisar da guarda de qualidade das prateleiras: uma segunda execucao no
+    mesmo dia so reflete um dado mais novo do INF_DIARIO, nunca uma coleta
+    pior."""
+    path = config.flows_dir / f"captacao-{resultado.gerado_em.date().isoformat()}.json"
+    return _write_json(path, resultado.to_dict())
+
+
+def load_captacao(path: Path) -> ResultadoCaptacao:
+    return ResultadoCaptacao.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def latest_captacao(config: Config) -> ResultadoCaptacao | None:
+    """O resultado mais recente em disco - o que `report`/`export` reusam sem
+    recalcular (e sem a rede que o pipeline completo precisaria)."""
+    candidates = sorted(config.flows_dir.glob("captacao-*.json"))
+    if not candidates:
+        return None
+    return load_captacao(candidates[-1])

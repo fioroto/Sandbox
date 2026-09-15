@@ -67,6 +67,9 @@ def render_deck(config: Config, report: RunReport) -> Path:
     # menos um gap. A supressao ja aparece no dashboard e no digest.
     if gaps.get("available") and gaps.get("total_gaps"):
         _gaps(prs, gaps)
+    captacao = data.get("captacao") or {}
+    if captacao.get("available"):
+        _captacao(prs, captacao)
     if platforms:
         _architecture(prs, platforms)
         _costs(prs, platforms)
@@ -321,6 +324,66 @@ def _gaps(prs, gaps: dict):
         notes.append(f"Fora do universo: {out}.")
     notes.append("Lista completa na planilha (aba Gaps XP).")
     _text(slide, 0.6, 6.95, 12.1, 0.4, " ".join(notes), 9.5, color=_MUTED)
+
+
+def _captacao(prs, captacao: dict):
+    """Slide de captacao: sempre no nivel do fundo (nota no rodape do slide)."""
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    _title(slide, "Captacao liquida dos fundos das vitrines",
+           "Top e bottom da semana, consolidado entre todas as vitrines de varejo")
+
+    cob = captacao.get("cobertura") or {}
+    tiles = [
+        ("Universo", captacao.get("rotulo_universo", "-"),
+         f"{len(captacao.get('plataformas') or [])} vitrine(s)"),
+        ("Ultima data no informe", captacao.get("ultima_data") or "-", "CVM INF_DIARIO"),
+        ("Fundos com fluxo", f"{cob.get('total_com_fluxo', 0)} de {cob.get('total_fundos', 0)}",
+         "encontrados no informe diario"),
+    ]
+    width = 2.85
+    for index, (label, value, note) in enumerate(tiles):
+        x = 0.6 + index * (width + 0.25)
+        _rect(slide, x, 1.55, width, 1.35, "FFFFFF", line=True)
+        _text(slide, x + 0.2, 1.68, width - 0.4, 0.35, label.upper(), 10.5, color=_INK_SOFT)
+        _text(slide, x + 0.2, 2.02, width - 0.4, 0.6, str(value), 22, bold=True)
+        _text(slide, x + 0.2, 2.6, width - 0.4, 0.3, note, 10, color=_MUTED)
+
+    def money(value):
+        return f"R$ {_fmt(value)}" if value is not None else "-"
+
+    def clip(name: str) -> str:
+        return name if len(name) <= 42 else name[:39] + "..."
+
+    janela_padrao = captacao.get("janela_padrao", "semana")
+    consolidado = ((captacao.get("rankings") or {}).get(janela_padrao) or {}).get("consolidado") or {}
+
+    top = consolidado.get("top") or []
+    if top:
+        _text(slide, 0.6, 3.1, 6.0, 0.35, "Top captacao liquida (semana)", 13, bold=True)
+        _table(
+            slide, 0.6, 3.5, 6.0,
+            ["Fundo", "Classificacao", "Liquida"],
+            [[clip(f["nome"]), f["classificacao"], money(f["captacao_liquida"])] for f in top[:8]],
+            col_widths=[2.6, 2.0, 1.4], size=10,
+        )
+
+    bottom = consolidado.get("bottom") or []
+    if bottom:
+        _text(slide, 6.9, 3.1, 5.8, 0.35, "Maiores saidas liquidas (semana)", 13, bold=True)
+        _table(
+            slide, 6.9, 3.5, 5.8,
+            ["Fundo", "Classificacao", "Liquida"],
+            [[clip(f["nome"]), f["classificacao"], money(f["captacao_liquida"])] for f in bottom[:8]],
+            col_widths=[2.6, 2.0, 1.2], size=10,
+        )
+
+    notes = [captacao.get("nota", "")]
+    if captacao.get("excluded"):
+        out = "; ".join(f"{e['label']} ({e['reason']})" for e in captacao["excluded"])
+        notes.append(f"Fora do universo: {out}.")
+    notes.append("Demais janelas, rankings por plataforma e analise cruzada na planilha.")
+    _text(slide, 0.6, 6.85, 12.1, 0.55, " ".join(notes), 9, color=_MUTED)
 
 
 def _architecture(prs, platforms: list[dict]):

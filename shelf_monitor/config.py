@@ -273,6 +273,12 @@ class Config:
     def etf_tickers_path(self) -> Path:
         return self.etf_dir / "tickers.csv"
 
+    @property
+    def flows_dir(self) -> Path:
+        """Resultado persistido do monitor de captacao - pequeno, versionado
+        (ao contrario de market/raw, que guarda os zips brutos do INF_DIARIO)."""
+        return self.data_dir / "flows"
+
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
 
@@ -285,6 +291,7 @@ class Config:
             self.cache_dir,
             self.reports_dir,
             self.market_dir,
+            self.flows_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

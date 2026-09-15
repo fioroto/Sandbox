@@ -15,6 +15,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from shelf_monitor.captacao import ResultadoCaptacao
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.enrich import (
     EnrichmentStats,
@@ -27,6 +28,7 @@ from shelf_monitor.models import (
     AssetClass,
     CvmSnapshot,
     FundOffer,
+    RunReport,
     ShelfDiff,
     ShelfSnapshot,
     SnapshotStatus,
@@ -35,6 +37,7 @@ from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import split_by_profile
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
+    build_captacao_block,
     build_gap_block,
     is_own_product,
 )
@@ -937,6 +940,263 @@ def _add_methodology_sheet(
         )
 
 
+def _add_captacao_sheets(workbook: Workbook, captacao: ResultadoCaptacao | None) -> None:
+    """Quatro abas do monitor de captacao: rankings, ANBIMA, cruzada e cobertura.
+
+    `captacao` e o `ResultadoCaptacao` persistido em `data/flows/` (via
+    `storage.latest_captacao`) - a planilha nunca recalcula a pipeline, so
+    reusa o que a coleta com `--with-captacao` (ou o subcomando `captacao`) ja
+    gravou. Sem resultado, so a primeira aba existe, suprimida com o motivo -
+    mesma convencao de `_add_gaps_sheets`.
+    """
+    fake_report = RunReport(
+        generated_at=captacao.gerado_em if captacao else datetime.now(),
+        captacao=captacao,
+    )
+    block = build_captacao_block(fake_report, limite=25)
+
+    sheet = workbook.create_sheet("Captacao rankings")
+    if not block.get("available"):
+        sheet.column_dimensions["A"].width = 110
+        sheet.cell(row=1, column=1, value="Captacao liquida dos fundos das vitrines").font = _TITLE_FONT
+        sheet.cell(
+            row=3, column=1,
+            value=f"Analise suprimida nesta execucao: {block.get('reason')}.",
+        ).font = _ALERT_FONT
+        return
+
+    headers = [
+        ("Janela", 30), ("Plataforma", 22), ("Tipo", 8), ("#", 5),
+        ("Fundo", 46), ("CNPJ", 20), ("Classificacao", 30), ("Nivel", 12),
+        ("Nº vitrines", 11), ("Vitrines", 30),
+        ("Captacao bruta (R$)", 18), ("Resgates (R$)", 18), ("Captacao liquida (R$)", 20),
+        ("PL inicio (R$)", 18), ("PL fim (R$)", 18), ("Liquida / PL (%)", 15),
+        ("Agregado por fundo", 16),
+    ]
+    for index, (name, width) in enumerate(headers, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(headers))
+
+    def _fundo_row(row: int, janela_label: str, plataforma_label: str, tipo: str, fundo: dict) -> None:
+        values = [
+            janela_label, plataforma_label, tipo, fundo["posicao"] if "posicao" in fundo else None,
+            fundo["nome"], fundo["cnpj_display"], fundo["classificacao"], fundo["nivel_classificacao"],
+            fundo["n_vitrines"], ", ".join(_platform_label(p) for p in fundo["plataformas"]),
+            fundo["captacao_bruta"], fundo["resgates"], fundo["captacao_liquida"],
+            fundo["pl_inicio"], fundo["pl_fim"], fundo["captacao_liquida_pct_pl"],
+            _yes_no(fundo["agregado_por_fundo"]),
+        ]
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        for col in (11, 12, 13, 14, 15):
+            sheet.cell(row=row, column=col).number_format = _MONEY
+        sheet.cell(row=row, column=16).number_format = _PCT
+
+    row = 1
+    for janela in block["janelas"]:
+        chave, label = janela["chave"], janela["rotulo"]
+        ranking = block["rankings"].get(chave, {})
+        consolidado = ranking.get("consolidado", {})
+        for tipo, lista in (("Top", consolidado.get("top") or []), ("Bottom", consolidado.get("bottom") or [])):
+            for posicao, fundo in enumerate(lista, start=1):
+                row += 1
+                _fundo_row(row, label, "Todas as vitrines", tipo, {**fundo, "posicao": posicao})
+        for platform_id, bloco in sorted((ranking.get("por_plataforma") or {}).items()):
+            plabel = _platform_label(platform_id)
+            for tipo, lista in (("Top", bloco.get("top") or []), ("Bottom", bloco.get("bottom") or [])):
+                for posicao, fundo in enumerate(lista, start=1):
+                    row += 1
+                    _fundo_row(row, label, plabel, tipo, {**fundo, "posicao": posicao})
+
+    if row > 1:
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row}"
+    sheet.freeze_panes = "A2"
+
+    # --- Captacao ANBIMA ---------------------------------------------------
+    anbima_sheet = workbook.create_sheet("Captacao ANBIMA")
+    anbima_headers = [
+        ("Janela", 30), ("Plataforma", 22), ("Classificacao", 30),
+        ("Nº fundos", 11), ("Com fluxo", 11),
+        ("Captacao bruta (R$)", 18), ("Resgates (R$)", 18), ("Captacao liquida (R$)", 20),
+    ]
+    for index, (name, width) in enumerate(anbima_headers, start=1):
+        anbima_sheet.cell(row=1, column=index, value=name)
+        anbima_sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(anbima_sheet, 1, len(anbima_headers))
+
+    row = 1
+    for janela in block["janelas"]:
+        chave, label = janela["chave"], janela["rotulo"]
+        for linha in block["classificacao"].get(chave, []):
+            row += 1
+            plataforma = "Todas as vitrines" if linha["platform_id"] == "__todas__" else linha["label"]
+            values = [
+                label, plataforma, linha["classificacao"], linha["qtd_fundos"], linha["qtd_com_fluxo"],
+                linha["captacao_bruta"], linha["resgates"], linha["captacao_liquida"],
+            ]
+            for index, value in enumerate(values, start=1):
+                cell = anbima_sheet.cell(row=row, column=index, value=value)
+                cell.font = _BODY_FONT
+                cell.border = _BORDER
+            for col in (6, 7, 8):
+                anbima_sheet.cell(row=row, column=col).number_format = _MONEY
+    if row > 1:
+        anbima_sheet.auto_filter.ref = f"A1:{get_column_letter(len(anbima_headers))}{row}"
+    anbima_sheet.freeze_panes = "A2"
+
+    # --- Captacao cruzada (secoes empilhadas, uma por janela calculada) -----
+    cruz_sheet = workbook.create_sheet("Captacao cruzada")
+    cruz_sheet.column_dimensions["A"].width = 46
+    for col in "BCDEF":
+        cruz_sheet.column_dimensions[col].width = 22
+    r = 1
+
+    def _titulo(text: str) -> None:
+        nonlocal r
+        cruz_sheet.cell(row=r, column=1, value=text).font = _TITLE_FONT
+        r += 1
+
+    def _tabela(cols: list[str], linhas: list[list[object]]) -> None:
+        nonlocal r
+        for index, name in enumerate(cols, start=1):
+            cruz_sheet.cell(row=r, column=index, value=name)
+        _style_header(cruz_sheet, r, len(cols))
+        r += 1
+        if not linhas:
+            cruz_sheet.cell(row=r, column=1, value="(nenhum)").font = _NOTE_FONT
+            r += 1
+            return
+        for linha in linhas:
+            for index, value in enumerate(linha, start=1):
+                cruz_sheet.cell(row=r, column=index, value=value).font = _BODY_FONT
+            r += 1
+
+    for janela in block["janelas"]:
+        chave, label = janela["chave"], janela["rotulo"]
+        cruzada = block["cruzada"].get(chave)
+        if cruzada is None:
+            continue
+        _titulo(f"Janela: {label}")
+        r += 1
+
+        cruz_sheet.cell(row=r, column=1, value="Maiores captadores em 2+ vitrines").font = _HEADER_FONT
+        r += 1
+        _tabela(
+            ["Fundo", "CNPJ", "Classificacao", "Vitrines", "Captacao liquida (R$)"],
+            [
+                [f["nome"], f["cnpj_display"], f["classificacao"],
+                 ", ".join(_platform_label(p) for p in f["plataformas"]), f["captacao_liquida"]]
+                for f in cruzada["compartilhados_top"]
+            ],
+        )
+        r += 1
+
+        cruz_sheet.cell(row=r, column=1, value="Maiores captadores exclusivos de uma vitrine").font = _HEADER_FONT
+        r += 1
+        _tabela(
+            ["Fundo", "CNPJ", "Classificacao", "Vitrine", "Captacao liquida (R$)"],
+            [
+                [f["nome"], f["cnpj_display"], f["classificacao"],
+                 ", ".join(_platform_label(p) for p in f["plataformas"]), f["captacao_liquida"]]
+                for f in cruzada["exclusivos_top"]
+            ],
+        )
+        r += 1
+
+        cruz_sheet.cell(row=r, column=1, value="Concentracao por classificacao").font = _HEADER_FONT
+        r += 1
+        _tabela(
+            ["Classificacao", "Lider", "Share do fluxo positivo (%)", "Captacao liquida total (R$)"],
+            [
+                [c["classificacao"], c["label"], c["share_pct"], c["captacao_liquida_total"]]
+                for c in cruzada["concentracao_por_classificacao"]
+            ],
+        )
+        r += 1
+
+        cruz_sheet.cell(row=r, column=1, value="Momentum (4 semanas seguidas no mesmo sentido)").font = _HEADER_FONT
+        r += 1
+        momentum_rows = [
+            ["Entrada seguida", e["nome"], e["classificacao"], ", ".join(_platform_label(p) for p in e["plataformas"])]
+            for e in cruzada["momentum_positivo"]
+        ] + [
+            ["Saida seguida", e["nome"], e["classificacao"], ", ".join(_platform_label(p) for p in e["plataformas"])]
+            for e in cruzada["sangria"]
+        ]
+        _tabela(["Sinal", "Fundo", "Classificacao", "Vitrines"], momentum_rows)
+        r += 1
+
+        ausentes = cruzada["ausentes_na_baseline"]
+        if ausentes.get("available"):
+            cruz_sheet.cell(
+                row=r, column=1,
+                value=f"Maiores captadores fora da vitrine da {ausentes['baseline_label']}",
+            ).font = _HEADER_FONT
+            r += 1
+            _tabela(
+                ["Fundo", "CNPJ", "Classificacao", "Vitrines", "Captacao liquida (R$)"],
+                [
+                    [f["nome"], f["cnpj_display"], f["classificacao"],
+                     ", ".join(_platform_label(p) for p in f["plataformas"]), f["captacao_liquida"]]
+                    for f in ausentes["fundos"]
+                ],
+            )
+        else:
+            cruz_sheet.cell(
+                row=r, column=1, value=f"Captadores fora da baseline: {ausentes.get('reason', 'nao disponivel')}."
+            ).font = _NOTE_FONT
+            r += 1
+        r += 2
+
+    # --- Captacao cobertura --------------------------------------------------
+    cov_sheet = workbook.create_sheet("Captacao cobertura")
+    cov_headers = [("Plataforma", 24), ("Vitrine total", 14), ("Com CNPJ", 12), ("Com fluxo no informe", 18)]
+    for index, (name, width) in enumerate(cov_headers, start=1):
+        cov_sheet.cell(row=1, column=index, value=name)
+        cov_sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(cov_sheet, 1, len(cov_headers))
+    row = 1
+    for entry in block["plataformas"]:
+        row += 1
+        values = [entry["label"], entry["vitrine_total"], entry["com_cnpj"], entry["com_fluxo"]]
+        for index, value in enumerate(values, start=1):
+            cov_sheet.cell(row=row, column=index, value=value).font = _BODY_FONT
+    cov_sheet.freeze_panes = "A2"
+
+    note_row = row + 3
+    cobertura = block["cobertura"]
+    cov_sheet.cell(
+        row=note_row, column=1,
+        value=(
+            f"Total: {cobertura['total_com_fluxo']} de {cobertura['total_fundos']} fundos da "
+            "vitrine encontrados no INF_DIARIO da CVM. Meses lidos: "
+            f"{', '.join(cobertura['meses_lidos']) or 'nenhum'}."
+        ),
+    ).font = _NOTE_FONT
+    note_row += 1
+    if cobertura["meses_faltantes"]:
+        cov_sheet.cell(
+            row=note_row, column=1,
+            value=f"Meses sem dado no cache local: {', '.join(cobertura['meses_faltantes'])}.",
+        ).font = _ALERT_FONT
+        note_row += 1
+    if not cobertura["base_mercado"]:
+        cov_sheet.cell(
+            row=note_row, column=1,
+            value="Base de mercado (data/market/mercado.csv) ausente: fundos anunciados pelo "
+            "CNPJ do envelope (RCVM 175) nao foram expandidos as classes e podem sair sem fluxo.",
+        ).font = _ALERT_FONT
+        note_row += 1
+    if block["excluded"]:
+        out = "; ".join(f"{e['label']} ({e['reason']})" for e in block["excluded"])
+        cov_sheet.cell(row=note_row, column=1, value=f"Fora do universo: {out}.").font = _NOTE_FONT
+        note_row += 1
+    cov_sheet.cell(row=note_row, column=1, value=block["nota"]).font = _NOTE_FONT
+
+
 def render_spreadsheet(
     config: Config,
     snapshots: list[ShelfSnapshot],
@@ -945,6 +1205,7 @@ def render_spreadsheet(
     path: Path | None = None,
     diffs: list[ShelfDiff] | None = None,
     enrichment: EnrichmentStats | None = None,
+    captacao: ResultadoCaptacao | None = None,
 ) -> Path:
     """Gera a planilha das prateleiras. Devolve o caminho do arquivo."""
     generated_at = generated_at or datetime.now()
@@ -956,6 +1217,7 @@ def render_spreadsheet(
     # Gaps recebem os snapshots completos: o proprio bloco decide quem entra
     # no universo e lista os excluidos com motivo.
     _add_gaps_sheets(workbook, snapshots, listing_last_row)
+    _add_captacao_sheets(workbook, captacao)
     _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)

@@ -60,6 +60,9 @@ REM --- Run: coleta, diff, digest e dashboard -----------------------------
 REM Para tambem catalogar ETFs (todas as categorias, incl. Renda Fixa) e o
 REM fluxo semanal, adicione --with-etf abaixo (opt-in: baixa dados extra da
 REM CVM). Ou rode em separado: python -m shelf_monitor etf --export
+REM Para tambem calcular a captacao liquida dos fundos das vitrines, adicione
+REM --with-captacao (opt-in: baixa o INF_DIARIO do ano corrente). Ou rode em
+REM separado: python -m shelf_monitor captacao
 python -m shelf_monitor run
 
 echo.
@@ -76,6 +79,9 @@ if errorlevel 1 (
     echo.
     echo   Catalogo de ETFs ^(incl. Renda Fixa^) e fluxo semanal: rode
     echo   python -m shelf_monitor etf --export ^(ou use --with-etf acima^)
+    echo.
+    echo   Captacao liquida dos fundos das vitrines: rode
+    echo   python -m shelf_monitor captacao ^(ou use --with-captacao acima^)
 )
 echo ============================================================
 echo.

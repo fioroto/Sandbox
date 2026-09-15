@@ -62,6 +62,26 @@ CADASTRO_DATASETS = (REGISTRO, CAD_FI)
 ALL_DATASETS = (REGISTRO, CAD_FI, EXTRATO)
 
 
+# Informe diario: uma linha por classe/fundo legado por data-base, com
+# CAPTC_DIA/RESG_DIA/VL_PATRIM_LIQ/VL_QUOTA/NR_COTST. Arquivo mensal, ~30 MB;
+# baixado sob demanda (um Dataset por mes) por market/inf_diario.py, nunca por
+# import_market - series temporais nao entram na base de cadastro.
+INF_DIARIO_URL = f"{CVM_BASE}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{{yyyymm}}.zip"
+
+
+def inf_diario_dataset(yyyymm: str) -> Dataset:
+    """Dataset do informe diario de um mes (`YYYYMM`)."""
+    filename = f"inf_diario_fi_{yyyymm}.zip"
+    return Dataset(
+        key=f"inf_diario_{yyyymm}",
+        url=INF_DIARIO_URL.format(yyyymm=yyyymm),
+        filename=filename,
+        description=f"Informe diario CVM {yyyymm}",
+        members={"inf_diario": f"inf_diario_fi_{yyyymm}.csv"},
+        approx_mb=30,
+    )
+
+
 # --- colunas conhecidas -------------------------------------------------------
 # Lidas por NOME, nunca por posicao: a CVM adiciona e renomeia colunas em
 # producao (cinco novas em 2025). Colunas do arquivo que nao estao aqui sao
@@ -98,8 +118,9 @@ REGISTRO_SUBCLASSE_COLUMNS = (
 
 
 # --- fora do escopo atual -----------------------------------------------------
-# Mapeados na pesquisa e prontos para quando a base precisar de series:
-#   informe diario  /FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{YYYYMM}.zip  (~11 MB/mes)
+# O informe diario tem Dataset proprio acima (`inf_diario_dataset`), consumido
+# por market/inf_diario.py - fora do cadastro por ser serie temporal, nao por
+# estar fora de escopo. O que segue continua mapeado e nao baixado:
 #   carteira (CDA)  /FI/DOC/CDA/DADOS/cda_fi_{YYYYMM}.zip                (~22 MB/mes)
 #   lamina          /FI/DOC/LAMINA/DADOS/lamina_fi_{YYYYMM}.zip          (~10 MB/mes)
 #   perfil mensal   /FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{YYYYMM}.csv
