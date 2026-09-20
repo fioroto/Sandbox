@@ -4,6 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # enrich importa models - a volta so vale para o type checker
+    from shelf_monitor.enrich import EnrichmentStats
 
 
 class CollectorStrategy(str, Enum):
@@ -482,6 +486,16 @@ class RunReport:
     # Cobertura do join com a base oficial (enrich.EnrichmentStats.to_dict());
     # None quando a base de mercado nao esta importada.
     enrichment: dict | None = None
+    # O mesmo dado como objeto. Existe ao lado do dict porque as duas formas tem
+    # consumidores diferentes: dashboard e aggregate serializam o dict para JSON,
+    # e a planilha le campos do objeto. Derivar um do outro no renderer seria
+    # reconstruir o que build_report ja tem na mao.
+    enrichment_stats: EnrichmentStats | None = None
+    # Captacao dos fundos de vitrine (report.retail_flow.build_retail_flow) e as
+    # oportunidades de grade que ela abre. None quando o informe diario da CVM
+    # nao estava disponivel - as superficies omitem o bloco em vez de inventar.
+    retail_flow: dict | None = None
+    grade_opportunities: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

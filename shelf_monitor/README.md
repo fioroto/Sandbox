@@ -301,6 +301,161 @@ Informe diario, composicao de carteira (CDA), lamina e balancete estao mapeados 
 `market/datasets.py` mas nao sao baixados: sao series temporais de dezenas de GB, e o uso hoje
 pede so cadastro e taxas.
 
+## Monitoramento de ETFs (`etf`)
+
+```bash
+python -m shelf_monitor etf                 # catalogo + PL mensal dos ETFs + fluxo semanal
+python -m shelf_monitor etf --export        # idem, gravando planilha .xlsx e CSV
+python -m shelf_monitor run --with-etf      # roda junto da coleta normal (opt-in - baixa ~33MB/mes extra)
+```
+
+O PL mensal (balancete de FIE) sai em toda execucao do `etf`: sao ~0,1 MB por competencia, ordens de
+grandeza abaixo do INF_DIARIO, e e a unica fonte medida que alcanca o ETF em si - nao so os feeders.
+
+**ETF e o tipo estrutural FIIM, nao uma palavra no nome.** Na CVM, ETF e Fundo de
+Investimento em Indice de Mercado (FIIM) - um tipo proprio de `Tipo_Fundo` (cadastro legado) ou
+`Tipo_Classe` (RCVM 175, `"Classes de Cotas de Fundos FIIM"`). Catalogar por palavra-chave no nome
+("ETF", "Fundo de Indice") erra nos dois sentidos: perde ETFs de nome abreviado ("BTGP B3
+IBOVESPA F DE INDICE") e confunde com *feeders* - FIFs comuns que so replicam um ETF ("BTG
+PACTUAL REFERENCE ETF FIA" e um FIF, nao um ETF). Por isso `market/etf.py` decide pelo tipo
+primeiro e usa palavra-chave so como sinal secundario (obrigatorio no cadastro legado, que nao
+tem `Tipo_Classe`; e o que marca um feeder). Todo registro sai com um `kind` explicito -
+`"etf"` ou `"feeder"` - e os dois nunca somam juntos: seria contar o mesmo dinheiro duas vezes.
+
+**Categoria vem do benchmark, nao do nome comercial.** `Indicador_Desempenho` (o que o ETF
+replica - IBOVESPA, IMA-B, S&P 500...) e testado antes do nome e da classificacao CVM/ANBIMA -
+e o dado mais confiavel para separar Renda Fixa (IMA-B, IRF-M, LFT, CDI...) de Acoes Brasil
+(IBOVESPA, SMLL, IDIV...), Internacional (S&P 500, NASDAQ, MSCI...), Cripto e Multimercado.
+
+**Cobertura de fluxo e parcial - e o console diz o quanto.** O INF_DIARIO da CVM (`inf_diario_fi`)
+e o informe de FI/FIF; fundos de indice (FIIM) tem arquivos proprios (`cda_fiim` na carteira,
+balancete em "Fundos Estruturados"), fora do escopo desta versao. Na pratica isso significa que a
+captacao diaria de um ETF de verdade normalmente nao aparece no INF_DIARIO - so a dos *feeders*
+aparece, por serem FI/FIF normais. Por isso o comando sempre mostra primeiro o **catalogo completo**
+(todo ETF cadastrado, por categoria - a resposta a "o monitor enxerga todos os ETFs do mercado,
+incluindo os de Renda Fixa?") e so depois o fluxo semanal, com uma linha de cobertura explicita
+("N de M ETFs com fluxo no INF_DIARIO") em vez de deixar a lacuna passar em silencio.
+
+**O PL do ETF em si vem do balancete de FIE** (`market/fie_balancete.py`), medido em 2026-09-19:
+219 dos 249 ETFs do catalogo (88%), R$ 130,5 bi somados, contra **0 de 249** no INF_DIARIO. Os ETFs
+nao tem diretorio proprio nos dados abertos - nao existe `/dados/FIIM/` nem `cda_fiim_*`: eles vivem
+sob FIE (Estruturados), em `/FIE/DOC/BALANCETE/DADOS/balancete_fie_{AAAAMM}.zip` (~0,1 MB por
+competencia) e tambem no membro `cda_fie_{AAAAMM}.csv` de `/FI/DOC/CDA/DADOS/cda_fi_{AAAAMM}.zip`
+(204/249). O balancete e a escolha: cobre mais, pesa 150x menos e traz o PL direto. As contas do
+plano COFI foram identificadas por medicao e a identidade `60000002 = 61100004 + 61800005`
+(PL = capital de cotas + resultado acumulado) fecha com desvio zero nos 219 - e virou guarda no
+codigo: se a CVM renumerar o plano, o registro sai marcado como suspeito em vez de publicar um PL
+que e outra coisa.
+
+O balancete **nao** separa captacao de valorizacao, e o modulo diz por que: entre 07 e 08/2026 o
+resultado acumulado ficou identico nos 213 ETFs presentes nos dois meses, ou seja a conta de cotas
+absorve marcacao a mercado junto com integralizacao. Por isso a coluna dele se chama variacao de PL,
+nao captacao. **Quem separa e o informe diario do Fundos.NET** - ver abaixo.
+
+### Cota, cotistas e a separacao entre captacao e valorizacao (`--flow-source fnet`)
+
+O informe diario de ETF no Fundos.NET traz, por fundo e por dia: `PATRIM_LIQ`, `VL_QUOTA`,
+`CAPTC_DIA`, `RESG_DIA` e `NR_COTST`. Medido em 2026-09-19: **853 informes, 223 dos 249 ETFs (90%)**
+- contra 0 no INF_DIARIO. Captacao e resgate vem **publicados**, nao derivados, entao a conta fecha:
+
+    variacao_pl = captacao_liquida + valorizacao
+
+A relacao foi verificada dia a dia no informe (`PL(D) = PL(D-1) + captacao(D) - resgates(D) +
+valorizacao(D)`), e e dela que vem uma correcao importante no agregador: a captacao do dia usado como
+PL inicial **ja esta dentro desse PL**. Somar aquele dia contava o mesmo dinheiro duas vezes - num
+ETF de Selic isso dava captacao de R$ 705 MM contra variacao de PL de R$ 405 MM e valorizacao por
+diferenca de -R$ 300 MM (queda de 19% num fundo de Selic, que nao acontece). Com a janela do fluxo
+alinhada a do PL, a valorizacao fica R$ 1,9 MM contra R$ 1,87 MM que a cota implica.
+
+Duas guardas nascem da mesma logica, porque a identidade fecha por construcao e por isso nao prova
+nada sozinha:
+
+| Guarda | O que pega | Como |
+|---|---|---|
+| `decomposicao_suspeita` | semana com dia faltando na coleta | a cota da uma leitura da valorizacao independente do fluxo; divergencia acima de 2% do PL inicial marca o registro |
+| `cotistas_suspeito` | erro de preenchimento na origem | queda de mais de metade dos cotistas com o PL praticamente parado. Caso real: em 2026-09-15 varios fundos de uma mesma casa declararam ~850 cotistas contra ~50 mil do dia anterior, com o PL intacto - somados, faziam o saldo semanal dar -245 mil cotistas. Registros marcados ficam fora do ranking e do saldo |
+
+O `etf` imprime, alem da captacao: **Ranking de Valorizacao** (retorno da cota lado a lado com a
+valorizacao em reais, captacao liquida e variacao de PL) e **Evolucao de Cotistas** (inicio, fim,
+variacao e saldo da semana). As colunas `Variacao PL`, `Valorizacao`, `Decomposicao Suspeita` e
+`Cotistas Suspeito` vao para o CSV e para a aba "Detalhamento Completo".
+
+**Ressalva que sai junto do numero:** o retorno e da cota patrimonial, ex-provento. O informe diario
+nao publica provento pago, entao um ETF que distribui aparece abaixo do retorno total do investidor -
+reincorporar exigiria uma segunda fonte de proventos, que nao esta implementada.
+
+O acesso ao Fundos.NET tambem estava barrado por uma exigencia que o servidor nao faz: o codigo
+procurava um `csrf_token` numa atribuicao literal de script. O token real vive numa
+`<meta name="_csrf">` que a pagina **publica nao emite** - o proprio JS do site le com fallback vazio
+-, e os XHR respondem HTTP 200 sem o header. Medido em 2026-09-19.
+
+**Rentabilidade implausivel e descartada, nao publicada.** O informe mensal e "atualizado
+diariamente com retificacoes" (a propria CVM documenta isso), entao o mesmo CNPJ pode aparecer
+duas vezes na mesma data dentro do arquivo do mes - sem tratar isso, duas versoes do mesmo dia
+eram lidas como dois pregoes e a cota comparava valores incompativeis. `etf_flow.py` agora
+deduplica por (CNPJ, data) e, mesmo assim, descarta (marca `data_suspeita`) qualquer retorno
+semanal acima de um teto plausivel por categoria (heuristica, nao fato de mercado) em vez de
+publicar um numero que nao e real.
+
+A planilha (`etf --export`) traz o catalogo completo numa aba propria ("Catalogo FIIM", com
+Renda Fixa incluida) e a coluna "Tipo" (ETF/Feeder) nas demais abas de fluxo.
+
+**Ticker de negociacao.** O cadastro da CVM nao traz o codigo de negociacao em bolsa (BOVA11,
+IVVB11...), e a maioria dos ETFs tambem nao o escreve no proprio nome cadastral - so `extract_ticker`
+consegue algo como "IT NOW IVVB11 FI EM COTAS DE ETF". `data/etf/tickers.csv` (`cnpj;ticker;...;fonte`)
+e o join CNPJ -> ticker: a coleta da B3 (abaixo) o preenche com `fonte=b3`, e linhas escritas a mao
+(qualquer outra `fonte`) nunca sao sobrescritas por uma coleta. Ele vem vazio de proposito - uma
+lista de CNPJ/ticker escrita de memoria, sem fonte para validar, contaminaria tudo rio abaixo.
+
+### As fontes que cobrem ETF de verdade (`etf --probe-sources`)
+
+O INF_DIARIO nao e o fim da linha. Tres fontes publicas, sem autenticacao, cobrem o que ele nao
+cobre - cada uma um pedaco:
+
+| Fonte | O que da | Frequencia | Modulo |
+|---|---|---|---|
+| **Fundos.NET** (`fnet.bmfbovespa.com.br`) | o **informe diario do ETF**: PL, cota, cotas emitidas, cotistas - e o canal pelo qual fundos de indice entregam documentos a CVM, com tipos de fundo `ETF` (3) e `ETF RF` (4) | diaria | `market/fundosnet.py` |
+| **B3 fundos listados** (`sistemaswebb3-listados.b3.com.br`) | ticker, CNPJ, classificacao, cotas aprovadas de cada ETF listado - e o que preenche `tickers.csv` | cadastro | `market/b3_funds.py` |
+| **COTAHIST** (`bvmf.bmfbovespa.com.br/InstDados/SerHist/`) | preco, volume financeiro, negocios e quantidade por pregao - liquidez, nao patrimonio | diaria | `market/cotahist.py` |
+
+O **balancete mensal de FIE** saiu do escopo futuro e esta implementado (ver acima). Seguem fora,
+mapeadas: a **carteira mensal** (membro `cda_fie_AAAAMM.csv`, o que cada ETF carrega - o PL ja vem
+do balancete, entao isto interessa para composicao, nao para tamanho), o **Boletim de Fundos da
+ANBIMA** (captacao liquida de ETF por tipo, mensal, planilha) e a API de ETFs da ANBIMA Developers
+(comercial). Sites de terceiros (StatusInvest
+e afins) ficam de fora: nao sao fonte oficial e o uso automatizado depende dos termos deles.
+
+**Evidencia, nao suposicao.** Os endpoints, parametros e formatos de resposta da B3 e do Fundos.NET
+vem do codigo aberto da biblioteca [`mercados`](https://github.com/PythonicCafe/mercados) (Pythonic
+Cafe), que usa exatamente esses caminhos para FII, FIP, FI-Infra e FI-Agro; o layout do COTAHIST
+tambem. Duas coisas **nao** tem evidencia e a sondagem existe para fecha-las: o `typeFund` dos ETFs na
+B3 (descoberto varrendo candidatos e reconhecendo o tipo pelo CNPJ contra o catalogo FIIM) e o
+esquema do XML do informe diario de ETF (o parser e tolerante: reconhece os nomes do padrao XML de
+informe diario da CVM - `VL_PATRIM_LIQ`, `VL_QUOTA`, `CAPTC_DIA`, `RESG_DIA`, `NR_COTST` - e
+variantes, e devolve o resto em `unknown_tags`, como o importador de mercado faz com colunas novas).
+Nada disso pode ser exercitado contra a fonte real no ambiente em que foi escrito (rede bloqueada).
+
+```bash
+python -m shelf_monitor etf --probe-sources                 # 1. sonda as tres fontes, grava a evidencia
+python -m shelf_monitor etf --collect-sources b3,fnet,cotahist   # 2. foto do dia (tickers, informes, cotacoes)
+python -m shelf_monitor etf --flow-source fnet --export     # 3. fluxo semanal a partir dos informes
+```
+
+A sondagem grava tudo em `data/cache/debug/etf-sources/` (`diagnostico-etf.json` consolida) e
+responde, linha a linha: o INF_DIARIO em cache tem alguma linha de FIIM (fase 0 do diagnostico); o
+Fundos.NET lista `ETF`/`ETF RF` e qual e o id do "Informe Diario" para eles; quantos informes sairam
+nos ultimos dias e, dos XML baixados, **quais campos o parser reconheceu e quais tags ficaram sem
+mapa**; quais `typeFund` da B3 devolvem ETF; e quantas cotas de fundo o COTAHIST do ultimo pregao
+traz. Se a linha `fundosnet/xml` vier com `unknown_tags` e sem `pl`/`cota`, o mapa de tags em
+`market/fundosnet.py` (`_TAG_MAP`) e o unico lugar a mexer - com o XML salvo ao lado.
+
+A coleta grava fotos versionaveis e pequenas: `data/etf/b3/<data>.json`, `data/etf/fnet/<data>.csv`
+(um informe por ETF por data-base; o XML bruto fica no cache) e `data/etf/cotahist/<data>.csv` (so
+os tickers conhecidos). Com `--flow-source fnet`, o fluxo semanal passa a vir desses informes - com
+captacao e resgate publicados quando o informe os traz, ou derivados de `(cotas hoje - cotas ontem)
+x cota` quando so ha cotas emitidas (a coluna `flow_source` do registro diz qual foi a via) - e o
+resto do pipeline (semanas, categorias, planilha, guarda de sanidade) e o mesmo.
+
 ## Area logada
 
 A v1 usa apenas fontes publicas. A arquitetura preve coletores autenticados sem
@@ -500,4 +655,6 @@ python -m unittest discover -s tests -v
 
 Os testes rodam contra fixtures (`tests/fixtures/`) que reproduzem o formato real das
 fontes, entao passam mesmo sem acesso de rede. Para regerar as fixtures:
-`python tests/fixtures/make_fixtures.py`.
+`python tests/fixtures/make_fixtures.py` (prateleiras), `python tests/fixtures/make_market_fixtures.py`
+(base de mercado) e `python tests/fixtures/etf/make_etf_fixtures.py` (catalogo de ETF - fixture
+propria, separada da de mercado para nao acoplar aos asserts de contagem de `test_market.py`).

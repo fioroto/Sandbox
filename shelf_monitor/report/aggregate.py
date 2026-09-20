@@ -660,6 +660,47 @@ def build_restricted_block(report: RunReport) -> dict:
     return {"total": total, "platforms": platforms}
 
 
+# Quantos fundos de cada recorte de captacao vao para o HTML. O dashboard e
+# navegacao visual; a lista inteira mora na planilha.
+_FLOW_EMBEDDED = 8
+
+
+def _flow_payload(report: RunReport) -> dict:
+    """Recorte de captacao que o dashboard desenha."""
+    flow = report.retail_flow
+    if not flow:
+        return {"available": False}
+
+    grade = report.grade_opportunities or {}
+    return {
+        "available": True,
+        "periodo": flow["periodo"],
+        "competencias": flow.get("competencias") or [],
+        "casas": flow["casas"],
+        "serie_por_casa": flow.get("serie_por_casa") or {},
+        "tendencias": flow.get("tendencias") or {},
+        "tendencia_labels": flow.get("tendencia_labels") or {},
+        "total_estruturais": flow.get("total_estruturais", 0),
+        "top_captacao": (flow.get("top_captacao") or [])[:_FLOW_EMBEDDED],
+        "top_resgate": (flow.get("top_resgate") or [])[:_FLOW_EMBEDDED],
+        "acelerando": (flow.get("acelerando") or [])[:_FLOW_EMBEDDED],
+        "virou_saida": (flow.get("virou_saida") or [])[:_FLOW_EMBEDDED],
+        "excluded": flow.get("excluded") or [],
+        "grade": {
+            "available": bool(grade.get("available")),
+            "total": grade.get("total", 0),
+            "total_transferiveis": grade.get("total_transferiveis", 0),
+            "total_produto_do_concorrente": grade.get("total_produto_do_concorrente", 0),
+            "total_operacionais": grade.get("total_operacionais", 0),
+            "total_comerciais": grade.get("total_comerciais", 0),
+            "captacao_transferivel": grade.get("captacao_transferivel", 0.0),
+            "cotistas_transferivel": grade.get("cotistas_transferivel", 0),
+            "mais_varejo": (grade.get("mais_varejo") or [])[:_FLOW_EMBEDDED],
+            "na_vitrine_perdendo": (grade.get("na_vitrine_perdendo") or [])[:_FLOW_EMBEDDED],
+        },
+    }
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -738,6 +779,9 @@ def build_dashboard_data(report: RunReport) -> dict:
             "funds_truncated": max(0, len(gap_funds) - _GAP_FUNDS_EMBEDDED),
         },
         "restricted": build_restricted_block(report),
+        # Captacao entra ja calculada pelo build_report: o dashboard nao le o
+        # informe diario da CVM por conta propria - o payload e uma foto.
+        "flow": _flow_payload(report),
         "enrichment": report.enrichment,
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],

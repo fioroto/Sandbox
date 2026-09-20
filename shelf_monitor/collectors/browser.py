@@ -1,8 +1,9 @@
-"""Coleta de prateleiras que sao SPA, via Playwright headless.
+"""Coleta de prateleiras que sao SPA, via Playwright.
 
 XP, BTG e Itau renderizam a listagem no cliente: o HTML servido nao contem os
 fundos, e duas delas devolvem 403 a um cliente HTTP simples. So um navegador de
-verdade alcanca essas listas.
+verdade alcanca essas listas - e, nas duas com Akamai, tem de ser o Chromium
+completo, nao o headless shell do Playwright (ver _NEW_HEADLESS_ARGS).
 
 A captura tem tres vias, aplicadas em conjunto e nao em cascata:
 
@@ -48,6 +49,23 @@ except Exception as _exc:  # noqa: BLE001
 
 _NAV_TIMEOUT_MS = 60_000
 _IDLE_TIMEOUT_MS = 20_000
+
+# Com `headless=True` o Playwright nao abre o Chromium: abre o "headless shell",
+# um binario reduzido que nao tem as features de um navegador completo e se
+# anuncia como HeadlessChrome na User-Agent. O Akamai da XP e do Itau barra as
+# duas coisas, e por isso as duas listas vinham 403. Medido em 2026-09-19 contra
+# ambas, isolando uma variavel por vez:
+#
+#   shell            + User-Agent limpa  -> 403  (o binario se entrega)
+#   --headless=new   + UA do proprio bin -> 403  (o token HeadlessChrome)
+#   --headless=new   + User-Agent limpa  -> 200  nas duas casas
+#
+# Ou seja: e preciso o Chromium completo *e* uma User-Agent sem o token - o que a
+# funcao ja fazia ao repassar config.user_agent. Dai nao existir `headless=True`
+# aqui: o navegador e sempre o binario completo, e `--headless=new` so tira a
+# janela. Plataforma e versao da UA nao pesaram (Linux/126 contra binario 148
+# passou igual), entao nao ha nada a sincronizar com o binario.
+_NEW_HEADLESS_ARGS = ("--headless=new",)
 # Teto para a espera por conteudo. A espera real termina assim que a lista
 # aparece - o relogio so existe para o caso em que ela nunca aparece.
 _CONTENT_TIMEOUT_MS = 25_000
@@ -640,8 +658,10 @@ def render_page(
     quando o texto para de crescer.
 
     `headed`/`channel` abrem um navegador com janela (ex.: o Chrome instalado do
-    usuario, channel="chrome") - a via legitima para paginas que barram o
-    Chromium headless. `on_page(page)` roda apos a rolagem, com a pagina viva:
+    usuario, channel="chrome"). Nao e mais o que destrava XP e Itau - o Chromium
+    completo em `--headless=new` basta -, e fica como recurso para a pagina que
+    exigir interacao visivel ou uma sessao logada do proprio navegador.
+    `on_page(page)` roda apos a rolagem, com a pagina viva:
     serve para paginar uma API interna com os cookies da sessao; o que devolver
     (lista de (url, payload)) entra em capture.payloads.
     """
@@ -705,7 +725,10 @@ def render_page(
 
     try:
         with sync_playwright() as playwright:
-            launch_args: dict[str, Any] = {"headless": not headed}
+            # Nunca headless=True: ver _NEW_HEADLESS_ARGS.
+            launch_args: dict[str, Any] = {"headless": False}
+            if not headed:
+                launch_args["args"] = list(_NEW_HEADLESS_ARGS)
             if channel:
                 # channel usa o navegador instalado na maquina (ex.: chrome);
                 # nesse caso o executable_path do Chromium empacotado nao vale.

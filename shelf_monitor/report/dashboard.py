@@ -20,6 +20,9 @@ _SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
 _SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
 
 _STYLE = """
+.flow-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.65; }
+.flow-list .dim { color: var(--muted); }
+
 :root {
   color-scheme: light;
   --surface-1: #fcfcfb;
@@ -699,6 +702,93 @@ function renderGaps(gaps) {
 }
 renderGaps(DATA.gaps);
 
+// --- captacao ---------------------------------------------------------------
+(function renderFlow(flow) {
+  const section = document.getElementById("flow-section");
+  if (!flow || !flow.available) { section.remove(); return; }
+
+  const mm = v => {
+    const n = v / 1e6;
+    const s = n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return (n > 0 ? "+" : "") + s + " MM";
+  };
+  const int = v => (v > 0 ? "+" : "") + v.toLocaleString("pt-BR");
+
+  document.getElementById("flow-tiles").innerHTML = flow.casas.map(c => `
+    <div class="tile">
+      <div class="label">${c.label}</div>
+      <div class="value" style="color:${c.captacao_liquida > 0 ? "var(--good)" : "var(--critical)"}">
+        ${mm(c.captacao_liquida)}</div>
+      <div class="note">${c.com_informe} de ${c.vitrine} fundos com informe
+        &middot; so ela exibe: ${c.exclusivos}, ${mm(c.captacao_exclusivos)}</div>
+    </div>`).join("");
+
+  // Serie por casa: uma linha por casa, uma coluna por competencia.
+  const comps = flow.competencias || [];
+  if (comps.length) {
+    const head = '<tr><th class="rowh">Casa</th>' +
+      comps.map(c => `<th>${c.slice(4)}/${c.slice(0, 4)}</th>`).join("") + "</tr>";
+    const body = Object.entries(flow.serie_por_casa).map(([pid, serie]) => {
+      const byComp = Object.fromEntries(serie.map(m => [m.competencia, m]));
+      const casa = (flow.casas.find(c => c.platform_id === pid) || {}).label || pid;
+      const cells = comps.map(c => {
+        const m = byComp[c];
+        if (!m) return '<td><span class="cell zero">-</span></td>';
+        const cor = m.media_diaria > 0 ? "var(--good)" : "var(--critical)";
+        return `<td title="${m.dias} pregoes observados"><span class="cell" style="color:${cor}">${mm(m.media_diaria)}/dia</span></td>`;
+      }).join("");
+      return `<tr><th class="rowh">${casa}</th>${cells}</tr>`;
+    }).join("");
+    document.getElementById("flow-trend").innerHTML =
+      `<table class="matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  const lista = (titulo, fundos, sinal) => {
+    if (!fundos || !fundos.length) return "";
+    const itens = fundos.map(f => `
+      <li><strong style="color:${sinal}">${mm(f.captacao_liquida)}</strong>
+        ${f.nome} <span class="dim">${int(f.variacao_cotistas)} cotistas &middot;
+        ${f.vitrines.join(", ")}</span></li>`).join("");
+    return `<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">${titulo}</h4>
+      <ul class="flow-list">${itens}</ul>`;
+  };
+
+  const tend = Object.entries(flow.tendencias || {}).map(([k, n]) => {
+    const rotulo = (flow.tendencia_labels || {})[k];
+    return `<li><strong>${n}</strong> ${k.replace(/_/g, " ")}${rotulo ? ` <span class="dim">- ${rotulo}</span>` : ""}</li>`;
+  }).join("");
+
+  const g = flow.grade || {};
+  const grade = g.available ? `
+    <h4 style="font-size:12.5px;font-weight:600;margin:16px 0 4px">Oportunidade de grade</h4>
+    <p class="card-sub">${g.total} fundos captam varejo fora da vitrine da XP, mas
+      ${g.total_produto_do_concorrente} sao produto proprio da casa que os exibe e nao se
+      transferem. Restam <strong>${g.total_transferiveis} fundos, ${mm(g.captacao_transferivel)}</strong>
+      e ${int(g.cotistas_transferivel)} cotistas - ${g.total_operacionais} de gestora que a XP
+      ja distribui, ${g.total_comerciais} exigem abrir gestora.</p>
+    ${lista("Mais varejo: quem trouxe mais cotistas", g.mais_varejo, "var(--good)")}
+    ${lista("Na vitrine da XP e perdendo varejo", g.na_vitrine_perdendo, "var(--critical)")}` : "";
+
+  document.getElementById("flow-lists").innerHTML =
+    `<ul class="flow-list">${tend}</ul>` +
+    lista("Maiores captadores de varejo", flow.top_captacao, "var(--good)") +
+    lista("Maiores perdas de varejo", flow.top_resgate, "var(--critical)") +
+    lista("Acelerando", flow.acelerando, "var(--good)") +
+    lista("Viraram saida", flow.virou_saida, "var(--critical)") +
+    grade;
+
+  const fora = (flow.excluded || []).map(e => `${e.label} (${e.reason})`);
+  const estrut = flow.total_estruturais
+    ? `${flow.total_estruturais} fundos com movimento estrutural (fluxo maior que o proprio
+       patrimonio, ou fundo esvaziado) ficam fora de todas as somas: e dinheiro trocando de
+       veiculo, nao demanda. `
+    : "";
+  document.getElementById("flow-coverage").textContent =
+    `Periodo ${flow.periodo.de} a ${flow.periodo.ate}. ${estrut}` +
+    (fora.length ? `Fora da analise: ${fora.join("; ")}.` : "");
+})(DATA.flow);
+
+
 (function renderRestricted(block) {
   const mount = document.getElementById("table-restricted");
   const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
@@ -954,6 +1044,26 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
     <details><summary>Ver os fundos de gap</summary><div id="table-gaps"></div></details>
     <div class="coverage" id="gaps-coverage"></div>
+  </section>
+
+  <section class="card" id="flow-section">
+    <h2>Captacao dos fundos de vitrine</h2>
+    <p class="card-sub">Fluxo do informe diario da CVM para os fundos que cada casa exibe.
+      A CVM publica captacao por <strong>fundo</strong>, nunca por distribuidor: um fundo em
+      tres vitrines entra inteiro nas tres somas. A coluna &quot;so ela exibe&quot; e onde a
+      atribuicao a uma casa e inequivoca.</p>
+    <div class="tiles" id="flow-tiles"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Tendencia</h3>
+    <p class="card-sub">Media diaria de captacao liquida por competencia. A media diaria
+      existe porque o mes corrente fecha com menos pregoes que os meses cheios - comparar
+      totais brutos marcaria toda casa como desacelerando, por efeito de calendario.</p>
+    <div class="matrix-scroll" id="flow-trend"></div>
+
+    <details><summary>Fundos por tendencia, e quais sao</summary>
+      <div id="flow-lists"></div>
+    </details>
+    <div class="coverage" id="flow-coverage"></div>
   </section>
 
   <section class="card">

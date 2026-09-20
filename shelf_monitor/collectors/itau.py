@@ -3,8 +3,9 @@
 A lista publica e a de rentabilidade (`/investimentos/fundos/rentabilidade`).
 A evidencia de 2026-08-31 (navegador com janela, na maquina do usuario) mostrou:
 
-- cliente HTTP simples e Chromium headless levam 403 da Akamai no documento;
-  com o Chrome real do usuario (SHELF_BROWSER_HEADED=1) a pagina abre;
+- cliente HTTP simples leva 403 da Akamai no documento, e o headless shell do
+  Playwright tambem; o Chromium completo em --headless=new abre a pagina sem
+  janela nenhuma (medido em 2026-09-19 - ver browser._NEW_HEADLESS_ARGS);
 - a tabela e paginada em ~10 fundos por pagina (45 paginas na medicao, ~450
   fundos), com botao `data-testid="page__arrow-next"`;
 - as colunas: nome, risco, aplicacao inicial, retornos (12m/ano/mes), taxa

@@ -82,11 +82,11 @@ PLATFORMS: dict[str, PlatformConfig] = {
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
-            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, ~450 "
-            "fundos em 2026-08-31). Akamai barra HTTP simples e Chromium "
-            "headless; abre com o Chrome real (SHELF_BROWSER_HEADED=1 + "
-            "SHELF_BROWSER_CHANNEL=chrome). A tabela nao traz CNPJ - o merge "
-            "reconcilia com o Open Finance pelo slug do nome."
+            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, 459 "
+            "fundos em 2026-09-19). Akamai barra HTTP simples e o headless shell "
+            "do Playwright, mas nao o Chromium completo em --headless=new - que e "
+            "o que o coletor usa desde 2026-09-19, sem exigir janela. A tabela "
+            "nao traz CNPJ - o merge reconcilia com o Open Finance pelo slug."
         ),
     ),
     "nu": PlatformConfig(
@@ -209,9 +209,10 @@ class Config:
         # na mao quando uma listagem muda de layout.
         self.browser_debug = _env_flag("SHELF_BROWSER_DEBUG")
         # Navegador com janela, usando o Chrome instalado do usuario
-        # (SHELF_BROWSER_CHANNEL=chrome). E a via legitima para paginas que
-        # barram o Chromium headless: e o navegador real da pessoa abrindo uma
-        # pagina publica - a CDN decide o que faz com isso.
+        # (SHELF_BROWSER_CHANNEL=chrome). Nao e necessario para XP e Itau: o que
+        # aquelas CDNs barram e o headless shell, nao o Chromium completo sem
+        # janela. Fica como recurso para pagina que exija interacao visivel ou a
+        # sessao logada do proprio navegador.
         self.browser_headed = _env_flag("SHELF_BROWSER_HEADED")
         self.browser_channel = os.getenv("SHELF_BROWSER_CHANNEL", "").strip() or None
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "")
@@ -260,6 +261,39 @@ class Config:
     def reports_dir(self) -> Path:
         return self.data_dir / "reports"
 
+    @property
+    def etf_dir(self) -> Path:
+        """Metadados de ETF mantidos a mao ou por uma coleta futura - pequeno,
+        versionado (ao contrario de market/, que e so tabela derivada). Hoje so
+        `tickers.csv` (override do codigo de negociacao por CNPJ, que o cadastro
+        da CVM nao traz).
+        """
+        return self.data_dir / "etf"
+
+    @property
+    def etf_tickers_path(self) -> Path:
+        return self.etf_dir / "tickers.csv"
+
+    @property
+    def etf_fnet_dir(self) -> Path:
+        """Informes diarios de ETF extraidos do Fundos.NET - um CSV por dia, versionado."""
+        return self.etf_dir / "fnet"
+
+    @property
+    def etf_b3_dir(self) -> Path:
+        """Cadastro de ETFs listados na B3 - um JSON por dia, versionado."""
+        return self.etf_dir / "b3"
+
+    @property
+    def etf_cotahist_dir(self) -> Path:
+        """Cotacoes diarias dos ETFs (COTAHIST filtrado) - um CSV por dia, versionado."""
+        return self.etf_dir / "cotahist"
+
+    @property
+    def etf_sources_debug_dir(self) -> Path:
+        """Evidencia bruta da sondagem das fontes de ETF - gitignored."""
+        return self.debug_dir / "etf-sources"
+
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
 
@@ -267,6 +301,7 @@ class Config:
         for path in (
             self.snapshots_dir,
             self.cvm_raw_dir,
+            self.etf_dir,
             self.cvm_extract_dir,
             self.cache_dir,
             self.reports_dir,

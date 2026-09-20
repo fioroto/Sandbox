@@ -1,0 +1,984 @@
+{
+  "gerado_em": "2026-09-19",
+  "posicionamento": {
+    "available": true,
+    "participantes": [
+      "xp",
+      "btg",
+      "itau",
+      "inter"
+    ],
+    "excluded": [
+      {
+        "platform_id": "nu",
+        "label": "Nu (Nubank)",
+        "reason": "sem vitrine coletada (estrategia: open-finance); o catalogo Open Finance nao e vitrine"
+      }
+    ],
+    "sem_identidade": [
+      {
+        "platform_id": "itau",
+        "label": "Itau (Ion)",
+        "reason": "CNPJ em apenas 6% da vitrine - nao da para cruzar os fundos dela com as outras casas"
+      }
+    ],
+    "positions": [
+      {
+        "platform_id": "xp",
+        "label": "XP Investimentos",
+        "vitrine": 664,
+        "categories": 6,
+        "over_index": [
+          {
+            "category": "Cambial",
+            "funds": 6,
+            "share": 0.0097,
+            "peer_share": 0.0059,
+            "index": 1.64
+          },
+          {
+            "category": "Renda Fixa",
+            "funds": 241,
+            "share": 0.3893,
+            "peer_share": 0.2873,
+            "index": 1.36
+          }
+        ],
+        "under_index": [
+          {
+            "category": "Internacional",
+            "funds": 5,
+            "share": 0.0081,
+            "peer_share": 0.0493,
+            "index": 0.16
+          }
+        ],
+        "fine_over": [
+          {
+            "category": "Renda Fixa Simples",
+            "funds": 6,
+            "share": 0.0105,
+            "peer_share": 0.003,
+            "index": 3.5
+          },
+          {
+            "category": "Renda Fixa Duração Média Grau de Invest.",
+            "funds": 9,
+            "share": 0.0158,
+            "peer_share": 0.007,
+            "index": 2.25
+          },
+          {
+            "category": "Renda Fixa Duração Alta Crédito Livre",
+            "funds": 6,
+            "share": 0.0105,
+            "peer_share": 0.005,
+            "index": 2.1
+          },
+          {
+            "category": "Multimercados Dinâmico",
+            "funds": 11,
+            "share": 0.0193,
+            "peer_share": 0.013,
+            "index": 1.48
+          }
+        ],
+        "fine_under": [
+          {
+            "category": "Direitos Creditórios",
+            "funds": 0,
+            "share": 0.0,
+            "peer_share": 0.024,
+            "index": 0.0
+          },
+          {
+            "category": "Ações Dividendos",
+            "funds": 5,
+            "share": 0.0088,
+            "peer_share": 0.014,
+            "index": 0.62
+          }
+        ],
+        "anbima_cov": 0.86,
+        "median_min": 50000.0,
+        "retail_ticket_share": 0.0,
+        "median_admin_fee": 0.0124,
+        "own_product_share": 0.16927899686520376,
+        "distinct_managers": 169,
+        "top3_manager_share": 0.15673981191222572,
+        "exclusive": 340,
+        "exclusive_share": 0.512,
+        "sem_dado": []
+      },
+      {
+        "platform_id": "btg",
+        "label": "BTG Pactual",
+        "vitrine": 634,
+        "categories": 5,
+        "over_index": [],
+        "under_index": [
+          {
+            "category": "Internacional",
+            "funds": 8,
+            "share": 0.0126,
+            "peer_share": 0.0478,
+            "index": 0.26
+          }
+        ],
+        "fine_over": [
+          {
+            "category": "Direitos Creditórios",
+            "funds": 24,
+            "share": 0.0379,
+            "peer_share": 0.0,
+            "index": Infinity
+          },
+          {
+            "category": "Multimercados Juros e Moedas",
+            "funds": 5,
+            "share": 0.0079,
+            "peer_share": 0.0043,
+            "index": 1.85
+          },
+          {
+            "category": "Renda Fixa Duração Livre Soberano",
+            "funds": 7,
+            "share": 0.011,
+            "peer_share": 0.0064,
+            "index": 1.72
+          },
+          {
+            "category": "Multimercados Invest. no Exterior",
+            "funds": 41,
+            "share": 0.0647,
+            "peer_share": 0.0438,
+            "index": 1.48
+          }
+        ],
+        "fine_under": [
+          {
+            "category": "Ações Valor/Crescimento",
+            "funds": 5,
+            "share": 0.0079,
+            "peer_share": 0.016,
+            "index": 0.49
+          },
+          {
+            "category": "Multimercados Macro",
+            "funds": 35,
+            "share": 0.0552,
+            "peer_share": 0.0876,
+            "index": 0.63
+          }
+        ],
+        "anbima_cov": 1.0,
+        "median_min": 50000.0,
+        "retail_ticket_share": 0.361198738170347,
+        "median_admin_fee": 0.0197,
+        "own_product_share": 0.18454258675078863,
+        "distinct_managers": 167,
+        "top3_manager_share": 0.22082018927444794,
+        "exclusive": 288,
+        "exclusive_share": 0.4543,
+        "sem_dado": []
+      },
+      {
+        "platform_id": "itau",
+        "label": "Itau (Ion)",
+        "vitrine": 458,
+        "categories": 5,
+        "over_index": [
+          {
+            "category": "Internacional",
+            "funds": 31,
+            "share": 0.0718,
+            "peer_share": 0.0287,
+            "index": 2.5
+          }
+        ],
+        "under_index": [],
+        "fine_over": [],
+        "fine_under": [],
+        "anbima_cov": 0.033,
+        "median_min": 500.0,
+        "retail_ticket_share": 0.7379912663755459,
+        "median_admin_fee": 1.4,
+        "own_product_share": null,
+        "distinct_managers": null,
+        "top3_manager_share": null,
+        "exclusive": null,
+        "exclusive_share": null,
+        "sem_dado": [
+          "gestora",
+          "identidade por CNPJ"
+        ]
+      },
+      {
+        "platform_id": "inter",
+        "label": "Banco Inter",
+        "vitrine": 466,
+        "categories": 5,
+        "over_index": [
+          {
+            "category": "Internacional",
+            "funds": 36,
+            "share": 0.0791,
+            "peer_share": 0.0261,
+            "index": 3.03
+          }
+        ],
+        "under_index": [
+          {
+            "category": "Renda Fixa",
+            "funds": 80,
+            "share": 0.1758,
+            "peer_share": 0.3549,
+            "index": 0.5
+          }
+        ],
+        "fine_over": [
+          {
+            "category": "Ações Índice Ativo",
+            "funds": 8,
+            "share": 0.0219,
+            "peer_share": 0.0108,
+            "index": 2.03
+          },
+          {
+            "category": "Multimercados Macro",
+            "funds": 42,
+            "share": 0.1151,
+            "peer_share": 0.0622,
+            "index": 1.85
+          },
+          {
+            "category": "Ações Livre",
+            "funds": 89,
+            "share": 0.2438,
+            "peer_share": 0.1602,
+            "index": 1.52
+          },
+          {
+            "category": "Ações Valor/Crescimento",
+            "funds": 6,
+            "share": 0.0164,
+            "peer_share": 0.0116,
+            "index": 1.41
+          }
+        ],
+        "fine_under": [
+          {
+            "category": "Renda Fixa Duração Livre Crédito Livre",
+            "funds": 27,
+            "share": 0.074,
+            "peer_share": 0.1635,
+            "index": 0.45
+          },
+          {
+            "category": "Multimercados Invest. no Exterior",
+            "funds": 11,
+            "share": 0.0301,
+            "peer_share": 0.0589,
+            "index": 0.51
+          },
+          {
+            "category": "Ações Invest. no Exterior",
+            "funds": 13,
+            "share": 0.0356,
+            "peer_share": 0.0631,
+            "index": 0.56
+          }
+        ],
+        "anbima_cov": 0.783,
+        "median_min": null,
+        "retail_ticket_share": null,
+        "median_admin_fee": null,
+        "own_product_share": 0.05121951219512195,
+        "distinct_managers": 169,
+        "top3_manager_share": 0.1073170731707317,
+        "exclusive": 231,
+        "exclusive_share": 0.4957,
+        "sem_dado": [
+          "aplicacao minima",
+          "taxa de administracao"
+        ]
+      }
+    ]
+  },
+  "gestoras": {
+    "available": true,
+    "participantes": [
+      "xp",
+      "btg",
+      "inter"
+    ],
+    "excluded": [
+      {
+        "platform_id": "nu",
+        "label": "Nu (Nubank)",
+        "reason": "sem vitrine coletada (estrategia: open-finance); o catalogo Open Finance nao e vitrine"
+      },
+      {
+        "platform_id": "itau",
+        "label": "Itau (Ion)",
+        "reason": "vitrine sem gestora publicada"
+      }
+    ],
+    "baseline_id": "xp",
+    "total_gestoras": 256,
+    "total_ausentes_no_baseline": 16,
+    "mais_distribuidas": [
+      {
+        "manager": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 4,
+          "btg": 70,
+          "inter": 13
+        },
+        "total_funds": 87
+      },
+      {
+        "manager": "ITAU UNIBANCO ASSET MANAGEMENT LTDA.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 6,
+          "btg": 24,
+          "inter": 6
+        },
+        "total_funds": 36
+      },
+      {
+        "manager": "Franklin Templeton Brasil Ltda.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 13,
+          "btg": 14,
+          "inter": 5
+        },
+        "total_funds": 32
+      },
+      {
+        "manager": "SPARTA ADMINISTRADORA DE RECURSOS LTDA",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 11,
+          "btg": 10,
+          "inter": 6
+        },
+        "total_funds": 27
+      },
+      {
+        "manager": "ARX INVESTIMENTOS LTDA",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 10,
+          "btg": 7,
+          "inter": 9
+        },
+        "total_funds": 26
+      },
+      {
+        "manager": "ICATU VANGUARDA GESTÃO DE RECURSOS LTDA",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 9,
+          "btg": 8,
+          "inter": 9
+        },
+        "total_funds": 26
+      },
+      {
+        "manager": "INTER ASSET GESTÃO DE RECURSOS LTDA.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 1,
+          "btg": 4,
+          "inter": 21
+        },
+        "total_funds": 26
+      },
+      {
+        "manager": "BNP PARIBAS ASSET MANAGEMENT BRASIL LTDA",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 14,
+          "btg": 8,
+          "inter": 3
+        },
+        "total_funds": 25
+      },
+      {
+        "manager": "KINEA INVESTIMENTOS LTDA.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 10,
+          "btg": 11,
+          "inter": 3
+        },
+        "total_funds": 24
+      },
+      {
+        "manager": "AZ QUEST INVESTIMENTOS LTDA.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 9,
+          "btg": 7,
+          "inter": 6
+        },
+        "total_funds": 22
+      },
+      {
+        "manager": "BB GESTAO DE RECURSOS DTVM S.A",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 7,
+          "btg": 5,
+          "inter": 10
+        },
+        "total_funds": 22
+      },
+      {
+        "manager": "GAMA INVESTIMENTOS LTDA.",
+        "platforms": [
+          "xp",
+          "btg",
+          "inter"
+        ],
+        "reach": 3,
+        "funds_por_casa": {
+          "xp": 7,
+          "btg": 11,
+          "inter": 4
+        },
+        "total_funds": 22
+      }
+    ],
+    "ausentes_no_baseline": [
+      {
+        "manager": "GALAPAGOS CAPITAL INVESTIMENTOS E PARTICIPAÇÕES LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 3,
+          "inter": 3
+        },
+        "total_funds": 6
+      },
+      {
+        "manager": "PIMCO LATIN AMERICA ADMINISTRADORA DE CARTEIRAS LTDA",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 3,
+          "inter": 3
+        },
+        "total_funds": 6
+      },
+      {
+        "manager": "CONSTÂNCIA INVESTIMENTOS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 2,
+          "inter": 2
+        },
+        "total_funds": 4
+      },
+      {
+        "manager": "EXPLORITAS ADMINISTRACAO FINANCEIRA LTDA",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 2,
+          "inter": 2
+        },
+        "total_funds": 4
+      },
+      {
+        "manager": "ORGANON CAPITAL GESTÃO DE INVESTIMENTOS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 2,
+          "inter": 1
+        },
+        "total_funds": 3
+      },
+      {
+        "manager": "RIO BRAVO INVESTIMENTOS LTDA",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 2,
+          "inter": 1
+        },
+        "total_funds": 3
+      },
+      {
+        "manager": "RYO GESTÃO DE RECURSOS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 2
+        },
+        "total_funds": 3
+      },
+      {
+        "manager": "TARPON PUBLIC EQUITIES GESTORA DE RECURSOS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 2
+        },
+        "total_funds": 3
+      },
+      {
+        "manager": "TROPICO INVESTIMENTOS E PARTICIPACOES LTDA",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 2
+        },
+        "total_funds": 3
+      },
+      {
+        "manager": "ATLAS ONE INVESTIMENTOS GESTÃO DE RECURSOS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 1
+        },
+        "total_funds": 2
+      },
+      {
+        "manager": "CHARLES RIVER ADMINISTRADORA DE RECURSOS FINANCEIROS LTDA.",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 1
+        },
+        "total_funds": 2
+      },
+      {
+        "manager": "LESTE CREDIT GESTAO DE RECURSOS LTDA",
+        "platforms": [
+          "btg",
+          "inter"
+        ],
+        "reach": 2,
+        "funds_por_casa": {
+          "btg": 1,
+          "inter": 1
+        },
+        "total_funds": 2
+      }
+    ],
+    "exclusivas": {
+      "xp": [
+        {
+          "manager": "XP ALLOCATION ASSET MANAGEMENT LTDA",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 66
+          },
+          "total_funds": 66
+        },
+        {
+          "manager": "XP VISTA ASSET MANAGEMENT LTDA.",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 20
+          },
+          "total_funds": 20
+        },
+        {
+          "manager": "XP ADVISORY GESTAO DE RECURSOS LTDA",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 12
+          },
+          "total_funds": 12
+        },
+        {
+          "manager": "BOCOM BBM CCVM S.A.",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 5
+          },
+          "total_funds": 5
+        },
+        {
+          "manager": "PARAMIS BR INVESTIMENTOS LTDA",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 3
+          },
+          "total_funds": 3
+        },
+        {
+          "manager": "VISTA CAPITAL GESTORA DE RECURSOS LTDA",
+          "platforms": [
+            "xp"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "xp": 3
+          },
+          "total_funds": 3
+        }
+      ],
+      "btg": [
+        {
+          "manager": "BTG PACTUAL GESTÃO E CONSULTORIA DE INVESTIMENTOS LTDA",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 46
+          },
+          "total_funds": 46
+        },
+        {
+          "manager": "EMPIRICUS ASSET MANAGEMENT  LTDA.",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 20
+          },
+          "total_funds": 20
+        },
+        {
+          "manager": "BLACKROCK BRASIL GESTORA DE INVESTIMENTOS LTDA",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 3
+          },
+          "total_funds": 3
+        },
+        {
+          "manager": "BOCAINA CAPITAL GESTORA DE RECURSOS LTDA.",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 2
+          },
+          "total_funds": 2
+        },
+        {
+          "manager": "CAIXA DISTRIBUIDORA DE TÍTULOS E VALORES MOBILIÁRIOS S.A.",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 2
+          },
+          "total_funds": 2
+        },
+        {
+          "manager": "CANUMA CAPITAL LTDA.",
+          "platforms": [
+            "btg"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "btg": 2
+          },
+          "total_funds": 2
+        }
+      ],
+      "inter": [
+        {
+          "manager": "VENTOR INVESTIMENTOS LTDA.",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 4
+          },
+          "total_funds": 4
+        },
+        {
+          "manager": "BUTIÁ GESTÃO DE INVESTIMENTOS LTDA.",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 3
+          },
+          "total_funds": 3
+        },
+        {
+          "manager": "CLARITAS ADMINISTRAÇÃO DE RECURSOS LTDA",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 3
+          },
+          "total_funds": 3
+        },
+        {
+          "manager": "TORK CAPITAL GESTAO DE RECURSOS LTDA",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 3
+          },
+          "total_funds": 3
+        },
+        {
+          "manager": "DEVANT ASSET INVESTIMENTOS LTDA",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 2
+          },
+          "total_funds": 2
+        },
+        {
+          "manager": "GARIN INVESTIMENTOS LTDA",
+          "platforms": [
+            "inter"
+          ],
+          "reach": 1,
+          "funds_por_casa": {
+            "inter": 2
+          },
+          "total_funds": 2
+        }
+      ]
+    }
+  },
+  "momentum": {
+    "available": true,
+    "reason": null,
+    "movimentos": [
+      {
+        "platform_id": "inter",
+        "label": "Banco Inter",
+        "de": "2026-09-13",
+        "para": "2026-09-19",
+        "vitrine_antes": 466,
+        "vitrine_agora": 466,
+        "entradas": 0,
+        "saidas": 0,
+        "saldo_por_categoria": {},
+        "exemplos_entrada": []
+      }
+    ],
+    "sem_base": [
+      {
+        "platform_id": "xp",
+        "label": "XP Investimentos",
+        "reason": "snapshot de 2026-09-13 nao tinha vitrine (estrategia: open-finance); a serie de vitrine comeca em 2026-09-19"
+      },
+      {
+        "platform_id": "btg",
+        "label": "BTG Pactual",
+        "reason": "snapshot de 2026-09-13 nao tinha vitrine (estrategia: open-finance); a serie de vitrine comeca em 2026-09-19"
+      },
+      {
+        "platform_id": "itau",
+        "label": "Itau (Ion)",
+        "reason": "snapshot de 2026-09-13 nao tinha vitrine (estrategia: open-finance); a serie de vitrine comeca em 2026-09-19"
+      }
+    ],
+    "excluded": [
+      {
+        "platform_id": "nu",
+        "label": "Nu (Nubank)",
+        "reason": "sem vitrine coletada (estrategia: open-finance); o catalogo Open Finance nao e vitrine"
+      }
+    ]
+  },
+  "decisoes": {
+    "available": true,
+    "reason": null,
+    "baseline_id": "xp",
+    "baseline_label": "XP Investimentos",
+    "concorrentes": [
+      "BTG Pactual",
+      "Itau (Ion)",
+      "Banco Inter"
+    ],
+    "excluded": [
+      {
+        "platform_id": "nu",
+        "label": "Nu (Nubank)",
+        "reason": "sem vitrine coletada (estrategia: open-finance); o catalogo Open Finance nao e vitrine"
+      }
+    ],
+    "decisoes": [
+      {
+        "titulo": "Fundos que a concorrencia exibe em consenso e a XP nao",
+        "tese": "Um fundo na vitrine de varias casas ao mesmo tempo ja passou pelo crivo comercial de todas elas - e o sinal mais barato de demanda validada que existe nesta base.",
+        "evidencia": "95 fundos aparecem na vitrine de pelo menos 2 das 2 concorrentes cruzaveis por CNPJ (BTG Pactual, Banco Inter) e estao fora da vitrine da XP. Exemplos: BTG PACTUAL YIELD DI FI RF REF CP (2 casas); BTG HEDGE FIRF CP - SUBCLASSE B (2 casas); OPPORTUNITY MARKET FIC FIM (2 casas); JGP HEDGE FIC DE FIM (2 casas); CLARITAS LONG SHORT FICFIM (2 casas). Fora da conta: Itau (Ion) (CNPJ em apenas 6% da vitrine - nao da para cruzar os fundos dela com as outras casas)",
+        "tamanho": "95 fundos",
+        "acao": "Comecar pelos 78 cuja gestora a XP ja distribui - inclusao operacional, sem negociacao nova. Os 17 restantes exigem abrir gestora.",
+        "esforco": "operacional",
+        "confianca": "alta"
+      },
+      {
+        "titulo": "Vitrine sub-indexada em Internacional",
+        "tese": "Categoria em que as concorrentes dedicam mais espaco de vitrine que a XP. Espaco de vitrine e escolha editorial: quando quatro casas dedicam mais que a quinta, ou elas viram demanda que a quinta nao viu, ou a quinta decidiu nao competir ali - e vale saber qual das duas.",
+        "evidencia": "Internacional: 0.8% da vitrine da XP contra 4.9% nas concorrentes (indice 0.16). E a unica classe em que a XP fica abaixo das concorrentes.",
+        "tamanho": "~27 fundos para igualar o share das concorrentes",
+        "acao": "Decidir explicitamente entre cobrir a categoria ou registrar que a ausencia e estrategica - hoje nao ha registro de qual e o caso.",
+        "esforco": "analise",
+        "confianca": "alta"
+      },
+      {
+        "titulo": "A vitrine da XP nao exibe aplicacao minima; as concorrentes exibem",
+        "tese": "Aplicacao minima e a primeira barreira que o investidor de varejo encontra, antes de qualquer comparacao de rentabilidade. Quando a concorrente mostra o ticket na propria listagem e a XP nao, o cliente consegue filtrar por aquilo que consegue comprar na casa dela e nao na nossa - e a comparacao de acessibilidade fica impossivel de fazer, para o cliente e para nos.",
+        "evidencia": "Nenhum dos 664 fundos da vitrine da XP traz minimo vindo da propria vitrine: os valores existentes vem do registro Open Finance, que informa o minimo institucional da classe, nao o ticket de varejo. BTG Pactual publica em 170 fundos (mediana R$ 500, 89% ate R$ 1 mil); Itau (Ion) publica em 431 fundos (mediana R$ 500, 78% ate R$ 1 mil). Somadas, as concorrentes tem mediana R$ 500 e 81% da vitrine acessivel por ate R$ 1 mil.",
+        "tamanho": "0 de 664 fundos da vitrine da XP com ticket exibido",
+        "acao": "Duas frentes, e a ordem importa: (1) produto - avaliar exibir o ticket na listagem, como as concorrentes fazem; (2) monitor - capturar o campo no XHR da vitrine da XP, sem o que esta comparacao continua impossivel. Ate entao, nao ha base para afirmar que o ticket da XP e maior nem menor que o das concorrentes.",
+        "esforco": "analise",
+        "confianca": "alta"
+      },
+      {
+        "titulo": "Gestoras distribuidas por varias concorrentes e ausentes na XP",
+        "tese": "Gestora presente em multiplas vitrines ja resolveu due diligence, operacional e comercial em mais de uma casa - o custo de entrada para a proxima e menor que o de uma gestora sem distribuicao.",
+        "evidencia": "16 gestoras aparecem em 2 ou mais vitrines concorrentes e em nenhuma posicao da vitrine da XP. Maiores: GALAPAGOS CAPITAL INVESTIMENTOS E  (2 casas, 6 fundos); PIMCO LATIN AMERICA ADMINISTRADORA (2 casas, 6 fundos); CONSTÂNCIA INVESTIMENTOS LTDA. (2 casas, 4 fundos); EXPLORITAS ADMINISTRACAO FINANCEIR (2 casas, 4 fundos); ORGANON CAPITAL GESTÃO DE INVESTIM (2 casas, 3 fundos)",
+        "tamanho": "16 gestoras",
+        "acao": "Priorizar por numero de casas e volume de fundos ja distribuidos.",
+        "esforco": "comercial",
+        "confianca": "media"
+      },
+      {
+        "titulo": "Diferencial exclusivo da vitrine da XP",
+        "tese": "O inverso do gap, e a metade da analise competitiva que costuma faltar: o que so a XP exibe e o que a concorrencia ainda nao copiou.",
+        "evidencia": "340 fundos aparecem na vitrine da XP e em nenhuma das 2 concorrentes cruzaveis por CNPJ (51% da vitrine). Uma casa que nao publica CNPJ na vitrine nao pode desmentir a exclusividade, entao o numero e um teto.",
+        "tamanho": "340 fundos exclusivos",
+        "acao": "Usar como argumento comercial e monitorar quando um deles aparecer na vitrine concorrente - a perda de exclusividade e um evento.",
+        "esforco": "analise",
+        "confianca": "alta"
+      }
+    ]
+  }
+}
