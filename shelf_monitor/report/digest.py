@@ -348,6 +348,8 @@ def render_markdown(report: RunReport) -> str:
     # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
     lines += _md_gaps_section(build_gap_block(report.snapshots))
 
+    lines += _md_flow_section(report)
+
     lines += _md_cvm_section(report.cvm_diff, report)
 
     lines += ["## Prateleiras", ""]
@@ -365,6 +367,250 @@ def render_markdown(report: RunReport) -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+# --- captacao ----------------------------------------------------------------
+
+# Quantos fundos listar em cada recorte do digest. O digest e leitura de 2
+# minutos: a lista inteira mora na planilha.
+_FLOW_LISTED = 5
+
+
+def _mm(valor: float) -> str:
+    """Reais em milhoes com sinal - a unidade em que fluxo de fundo se le."""
+    return f"{valor / 1_000_000:+,.1f} MM".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _inteiro(valor: int) -> str:
+    """Inteiro com separador de milhar brasileiro.
+
+    Existe para que o `.replace` fique preso ao numero: aplicado sobre uma
+    f-string concatenada, ele trocava as virgulas da frase inteira por pontos.
+    """
+    return f"{valor:+,}".replace(",", ".")
+
+
+def _competencia(chave: str) -> str:
+    return f"{chave[4:]}/{chave[:4]}"
+
+
+def _md_flow_section(report: RunReport) -> list[str]:
+    flow = report.retail_flow
+    if not flow:
+        return []
+
+    periodo = flow["periodo"]
+    lines = [
+        "## Captacao dos fundos de vitrine",
+        "",
+        f"Informe diario da CVM, {periodo['de']} a {periodo['ate']}. "
+        "A CVM publica fluxo por **fundo**, nunca por distribuidor: os numeros "
+        "por casa sao o fluxo dos fundos que ela exibe, no mercado inteiro.",
+        "",
+        "| Casa | Fundos com informe | Captacao de varejo | So ela exibe |",
+        "|---|---:|---:|---:|",
+    ]
+    for casa in flow["casas"]:
+        lines.append(
+            f"| {casa['label']} | {casa['com_informe']} de {casa['vitrine']} "
+            f"({casa['cobertura']:.0%}) | {_mm(casa['captacao_liquida'])} | "
+            f"{casa['exclusivos']} fundos, {_mm(casa['captacao_exclusivos'])} |"
+        )
+    lines.append("")
+
+    competencias = flow.get("competencias") or []
+    if competencias:
+        lines += [
+            "**Tendencia** - media diaria de captacao por competencia. A media "
+            "diaria existe porque o mes corrente tem menos pregoes que os "
+            "fechados; comparar totais seria comparar calendarios.",
+            "",
+            "| Casa | " + " | ".join(_competencia(c) for c in competencias) + " |",
+            "|---|" + "---:|" * len(competencias),
+        ]
+        for platform_id, serie in (flow.get("serie_por_casa") or {}).items():
+            por_competencia = {m["competencia"]: m for m in serie}
+            celulas = []
+            for competencia in competencias:
+                mes = por_competencia.get(competencia)
+                celulas.append(_mm(mes["media_diaria"]) + "/dia" if mes else "-")
+            lines.append(f"| {_platform_label(platform_id)} | " + " | ".join(celulas) + " |")
+        lines.append("")
+
+    resumo = flow.get("tendencias") or {}
+    rotulos = flow.get("tendencia_labels") or {}
+    if resumo:
+        lines += ["**Fundos de varejo por tendencia**", ""]
+        for chave, quantidade in resumo.items():
+            descricao = rotulos.get(chave)
+            sufixo = f" - {descricao}" if descricao else ""
+            lines.append(f"- **{quantidade}** {chave.replace('_', ' ')}{sufixo}")
+        lines.append("")
+
+    for titulo, chave in (
+        ("Maiores captadores de varejo", "top_captacao"),
+        ("Maiores perdas de varejo", "top_resgate"),
+        ("Acelerando - captando mais por dia que antes", "acelerando"),
+        ("Viraram saida - captavam e passaram a perder", "virou_saida"),
+    ):
+        fundos = flow.get(chave) or []
+        if not fundos:
+            continue
+        lines += [f"**{titulo}**", ""]
+        for fundo in fundos[:_FLOW_LISTED]:
+            casas = ", ".join(fundo["vitrines"])
+            cotistas = _inteiro(fundo["variacao_cotistas"])
+            lines.append(
+                f"- {fundo['nome']} - {_mm(fundo['captacao_liquida'])}, "
+                f"{cotistas} cotistas - {casas}"
+            )
+        lines.append("")
+
+    if flow.get("total_estruturais"):
+        lines += [
+            f"_{flow['total_estruturais']} fundos com movimento estrutural "
+            "(fluxo maior que o proprio patrimonio, ou fundo esvaziado) ficam "
+            "fora de todas as somas: e dinheiro trocando de veiculo, nao demanda._",
+            "",
+        ]
+
+    grade = report.grade_opportunities
+    if grade and grade.get("available"):
+        lines += [
+            "### Oportunidade de grade",
+            "",
+            f"{grade['total']} fundos captam varejo fora da vitrine da XP, mas "
+            f"{grade['total_produto_do_concorrente']} sao produto proprio da casa "
+            f"que os exibe e nao se transferem. Restam **{grade['total_transferiveis']} "
+            f"fundos, {_mm(grade['captacao_transferivel'])}** e "
+            f"{_inteiro(grade['cotistas_transferivel'])} cotistas - "
+            f"{grade['total_operacionais']} de gestora que a XP ja distribui, "
+            f"{grade['total_comerciais']} exigem abrir gestora.",
+            "",
+        ]
+        for fundo in (grade.get("mais_varejo") or [])[:_FLOW_LISTED]:
+            cotistas = _inteiro(fundo["variacao_cotistas"])
+            esforco = (
+                "gestora ja distribuida" if fundo["gestora_ja_distribuida"]
+                else "abrir gestora"
+            )
+            lines.append(
+                f"- {fundo['nome']} - {_mm(fundo['captacao_liquida'])}, "
+                f"{cotistas} cotistas - {esforco}"
+            )
+        lines.append("")
+
+    return lines
+
+
+def _html_flow_section(report: RunReport) -> str:
+    flow = report.retail_flow
+    if not flow:
+        return ""
+
+    periodo = flow["periodo"]
+    parts = [
+        f'<h2 style="{_H2}">Captacao dos fundos de vitrine</h2>',
+        f'<p style="{_P}">Informe diario da CVM, {_esc(periodo["de"])} a '
+        f'{_esc(periodo["ate"])}. A CVM publica fluxo por <strong>fundo</strong>, '
+        "nunca por distribuidor: os numeros por casa sao o fluxo dos fundos que "
+        "ela exibe, no mercado inteiro.</p>",
+    ]
+
+    linhas = ""
+    for casa in flow["casas"]:
+        cor = "#2c6e4b" if casa["captacao_liquida"] > 0 else "#a3402b"
+        linhas += (
+            f'<tr><td style="{_TD}">{_esc(casa["label"])}</td>'
+            f'<td style="{_TD}text-align:right;">{casa["com_informe"]} de {casa["vitrine"]}</td>'
+            f'<td style="{_TD}text-align:right;color:{cor};font-weight:600;">'
+            f'{_esc(_mm(casa["captacao_liquida"]))}</td>'
+            f'<td style="{_TD}text-align:right;">{casa["exclusivos"]} / '
+            f'{_esc(_mm(casa["captacao_exclusivos"]))}</td></tr>'
+        )
+    parts.append(
+        f'<table style="{_TABLE}"><thead><tr>'
+        f'<th style="{_TH}">Casa</th>'
+        f'<th style="{_TH}text-align:right;">Com informe</th>'
+        f'<th style="{_TH}text-align:right;">Captacao de varejo</th>'
+        f'<th style="{_TH}text-align:right;">So ela exibe</th>'
+        f"</tr></thead><tbody>{linhas}</tbody></table>"
+    )
+
+    competencias = flow.get("competencias") or []
+    if competencias:
+        cabecalho = "".join(
+            f'<th style="{_TH}text-align:right;">{_esc(_competencia(c))}</th>'
+            for c in competencias
+        )
+        corpo = ""
+        for platform_id, serie in (flow.get("serie_por_casa") or {}).items():
+            por_competencia = {m["competencia"]: m for m in serie}
+            celulas = ""
+            for competencia in competencias:
+                mes = por_competencia.get(competencia)
+                texto = _mm(mes["media_diaria"]) if mes else "-"
+                celulas += f'<td style="{_TD}text-align:right;">{_esc(texto)}</td>'
+            corpo += (
+                f'<tr><td style="{_TD}">{_esc(_platform_label(platform_id))}</td>'
+                f"{celulas}</tr>"
+            )
+        parts.append(
+            f'<p style="{_P}"><strong>Tendencia</strong> - media diaria de captacao '
+            "por competencia (o mes corrente tem menos pregoes que os fechados).</p>"
+            f'<table style="{_TABLE}"><thead><tr><th style="{_TH}">Casa</th>'
+            f"{cabecalho}</tr></thead><tbody>{corpo}</tbody></table>"
+        )
+
+    resumo = flow.get("tendencias") or {}
+    rotulos = flow.get("tendencia_labels") or {}
+    if resumo:
+        itens = "".join(
+            f'<li style="{_LI}"><strong>{quantidade}</strong> '
+            f"{_esc(chave.replace('_', ' '))}"
+            + (f" - {_esc(rotulos[chave])}" if chave in rotulos else "")
+            + "</li>"
+            for chave, quantidade in resumo.items()
+        )
+        parts.append(
+            f'<p style="{_P}"><strong>Fundos de varejo por tendencia</strong></p>'
+            f'<ul style="margin:0 0 14px;padding-left:18px;">{itens}</ul>'
+        )
+
+    for titulo, chave in (
+        ("Maiores captadores de varejo", "top_captacao"),
+        ("Maiores perdas de varejo", "top_resgate"),
+        ("Acelerando", "acelerando"),
+        ("Viraram saida", "virou_saida"),
+    ):
+        fundos = flow.get(chave) or []
+        if not fundos:
+            continue
+        itens = "".join(
+            f'<li style="{_LI}">{_esc(fundo["nome"])} - '
+            f'{_esc(_mm(fundo["captacao_liquida"]))}, '
+            f'{_inteiro(fundo["variacao_cotistas"])} cotistas - '
+            f'{_esc(", ".join(fundo["vitrines"]))}</li>'
+            for fundo in fundos[:_FLOW_LISTED]
+        )
+        parts.append(
+            f'<p style="{_P}"><strong>{_esc(titulo)}</strong></p>'
+            f'<ul style="margin:0 0 14px;padding-left:18px;">{itens}</ul>'
+        )
+
+    grade = report.grade_opportunities
+    if grade and grade.get("available"):
+        parts.append(
+            f'<p style="{_P}"><strong>Oportunidade de grade:</strong> '
+            f'{grade["total"]} fundos captam varejo fora da vitrine da XP, mas '
+            f'{grade["total_produto_do_concorrente"]} sao produto proprio da casa '
+            f"que os exibe. Restam <strong>{grade['total_transferiveis']} fundos, "
+            f"{_esc(_mm(grade['captacao_transferivel']))}</strong> - "
+            f'{grade["total_operacionais"]} de gestora que a XP ja distribui, '
+            f'{grade["total_comerciais"]} exigem abrir gestora.</p>'
+        )
+
+    return "".join(parts)
 
 
 # --- HTML para e-mail --------------------------------------------------------
@@ -635,6 +881,8 @@ def render_html(report: RunReport) -> str:
   </tr></thead><tbody>{rows}</tbody></table>
 
   {_html_gaps_section(build_gap_block(report.snapshots))}
+
+  {_html_flow_section(report)}
 
   {_html_cvm_section(report)}
 

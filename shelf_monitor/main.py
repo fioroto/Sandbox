@@ -6,6 +6,7 @@ Uso:
     python -m shelf_monitor cvm                    # so o radar CVM
     python -m shelf_monitor diff
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
+    python -m shelf_monitor insights               # leitura competitiva das vitrines\n    python -m shelf_monitor captacao               # captacao de varejo e oportunidades de grade
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
@@ -38,6 +39,7 @@ from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
 from shelf_monitor.enrich import enrich_snapshots
 from shelf_monitor.http import check_reachable
 from shelf_monitor.models import (
+    CollectorStrategy,
     CvmSnapshot,
     RunReport,
     ShelfSnapshot,
@@ -49,14 +51,26 @@ from shelf_monitor.market.etf_flow import (
     aggregate_category_weekly_flows,
     aggregate_etf_weekly_flows,
     flow_coverage,
+    get_recent_months,
     run_etf_flow_pipeline,
 )
+from shelf_monitor.market.fie_balancete import run_etf_pl_pipeline
 from shelf_monitor.market.importer import run_import
+from shelf_monitor.report.competitive import (
+    build_competitive_view,
+    print_competitive_view,
+)
+from shelf_monitor.report.retail_flow import (
+    build_grade_opportunities,
+    build_retail_flow,
+    print_retail_flow,
+)
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.etf_report import (
     export_etf_csv,
     export_etf_excel,
+    print_etf_pl,
     print_etf_summary,
 )
 from shelf_monitor.report.mailer import build_subject, send_digest
@@ -232,6 +246,7 @@ def build_report(
         warn_market_missing()
     else:
         report.enrichment = stats.to_dict()
+        report.enrichment_stats = stats
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
@@ -244,7 +259,38 @@ def build_report(
         previous_cvm = latest_cvm_snapshot(config, before=cvm_snapshot.snapshot_date)
         report.cvm_diff = diff_cvm(cvm_snapshot, previous_cvm)
 
+    attach_retail_flow(config, report)
+
     return report
+
+
+def attach_retail_flow(config: Config, report: RunReport) -> None:
+    """Anexa a captacao dos fundos de vitrine ao relatorio.
+
+    Nunca derruba a execucao: o informe diario e uma fonte externa, e uma coleta
+    de prateleira que levou dezenas de minutos nao pode morrer porque a CVM
+    estava fora do ar. Sem ele, as superficies simplesmente omitem o bloco.
+    """
+    try:
+        flow = build_retail_flow(config, report.snapshots)
+    except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
+        console.print(
+            f"[yellow]Captacao nao calculada:[/] {_short(str(exc))} "
+            "(os demais blocos seguem normalmente)"
+        )
+        return
+
+    if not flow.get("available"):
+        console.print(f"[yellow]Captacao nao calculada:[/] {flow.get('reason')}")
+        return
+
+    report.retail_flow = flow
+    try:
+        report.grade_opportunities = build_grade_opportunities(
+            report.snapshots, flow["_fluxos"]
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Oportunidades de grade nao calculadas:[/] {_short(str(exc))}")
 
 
 def render_outputs(
@@ -281,6 +327,30 @@ def render_outputs(
         deck_note = "instale python-pptx para gerar o deck executivo"
     except Exception as exc:  # noqa: BLE001 - o deck nunca derruba o relatorio
         deck_note = f"falha ao gerar o deck: {_short(str(exc))}"
+
+    # A planilha sai aqui junto das demais superficies. Antes ela existia so no
+    # subcomando `export`, e o `run` terminava anunciando "Relatorios gerados"
+    # sem ela - quem esperava a planilha do dia concluia que a geracao falhara.
+    # Mesma entrada do `export`: os snapshots, os diffs e o enriquecimento que o
+    # report ja carrega.
+    spreadsheet_path = None
+    spreadsheet_note = ""
+    try:
+        spreadsheet_path = render_spreadsheet(
+            config,
+            report.snapshots,
+            report.cvm_snapshot,
+            generated_at=report.generated_at,
+            diffs=report.shelf_diffs,
+            enrichment=report.enrichment_stats,
+            retail_flow=report.retail_flow,
+            grade=report.grade_opportunities,
+        )
+    except ImportError:
+        spreadsheet_note = "instale openpyxl para gerar a planilha"
+    except Exception as exc:  # noqa: BLE001 - a planilha nao derruba o relatorio
+        spreadsheet_note = f"falha ao gerar a planilha: {_short(str(exc))}"
+
     console.print()
     console.print("[bold]Relatorios gerados[/]")
     if md_path:
@@ -296,6 +366,10 @@ def render_outputs(
         console.print(f"  deck executivo:  {deck_path}")
     else:
         console.print(f"  deck executivo:  [yellow]{deck_note}[/]")
+    if spreadsheet_path:
+        console.print(f"  planilha:        {spreadsheet_path}")
+    else:
+        console.print(f"  planilha:        [yellow]{spreadsheet_note}[/]")
     console.print(f"  assunto sugerido: {build_subject(report)}")
 
     if send_email:
@@ -409,9 +483,14 @@ def run_etf_monitor(config: Config) -> None:
         catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(config)
         coverage = flow_coverage(catalog, weekly_flows)
         print_etf_summary(weekly_flows, category_summaries, catalog, coverage=coverage)
+        pl_series, pl_cov, pl_missing = run_etf_pl_pipeline(
+            config, catalog, get_recent_months(4)
+        )
+        print_etf_pl(pl_series, pl_cov, pl_missing)
         export_etf_excel(
             weekly_flows, category_summaries, catalog,
             config.reports_dir / "etf_captacao_semanal.xlsx",
+            pl_series=pl_series,
         )
         export_etf_csv(weekly_flows, config.reports_dir / "etf_weekly_flow.csv")
     except Exception as exc:  # noqa: BLE001 - ETF e opcional, nao pode derrubar o run
@@ -542,6 +621,11 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         )
         for snapshot in snapshots
     ]
+    # A planilha avulsa recebe os mesmos blocos da do `run`: um `export` que
+    # sai sem captacao seria uma segunda versao do mesmo arquivo.
+    avulso = RunReport(generated_at=datetime.now(), snapshots=snapshots)
+    attach_retail_flow(config, avulso)
+
     path = render_spreadsheet(
         config,
         snapshots,
@@ -549,6 +633,8 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         path=Path(args.output) if args.output else None,
         diffs=diffs,
         enrichment=enrichment,
+        retail_flow=avulso.retail_flow,
+        grade=avulso.grade_opportunities,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()
@@ -557,6 +643,114 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         f"  {total} fundos de {len(snapshots)} plataforma(s)"
         + (f", {len(cvm_snapshot.funds)} registros da CVM" if cvm_snapshot else "")
     )
+
+
+def cmd_insights(config: Config, args: argparse.Namespace) -> None:
+    """Leitura competitiva das vitrines a partir dos snapshots gravados.
+
+    Nao coleta: le o ultimo snapshot de cada casa. Assim a analise pode ser
+    reexecutada e discutida quantas vezes for preciso sem bater nos sites - e o
+    que separa "rodar o monitor" de "olhar o resultado".
+    """
+    config.ensure_dirs()
+    platform_ids = args.platforms or list(PLATFORMS)
+
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in platform_ids:
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+
+    if not snapshots:
+        console.print(
+            "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
+            "competitiva e feita sobre o que ja foi coletado."
+        )
+        return
+
+    if enrich_snapshots(config, snapshots) is None:
+        warn_market_missing()
+
+    datas = sorted({s.snapshot_date for s in snapshots})
+    console.print(
+        f"[bold]Leitura competitiva de {len(snapshots)} casa(s)[/] - snapshots de "
+        + ", ".join(d.isoformat() for d in datas)
+    )
+
+    view = build_competitive_view(config, snapshots)
+    print_competitive_view(view)
+
+    if args.json:
+        destino = Path(args.json)
+        # `_positions`, `_reaches` e `_decisoes` carregam os objetos para quem
+        # chama em Python; no JSON sairiam como lixo nao serializavel.
+        limpo = {
+            bloco: {k: v for k, v in dados.items() if not k.startswith("_")}
+            if isinstance(dados, dict) else dados
+            for bloco, dados in view.items()
+        }
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(
+            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
+            encoding="utf-8",
+        )
+        console.print()
+        console.print(f"[green]Visao em JSON:[/] {destino}")
+
+
+def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
+    """Captacao de varejo dos fundos de vitrine, e o que isso abre de grade.
+
+    Usa os snapshots ja gravados mais o informe diario da CVM: o fluxo vem do
+    INF_DIARIO, a vitrine vem da ultima coleta de cada casa.
+    """
+    config.ensure_dirs()
+    platform_ids = args.platforms or list(PLATFORMS)
+
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in platform_ids:
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+
+    if not snapshots:
+        console.print(
+            "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a analise de "
+            "captacao parte da vitrine ja coletada."
+        )
+        return
+
+    if enrich_snapshots(config, snapshots) is None:
+        warn_market_missing()
+
+    console.print(
+        f"[bold]Lendo o informe diario da CVM[/] para os fundos de vitrine "
+        f"({args.months} meses)..."
+    )
+    resultado = build_retail_flow(
+        config, snapshots, meses=args.months, force_download=args.force
+    )
+    oportunidades = (
+        build_grade_opportunities(snapshots, resultado["_fluxos"])
+        if resultado["available"] else {"available": False, "reason": resultado["reason"]}
+    )
+    print_retail_flow(resultado, oportunidades)
+
+    if args.json:
+        destino = Path(args.json)
+        limpo = {
+            "captacao": {k: v for k, v in resultado.items() if not k.startswith("_")},
+            "oportunidades": {
+                k: v for k, v in oportunidades.items() if not k.startswith("_")
+            },
+        }
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(
+            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
+            encoding="utf-8",
+        )
+        console.print()
+        console.print(f"[green]Analise em JSON:[/] {destino}")
 
 
 def cmd_market(config: Config, args: argparse.Namespace) -> None:
@@ -663,13 +857,21 @@ def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
 
 def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     """Testa o acesso a cada fonte - o gate antes da primeira execucao real."""
-    sources: list[tuple[str, str]] = [
-        ("CVM (cadastro de fundos)", CVM_REGISTRO_ZIP_URL),
-        ("Open Finance (diretorio)", config.directory_url),
+    # (label, url, o navegador cobre esta fonte?). A terceira coluna existe porque
+    # a prateleira de uma casa com CDN anti-bot responde 403 a este teste - que e
+    # HTTP simples - e coleta normalmente pelo Playwright. Contar esse 403 como
+    # fonte inacessivel mandava procurar bloqueio de rede onde nao havia.
+    sources: list[tuple[str, str, bool]] = [
+        ("CVM (cadastro de fundos)", CVM_REGISTRO_ZIP_URL, False),
+        ("Open Finance (diretorio)", config.directory_url, False),
     ]
     for platform_id, platform in PLATFORMS.items():
         if platform.shelf_url:
-            sources.append((f"{platform.label} (prateleira)", platform.shelf_url))
+            sources.append((
+                f"{platform.label} (prateleira)",
+                platform.shelf_url,
+                CollectorStrategy.PLAYWRIGHT in platform.strategies,
+            ))
 
     table = Table(title="Acessibilidade das fontes", title_style="bold")
     table.add_column("Fonte")
@@ -677,13 +879,29 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     table.add_column("Detalhe", overflow="fold")
 
     blocked = 0
-    for label, url in sources:
+    via_browser = 0
+    for label, url, browser_covers in sources:
         ok, detail = check_reachable(config, url)
-        if not ok:
+        if ok:
+            result = "[green]ok[/]"
+        elif browser_covers:
+            via_browser += 1
+            result = "[cyan]so navegador[/]"
+            detail = f"{detail} - esperado; a coleta usa Playwright"
+        else:
             blocked += 1
-        table.add_row(label, "[green]ok[/]" if ok else "[red]falha[/]", detail)
+            result = "[red]falha[/]"
+        table.add_row(label, result, detail)
 
     console.print(table)
+
+    if via_browser:
+        console.print()
+        console.print(
+            f"[cyan]{via_browser} prateleira(s) so abrem em navegador.[/] Nao e "
+            "bloqueio: a CDN da casa barra cliente HTTP, e o Playwright coleta. "
+            "Exige o Chromium completo - o headless shell tambem leva 403."
+        )
 
     if blocked:
         console.print()
@@ -817,11 +1035,21 @@ def cmd_etf(config: Config, args: argparse.Namespace) -> None:
         source_label="Fundos.NET" if args.flow_source == "fnet" else "INF_DIARIO",
     )
 
+    # PL mensal do balancete de FIE: a única fonte medida que alcança o ETF em
+    # si, e não só os feeders. Roda sempre - são ~0,1 MB por competência, ordens
+    # de grandeza abaixo do INF_DIARIO, então não há o que tornar opt-in.
+    pl_series, pl_cov, pl_missing = run_etf_pl_pipeline(
+        config, catalog, get_recent_months(args.months + 1), force_download=args.force
+    )
+    print_etf_pl(pl_series, pl_cov, pl_missing)
+
     if args.export or args.output:
         xlsx_path = Path(args.output) if args.output else (config.reports_dir / "etf_captacao_semanal.xlsx")
         csv_path = config.reports_dir / "etf_weekly_flow.csv"
 
-        saved_xlsx = export_etf_excel(weekly_flows, category_summaries, catalog, xlsx_path)
+        saved_xlsx = export_etf_excel(
+            weekly_flows, category_summaries, catalog, xlsx_path, pl_series=pl_series
+        )
         saved_csv = export_etf_csv(weekly_flows, csv_path)
 
         console.print()
@@ -927,6 +1155,36 @@ def main() -> None:
     export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
     export_parser.set_defaults(func=cmd_export)
+
+    insights_parser = subparsers.add_parser(
+        "insights",
+        help="Leitura competitiva das vitrines: posicionamento, gestoras, momentum e decisoes",
+        parents=[common],
+    )
+    add_platform_arg(insights_parser)
+    insights_parser.add_argument(
+        "--json", help="Tambem gravar a visao completa neste caminho (.json)"
+    )
+    insights_parser.set_defaults(func=cmd_insights)
+
+    captacao_parser = subparsers.add_parser(
+        "captacao",
+        help="Captacao de varejo dos fundos de vitrine e oportunidades de grade",
+        parents=[common],
+    )
+    add_platform_arg(captacao_parser)
+    captacao_parser.add_argument(
+        "--months", type=int, default=3,
+        help="Meses de informe diario a ler (default: 3)",
+    )
+    captacao_parser.add_argument(
+        "--force", action="store_true",
+        help="Forcar re-download dos informes mesmo com cache",
+    )
+    captacao_parser.add_argument(
+        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+    )
+    captacao_parser.set_defaults(func=cmd_captacao)
 
     market_parser = subparsers.add_parser(
         "market",

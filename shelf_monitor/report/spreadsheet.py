@@ -42,6 +42,10 @@ from shelf_monitor.report.aggregate import (
 FONT = "Arial"
 
 _HEADER_FILL = PatternFill("solid", fgColor="1F3864")
+# Entrada e saida de dinheiro nas abas de captacao - os mesmos tons do
+# relatorio de ETF, para o verde significar a mesma coisa nos dois arquivos.
+_GREEN_FILL = PatternFill("solid", fgColor="E2EFDA")
+_RED_FILL = PatternFill("solid", fgColor="FCE4D6")
 _HEADER_FONT = Font(name=FONT, size=10, bold=True, color="FFFFFF")
 _TITLE_FONT = Font(name=FONT, size=13, bold=True)
 _BODY_FONT = Font(name=FONT, size=10)
@@ -945,6 +949,8 @@ def render_spreadsheet(
     path: Path | None = None,
     diffs: list[ShelfDiff] | None = None,
     enrichment: EnrichmentStats | None = None,
+    retail_flow: dict | None = None,
+    grade: dict | None = None,
 ) -> Path:
     """Gera a planilha das prateleiras. Devolve o caminho do arquivo."""
     generated_at = generated_at or datetime.now()
@@ -963,6 +969,11 @@ def render_spreadsheet(
     if cvm and cvm.funds:
         _add_cvm(workbook, cvm)
     _add_source_coverage(workbook, usable)
+    if retail_flow and retail_flow.get("available"):
+        _add_flow_sheet(workbook, retail_flow)
+        _add_trend_sheet(workbook, retail_flow)
+    if grade and grade.get("available"):
+        _add_grade_sheet(workbook, grade)
     _add_collection_health(workbook, snapshots, cvm)
     _add_methodology_sheet(workbook, snapshots, enrichment, generated_at)
     _add_summary(workbook, usable, snapshots, last_row, generated_at)
@@ -973,3 +984,232 @@ def render_spreadsheet(
     )
     workbook.save(path)
     return path
+
+
+# --- captacao ----------------------------------------------------------------
+
+_FLOW_HEADERS = [
+    "Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "Exclusivo",
+    "Captacao bruta (R$)", "Resgates (R$)", "Captacao liquida (R$)",
+    "PL inicio (R$)", "PL fim (R$)", "Captacao / PL (%)",
+    "Cotistas fim", "Variacao cotistas", "Ticket por cotista (R$)",
+    "Rentabilidade (%)", "Tendencia", "Movimento estrutural",
+]
+
+
+def _flow_row(fundo: dict) -> list:
+    return [
+        fundo["nome"],
+        format_cnpj(fundo["cnpj"]),
+        fundo["categoria"],
+        fundo.get("gestora") or "",
+        ", ".join(fundo["vitrines"]),
+        "sim" if fundo["exclusivo"] else "",
+        fundo["captacao_bruta"],
+        fundo["resgates"],
+        fundo["captacao_liquida"],
+        fundo["pl_inicio"],
+        fundo["pl_fim"],
+        # _PCT concatena o "%" ao valor: a planilha guarda pontos percentuais
+        # (1,24 para 1,24%), nao a fracao - mesma convencao da taxa de adm.
+        fundo.get("captacao_sobre_pl"),
+        fundo["cotistas_fim"],
+        fundo["variacao_cotistas"],
+        fundo.get("ticket_por_cotista"),
+        fundo.get("rentabilidade"),
+        fundo.get("tendencia") or "",
+        "sim" if fundo.get("estrutural") else "",
+    ]
+
+
+def _write_flow_rows(ws, fundos: list[dict], header_row: int) -> int:
+    for col_idx, header in enumerate(_FLOW_HEADERS, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        ws.column_dimensions[get_column_letter(col_idx)].width = (
+            44 if col_idx == 1 else 20 if col_idx in (2, 4) else 16
+        )
+
+    row_idx = header_row + 1
+    for fundo in fundos:
+        for col_idx, valor in enumerate(_flow_row(fundo), start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=valor)
+            cell.font = _BODY_FONT
+            if col_idx in (7, 8, 9, 10, 11, 15):
+                cell.number_format = _MONEY
+            elif col_idx in (12, 16):
+                cell.number_format = _PCT
+            elif col_idx in (13, 14):
+                cell.number_format = _INT
+            if col_idx == 9 and isinstance(valor, (int, float)) and valor:
+                cell.fill = _GREEN_FILL if valor > 0 else _RED_FILL
+        row_idx += 1
+    return row_idx
+
+
+def _add_flow_sheet(workbook: Workbook, flow: dict) -> None:
+    """Aba "Captacao por fundo": o fluxo de cada fundo de vitrine no periodo.
+
+    Os movimentos estruturais entram, marcados na ultima coluna, em vez de serem
+    omitidos: quem abre a planilha para conferir um numero precisa encontrar o
+    fundo que procurou - some-lo e que nao pode.
+    """
+    ws = workbook.create_sheet("Captacao por fundo")
+    periodo = flow["periodo"]
+
+    ws.cell(row=1, column=1, value="Captacao dos fundos de vitrine").font = _TITLE_FONT
+    ws.cell(
+        row=2, column=1,
+        value=(
+            f"Informe diario da CVM, {periodo['de']} a {periodo['ate']}. "
+            "A CVM publica fluxo por FUNDO, nunca por distribuidor: um fundo em "
+            "tres vitrines entra inteiro nas tres. A coluna Exclusivo marca onde "
+            "a atribuicao a uma casa e inequivoca."
+        ),
+    ).font = _NOTE_FONT
+
+    fundos = sorted(
+        flow["top_captacao"] + flow["top_resgate"] + flow.get("estruturais", []),
+        key=lambda f: -abs(f["captacao_liquida"]),
+    )
+    vistos: set[str] = set()
+    unicos = []
+    for fundo in fundos:
+        if fundo["cnpj"] not in vistos:
+            vistos.add(fundo["cnpj"])
+            unicos.append(fundo)
+
+    ultima = _write_flow_rows(ws, unicos, 4)
+    ws.freeze_panes = "A5"
+    if ultima > 5:
+        ws.auto_filter.ref = f"A4:R{ultima - 1}"
+
+
+def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
+    """Aba "Tendencia de captacao": a serie mensal, por casa e por fundo.
+
+    A coluna que importa e a media diaria, nao o total do mes: o mes corrente
+    fecha com menos pregoes que os cheios, e comparar totais marcaria todo fundo
+    como desacelerando por um efeito de calendario.
+    """
+    ws = workbook.create_sheet("Tendencia de captacao")
+    competencias = flow.get("competencias") or []
+
+    ws.cell(row=1, column=1, value="Tendencia de captacao").font = _TITLE_FONT
+    ws.cell(
+        row=2, column=1,
+        value=(
+            "Media diaria de captacao liquida por competencia. A media diaria "
+            "existe porque o mes corrente tem menos pregoes que os fechados - "
+            "comparar totais brutos seria comparar calendarios."
+        ),
+    ).font = _NOTE_FONT
+
+    linha = 4
+    ws.cell(row=linha, column=1, value="Por vitrine").font = _HEADER_FONT
+    linha += 1
+    cabecalho = ["Casa"] + [f"{c[4:]}/{c[:4]}" for c in competencias] + ["Dias observados"]
+    for col_idx, header in enumerate(cabecalho, start=1):
+        cell = ws.cell(row=linha, column=col_idx, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        ws.column_dimensions[get_column_letter(col_idx)].width = 26 if col_idx == 1 else 18
+    linha += 1
+
+    for platform_id, serie in (flow.get("serie_por_casa") or {}).items():
+        por_competencia = {m["competencia"]: m for m in serie}
+        ws.cell(row=linha, column=1, value=_platform_label(platform_id)).font = _BODY_FONT
+        for idx, competencia in enumerate(competencias, start=2):
+            mes = por_competencia.get(competencia)
+            cell = ws.cell(
+                row=linha, column=idx,
+                value=mes["media_diaria"] if mes else None,
+            )
+            cell.font = _BODY_FONT
+            cell.number_format = _MONEY
+            if mes and mes["media_diaria"]:
+                cell.fill = _GREEN_FILL if mes["media_diaria"] > 0 else _RED_FILL
+        ws.cell(
+            row=linha, column=len(competencias) + 2,
+            value=", ".join(str(m["dias"]) for m in serie),
+        ).font = _NOTE_FONT
+        linha += 1
+
+    linha += 2
+    resumo = flow.get("tendencias") or {}
+    rotulos = flow.get("tendencia_labels") or {}
+    ws.cell(row=linha, column=1, value="Fundos por tendencia").font = _HEADER_FONT
+    linha += 1
+    for chave, quantidade in resumo.items():
+        ws.cell(row=linha, column=1, value=chave).font = _BODY_FONT
+        ws.cell(row=linha, column=2, value=quantidade).font = _BODY_FONT
+        ws.cell(row=linha, column=3, value=rotulos.get(chave, "")).font = _NOTE_FONT
+        linha += 1
+
+    for titulo, chave in (
+        ("Acelerando - captando mais por dia que antes", "acelerando"),
+        ("Viraram saida - captavam e passaram a perder", "virou_saida"),
+    ):
+        fundos = flow.get(chave) or []
+        if not fundos:
+            continue
+        linha += 2
+        ws.cell(row=linha, column=1, value=titulo).font = _HEADER_FONT
+        linha += 1
+        cabecalho = ["Fundo", "Vitrines"] + [f"{c[4:]}/{c[:4]}" for c in competencias] + ["Total (R$)"]
+        for col_idx, header in enumerate(cabecalho, start=1):
+            cell = ws.cell(row=linha, column=col_idx, value=header)
+            cell.fill = _HEADER_FILL
+            cell.font = _HEADER_FONT
+        linha += 1
+        for fundo in fundos:
+            por_competencia = {m["competencia"]: m for m in fundo.get("meses", [])}
+            ws.cell(row=linha, column=1, value=fundo["nome"]).font = _BODY_FONT
+            ws.cell(row=linha, column=2, value=", ".join(fundo["vitrines"])).font = _BODY_FONT
+            for idx, competencia in enumerate(competencias, start=3):
+                mes = por_competencia.get(competencia)
+                cell = ws.cell(
+                    row=linha, column=idx,
+                    value=mes["media_diaria"] if mes else None,
+                )
+                cell.font = _BODY_FONT
+                cell.number_format = _MONEY
+            total = ws.cell(
+                row=linha, column=len(competencias) + 3,
+                value=fundo["captacao_liquida"],
+            )
+            total.font = _BODY_FONT
+            total.number_format = _MONEY
+            linha += 1
+
+
+def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
+    """Aba "Oportunidades de grade": o que capta fora da vitrine da XP."""
+    ws = workbook.create_sheet("Oportunidades de grade")
+
+    ws.cell(row=1, column=1, value="Oportunidades de grade para a XP").font = _TITLE_FONT
+    ws.cell(
+        row=2, column=1,
+        value=(
+            f"{grade['total']} fundos captam varejo fora da vitrine da XP; "
+            f"{grade['total_produto_do_concorrente']} sao produto proprio da casa que "
+            f"os exibe e nao se transferem. Restam {grade['total_transferiveis']} "
+            f"({grade['total_operacionais']} de gestora ja distribuida pela XP, "
+            f"{grade['total_comerciais']} exigem abrir gestora)."
+        ),
+    ).font = _NOTE_FONT
+
+    linha = 4
+    for titulo, chave in (
+        ("Inclusao operacional - gestora ja distribuida pela XP", "operacionais"),
+        ("Exige abrir gestora", "comerciais"),
+        ("Mais varejo - por cotistas trazidos", "mais_varejo"),
+        ("Produto proprio do concorrente - nao transferivel", "produto_do_concorrente"),
+        ("Na vitrine da XP e perdendo varejo", "na_vitrine_perdendo"),
+    ):
+        fundos = grade.get(chave) or []
+        if not fundos:
+            continue
+        ws.cell(row=linha, column=1, value=titulo).font = _HEADER_FONT
+        linha = _write_flow_rows(ws, fundos, linha + 1) + 1
