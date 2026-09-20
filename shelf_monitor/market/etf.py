@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import re
+from functools import lru_cache
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -156,6 +157,26 @@ _CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+@lru_cache(maxsize=None)
+def _keyword_pattern(keyword: str) -> re.Pattern[str]:
+    """Regex de uma keyword de categoria, ancorada no INICIO de palavra.
+
+    Busca por substring solta classificava errado em escala: "IDA" (indice de
+    debentures ANBIMA) casa dentro de "RESPONSABILIDADE", e desde a RCVM 175
+    toda classe se chama "... RESPONSABILIDADE LIMITADA" - 166 dos 266 registros
+    do catalogo. O resultado era 175 "Renda Fixa", entre eles ETFs de Ibovespa.
+
+    A ancora e so a da esquerda, de proposito: os codigos de indice aparecem
+    colados a um sufixo que faz parte do nome do indice ("IMA-B5", "IBOV11"),
+    e exigir fronteira a direita perderia justamente esses.
+    """
+    return re.compile(r"(?<!\w)" + re.escape(keyword))
+
+
+def _matches_keyword(keyword: str, text: str) -> bool:
+    return _keyword_pattern(keyword).search(text) is not None
+
+
 def categorize_etf(
     cvm_class: str | None = None,
     anbima_class: str | None = None,
@@ -171,11 +192,11 @@ def categorize_etf(
     rest_text = normalize_text(f"{cvm_class or ''} {anbima_class or ''} {name or ''}")
 
     for label, keywords in _CATEGORY_KEYWORDS:
-        if any(kw in benchmark_text for kw in keywords):
+        if any(_matches_keyword(kw, benchmark_text) for kw in keywords):
             return label
 
     for label, keywords in _CATEGORY_KEYWORDS:
-        if any(kw in rest_text for kw in keywords):
+        if any(_matches_keyword(kw, rest_text) for kw in keywords):
             return label
 
     return "Outros"

@@ -54,7 +54,15 @@ ETF_FUND_TYPES = {"ETF": 3, "ETF RF": 4}
 CATEGORY_INFORMES_PERIODICOS = 6
 DOC_TYPE_INFORME_DIARIO = 64
 
-_CSRF_RE = re.compile(r"""csrf_token ?= ?["']([^"']+)["']""")
+# O token vive numa <meta name="_csrf">, que a pagina PUBLICA nao emite - o
+# proprio JS do site le com fallback vazio (`$("meta[name='_csrf']")... || ''`).
+# Medido em 2026-09-19: os XHR respondem HTTP 200 sem o header CSRFToken e com
+# ele vazio. A versao anterior procurava uma atribuicao literal
+# (`csrf_token = "..."`), nao achava, e levantava - barrando as quatro sondagens
+# de ETF do Fundos.NET por uma exigencia que o servidor nao faz.
+_CSRF_RE = re.compile(
+    r"""<meta[^>]*name=["']_csrf["'][^>]*content=["']([^"']+)["']""", re.I
+)
 _SELECT_RE = r"""<select[^>]*\bid=["']{id}["'][^>]*>(.*?)</select>"""
 _OPTION_RE = re.compile(r"""<option[^>]*\bvalue=["']([^"']*)["'][^>]*>(.*?)</option>""", re.S | re.I)
 
@@ -185,10 +193,12 @@ class FundosNetClient:
 
     @property
     def csrf_token(self) -> str:
-        token = extract_csrf_token(self.main_page())
-        if not token:
-            raise SourceUnavailable("Fundos.NET: csrf_token nao encontrado na pagina principal")
-        return token
+        """Token da pagina, ou string vazia quando ela nao emite nenhum.
+
+        Ausencia de token nao e falha: ver _CSRF_RE. Se um dia a pagina publica
+        passar a exigir, o header vai junto sozinho - e o que a meta trouxer.
+        """
+        return extract_csrf_token(self.main_page()) or ""
 
     def fund_types(self) -> dict[str, int]:
         return parse_select_options(self.main_page(), "tipoFundo")
@@ -297,7 +307,13 @@ class FundosNetClient:
 # demais são variantes plausíveis - tudo que não casar vai para `unknown_tags`.
 _TAG_MAP: dict[str, tuple[str, ...]] = {
     "cnpj": ("CNPJFDO", "CNPJFUNDO", "CNPJ", "CNPJCLASSE", "CNPJFUNDOCLASSE"),
-    "data": ("DTCOMPTC", "DTCOMPETENCIA", "DTREF", "DTREFERENCIA", "DATA", "DATACOMPETENCIA", "DATAREFERENCIA"),
+    # DTCOMPT e a tag real do informe de ETF (versao 4.0 do PadraoXMLInfoDiarioNet,
+    # medido em 2026-09-19); as demais sao variantes plausiveis. Nao inclua
+    # DATAPROXPL aqui: DATA_PROX_PL e a data do PROXIMO PL, nao a do informe.
+    "data": (
+        "DTCOMPT", "DTCOMPTC", "DTCOMPETENCIA", "DTREF", "DTREFERENCIA", "DATA",
+        "DATACOMPETENCIA", "DATAREFERENCIA",
+    ),
     "vl_total": ("VLTOTAL", "VALORTOTAL", "VLTOTALATV"),
     "cota": ("VLQUOTA", "VLCOTA", "VALORCOTA", "VALORDACOTA", "COTA"),
     "pl": ("VLPATRIMLIQ", "PATRIMLIQ", "PL", "PATRIMONIOLIQUIDO", "VLPL", "VLPATRIMONIOLIQUIDO"),
@@ -382,6 +398,13 @@ def parse_informe_diario_xml(
     if not nodes:
         nodes = [root]
 
+    # A data do informe de ETF mora no cabecalho (CAB_INFORM/DT_COMPT), fora do
+    # bloco de cada fundo - entao ler so o bloco deixava `data` vazia e
+    # `is_usable` falso, descartando todo registro apesar de PL, cota, captacao,
+    # resgate e cotistas terem sido lidos. O cabecalho entra como padrao; um
+    # bloco que traga a propria data continua ganhando dela.
+    header_date = _header_date(root, nodes)
+
     informes: list[InformeDiarioEtf] = []
     for node in nodes:
         informe = InformeDiarioEtf(doc_id=doc_id, fundo=fundo)
@@ -403,9 +426,24 @@ def parse_informe_diario_xml(
                 number = parse_number(text)
                 if number is not None and getattr(informe, fld) is None:
                     setattr(informe, fld, number)
+        informe.data = informe.data or header_date
         informe.unknown_tags = sorted(set(unknown))
         informes.append(informe)
     return informes
+
+
+def _header_date(root, nodes: list) -> date | None:
+    """Data do informe declarada fora dos blocos de fundo (o cabecalho)."""
+    inside = {id(el) for node in nodes for el in node.iter()}
+    for element in root.iter():
+        if id(element) in inside:
+            continue
+        for tag, text in _leaves(element):
+            if _FIELD_OF.get(tag) == "data":
+                parsed = _parse_any_date(text)
+                if parsed:
+                    return parsed
+    return None
 
 
 def records_from_informes(informes: list[InformeDiarioEtf]) -> list[EtfDailyRecord]:

@@ -236,9 +236,12 @@ def run_probes(config: Config, catalog: dict[str, EtfMetadata]) -> list[Probe]:
     probes.append(probe_cotahist(config, catalog_tickers(config, catalog)))
 
     report = {"generated_at": datetime.now().isoformat(), "probes": [p.to_dict() for p in probes]}
+    # default=str: a evidencia carrega o que a fonte devolveu, e o informe do
+    # Fundos.NET traz `date`. Sem isso a gravacao explodia justamente quando a
+    # sondagem encontrava dados - o oposto do que este arquivo existe para fazer.
     path = config.etf_sources_debug_dir / "diagnostico-etf.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     return probes
 
 

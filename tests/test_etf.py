@@ -111,6 +111,30 @@ class TestCategorizeEtf(unittest.TestCase):
     def test_unknown_is_outros(self):
         self.assertEqual(categorize_etf(name="ALGO SEM PISTA NENHUMA"), "Outros")
 
+    def test_responsabilidade_limitada_nao_virou_renda_fixa(self):
+        """O sufixo da RCVM 175 nao pode decidir a categoria.
+
+        "RESPONSABILIDADE" contem "IDA" (indice de debentures ANBIMA). Com busca
+        por substring solta, 166 dos 266 registros do catalogo caiam em Renda
+        Fixa por causa do proprio nome juridico - inclusive ETFs de Ibovespa.
+        """
+        self.assertEqual(
+            categorize_etf(
+                name="ISHARES IBOVESPA CLASSE DE INDICE - RESPONSABILIDADE LIMITADA"
+            ),
+            "Ações Brasil",
+        )
+        self.assertEqual(
+            categorize_etf(name="FUNDO DE INDICE RESPONSABILIDADE LIMITADA"), "Outros"
+        )
+
+    def test_codigo_de_indice_com_sufixo_ainda_casa(self):
+        """A ancora e so a esquerda: "IMA-B5" tem de continuar sendo Renda Fixa."""
+        self.assertEqual(
+            categorize_etf(name="IT NOW IMA-B5 P2 FUNDO DE INDICE"), "Renda Fixa"
+        )
+        self.assertEqual(categorize_etf(name="ETF IBOV11 DE ACOES"), "Ações Brasil")
+
 
 class TestBuildEtfCatalog(unittest.TestCase):
     """Integração com o cadastro: tipo estrutural, exclusão de cancelados,
@@ -183,16 +207,94 @@ class TestAggregateEtfWeeklyFlows(unittest.TestCase):
         self.assertEqual(len(weekly), 1)
         w = weekly[0]
         self.assertEqual(w.cnpj, "11111111000111")
-        self.assertEqual(w.captacao_bruta, 150.0)
-        self.assertEqual(w.resgates, 30.0)
-        self.assertEqual(w.captacao_liquida, 120.0)
+        # Sem semana anterior, a referência é o primeiro registro da própria
+        # semana (única forma possível para a primeira semana da série) - e o
+        # fluxo DAQUELE dia nao entra na soma: medido no informe do Fundos.NET,
+        # PL(D) ja contem a captacao de D, entao somar o dia da referencia
+        # contaria o mesmo dinheiro duas vezes e a valorizacao por diferenca
+        # sairia negativa sem motivo.
+        self.assertEqual(w.pl_inicio, 1000.0)
+        self.assertEqual(w.captacao_bruta, 50.0)
+        self.assertEqual(w.resgates, 10.0)
+        self.assertEqual(w.captacao_liquida, 40.0)
         self.assertEqual(w.pl_fim, 1150.0)
         self.assertEqual(w.cotistas_fim, 15)
-        # Sem semana anterior, a referência é o primeiro registro da própria
-        # semana (única forma possível para a primeira semana da série).
-        self.assertEqual(w.pl_inicio, 1000.0)
         self.assertEqual(w.rentabilidade_semana, 10.0)  # (11/10 - 1)*100
         self.assertFalse(w.data_suspeita)
+
+    def test_pl_decomposto_em_captacao_e_valorizacao(self):
+        """variacao_pl = captacao_liquida + valorizacao, por construcao."""
+        recs = [
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 7),
+                vl_patrim_liq=1000.0, captc_dia=0.0, resg_dia=0.0,
+                nr_cotst=10, vl_quota=10.0,
+            ),
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 11),
+                vl_patrim_liq=1150.0, captc_dia=100.0, resg_dia=20.0,
+                nr_cotst=15, vl_quota=10.5,
+            ),
+        ]
+        w = aggregate_etf_weekly_flows({}, recs)[0]
+
+        self.assertEqual(w.captacao_liquida, 80.0)
+        self.assertEqual(w.variacao_pl, 150.0)
+        self.assertEqual(w.valorizacao, 70.0)
+        self.assertAlmostEqual(w.captacao_liquida + w.valorizacao, w.variacao_pl)
+
+    def test_valorizacao_que_a_cota_desmente_e_marcada(self):
+        """A identidade fecha sempre - a cota e a segunda leitura.
+
+        Aqui a cota nao se move (retorno zero), mas o PL sobe 50% sem fluxo
+        declarado: a semana esta incompleta, nao extraordinaria. Os valores sao
+        em escala de fundo real porque a guarda tem piso absoluto de R$ 1.000 -
+        abaixo dele o desvio e arredondamento, nao sinal.
+        """
+        recs = [
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 7),
+                vl_patrim_liq=1_000_000.0, nr_cotst=10, vl_quota=10.0,
+            ),
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 11),
+                vl_patrim_liq=1_500_000.0, nr_cotst=10, vl_quota=10.0,
+            ),
+        ]
+        w = aggregate_etf_weekly_flows({}, recs)[0]
+        self.assertEqual(w.rentabilidade_semana, 0.0)
+        self.assertTrue(w.decomposicao_suspeita)
+
+    def test_queda_de_cotistas_que_o_pl_desmente_e_marcada(self):
+        """O caso real de 2026-09-15: 52.587 -> 854 cotistas com o PL parado."""
+        recs = [
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 14),
+                vl_patrim_liq=2_592_018_900.85, nr_cotst=52_587, vl_quota=132.58,
+            ),
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 15),
+                vl_patrim_liq=2_613_719_662.40, nr_cotst=854, vl_quota=133.35,
+            ),
+        ]
+        w = aggregate_etf_weekly_flows({}, recs)[0]
+        self.assertEqual(w.variacao_cotistas, -51_733)
+        self.assertTrue(w.cotistas_suspeito)
+
+    def test_movimento_normal_de_cotistas_nao_e_marcado(self):
+        recs = [
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 7),
+                vl_patrim_liq=1000.0, nr_cotst=100, vl_quota=10.0,
+            ),
+            EtfDailyRecord(
+                cnpj="11111111000111", dt_comptc=date(2026, 9, 11),
+                vl_patrim_liq=1010.0, nr_cotst=112, vl_quota=10.1,
+            ),
+        ]
+        w = aggregate_etf_weekly_flows({}, recs)[0]
+        self.assertEqual(w.variacao_cotistas, 12)
+        self.assertFalse(w.cotistas_suspeito)
 
     def test_return_compares_against_the_previous_weeks_close_not_mondays_open(self):
         """O bug original comparava segunda vs sexta da MESMA semana e perdia

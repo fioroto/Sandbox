@@ -123,7 +123,7 @@ class TestTickersCsv(unittest.TestCase):
 
 class TestFundosNetPage(unittest.TestCase):
     HTML = """
-    <html><script>var csrf_token = "abc123";</script>
+    <html><meta name="_csrf" content="abc123">
     <select id="tipoFundo" class="x">
       <option value="">Todos</option>
       <option value="1">Fundo Imobiliário</option>
@@ -133,8 +133,26 @@ class TestFundosNetPage(unittest.TestCase):
     <select id="categoriaDocumento"><option value="6">Informes  Periódicos</option></select>
     </html>"""
 
-    def test_csrf_token(self):
+    # A pagina publica real (medida em 2026-09-19): o JS le a meta com fallback
+    # vazio, e a meta nao vem. Nao ha token a extrair - e os XHR respondem 200
+    # sem ele.
+    HTML_PUBLICA = """
+    <html><script>
+      const csrf_token = $("meta[name='_csrf']").attr("content") || '';
+      const csrfHeader = $("meta[name='_csrf_header']").attr("content") || '';
+    </script></html>"""
+
+    def test_csrf_token_vem_da_meta_tag(self):
         self.assertEqual(fundosnet.extract_csrf_token(self.HTML), "abc123")
+
+    def test_pagina_publica_sem_meta_nao_tem_token(self):
+        """O JS que apenas LE a meta nao pode ser confundido com o token.
+
+        A versao anterior procurava uma atribuicao literal e, nesta pagina,
+        levantava SourceUnavailable - barrando as quatro sondagens de ETF do
+        Fundos.NET por uma exigencia que o servidor nao faz.
+        """
+        self.assertIsNone(fundosnet.extract_csrf_token(self.HTML_PUBLICA))
         self.assertIsNone(fundosnet.extract_csrf_token("<html></html>"))
 
     def test_select_options(self):

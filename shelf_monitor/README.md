@@ -304,10 +304,13 @@ pede so cadastro e taxas.
 ## Monitoramento de ETFs (`etf`)
 
 ```bash
-python -m shelf_monitor etf                 # catalogo completo + fluxo semanal (o que houver)
+python -m shelf_monitor etf                 # catalogo + PL mensal dos ETFs + fluxo semanal
 python -m shelf_monitor etf --export        # idem, gravando planilha .xlsx e CSV
 python -m shelf_monitor run --with-etf      # roda junto da coleta normal (opt-in - baixa ~33MB/mes extra)
 ```
+
+O PL mensal (balancete de FIE) sai em toda execucao do `etf`: sao ~0,1 MB por competencia, ordens de
+grandeza abaixo do INF_DIARIO, e e a unica fonte medida que alcanca o ETF em si - nao so os feeders.
 
 **ETF e o tipo estrutural FIIM, nao uma palavra no nome.** Na CVM, ETF e Fundo de
 Investimento em Indice de Mercado (FIIM) - um tipo proprio de `Tipo_Fundo` (cadastro legado) ou
@@ -331,9 +334,60 @@ captacao diaria de um ETF de verdade normalmente nao aparece no INF_DIARIO - so 
 aparece, por serem FI/FIF normais. Por isso o comando sempre mostra primeiro o **catalogo completo**
 (todo ETF cadastrado, por categoria - a resposta a "o monitor enxerga todos os ETFs do mercado,
 incluindo os de Renda Fixa?") e so depois o fluxo semanal, com uma linha de cobertura explicita
-("N de M ETFs com fluxo no INF_DIARIO") em vez de deixar a lacuna passar em silencio. Fechar essa
-lacuna de verdade exige uma fonte que cubra FIIM (B3: cotas emitidas e cota patrimonial por ETF) -
-nao implementado nesta versao por falta de acesso a essa fonte para descobrir o formato real.
+("N de M ETFs com fluxo no INF_DIARIO") em vez de deixar a lacuna passar em silencio.
+
+**O PL do ETF em si vem do balancete de FIE** (`market/fie_balancete.py`), medido em 2026-09-19:
+219 dos 249 ETFs do catalogo (88%), R$ 130,5 bi somados, contra **0 de 249** no INF_DIARIO. Os ETFs
+nao tem diretorio proprio nos dados abertos - nao existe `/dados/FIIM/` nem `cda_fiim_*`: eles vivem
+sob FIE (Estruturados), em `/FIE/DOC/BALANCETE/DADOS/balancete_fie_{AAAAMM}.zip` (~0,1 MB por
+competencia) e tambem no membro `cda_fie_{AAAAMM}.csv` de `/FI/DOC/CDA/DADOS/cda_fi_{AAAAMM}.zip`
+(204/249). O balancete e a escolha: cobre mais, pesa 150x menos e traz o PL direto. As contas do
+plano COFI foram identificadas por medicao e a identidade `60000002 = 61100004 + 61800005`
+(PL = capital de cotas + resultado acumulado) fecha com desvio zero nos 219 - e virou guarda no
+codigo: se a CVM renumerar o plano, o registro sai marcado como suspeito em vez de publicar um PL
+que e outra coisa.
+
+O balancete **nao** separa captacao de valorizacao, e o modulo diz por que: entre 07 e 08/2026 o
+resultado acumulado ficou identico nos 213 ETFs presentes nos dois meses, ou seja a conta de cotas
+absorve marcacao a mercado junto com integralizacao. Por isso a coluna dele se chama variacao de PL,
+nao captacao. **Quem separa e o informe diario do Fundos.NET** - ver abaixo.
+
+### Cota, cotistas e a separacao entre captacao e valorizacao (`--flow-source fnet`)
+
+O informe diario de ETF no Fundos.NET traz, por fundo e por dia: `PATRIM_LIQ`, `VL_QUOTA`,
+`CAPTC_DIA`, `RESG_DIA` e `NR_COTST`. Medido em 2026-09-19: **853 informes, 223 dos 249 ETFs (90%)**
+- contra 0 no INF_DIARIO. Captacao e resgate vem **publicados**, nao derivados, entao a conta fecha:
+
+    variacao_pl = captacao_liquida + valorizacao
+
+A relacao foi verificada dia a dia no informe (`PL(D) = PL(D-1) + captacao(D) - resgates(D) +
+valorizacao(D)`), e e dela que vem uma correcao importante no agregador: a captacao do dia usado como
+PL inicial **ja esta dentro desse PL**. Somar aquele dia contava o mesmo dinheiro duas vezes - num
+ETF de Selic isso dava captacao de R$ 705 MM contra variacao de PL de R$ 405 MM e valorizacao por
+diferenca de -R$ 300 MM (queda de 19% num fundo de Selic, que nao acontece). Com a janela do fluxo
+alinhada a do PL, a valorizacao fica R$ 1,9 MM contra R$ 1,87 MM que a cota implica.
+
+Duas guardas nascem da mesma logica, porque a identidade fecha por construcao e por isso nao prova
+nada sozinha:
+
+| Guarda | O que pega | Como |
+|---|---|---|
+| `decomposicao_suspeita` | semana com dia faltando na coleta | a cota da uma leitura da valorizacao independente do fluxo; divergencia acima de 2% do PL inicial marca o registro |
+| `cotistas_suspeito` | erro de preenchimento na origem | queda de mais de metade dos cotistas com o PL praticamente parado. Caso real: em 2026-09-15 varios fundos de uma mesma casa declararam ~850 cotistas contra ~50 mil do dia anterior, com o PL intacto - somados, faziam o saldo semanal dar -245 mil cotistas. Registros marcados ficam fora do ranking e do saldo |
+
+O `etf` imprime, alem da captacao: **Ranking de Valorizacao** (retorno da cota lado a lado com a
+valorizacao em reais, captacao liquida e variacao de PL) e **Evolucao de Cotistas** (inicio, fim,
+variacao e saldo da semana). As colunas `Variacao PL`, `Valorizacao`, `Decomposicao Suspeita` e
+`Cotistas Suspeito` vao para o CSV e para a aba "Detalhamento Completo".
+
+**Ressalva que sai junto do numero:** o retorno e da cota patrimonial, ex-provento. O informe diario
+nao publica provento pago, entao um ETF que distribui aparece abaixo do retorno total do investidor -
+reincorporar exigiria uma segunda fonte de proventos, que nao esta implementada.
+
+O acesso ao Fundos.NET tambem estava barrado por uma exigencia que o servidor nao faz: o codigo
+procurava um `csrf_token` numa atribuicao literal de script. O token real vive numa
+`<meta name="_csrf">` que a pagina **publica nao emite** - o proprio JS do site le com fallback vazio
+-, e os XHR respondem HTTP 200 sem o header. Medido em 2026-09-19.
 
 **Rentabilidade implausivel e descartada, nao publicada.** O informe mensal e "atualizado
 diariamente com retificacoes" (a propria CVM documenta isso), entao o mesmo CNPJ pode aparecer
@@ -364,10 +418,11 @@ cobre - cada uma um pedaco:
 | **B3 fundos listados** (`sistemaswebb3-listados.b3.com.br`) | ticker, CNPJ, classificacao, cotas aprovadas de cada ETF listado - e o que preenche `tickers.csv` | cadastro | `market/b3_funds.py` |
 | **COTAHIST** (`bvmf.bmfbovespa.com.br/InstDados/SerHist/`) | preco, volume financeiro, negocios e quantidade por pregao - liquidez, nao patrimonio | diaria | `market/cotahist.py` |
 
-Fora do escopo desta versao, mapeadas: o **balancete mensal de FIIM** da CVM (dataset "Fundos
-Estruturados: Balancete", peso contabil, mensal), a **carteira mensal** (`cda_fiim_AAAAMM.csv`, o
-que cada ETF de RF carrega), o **Boletim de Fundos da ANBIMA** (captacao liquida de ETF por tipo,
-mensal, planilha) e a API de ETFs da ANBIMA Developers (comercial). Sites de terceiros (StatusInvest
+O **balancete mensal de FIE** saiu do escopo futuro e esta implementado (ver acima). Seguem fora,
+mapeadas: a **carteira mensal** (membro `cda_fie_AAAAMM.csv`, o que cada ETF carrega - o PL ja vem
+do balancete, entao isto interessa para composicao, nao para tamanho), o **Boletim de Fundos da
+ANBIMA** (captacao liquida de ETF por tipo, mensal, planilha) e a API de ETFs da ANBIMA Developers
+(comercial). Sites de terceiros (StatusInvest
 e afins) ficam de fora: nao sao fonte oficial e o uso automatizado depende dos termos deles.
 
 **Evidencia, nao suposicao.** Os endpoints, parametros e formatos de resposta da B3 e do Fundos.NET

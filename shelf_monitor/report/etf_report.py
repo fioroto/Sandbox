@@ -17,6 +17,7 @@ from rich.table import Table
 
 from shelf_monitor.market.etf import EtfMetadata, catalog_counts
 from shelf_monitor.market.etf_flow import CategoryWeeklySummary, EtfWeeklyFlow, FlowCoverage
+from shelf_monitor.market.fie_balancete import EtfMonthlyPl, PlCoverage
 from shelf_monitor.normalize import format_cnpj
 
 _KIND_LABEL = {"etf": "ETF", "feeder": "Feeder"}
@@ -206,6 +207,124 @@ def print_etf_summary(
             )
         console.print(out_table)
 
+    _print_valorizacao_ranking(console, latest_flows, latest_week)
+    _print_cotistas_ranking(console, latest_flows, latest_week)
+
+
+def _print_valorizacao_ranking(
+    console: Console, flows: list[EtfWeeklyFlow], week: str
+) -> None:
+    """Ranking de valorizacao: quanto do PL veio de mercado, e nao de captacao.
+
+    Duas medidas lado a lado de proposito. O retorno da cota e a performance por
+    unidade (comparavel entre ETFs de tamanhos diferentes); a valorizacao em reais
+    e o quanto do patrimonio o mercado somou ou tirou. Um ETF pequeno pode liderar
+    a primeira e nao aparecer na segunda - sao perguntas distintas.
+    """
+    ranked = [f for f in flows if f.rentabilidade_semana is not None]
+    if not ranked:
+        return
+    ranked.sort(key=lambda f: f.rentabilidade_semana or 0.0, reverse=True)
+
+    console.print()
+    table = Table(
+        title=f"Ranking de Valorizacao ({week}) - retorno da cota",
+        title_style="bold",
+    )
+    table.add_column("Ticker / Nome", style="cyan")
+    table.add_column("Categoria")
+    table.add_column("Retorno da cota", justify="right")
+    table.add_column("Valorizacao (R$)", justify="right")
+    table.add_column("Captacao liquida", justify="right")
+    table.add_column("Variacao de PL", justify="right")
+
+    def row(flow: EtfWeeklyFlow) -> None:
+        style = "green" if (flow.rentabilidade_semana or 0) > 0 else "red"
+        table.add_row(
+            (flow.ticker or flow.etf_name[:30]) + (" *" if flow.decomposicao_suspeita else ""),
+            flow.category,
+            f"[{style}]{flow.rentabilidade_semana:+.2f}%[/]",
+            format_money_millions(flow.valorizacao),
+            format_money_millions(flow.captacao_liquida),
+            format_money_millions(flow.variacao_pl),
+        )
+
+    for flow in ranked[:10]:
+        row(flow)
+    if len(ranked) > 12:
+        table.add_section()
+        for flow in ranked[-3:]:
+            row(flow)
+
+    console.print(table)
+    # A cota do informe e cota patrimonial ex-provento: num ETF que distribui, o
+    # retorno medido aqui fica abaixo do retorno total do investidor. O informe
+    # diario nao traz provento pago, entao nao ha como reincorporar sem uma
+    # segunda fonte - dizer isso e mais util que publicar o numero sem ressalva.
+    console.print(
+        "[dim]Retorno da cota, ex-provento: o informe diario nao publica provento "
+        "pago, entao um ETF que distribui aparece abaixo do retorno total.[/]"
+    )
+    duvidosos = [f for f in flows if f.decomposicao_suspeita]
+    if duvidosos:
+        console.print(
+            f"[yellow]* {len(duvidosos)} de {len(flows)} ETF(s) com decomposicao "
+            "suspeita:[/] a valorizacao por diferenca nao bate com a que a cota "
+            "implica - semana com dia faltando na coleta, nao movimento real."
+        )
+
+
+def _print_cotistas_ranking(
+    console: Console, flows: list[EtfWeeklyFlow], week: str
+) -> None:
+    """Quem ganhou e quem perdeu cotistas na semana."""
+    # Registros com cotistas desmentidos pelo PL ficam FORA do ranking e do
+    # saldo, como o retorno implausivel ja ficava: publicar -51 mil cotistas de um
+    # erro de preenchimento e pior que nao publicar numero nenhum.
+    descartados = [f for f in flows if f.cotistas_suspeito]
+    moved = [f for f in flows if f.variacao_cotistas and not f.cotistas_suspeito]
+    if not moved:
+        return
+    moved.sort(key=lambda f: f.variacao_cotistas, reverse=True)
+
+    console.print()
+    table = Table(title=f"Evolucao de Cotistas ({week})", title_style="bold")
+    table.add_column("Ticker / Nome", style="cyan")
+    table.add_column("Categoria")
+    table.add_column("Cotistas inicio", justify="right")
+    table.add_column("Cotistas fim", justify="right")
+    table.add_column("Variacao", justify="right")
+
+    def row(flow: EtfWeeklyFlow) -> None:
+        style = "green" if flow.variacao_cotistas > 0 else "red"
+        table.add_row(
+            flow.ticker or flow.etf_name[:30],
+            flow.category,
+            f"{flow.cotistas_inicio:,}".replace(",", "."),
+            f"{flow.cotistas_fim:,}".replace(",", "."),
+            f"[{style}]{flow.variacao_cotistas:+,}[/]".replace(",", "."),
+        )
+
+    for flow in moved[:8]:
+        row(flow)
+    perdas = [f for f in moved if f.variacao_cotistas < 0]
+    if perdas:
+        table.add_section()
+        for flow in perdas[-3:]:
+            row(flow)
+
+    total = sum(f.variacao_cotistas for f in moved)
+    console.print(table)
+    console.print(
+        f"[bold]Saldo de cotistas na semana:[/] {total:+,}".replace(",", ".")
+        + f" em {len(moved)} ETF(s) com movimento"
+    )
+    if descartados:
+        console.print(
+            f"[yellow]{len(descartados)} ETF(s) descartado(s) do saldo:[/] variacao "
+            "de cotistas que o PL desmente (erro de preenchimento na origem)."
+        )
+
 
 def export_etf_csv(weekly_flows: list[EtfWeeklyFlow], output_path: Path) -> Path:
     """Exporta o histórico completo semanal de captação de ETFs para CSV."""
@@ -215,8 +334,10 @@ def export_etf_csv(weekly_flows: list[EtfWeeklyFlow], output_path: Path) -> Path
         "CNPJ", "Tipo", "Ticker", "Nome ETF", "Categoria", "Gestora", "Semana ISO",
         "Data Fim Semana", "Captacao Bruta (RS)", "Resgates (RS)",
         "Captacao Liquida (RS)", "PL Inicio (RS)", "PL Fim (RS)",
+        "Variacao PL (RS)", "Valorizacao (RS)",
         "Cotistas Inicio", "Cotistas Fim", "Variacao Cotistas",
-        "Rentabilidade Semanal (%)", "Dado Suspeito",
+        "Rentabilidade Semanal (%)", "Dado Suspeito", "Decomposicao Suspeita",
+        "Cotistas Suspeito",
     ]
 
     with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -237,11 +358,15 @@ def export_etf_csv(weekly_flows: list[EtfWeeklyFlow], output_path: Path) -> Path
                 f.captacao_liquida,
                 f.pl_inicio,
                 f.pl_fim,
+                f.variacao_pl,
+                f.valorizacao,
                 f.cotistas_inicio,
                 f.cotistas_fim,
                 f.variacao_cotistas,
                 f.rentabilidade_semana if f.rentabilidade_semana is not None else "",
                 "sim" if f.data_suspeita else "",
+                "sim" if f.decomposicao_suspeita else "",
+                "sim" if f.cotistas_suspeito else "",
             ])
 
     return output_path
@@ -252,6 +377,7 @@ def export_etf_excel(
     category_summaries: list[CategoryWeeklySummary],
     catalog: dict[str, EtfMetadata],
     output_path: Path,
+    pl_series: list[EtfMonthlyPl] | None = None,
 ) -> Path:
     """Exporta a planilha Excel completa com matriz semanal por ETF e por categoria."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,10 +491,11 @@ def export_etf_excel(
     headers_flat = [
         "CNPJ", "Tipo", "Ticker", "Nome ETF", "Categoria", "Gestora", "Semana ISO",
         "Data Fim", "Captação Bruta (R$)", "Resgates (R$)", "Captação Líquida (R$)",
-        "PL Fim (R$)", "Cotistas Fim", "Variação Cotistas", "Rentabilidade Semanal (%)",
-        "Dado Suspeito",
+        "PL Fim (R$)", "Variação PL (R$)", "Valorização (R$)",
+        "Cotistas Fim", "Variação Cotistas", "Rentabilidade Semanal (%)",
+        "Dado Suspeito", "Decomposição Suspeita", "Cotistas Suspeito",
     ]
-    widths_flat = [18, 10, 12, 38, 16, 26, 12, 14, 18, 18, 20, 18, 14, 16, 20, 14]
+    widths_flat = [18, 10, 12, 38, 16, 26, 12, 14, 18, 18, 20, 18, 18, 18, 14, 16, 20, 14, 20, 18]
 
     for col_idx, (h, w) in enumerate(zip(headers_flat, widths_flat), start=1):
         ws_flat.cell(row=1, column=col_idx, value=h)
@@ -395,30 +522,36 @@ def export_etf_excel(
             f.resgates,
             f.captacao_liquida,
             f.pl_fim,
+            f.variacao_pl,
+            f.valorizacao,
             f.cotistas_fim,
             f.variacao_cotistas,
             (f.rentabilidade_semana / 100.0) if f.rentabilidade_semana is not None else None,
             "sim" if f.data_suspeita else "",
+            "sim" if f.decomposicao_suspeita else "",
+            "sim" if f.cotistas_suspeito else "",
         ]
         for col_idx, val in enumerate(values, start=1):
             cell = ws_flat.cell(row=row_idx, column=col_idx, value=val)
             cell.font = _BODY_FONT
             cell.border = _BORDER
 
-        ws_flat.cell(row=row_idx, column=9).number_format = _MONEY
-        ws_flat.cell(row=row_idx, column=10).number_format = _MONEY
-        ws_flat.cell(row=row_idx, column=11).number_format = _MONEY
-        ws_flat.cell(row=row_idx, column=12).number_format = _MONEY
-        ws_flat.cell(row=row_idx, column=13).number_format = _INT
-        ws_flat.cell(row=row_idx, column=14).number_format = _INT
-        ws_flat.cell(row=row_idx, column=15).number_format = _PCT
+        # 9-14 sao reais (captacao bruta, resgates, liquida, PL fim, variacao de
+        # PL, valorizacao); 15-16 contagem de cotistas; 17 percentual.
+        for money_col in range(9, 15):
+            ws_flat.cell(row=row_idx, column=money_col).number_format = _MONEY
+        ws_flat.cell(row=row_idx, column=15).number_format = _INT
+        ws_flat.cell(row=row_idx, column=16).number_format = _INT
+        ws_flat.cell(row=row_idx, column=17).number_format = _PCT
         row_idx += 1
 
     ws_flat.freeze_panes = "A2"
     if row_idx > 2:
-        ws_flat.auto_filter.ref = f"A1:P{row_idx - 1}"
+        ws_flat.auto_filter.ref = f"A1:T{row_idx - 1}"
 
     _write_catalog_sheet(wb, catalog)
+    if pl_series:
+        _write_pl_sheet(wb, pl_series)
 
     wb.save(output_path)
     return output_path
@@ -491,3 +624,133 @@ def _write_catalog_sheet(wb: Workbook, catalog: dict[str, EtfMetadata]) -> None:
             cell.fill = _HEADER_FILL
             cell.font = _HEADER_FONT
         write_rows(feeders, feeder_header_row + 1)
+
+
+def print_etf_pl(
+    series: list[EtfMonthlyPl],
+    coverage: PlCoverage,
+    missing: list[str] | None = None,
+) -> None:
+    """Exibe o PL mensal dos ETFs vindo do balancete de FIE.
+
+    Fica separado de print_etf_summary de proposito: sao fontes com cadencia e
+    semantica diferentes (semanal/captacao contra mensal/PL) e juntar as duas
+    numa tabela convidaria a somar numeros que nao se somam.
+    """
+    console = Console()
+
+    if not series:
+        console.print(
+            "[yellow]Balancete de FIE sem nenhum ETF do catalogo.[/] "
+            "Nenhuma competencia disponivel no periodo pedido."
+        )
+        return
+
+    latest = coverage.competencia
+    current = [s for s in series if s.competencia == latest]
+    comparable = [s for s in current if s.variacao_pl is not None]
+    comparable.sort(key=lambda s: -abs(s.variacao_pl or 0))
+
+    label = f"{latest[4:]}/{latest[:4]}" if latest else "?"
+    table = Table(
+        title=f"PL dos ETFs no balancete de FIE - competencia {label}",
+        title_style="bold",
+    )
+    table.add_column("ETF")
+    table.add_column("Categoria")
+    table.add_column("PL", justify="right")
+    table.add_column("Variacao no mes", justify="right")
+    table.add_column("%", justify="right")
+
+    for item in comparable[:15]:
+        variacao = item.variacao_pl or 0.0
+        style = "green" if variacao > 0 else "red" if variacao < 0 else ""
+        pct = f"{item.variacao_pct:+.1f}%" if item.variacao_pct is not None else "-"
+        table.add_row(
+            (item.ticker and f"{item.ticker} - {item.etf_name}" or item.etf_name)[:44],
+            item.category[:18],
+            format_money_millions(item.pl),
+            f"[{style}]{format_money_millions(variacao)}[/]" if style else format_money_millions(variacao),
+            f"[{style}]{pct}[/]" if style else pct,
+        )
+
+    console.print()
+    console.print(table)
+    console.print(
+        f"[bold]Cobertura:[/] {coverage.etfs_com_pl} de {coverage.etfs_no_catalogo} "
+        f"ETFs do catalogo ({coverage.coverage_ratio:.0%}), "
+        f"PL somado {format_money_millions(coverage.pl_total)}"
+    )
+    # A ressalva sai junto do numero, sempre: sem ela a variacao de PL seria lida
+    # como captacao - e ela inclui marcacao a mercado. Ver market/fie_balancete.py.
+    console.print(
+        "[dim]Variacao de PL nao e captacao liquida: inclui valorizacao. O "
+        "balancete nao traz cotas em circulacao, que e o que separaria as duas.[/]"
+    )
+    if coverage.identidades_suspeitas:
+        console.print(
+            f"[yellow]{coverage.identidades_suspeitas} ETF(s) com identidade "
+            "contabil fora de linha[/] (PL != capital de cotas + resultado) - "
+            "sinal de que o plano de contas mudou; confira market/fie_balancete.py."
+        )
+    if missing:
+        console.print(
+            f"[dim]Competencias sem balancete publicado: {', '.join(missing)} "
+            "(a CVM publica com defasagem).[/]"
+        )
+
+
+def _write_pl_sheet(wb: Workbook, series: list[EtfMonthlyPl]) -> None:
+    """Aba "PL mensal (FIE)": a serie de PL por ETF e competencia."""
+    ws = wb.create_sheet("PL mensal (FIE)")
+
+    ws.cell(row=1, column=1, value="PL mensal dos ETFs - balancete de Fundos Estruturados (CVM)").font = _TITLE_FONT
+    ws.cell(
+        row=2, column=1,
+        value=(
+            "Variacao de PL NAO e captacao liquida: inclui valorizacao. "
+            "O balancete nao publica cotas em circulacao."
+        ),
+    ).font = _NOTE_FONT
+
+    headers = [
+        "Competencia", "Ticker", "ETF", "CNPJ", "Categoria", "Gestora",
+        "PL (R$)", "PL anterior (R$)", "Variacao (R$)", "Variacao (%)",
+    ]
+    header_row = 4
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        ws.column_dimensions[get_column_letter(col_idx)].width = 44 if col_idx == 3 else 18
+
+    row_idx = header_row + 1
+    for item in series:
+        values = [
+            item.competencia,
+            item.ticker or "",
+            item.etf_name,
+            format_cnpj(item.cnpj),
+            item.category,
+            item.manager_name or "",
+            item.pl,
+            item.pl_anterior,
+            item.variacao_pl,
+            item.variacao_pct,
+        ]
+        for col_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = _BODY_FONT
+            if col_idx in (7, 8, 9):
+                cell.number_format = _MONEY
+            elif col_idx == 10 and value is not None:
+                cell.number_format = "0.0"
+            # Reatribuir cell.fill a si mesmo levanta TypeError (StyleProxy nao
+            # e hashable), entao a cor so e tocada quando ha sinal a mostrar.
+            if col_idx == 9 and isinstance(value, (int, float)) and value:
+                cell.fill = _GREEN_FILL if value > 0 else _RED_FILL
+        row_idx += 1
+
+    ws.freeze_panes = f"A{header_row + 1}"
+    if row_idx > header_row + 1:
+        ws.auto_filter.ref = f"A{header_row}:J{row_idx - 1}"

@@ -87,7 +87,26 @@ class EtfWeeklyFlow:
     cotistas_inicio: int
     cotistas_fim: int
     variacao_cotistas: int
+    # Decomposicao do PL: o que entrou de dinheiro novo e o que foi mercado.
+    # variacao_pl = captacao_liquida + valorizacao, por construcao - e a conta que
+    # o INF_DIARIO nunca permitiu fechar para ETF porque nao cobria FIIM. O
+    # informe do Fundos.NET publica captacao e resgate, entao a valorizacao sai
+    # por diferenca: nao e estimativa de fluxo, e o residuo do fluxo declarado.
+    variacao_pl: float = 0.0
+    valorizacao: float = 0.0
     rentabilidade_semana: float | None = None
+    # A valorizacao sai por diferenca (PL menos fluxo declarado), entao a
+    # identidade fecha sempre - inclusive quando a serie tem buraco e o residuo
+    # absorve o erro. A cota da a segunda leitura, independente do fluxo: se as
+    # duas divergem materialmente, a semana esta incompleta, nao extraordinaria.
+    decomposicao_suspeita: bool = False
+    # Queda (ou salto) de cotistas que o PL desmente. Medido em 2026-09-15: o
+    # informe do IT NOW IDIV declarou 854 cotistas contra 52.587 do dia anterior,
+    # com PL de R$ 2,59 bi para R$ 2,61 bi - varios fundos da mesma casa no mesmo
+    # dia. Saida de 98% dos cotistas nao deixa o PL parado: e erro de
+    # preenchimento na origem. Somados, esses registros faziam o saldo da semana
+    # dar -245 mil cotistas.
+    cotistas_suspeito: bool = False
     # True quando a rentabilidade calculada excedeu o teto plausível para a
     # categoria e foi descartada (ver _MAX_PLAUSIBLE_WEEKLY_RETURN_PCT) - sinal
     # de descontinuidade nos dados, não de um resultado extremo real.
@@ -326,12 +345,25 @@ def aggregate_etf_weekly_flows(
             week_end_date = week_recs[-1].dt_comptc
             week_key = f"{iso_year}-W{iso_week:02d}"
 
-            captacao_bruta = sum(r.captc_dia for r in week_recs)
-            resgates = sum(r.resg_dia for r in week_recs)
+            # O fluxo tem de cobrir a MESMA janela que o PL. Medido no informe do
+            # Fundos.NET, dia a dia: PL(D) = PL(D-1) + captacao(D) - resgates(D)
+            # + valorizacao(D). Logo a captacao do dia usado como PL inicial ja
+            # esta dentro dele: quando a referencia e o primeiro registro da
+            # propria semana (serie comecando, sem semana anterior), somar aquele
+            # dia conta o mesmo dinheiro duas vezes. Media o estrago: num ETF de
+            # Selic isso produzia captacao de R$ 705 MM contra variacao de PL de
+            # R$ 405 MM, e a valorizacao por diferenca saia -R$ 300 MM - queda de
+            # 19% num fundo de Selic, que nao acontece. Com a janela alinhada, a
+            # valorizacao fica R$ 1,9 MM contra R$ 1,87 MM que a cota implica.
+            flow_recs = week_recs if prev_week_last else week_recs[1:]
+            captacao_bruta = sum(r.captc_dia for r in flow_recs)
+            resgates = sum(r.resg_dia for r in flow_recs)
             captacao_liquida = captacao_bruta - resgates
 
             pl_inicio = reference.vl_patrim_liq
             pl_fim = week_recs[-1].vl_patrim_liq
+            variacao_pl = pl_fim - pl_inicio
+            valorizacao = variacao_pl - captacao_liquida
 
             cotistas_inicio = reference.nr_cotst
             cotistas_fim = week_recs[-1].nr_cotst
@@ -346,6 +378,25 @@ def aggregate_etf_weekly_flows(
                 if abs(rentab) > max_return:
                     suspeita = True
                     rentab = None
+
+            # Metade dos cotistas indo embora com o PL praticamente parado nao e
+            # movimento de mercado, e erro de preenchimento (ver o campo).
+            cotistas_suspeito = bool(
+                cotistas_inicio > 100
+                and abs(variacao_cotistas) > 0.5 * cotistas_inicio
+                and pl_inicio > 0
+                and abs(variacao_pl) < 0.10 * pl_inicio
+            )
+
+            # 2% do PL inicial de folga: acomoda o retorno da propria captacao
+            # intrassemana (que a cota inicial nao ve) sem deixar passar um
+            # residuo que denuncia dia faltando.
+            esperada = pl_inicio * (rentab / 100.0) if rentab is not None else None
+            decomposicao_suspeita = bool(
+                esperada is not None
+                and pl_inicio > 0
+                and abs(valorizacao - esperada) > max(0.02 * pl_inicio, 1_000.0)
+            )
 
             weekly_flows.append(
                 EtfWeeklyFlow(
@@ -364,11 +415,15 @@ def aggregate_etf_weekly_flows(
                     captacao_liquida=round(captacao_liquida, 2),
                     pl_inicio=round(pl_inicio, 2),
                     pl_fim=round(pl_fim, 2),
+                    variacao_pl=round(variacao_pl, 2),
+                    valorizacao=round(valorizacao, 2),
                     cotistas_inicio=cotistas_inicio,
                     cotistas_fim=cotistas_fim,
                     variacao_cotistas=variacao_cotistas,
                     rentabilidade_semana=rentab,
                     data_suspeita=suspeita,
+                    decomposicao_suspeita=decomposicao_suspeita,
+                    cotistas_suspeito=cotistas_suspeito,
                 )
             )
             prev_week_last = week_recs[-1]
