@@ -406,10 +406,10 @@ avisava, e prateleira inteira saia sem gestora em silencio.
 
 | Superficie | Comando | Para quem |
 |---|---|---|
-| Dashboard (`dashboard.html`) | `report` / `run` | explorar - matriz casa x classe ANBIMA, arquitetura aberta, custo/ticket por quartis, exclusivos |
-| Deck executivo (`prateleiras-<data>.pptx`) | `report` / `run` | decidir - 8 slides para forum/comite, gerados a cada coleta |
-| Planilha (`prateleiras-<data>.xlsx`) | `export` | trabalhar - abas Vitrine varejo (tabela-dinamica-ready), Movimentos e Metodologia |
-| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo do dia por e-mail |
+| Dashboard (`dashboard.html`) | `report` / `run` | explorar - matriz casa x classe ANBIMA, gaps da vitrine XP, arquitetura aberta, custo/ticket por quartis, exclusivos |
+| Deck executivo (`prateleiras-<data>.pptx`) | `report` / `run` | decidir - ate 9 slides para forum/comite (incl. gaps XP), gerados a cada coleta |
+| Planilha (`prateleiras-<data>.xlsx`) | `export` | trabalhar - abas Vitrine varejo (tabela-dinamica-ready), Gaps XP, Gaps por categoria, Movimentos e Metodologia |
+| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo do dia por e-mail, com a secao de gaps XP no topo |
 
 Regras de leitura que valem nas quatro: quartis em vez de media (a media esconde a
 forma da prateleira), "gestora da casa" definida pela mesma watchlist do radar CVM,
@@ -425,6 +425,25 @@ planilha e no card auxiliar do dashboard, cada um com o motivo. Investidor
 *qualificado* nao e motivo de corte - plataforma de varejo distribui fundo
 qualificado a alta renda normalmente. Com o corte, "exclusivo" passou a significar
 uma coisa so; o conceito competitivo virou "so nesta casa"/"diferencial".
+
+**Gaps de prateleira da XP.** A leitura XP-centrica da coleta: gap e um fundo de
+varejo presente na vitrine de ao menos um concorrente e ausente da vitrine da XP,
+cruzado **por CNPJ**. A base e sempre a vitrine, dos dois lados - o catalogo Open
+Finance nao entra em nenhum ponto da conta: um fundo que a XP so tem via Open
+Finance conta como gap, porque o cliente nao o ve. Duas dimensoes: a lista nominal
+(ranqueada por numero de casas que vitrinam e PL, quando a base de mercado esta
+importada) e a cobertura por categoria ANBIMA (vitrine XP vs. melhor concorrente,
+com quantos gaps caem em cada categoria). Supressoes, na mesma linha do resto do
+monitor: XP indisponivel ou **sem vitrine coletada** suprime o bloco inteiro com o
+motivo (sem a vitrine da XP, todo fundo concorrente pareceria gap - hoje e o caso
+quando a coleta da XP roda so via Open Finance, sem o Playwright); XP parcial gera
+aviso de superestimacao; concorrente indisponivel ou sem vitrine sai do universo,
+listado com motivo (o Nu, que so coleta Open Finance, sai por construcao). Duas
+colunas heuristicas - "gestora ja na vitrine XP" (gap de fundo vs. gap de
+relacionamento) e "possivel equivalente XP" (feeder proprio com outro CNPJ,
+casado por slug de nome) - **informam e nunca removem** um fundo da lista. Sai nas
+quatro superficies com os mesmos numeros; a lista completa mora na aba "Gaps XP"
+da planilha, com coluna de verificacao em formula contra a aba "Vitrine varejo".
 
 **Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
 Quatro vias, na ordem de confianca: (0) o join com o registro da CVM, pelo CNPJ ou

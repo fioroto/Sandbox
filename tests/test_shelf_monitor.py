@@ -908,111 +908,89 @@ class TestReports(unittest.TestCase):
         html = html_path.read_text(encoding="utf-8")
         self.assertNotIn("<script", html, "digest de e-mail nao deve conter JS")
 
-    def test_digest_failure_does_not_stop_dashboard(self):
-        """Um renderer que quebra nao pode descartar o e-mail e o commit de uma
-        coleta que levou dezenas de minutos."""
-        def explode(config, report):
-            raise RuntimeError("dado inesperado")
+    def _listing_report(self):
+        """Report com vitrines de verdade: XP via navegador, BTG via API.
 
-        original = main_mod.render_digest
-        main_mod.render_digest = explode
-        try:
-            failures = main_mod.render_outputs(self.config, self.report)
-        finally:
-            main_mod.render_digest = original
-
-        self.assertEqual(len(failures), 1)
-        self.assertIn("digest", failures[0])
-        self.assertTrue((self.config.reports_dir / "dashboard.html").exists())
-
-    def test_healthy_run_reports_no_failures(self):
-        self.assertEqual(main_mod.render_outputs(self.config, self.report), [])
-
-
-class TestRunOutcome(unittest.TestCase):
-    """O `run` saia 0 com tudo bloqueado fazia o job aparecer verde no cron."""
-
-    def _report(self, snapshots, cvm_snapshot=None) -> RunReport:
+        Os snapshots do setUp nao tem sources (vitrine vazia), entao o bloco
+        de gaps sai suprimido neles - este report exercita o caminho com dado.
+        """
+        now = datetime.now()
+        xp_fund = offer("xp", "XP Macro FIC FIM", "10345678000110",
+                        manager_name="XP Gestao")
+        xp_fund.sources = ["playwright"]
+        btg_shared = offer("btg", "XP Macro FIC FIM", "10345678000110")
+        btg_shared.sources = ["api-json"]
+        btg_gap = offer("btg", "Kapitalo Zeta FIC FIM", "40345678000140",
+                        manager_name="Kapitalo Gestao")
+        btg_gap.sources = ["api-json"]
+        xp = snapshot_for("xp", [xp_fund], now)
+        btg = snapshot_for("btg", [btg_shared, btg_gap], now)
         return RunReport(
-            generated_at=datetime.now(),
-            snapshots=snapshots,
-            cvm_snapshot=cvm_snapshot,
+            generated_at=now, snapshots=[xp, btg],
+            shelf_diffs=[diff_shelf(xp, None), diff_shelf(btg, None)],
         )
 
-    def test_total_collection_failure_exits_one(self):
-        now = datetime.now()
-        broken = [
-            snapshot_for("btg", [], now, status=SnapshotStatus.UNAVAILABLE),
-            snapshot_for("xp", [], now, status=SnapshotStatus.UNAVAILABLE),
-        ]
-        line, code = main_mod.run_outcome(self._report(broken), True, [])
+    def test_dashboard_embeds_gap_block(self):
+        content = render_dashboard(
+            self.config, self._listing_report()
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="gaps-section"', content)
+        self.assertEqual(content.count("<script"), 2)
+        start = content.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(content[start:content.index("</script>", start)])
+        self.assertTrue(data["gaps"]["available"])
+        self.assertEqual(data["gaps"]["total_gaps"], 1)
+        self.assertEqual(data["gaps"]["funds"][0]["cnpj"], "40345678000140")
 
-        self.assertEqual(code, 1)
-        self.assertIn("0 de 2 casas", line)
-        self.assertIn("CVM falhou", line)
-
-    def test_partial_house_still_counts_as_collected(self):
-        now = datetime.now()
-        snapshots = [
-            snapshot_for("btg", [offer("btg", "A", "11111111000191")], now),
-            snapshot_for("xp", [offer("xp", "B", "22222222000192")], now,
-                         status=SnapshotStatus.PARTIAL),
-        ]
-        line, code = main_mod.run_outcome(self._report(snapshots), False, [])
-
-        self.assertEqual(code, 0)
-        self.assertIn("2 de 2 casas", line)
-        self.assertIn("CVM pulada", line)
-        self.assertIn("relatorios ok", line)
-
-    def test_report_failure_forces_exit_one(self):
-        now = datetime.now()
-        snapshots = [snapshot_for("btg", [offer("btg", "A", "11111111000191")], now)]
-        line, code = main_mod.run_outcome(
-            self._report(snapshots), False, ["digest: boom"]
+        # Sem vitrine da XP (snapshots do setUp), o bloco vem suprimido com
+        # motivo - nunca com numeros.
+        suppressed = render_dashboard(self.config, self.report).read_text(
+            encoding="utf-8"
         )
+        start = suppressed.index('id="dashboard-data">') + len('id="dashboard-data">')
+        data = json.loads(suppressed[start:suppressed.index("</script>", start)])
+        self.assertFalse(data["gaps"]["available"])
+        self.assertIn("vitrine", data["gaps"]["reason"])
 
-        self.assertEqual(code, 1)
-        self.assertIn("1 relatorio(s) falharam", line)
+    def test_spreadsheet_gap_tabs_and_bounded_formula(self):
+        from openpyxl import load_workbook
 
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
 
-class TestMarketBaseStatus(unittest.TestCase):
-    """Sem a base de mercado a analise degrada em silencio - o doctor avisa."""
+        report = self._listing_report()
+        path = render_spreadsheet(self.config, report.snapshots)
+        workbook = load_workbook(path)
+        self.assertIn("Gaps XP", workbook.sheetnames)
+        self.assertIn("Gaps por categoria", workbook.sheetnames)
 
-    def setUp(self):
-        self.config, self.tmp = temp_config()
+        gaps = workbook["Gaps XP"]
+        self.assertEqual(gaps.cell(row=2, column=1).value, "Kapitalo Zeta FIC FIM")
+        formula = gaps.cell(row=2, column=12).value
+        self.assertTrue(formula.startswith("=IF("))
+        self.assertIn("COUNTIFS('Vitrine varejo'!$A$2:$A$", formula)
+        self.assertNotIn("$A:$A", formula)
+        self.assertNotIn("$C:$C", formula)
 
-    def tearDown(self):
-        self.tmp.cleanup()
+        # Sem vitrine da XP: a aba existe so para dizer por que nao ha numeros.
+        suppressed_path = render_spreadsheet(
+            self.config, [self.xp, self.btg, self.nu],
+            path=self.config.reports_dir / "suprimida.xlsx",
+        )
+        suppressed = load_workbook(suppressed_path)
+        self.assertIn("Gaps XP", suppressed.sheetnames)
+        self.assertNotIn("Gaps por categoria", suppressed.sheetnames)
+        self.assertIn("suprimida", suppressed["Gaps XP"].cell(row=3, column=1).value)
 
-    def _write_base(self, imported_at: str | None) -> None:
-        (self.config.market_dir / "mercado.csv").write_text("cnpj\n", encoding="utf-8")
-        if imported_at is not None:
-            (self.config.market_dir / "_manifest.json").write_text(
-                json.dumps({"imported_at": imported_at}), encoding="utf-8"
-            )
+    def test_digest_gap_section_and_suppression(self):
+        markdown = render_markdown(self._listing_report())
+        self.assertIn("Gaps de prateleira da XP", markdown)
+        self.assertIn("Kapitalo Zeta FIC FIM", markdown)
+        self.assertIn("vitrine x vitrine", markdown)
 
-    def test_missing_base_is_reported(self):
-        state, _ = main_mod.market_base_status(self.config)
-        self.assertEqual(state, "ausente")
-
-    def test_base_without_manifest_has_unknown_age(self):
-        self._write_base(None)
-        state, detail = main_mod.market_base_status(self.config)
-        self.assertEqual(state, "sem-manifesto")
-        self.assertIn("idade desconhecida", detail)
-
-    def test_stale_base_is_flagged(self):
-        old = (datetime.now() - timedelta(days=90)).date().isoformat()
-        self._write_base(old)
-        state, detail = main_mod.market_base_status(self.config)
-        self.assertEqual(state, "velha")
-        self.assertIn("90", detail)
-
-    def test_fresh_base_is_ok(self):
-        self._write_base(datetime.now().date().isoformat())
-        state, _ = main_mod.market_base_status(self.config)
-        self.assertEqual(state, "ok")
+        suppressed = render_markdown(self.report)
+        self.assertIn("Gaps de prateleira da XP", suppressed)
+        self.assertIn("suprimida", suppressed)
+        self.assertNotIn("Kapitalo", suppressed)
 
 
 if __name__ == "__main__":

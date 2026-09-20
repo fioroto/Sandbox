@@ -18,6 +18,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.report.aggregate import build_gap_block
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -31,6 +32,25 @@ _FIELD_LABELS = {
 }
 
 _MAX_LISTED = 25
+
+# Gaps listados no e-mail: o topo cabe numa tela; o resto mora no dashboard e
+# na planilha.
+_GAP_LISTED = 10
+_GAP_CATEGORY_ROWS = 8
+
+
+def _gap_footnotes(gaps: dict) -> list[str]:
+    """Proveniencia do bloco de gaps - as frases sao as mesmas em md e html."""
+    notes = [
+        "Comparacao vitrine x vitrine por CNPJ - o catalogo Open Finance nao "
+        "conta em nenhum dos lados."
+    ]
+    if gaps.get("baseline_warning"):
+        notes.append(f"Atencao: {gaps['baseline_warning']}.")
+    if gaps.get("excluded"):
+        out = "; ".join(f"{e['label']} ({e['reason']})" for e in gaps["excluded"])
+        notes.append(f"Fora do universo: {out}.")
+    return notes
 
 
 def _platform_label(platform_id: str) -> str:
@@ -248,6 +268,54 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
+def _md_gaps_section(gaps: dict) -> list[str]:
+    lines = ["## Gaps de prateleira da XP", ""]
+    if not gaps.get("available"):
+        lines += [f"Analise suprimida nesta execucao: {gaps.get('reason')}.", ""]
+        return lines
+
+    if not gaps["total_gaps"]:
+        lines += [
+            "Nenhum gap: toda vitrine concorrente coletada esta contida na "
+            "vitrine da XP.",
+            "",
+        ]
+    else:
+        lines += [
+            f"{gaps['total_gaps']} fundos de varejo estao em vitrines "
+            f"concorrentes e fora da vitrine da XP "
+            f"({gaps['multi_house_gaps']} em 2 ou mais casas).",
+            "",
+        ]
+        for fund in gaps["funds"][:_GAP_LISTED]:
+            lines.append(
+                f"- {fund['name']} ({fund['cnpj_display']}) - "
+                f"{fund['category']} - casas: {fund['houses_label']}"
+            )
+        remaining = gaps["total_gaps"] - min(_GAP_LISTED, len(gaps["funds"]))
+        if remaining > 0:
+            lines.append(f"- ... e mais {remaining} (dashboard e planilha)")
+        lines.append("")
+
+        categories = gaps["categories"][:_GAP_CATEGORY_ROWS]
+        if categories:
+            lines.append("| Categoria | XP | Melhor concorrente | Gaps |")
+            lines.append("|---|---:|---|---:|")
+            for entry in categories:
+                best = entry["best_competitor"]
+                best_label = f"{best['label']} ({best['count']})" if best else "-"
+                lines.append(
+                    f"| {entry['category']} | {entry['xp']} | "
+                    f"{best_label} | {entry['gap_count']} |"
+                )
+            lines.append("")
+
+    for note in _gap_footnotes(gaps):
+        lines.append(f"_{note}_")
+    lines.append("")
+    return lines
+
+
 def render_markdown(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
@@ -276,6 +344,9 @@ def render_markdown(report: RunReport) -> str:
             f"{len(diff.changed) if diff and not diff.is_first_run else 0} |"
         )
     lines.append("")
+
+    # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
+    lines += _md_gaps_section(build_gap_block(report.snapshots))
 
     lines += _md_cvm_section(report.cvm_diff, report)
 
@@ -460,6 +531,65 @@ def _html_cvm_section(report: RunReport) -> str:
     return "".join(parts)
 
 
+def _html_gaps_section(gaps: dict) -> str:
+    parts = [f'<h2 style="{_H2}">Gaps de prateleira da XP</h2>']
+    if not gaps.get("available"):
+        parts.append(
+            f'<p style="{_P}"><strong>Analise suprimida nesta execucao:</strong> '
+            f"{_esc(gaps.get('reason'))}.</p>"
+        )
+        return "".join(parts)
+
+    if not gaps["total_gaps"]:
+        parts.append(
+            f'<p style="{_P}">Nenhum gap: toda vitrine concorrente coletada '
+            "esta contida na vitrine da XP.</p>"
+        )
+    else:
+        parts.append(
+            f'<p style="{_P}"><strong>{gaps["total_gaps"]}</strong> fundos de '
+            "varejo estao em vitrines concorrentes e fora da vitrine da XP "
+            f"({gaps['multi_house_gaps']} em 2 ou mais casas).</p>"
+        )
+        items = "".join(
+            f'<li style="{_LI}">{_esc(fund["name"])} ({_esc(fund["cnpj_display"])}) '
+            f"- {_esc(fund['category'])} - casas: {_esc(fund['houses_label'])}</li>"
+            for fund in gaps["funds"][:_GAP_LISTED]
+        )
+        remaining = gaps["total_gaps"] - min(_GAP_LISTED, len(gaps["funds"]))
+        if remaining > 0:
+            items += (
+                f'<li style="{_LI}">... e mais {remaining} '
+                "(dashboard e planilha)</li>"
+            )
+        parts.append(f'<ul style="margin:0 0 12px;padding-left:20px;">{items}</ul>')
+
+        categories = gaps["categories"][:_GAP_CATEGORY_ROWS]
+        if categories:
+            rows = ""
+            for entry in categories:
+                best = entry["best_competitor"]
+                best_label = f"{best['label']} ({best['count']})" if best else "-"
+                rows += (
+                    f'<tr><td style="{_TD}">{_esc(entry["category"])}</td>'
+                    f'<td style="{_TD}text-align:right;">{entry["xp"]}</td>'
+                    f'<td style="{_TD}">{_esc(best_label)}</td>'
+                    f'<td style="{_TD}text-align:right;">{entry["gap_count"]}</td></tr>'
+                )
+            parts.append(
+                f'<table style="{_TABLE}"><thead><tr>'
+                f'<th style="{_TH}">Categoria</th>'
+                f'<th style="{_TH}text-align:right;">XP</th>'
+                f'<th style="{_TH}">Melhor concorrente</th>'
+                f'<th style="{_TH}text-align:right;">Gaps</th>'
+                f"</tr></thead><tbody>{rows}</tbody></table>"
+            )
+
+    notes = " ".join(_esc(note) for note in _gap_footnotes(gaps))
+    parts.append(f'<p style="font-size:12px;color:#898781;margin:0 0 12px;">{notes}</p>')
+    return "".join(parts)
+
+
 def render_html(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     sentence, is_alert = _summary_sentence(report)
@@ -503,6 +633,8 @@ def render_html(report: RunReport) -> str:
     <th style="{_TH}text-align:right;">Saidas</th>
     <th style="{_TH}text-align:right;">Alteracoes</th>
   </tr></thead><tbody>{rows}</tbody></table>
+
+  {_html_gaps_section(build_gap_block(report.snapshots))}
 
   {_html_cvm_section(report)}
 
