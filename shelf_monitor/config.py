@@ -82,11 +82,11 @@ PLATFORMS: dict[str, PlatformConfig] = {
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
-            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, ~450 "
-            "fundos em 2026-08-31). Akamai barra HTTP simples e Chromium "
-            "headless; abre com o Chrome real (SHELF_BROWSER_HEADED=1 + "
-            "SHELF_BROWSER_CHANNEL=chrome). A tabela nao traz CNPJ - o merge "
-            "reconcilia com o Open Finance pelo slug do nome."
+            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, 459 "
+            "fundos em 2026-09-19). Akamai barra HTTP simples e o headless shell "
+            "do Playwright, mas nao o Chromium completo em --headless=new - que e "
+            "o que o coletor usa desde 2026-09-19, sem exigir janela. A tabela "
+            "nao traz CNPJ - o merge reconcilia com o Open Finance pelo slug."
         ),
     ),
     "nu": PlatformConfig(
@@ -209,9 +209,10 @@ class Config:
         # na mao quando uma listagem muda de layout.
         self.browser_debug = _env_flag("SHELF_BROWSER_DEBUG")
         # Navegador com janela, usando o Chrome instalado do usuario
-        # (SHELF_BROWSER_CHANNEL=chrome). E a via legitima para paginas que
-        # barram o Chromium headless: e o navegador real da pessoa abrindo uma
-        # pagina publica - a CDN decide o que faz com isso.
+        # (SHELF_BROWSER_CHANNEL=chrome). Nao e necessario para XP e Itau: o que
+        # aquelas CDNs barram e o headless shell, nao o Chromium completo sem
+        # janela. Fica como recurso para pagina que exija interacao visivel ou a
+        # sessao logada do proprio navegador.
         self.browser_headed = _env_flag("SHELF_BROWSER_HEADED")
         self.browser_channel = os.getenv("SHELF_BROWSER_CHANNEL", "").strip() or None
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "")
