@@ -26,7 +26,12 @@ from shelf_monitor.report.performance import (
     _MAX_EXPOSTOS,
     fundos_abaixo_da_categoria,
 )
-from shelf_monitor.report.aggregate import build_gap_block, listing_funds, retail_funds
+from shelf_monitor.report.aggregate import (
+    build_gap_block,
+    listing_funds,
+    ranquear_gaps,
+    retail_funds,
+)
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -371,6 +376,17 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
+def _gaps_ranqueados(report: RunReport) -> dict:
+    """Bloco de gaps com a lista ja fundida com a captacao e o esforco.
+
+    O digest listava os dez primeiros gaps por presenca e PL, e mais abaixo
+    repetia uma segunda lista ("Oportunidade de grade") com outros criterios.
+    Sao a mesma pergunta; agora a ordem e uma so.
+    """
+    gaps = build_gap_block(report.snapshots)
+    return {**gaps, "funds": ranquear_gaps(gaps.get("funds") or [], report)}
+
+
 def _md_gaps_section(gaps: dict) -> list[str]:
     lines = ["## Gaps de prateleira da XP", ""]
     if not gaps.get("available"):
@@ -387,13 +403,19 @@ def _md_gaps_section(gaps: dict) -> list[str]:
         lines += [
             f"{gaps['total_gaps']} fundos de varejo estao em vitrines "
             f"concorrentes e fora da vitrine da XP "
-            f"({gaps['multi_house_gaps']} em 2 ou mais casas).",
+            f"({gaps['multi_house_gaps']} em 2 ou mais casas). "
+            "Ordenados pelo esforco de incluir e, dentro de cada faixa, pela "
+            "captacao que estao levando no mercado. Produto proprio do "
+            "concorrente nao se transfere e vai para o fim, sem sair da lista.",
             "",
         ]
         for fund in gaps["funds"][:_GAP_LISTED]:
+            captacao = fund.get("captacao_liquida")
+            fluxo = f" - {_mm(captacao)} de captacao" if captacao is not None else ""
+            esforco = f" - {fund['esforco']}" if fund.get("esforco") else ""
             lines.append(
                 f"- {fund['name']} ({fund['cnpj_display']}) - "
-                f"{fund['category']} - casas: {fund['houses_label']}"
+                f"{fund['category']} - casas: {fund['houses_label']}{fluxo}{esforco}"
             )
         remaining = gaps["total_gaps"] - min(_GAP_LISTED, len(gaps["funds"]))
         if remaining > 0:
@@ -671,7 +693,7 @@ def render_markdown(report: RunReport) -> str:
         lines.append("")
 
     # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
-    lines += _md_gaps_section(build_gap_block(report.snapshots))
+    lines += _md_gaps_section(_gaps_ranqueados(report))
 
     lines += _md_flow_section(report)
     lines += _md_performance_section(report)
@@ -1236,7 +1258,7 @@ def render_html(report: RunReport) -> str:
   </tr></thead><tbody>{rows}</tbody></table>
   {nota_base}
 
-  {_html_gaps_section(build_gap_block(report.snapshots))}
+  {_html_gaps_section(_gaps_ranqueados(report))}
 
   {_html_flow_section(report)}
   {_html_performance_section(report)}

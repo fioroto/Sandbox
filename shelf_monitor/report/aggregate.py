@@ -793,6 +793,111 @@ def _flow_payload(report: RunReport) -> dict:
     }
 
 
+# Esforco de incluir um fundo de gap na grade, do mais barato ao mais caro.
+# A ordem e a da lista: um gap de gestora que a XP ja distribui e uma inclusao
+# operacional; um de gestora nova exige abrir relacionamento; produto proprio
+# do concorrente nao se transfere.
+ESFORCO_OPERACIONAL = "inclusao operacional"
+ESFORCO_ABRIR_GESTORA = "abrir gestora"
+ESFORCO_NAO_TRANSFERIVEL = "produto proprio do concorrente"
+ESFORCO_INDEFINIDO = "gestora nao identificada"
+
+_ORDEM_ESFORCO = {
+    ESFORCO_OPERACIONAL: 0,
+    ESFORCO_ABRIR_GESTORA: 1,
+    ESFORCO_INDEFINIDO: 2,
+    ESFORCO_NAO_TRANSFERIVEL: 3,
+}
+
+
+def _esforco_do_gap(fundo: dict) -> str:
+    """Quanto custa colocar este gap na grade.
+
+    A gestora e testada contra a watchlist das casas que EXIBEM o fundo - a
+    mesma definicao de "produto da casa" que o resto do monitor usa. Derivar
+    isto do bloco de captacao nao funcionava: um fundo que aparece em
+    `top_captacao` (e nao em `grade_opportunities`) nao carrega o campo, e o
+    BTGP Tesouro Selic - produto do proprio BTG - saia rotulado "inclusao
+    operacional", que e o oposto do que ele e.
+    """
+    gestora = fundo.get("manager")
+    if not gestora:
+        return ESFORCO_INDEFINIDO
+
+    normalizada = normalize_text(gestora)
+    for platform_id in fundo.get("houses") or []:
+        padroes = _own_product_patterns(platform_id)
+        if padroes and any(p.search(normalizada) for p in padroes):
+            return ESFORCO_NAO_TRANSFERIVEL
+
+    if fundo.get("manager_on_xp"):
+        return ESFORCO_OPERACIONAL
+    return ESFORCO_ABRIR_GESTORA
+
+
+def ranquear_gaps(gap_funds: list[dict], report: RunReport) -> list[dict]:
+    """Funde a lista de gaps com a captacao, e ordena por quanto ela vale.
+
+    Ate aqui o monitor publicava TRES listas de "fundo que a XP nao tem", com
+    universos diferentes e sem hierarquia entre elas: "Gaps XP" (618 fundos,
+    ordenada por numero de casas e PL), "Oportunidade de grade" (97 -> 60,
+    ordenada por captacao) e "Mais varejo". Quem abria o relatorio nao tinha
+    como saber por qual comecar, e os mesmos fundos apareciam nas tres.
+
+    Passa a ser uma lista so. O gap continua sendo o universo - e a pergunta
+    completa, "o que o cliente da XP nao ve" - e a captacao entra como a
+    medida de quanto cada gap vale, junto do esforco de fechar. Fundo que
+    capta ordena na frente; entre os sem informe, vale o criterio antigo
+    (mais casas vitrinando, depois PL).
+
+    Nao remove nada: um gap sem informe diario continua na lista, dizendo que
+    nao tem serie. O monitor informa e nao filtra.
+    """
+    if not gap_funds:
+        return gap_funds
+
+    fluxo_por_cnpj: dict[str, dict] = {}
+    for bloco in ((report.retail_flow or {}).get("top_captacao") or [],
+                  (report.retail_flow or {}).get("top_resgate") or [],
+                  (report.grade_opportunities or {}).get("mais_varejo") or [],
+                  (report.grade_opportunities or {}).get("operacionais") or [],
+                  (report.grade_opportunities or {}).get("comerciais") or [],
+                  (report.grade_opportunities or {}).get("produto_do_concorrente") or []):
+        for fundo in bloco:
+            if fundo.get("cnpj"):
+                fluxo_por_cnpj.setdefault(fundo["cnpj"], fundo)
+
+    enriquecidos = []
+    for fundo in gap_funds:
+        fluxo = fluxo_por_cnpj.get(fundo.get("cnpj"))
+        esforco = _esforco_do_gap(fundo)
+        enriquecidos.append({
+            **fundo,
+            "captacao_liquida": (fluxo or {}).get("captacao_liquida"),
+            "variacao_cotistas": (fluxo or {}).get("variacao_cotistas"),
+            "esforco": esforco,
+        })
+
+    def chave(f: dict) -> tuple:
+        # Esforco ANTES de captacao: a lista existe para decidir o que incluir,
+        # entao o topo tem de ser o que da para incluir. Ordenada so por
+        # captacao, ela abria com sete produtos do proprio BTG - a maior
+        # captacao do periodo e tambem o que a XP nao pode distribuir - e o
+        # leitor tinha de varrer a lista atras do primeiro item acionavel.
+        # Dentro de cada faixa de esforco vale a captacao, que e quanto o gap
+        # esta custando agora.
+        captacao = f.get("captacao_liquida")
+        return (
+            _ORDEM_ESFORCO.get(f["esforco"], 9),
+            0 if captacao is not None else 1,
+            -(captacao or 0.0),
+            -(f.get("houses_count") or 0),
+            -(f.get("pl_cvm") or 0.0),
+        )
+
+    return sorted(enriquecidos, key=chave)
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -860,7 +965,7 @@ def build_dashboard_data(report: RunReport) -> dict:
     # A lista completa de gaps vai a planilha (que chama build_gap_block
     # direto); o HTML embute so o topo para o payload nao inchar.
     gaps = build_gap_block(report.snapshots)
-    gap_funds = gaps.get("funds") or []
+    gap_funds = ranquear_gaps(gaps.get("funds") or [], report)
 
     return {
         "generated_at": report.generated_at.isoformat(),

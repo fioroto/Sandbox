@@ -683,22 +683,34 @@ function renderGaps(gaps) {
       '<p class="empty">Nenhum gap por categoria nesta execucao.</p>';
   }
 
-  // A lista nominal - o insumo de trabalho.
+  // A lista nominal - o insumo de trabalho. Ordenada por captacao e nao por
+  // PL: o gap que vale primeiro e o que esta levando dinheiro de varejo agora.
+  // "Esforco" e o que separa uma inclusao operacional de uma que exige abrir
+  // gestora - era a unica coisa que a lista de "oportunidades de grade" tinha
+  // e esta nao, e por isso as duas conviviam.
+  const mm = v => (v === null || v === undefined) ? "–"
+    : (v > 0 ? "+" : "") + (v / 1e6).toLocaleString("pt-BR",
+        { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " MM";
   table(
     document.getElementById("table-gaps"),
     [{ key: "name", label: "Fundo" }, { key: "cnpj_display", label: "CNPJ" },
      { key: "category", label: "Categoria" }, { key: "manager", label: "Gestora" },
      { key: "houses_label", label: "Casas" },
+     { key: "capt", label: "Captacao no mercado", num: true },
+     { key: "cot", label: "Cotistas ganhos", num: true },
+     { key: "esforco", label: "Esforco" },
      { key: "min", label: "Menor minimo", num: true },
      { key: "fee", label: "Menor taxa", num: true },
      { key: "pl", label: "PL CVM", num: true },
-     { key: "mgr", label: "Gestora na XP" },
      { key: "equiv", label: "Possivel equivalente XP" }],
     (gaps.funds || []).map(f => ({
       name: f.name, cnpj_display: f.cnpj_display, category: f.category,
       manager: f.manager || "–", houses_label: f.houses_label,
+      capt: mm(f.captacao_liquida),
+      cot: f.variacao_cotistas === null || f.variacao_cotistas === undefined
+        ? "–" : f.variacao_cotistas.toLocaleString("pt-BR"),
+      esforco: f.esforco || "–",
       min: money(f.min_initial), fee: pct(f.admin_fee_pct), pl: money(f.pl_cvm),
-      mgr: f.manager_on_xp === null ? "–" : (f.manager_on_xp ? "Sim" : "Nao"),
       equiv: f.possible_xp_equivalent || "–",
     }))
   );
@@ -1289,7 +1301,7 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
       na categoria. Mais escuro = mais fundos.</p>
     <div class="matrix-scroll" id="matrix-gaps"></div>
 
-    <details><summary>Ver os fundos de gap</summary><div id="table-gaps"></div></details>
+    <details><summary>Ver os fundos de gap (ordenados por captacao, com o esforco de incluir)</summary><div id="table-gaps"></div></details>
     <div class="coverage" id="gaps-coverage"></div>
   </section>
 
