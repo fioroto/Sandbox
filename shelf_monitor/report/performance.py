@@ -63,6 +63,7 @@ import statistics
 from dataclasses import dataclass, field
 
 from shelf_monitor.config import Config
+from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
@@ -330,9 +331,7 @@ def categorias_por_cnpj(config: Config) -> dict[str, str]:
     with caminho.open(encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle, delimiter=";"):
             cnpj = normalize_cnpj(row.get("cnpj"))
-            categoria = (row.get("classificacao_anbima") or "").strip() or (
-                row.get("classificacao_cvm") or ""
-            ).strip()
+            categoria = categoria_da_linha(row)
             if cnpj and categoria:
                 indice[cnpj] = categoria
     return indice

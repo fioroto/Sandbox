@@ -78,6 +78,7 @@ from shelf_monitor.normalize import (
     normalize_text,
     parse_number,
 )
+from shelf_monitor.mercado_csv import categoria_da_linha
 
 # Chaves gravadas em FundOffer.extra pelas vias deste modulo.
 KEY_CATEGORIA = "categoria_oficial"
@@ -269,9 +270,7 @@ class ClassificationIndex:
         classes: list[ClasseOficial] = []
         with caminho.open(encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle, delimiter=";"):
-                categoria = (row.get("classificacao_anbima") or "").strip() or (
-                    row.get("classificacao_cvm") or ""
-                ).strip()
+                categoria = categoria_da_linha(row)
                 if not categoria:
                     continue
                 # Classe cancelada continua no cadastro e nao esta na vitrine de

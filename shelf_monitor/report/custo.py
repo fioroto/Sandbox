@@ -70,6 +70,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
@@ -297,9 +298,7 @@ class IndiceCusto:
                 cnpj = normalize_cnpj(row.get("cnpj"))
                 if not cnpj:
                     continue
-                categoria = (row.get("classificacao_anbima") or "").strip() or (
-                    row.get("classificacao_cvm") or ""
-                ).strip()
+                categoria = categoria_da_linha(row)
                 unidade = normalize_text(row.get("taxa_adm_unidade"))
                 classes[cnpj] = CustoClasse(
                     cnpj=cnpj,

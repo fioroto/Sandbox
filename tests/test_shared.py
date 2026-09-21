@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import unittest
 
+from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.report.shared import (
     MIN_COBERTURA_CUSTO,
     MIN_COBERTURA_JANELA,
@@ -136,6 +137,45 @@ class TestLimiares(unittest.TestCase):
         """
         self.assertNotEqual(MIN_COBERTURA_VITRINE, MIN_COBERTURA_JANELA)
         self.assertLess(MIN_COBERTURA_CUSTO, MIN_COBERTURA_VITRINE)
+
+
+
+class TestCategoriaDaLinha(unittest.TestCase):
+    """A cascata ANBIMA -> CVM estava copiada em tres modulos.
+
+    A ordem e uma decisao: a classificacao ANBIMA e de tres niveis ("Renda
+    Fixa Duracao Baixa Soberano") e a da CVM e o balde generico ("Renda
+    Fixa"). Tres copias eram tres lugares para esquecer de mudar.
+    """
+
+    def test_anbima_vence_a_cvm(self):
+        linha = {
+            "classificacao_anbima": "Renda Fixa Duracao Baixa Soberano",
+            "classificacao_cvm": "Renda Fixa",
+        }
+        self.assertEqual(
+            categoria_da_linha(linha), "Renda Fixa Duracao Baixa Soberano"
+        )
+
+    def test_cai_para_a_cvm_quando_nao_ha_anbima(self):
+        self.assertEqual(
+            categoria_da_linha({"classificacao_anbima": "", "classificacao_cvm": "Renda Fixa"}),
+            "Renda Fixa",
+        )
+
+    def test_espaco_em_branco_nao_conta_como_categoria(self):
+        """Celula com espacos e celula vazia - a CVM entrega as duas formas."""
+        self.assertEqual(
+            categoria_da_linha({"classificacao_anbima": "   ", "classificacao_cvm": "Acoes"}),
+            "Acoes",
+        )
+
+    def test_sem_nenhuma_devolve_vazio_e_nao_none(self):
+        """Quem chama decide se pula a linha; o helper nao decide por ele."""
+        self.assertEqual(categoria_da_linha({}), "")
+        self.assertEqual(
+            categoria_da_linha({"classificacao_anbima": None, "classificacao_cvm": None}), ""
+        )
 
 
 if __name__ == "__main__":
