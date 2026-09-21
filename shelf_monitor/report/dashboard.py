@@ -408,7 +408,7 @@ function renderVitrine(listing) {
     const catalog = p.catalog_total || 0;
     note.textContent = (catalog > p.total
       ? `de ${catalog.toLocaleString("pt-BR")} no catalogo` : "vitrine = total coletado") +
-      (p.exclusive ? ` - ${p.exclusive} so nela` : "");
+      (p.exclusive ? ` - ${p.exclusive} so nesta vitrine` : "");
     tile.append(label, value, note);
     tiles.appendChild(tile);
   });
@@ -859,9 +859,9 @@ renderGaps(DATA.gaps);
     const larguraCasa = 150, alturaMax = 120;
     const w = perf.casas.length * larguraCasa + 40, h = alturaMax + 70;
     const series = [
-      ["mediana", "Fundo mediano", "var(--muted)"],
-      ["por_pl", "Real medio", "var(--s1)"],
-      ["por_cotista", "Cotista medio", "var(--good)"],
+      ["mediana", "Mediana dos fundos", "var(--muted)"],
+      ["por_pl", "Ponderada por PL", "var(--s1)"],
+      ["por_cotista", "Ponderada por cotistas", "var(--good)"],
     ];
     const barras = perf.casas.map((c, i) => {
       const x0 = 30 + i * larguraCasa;
@@ -905,6 +905,39 @@ renderGaps(DATA.gaps);
         }</span></td></tr>`;
     }).join("") + "</tbody></table>";
 
+  // Fundos expostos: deduplicado por CNPJ, com as casas numa coluna. Listado
+  // por casa, o mesmo produto aparecia varias vezes seguidas com numeros
+  // identicos - a CVM publica por fundo, nao por distribuidor.
+  const expostosEl = document.getElementById("perf-expostos");
+  if (expostosEl) {
+    const porCnpj = new Map();
+    const rotuloCasa = {};
+    (perf.casas || []).forEach(c => { rotuloCasa[c.platform_id] = c.label; });
+    Object.entries(perf.onde_esta_a_gente || {}).forEach(([pid, fundos]) => {
+      (fundos || []).forEach(f => {
+        if (f.excesso === null || f.excesso === undefined || f.excesso >= 0) return;
+        const chave = f.cnpj || (pid + ":" + f.nome);
+        const casa = rotuloCasa[pid] || pid;
+        if (!porCnpj.has(chave)) porCnpj.set(chave, Object.assign({}, f, { casas: [casa] }));
+        else if (!porCnpj.get(chave).casas.includes(casa)) porCnpj.get(chave).casas.push(casa);
+      });
+    });
+    const expostos = Array.from(porCnpj.values())
+      .sort((a, b) => b.cotistas - a.cotistas).slice(0, 10);
+    expostosEl.innerHTML = expostos.length
+      ? '<table class="matrix"><thead><tr><th class="rowh">Fundo</th><th>Cotistas</th>' +
+        "<th>Retorno</th><th>Mediana da categoria</th><th>Atras em</th><th>Casas</th>" +
+        "</tr></thead><tbody>" +
+        expostos.map(f => `<tr><th class="rowh">${f.nome || f.cnpj}</th>
+          <td><span class="cell">${(f.cotistas || 0).toLocaleString("pt-BR")}</span></td>
+          <td><span class="cell">${pct(f.retorno)}</span></td>
+          <td><span class="cell">${pct(f.mediana_categoria)}</span></td>
+          <td><span class="cell" style="color:var(--critical)">${f.excesso.toFixed(2)}pp</span></td>
+          <td><span class="cell">${f.casas.join(", ")}</span></td></tr>`).join("") +
+        "</tbody></table>"
+      : '<p class="card-sub">Nenhum fundo de destaque rendendo abaixo da propria categoria.</p>';
+  }
+
   // Custo: indice mediano, nao taxa mediana.
   const bloco = document.getElementById("custo-bloco");
   if (custo && custo.available && bloco) {
@@ -932,8 +965,13 @@ renderGaps(DATA.gaps);
       if (!dims.some(d => d[0] === l.chave)) dims.push([l.chave, l.rotulo]);
       (porCasa[l.platform_id] = porCasa[l.platform_id] || {})[l.chave] = l;
     });
+    // O rotulo mantem "autorizado". Encurtar a coluna apagando justamente essa
+    // palavra transformava "credito privado AUTORIZADO pelo regulamento" em
+    // "credito privado", que o leitor entende como exposicao carregada - a
+    // unica leitura que este bloco nao pode sustentar, porque mediria carteira
+    // e exigiria a CDA. A ressalva ficava so no paragrafo acima da tabela.
     const head = '<tr><th class="rowh">Casa</th>' +
-      dims.map(([, r]) => `<th>${r.replace(/ autorizad[oa]/, "")}</th>`).join("") + "</tr>";
+      dims.map(([, r]) => `<th>${r}</th>`).join("") + "</tr>";
     const body = (mandato.casas || []).map(c => {
       const cells = dims.map(([chave]) => {
         const l = (porCasa[c.platform_id] || {})[chave];
@@ -1143,17 +1181,25 @@ def _stat_tiles(data: dict) -> str:
     )
     cvm = data.get("cvm", {})
     pre_op = sum(h["pre_operational"] for h in cvm.get("houses", [])) if cvm.get("available") else 0
-    xp = next((p for p in data["platforms"] if p["platform_id"] == "xp"), None)
-
     milhar = lambda n: f"{n:,}".replace(",", ".")  # noqa: E731
+    gaps = data.get("gaps") or {}
 
+    # O segundo tile era "Vitrine da XP", repetindo o tile que o bloco de gaps
+    # ja mostra oitenta pixels abaixo. No lugar entra o numero que o leitor tem
+    # o que fazer com: quantos fundos de varejo os concorrentes vitrinam e a XP
+    # nao. Era a unica manchete acionavel da pagina e estava enterrada.
     tiles = [
-        ("Fundos em vitrine", milhar(listing_total),
-         f"{len(usable)} de {len(data['platforms'])} casas com vitrine alcancavel; "
-         f"{milhar(catalog_total)} no catalogo Open Finance"),
-        ("Vitrine da XP", milhar(xp["listing_funds"]) if xp and xp["listing_funds"] else "-",
-         "baseline de comparacao - o que o cliente ve"),
-        ("Registrados na CVM", f"{cvm.get('total', 0):,}".replace(",", ".") if cvm.get("available") else "-",
+        ("Fundos em vitrine (soma das casas)", milhar(listing_total),
+         f"{len(usable)} de {len(data['platforms'])} casas com vitrine alcancavel. "
+         "Um fundo em tres vitrines conta tres vezes: e a soma das prateleiras, "
+         f"nao fundos distintos. Catalogo Open Finance: {milhar(catalog_total)}"),
+        ("Fundos que faltam na XP",
+         milhar(gaps.get("total_gaps", 0)) if gaps.get("available") else "-",
+         f"de varejo, em ao menos uma vitrine concorrente e fora da vitrine da XP "
+         f"({milhar(gaps.get('baseline_listing_total') or 0)} fundos)"
+         if gaps.get("available") else "bloco de gaps suprimido nesta coleta"),
+        ("Registrados na CVM",
+         milhar(cvm.get("total", 0)) if cvm.get("available") else "-",
          "gestoras ligadas as casas monitoradas"),
         ("Em fase pre-operacional", str(pre_op) if cvm.get("available") else "-",
          "registrados e ainda nao lancados"),
@@ -1291,13 +1337,20 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
       suficiente fica fora do denominador.</p>
     <div class="matrix-scroll" id="perf-massa"></div>
 
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Fundos de muita gente rendendo abaixo da categoria</h3>
+    <p class="card-sub">O recorte com o que fazer: produto especifico, com muita gente dentro,
+      atras da mediana da propria categoria. Deduplicado por CNPJ &mdash; a CVM publica cotistas e
+      retorno por <strong>fundo</strong>, somando todos os distribuidores, entao o mesmo produto em
+      tres vitrines tem os mesmos numeros nas tres e a coluna Casas lista quem o exibe.</p>
+    <div class="matrix-scroll" id="perf-expostos"></div>
+
     <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Custo relativo a categoria</h3>
     <p class="card-sub">Indice mediano, nao taxa mediana: comparar a taxa bruta entre casas mede o
       <strong>mix</strong> da prateleira (renda fixa custa ~0,2% ao ano, acoes ~2%), nao o preco dos
       produtos. 1,00x e exatamente a mediana da categoria de cada fundo.</p>
     <div class="matrix-scroll" id="custo-bloco"></div>
 
-    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Mandato declarado</h3>
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Mandato autorizado pelo regulamento</h3>
     <p class="card-sub">Share da vitrine cujo regulamento <strong>autoriza</strong> cada coisa - nunca
       o que a carteira carrega. Um fundo pode ter autorizacao para 100% de credito privado e carregar
       10%; medir exposicao realizada exigiria a carteira mensal (CDA), fora do escopo. Verde acima das
@@ -1337,7 +1390,7 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
   </section>
 
   <section class="card">
-    <h2>Diferenciais de prateleira</h2>
+    <h2>Fundos so nesta vitrine</h2>
     <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas <strong>exibe
       na vitrine</strong> - o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio,
       que fica fora desta analise. Vitrine dos dois lados: o que a casa apenas administra e

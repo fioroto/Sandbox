@@ -562,6 +562,45 @@ def _onde_esta_a_gente(casas: list[PerformanceCasa], limite: int = 25) -> dict:
     }
 
 
+# Quantos fundos expostos cada superficie mostra. O resto mora na planilha.
+_MAX_EXPOSTOS = 8
+
+
+def fundos_abaixo_da_categoria(performance: dict) -> list[dict]:
+    """Fundos de muita gente rendendo abaixo da mediana da propria categoria.
+
+    E o recorte acionavel do bloco de rentabilidade: nao "a vitrine rende
+    bem?", e sim "que produto especifico tem muita gente dentro e esta atras
+    dos pares?".
+
+    Deduplicado por CNPJ, com as casas numa lista. A CVM publica cota, PL e
+    cotistas por FUNDO, somando todos os distribuidores - entao um fundo em
+    tres vitrines tem os MESMOS cotistas e o MESMO retorno nas tres. Listado
+    por casa, o mesmo produto aparecia tres vezes seguidas com numeros
+    identicos (medido em 20/09: AZ Quest Valore tres vezes, Porto Seguro duas)
+    e enchia a lista de oito com quatro produtos.
+
+    Ordenado por cotistas, que e a medida de quanta gente o problema atinge.
+    """
+    por_cnpj: dict[str, dict] = {}
+    rotulos = {c["platform_id"]: c["label"] for c in performance.get("casas", [])}
+
+    for platform_id, fundos in (performance.get("onde_esta_a_gente") or {}).items():
+        rotulo = rotulos.get(platform_id, platform_id)
+        for fundo in fundos:
+            if fundo.get("excesso") is None or fundo["excesso"] >= 0:
+                continue
+            # Sem CNPJ nao da para afirmar que e o mesmo fundo: entra sozinho.
+            chave = fundo.get("cnpj") or f"{platform_id}:{fundo.get('nome')}"
+            existente = por_cnpj.get(chave)
+            if existente is None:
+                por_cnpj[chave] = {**fundo, "casas": [rotulo]}
+            elif rotulo not in existente["casas"]:
+                existente["casas"].append(rotulo)
+
+    return sorted(por_cnpj.values(), key=lambda f: -f["cotistas"])
+
+
 # --- renderizacao no console --------------------------------------------------
 
 

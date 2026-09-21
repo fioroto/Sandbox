@@ -212,7 +212,7 @@ def _headline(prs, data: dict, platforms: list[dict]):
 
     exclusives = [(p["label"], p.get("exclusive", 0)) for p in platforms]
     if exclusives:
-        _text(slide, 0.6, 4.0, 12, 0.4, "Diferenciais na vitrine (por CNPJ)", 14, bold=True)
+        _text(slide, 0.6, 4.0, 12, 0.4, "Fundos so nesta vitrine (por CNPJ)", 14, bold=True)
         _table(
             slide, 0.6, 4.5, 6.5,
             ["Casa", "Fundos de varejo que so ela oferta"],

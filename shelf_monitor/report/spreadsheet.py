@@ -1485,15 +1485,21 @@ def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
 # --- rentabilidade ponderada --------------------------------------------------
 
 _PERF_HEADERS = [
-    "Casa", "Categoria", "Fundos", "Mediana (%)", "Por PL (%)",
-    "Por cotista (%)", "Gap PL-cotista (pp)", "Mediana da categoria no mercado (%)",
+    "Casa", "Categoria", "Fundos", "Mediana dos fundos (%)", "Ponderada por PL (%)",
+    "Ponderada por cotistas (%)", "PL menos cotistas (pp)",
+    "Mediana da categoria no mercado (%)",
     "PL (R$)", "Cotistas",
 ]
 
+# "no mercado" no cabecalho e nao so na nota: cotistas e PL sao do FUNDO
+# inteiro, somando todos os distribuidores. A CVM nao publica nada por
+# distribuidor. Sem isso no proprio rotulo, a coluna "Cotistas" ao lado da
+# coluna "Casa" se le como "os clientes dela".
 _GENTE_HEADERS = [
-    "Casa", "Fundo", "CNPJ", "Categoria", "Cotistas", "PL (R$)",
+    "Casa", "Fundo", "CNPJ", "Categoria", "Cotistas no mercado", "PL no mercado (R$)",
     "Ticket medio (R$)", "Rentabilidade (%)", "Mediana da categoria (%)",
-    "Excesso (pp)", "Captacao liquida (R$)", "Variacao cotistas", "Pregoes",
+    "Excesso (pp)", "Captacao liquida no mercado (R$)",
+    "Variacao cotistas no mercado", "Pregoes",
 ]
 
 
@@ -1531,7 +1537,8 @@ def _add_performance_sheet(workbook: Workbook, performance: dict) -> None:
     )
     resumo = [
         "Casa", "Fundos com serie", "Vitrine", "Cobertura",
-        "Mediana (%)", "Por PL (%)", "Por cotista (%)", "Gap (pp)",
+        "Mediana dos fundos (%)", "Ponderada por PL (%)", "Ponderada por cotistas (%)",
+        "PL menos cotistas (pp)",
         "Fundos abaixo da mediana", "% dos fundos", "% do PL", "% dos cotistas",
         "Indice PL", "Indice cotistas",
     ]
@@ -1598,7 +1605,10 @@ def _add_gente_sheet(workbook: Workbook, performance: dict) -> None:
     """
     ws = workbook.create_sheet("Onde esta a gente")
     periodo = performance.get("periodo") or {}
-    ws.cell(row=1, column=1, value="Onde esta a gente").font = _TITLE_FONT
+    ws.cell(
+        row=1, column=1,
+        value="Onde esta a gente - fundos da vitrine com mais cotistas",
+    ).font = _TITLE_FONT
     linha = _periodo_bloco(
         ws, 2,
         de=periodo.get("de"), ate=periodo.get("ate"),
@@ -1899,9 +1909,9 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
     linha += 1
     for casa in rent.get("casas") or []:
         for leitura, chave in (
-            ("Fundo mediano", "mediana"),
-            ("Real medio (por PL)", "por_pl"),
-            ("Cotista medio", "por_cotista"),
+            ("Mediana dos fundos", "mediana"),
+            ("Ponderada por PL", "por_pl"),
+            ("Ponderada por cotistas", "por_cotista"),
             ("Gap PL - cotista (pp)", "gap"),
         ):
             valores = [casa["label"], casa["com_serie"], casa["vitrine"], leitura]

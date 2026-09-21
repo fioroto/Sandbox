@@ -22,6 +22,10 @@ from shelf_monitor.models import (
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import restriction_reason
 from shelf_monitor.report.shared import rotulo_da_casa
+from shelf_monitor.report.performance import (
+    _MAX_EXPOSTOS,
+    fundos_abaixo_da_categoria,
+)
 from shelf_monitor.report.aggregate import build_gap_block, listing_funds, retail_funds
 
 _FIELD_LABELS = {
@@ -459,7 +463,7 @@ def _md_performance_section(report: RunReport) -> list[str]:
         "universo oficial. E o retorno dos fundos que a casa exibe, com o peso que "
         "eles tem no **mercado** - nao o retorno dos clientes dela.",
         "",
-        "| Casa | Fundo mediano | Real medio | Cotista medio | Gap | Abaixo da mediana da categoria |",
+        "| Casa | Mediana dos fundos | Ponderada por PL | Ponderada por cotistas | PL menos cotistas (pp) | Abaixo da mediana da categoria |",
         "|---|---:|---:|---:|---:|---|",
     ]
     for casa in performance["casas"]:
@@ -485,23 +489,14 @@ def _md_performance_section(report: RunReport) -> list[str]:
     lines.append("")
 
     # Os fundos de muita gente que rendem abaixo dos pares - o recorte acionavel.
-    abaixo: list[dict] = []
-    for platform_id, fundos in (performance.get("onde_esta_a_gente") or {}).items():
-        rotulo = next(
-            (c["label"] for c in performance["casas"] if c["platform_id"] == platform_id),
-            platform_id,
-        )
-        for fundo in fundos:
-            if fundo.get("excesso") is not None and fundo["excesso"] < 0:
-                abaixo.append({**fundo, "casa": rotulo})
-    abaixo.sort(key=lambda f: -f["cotistas"])
+    abaixo = fundos_abaixo_da_categoria(performance)
     if abaixo:
         lines.append("**Fundos de muita gente rendendo abaixo da categoria**")
         lines.append("")
-        for fundo in abaixo[:8]:
+        for fundo in abaixo[:_MAX_EXPOSTOS]:
             lines.append(
                 f"- {_contagem(fundo['cotistas'])} cotistas - {fundo['nome']} "
-                f"({fundo['casa']}): {_pct(fundo['retorno'])} contra "
+                f"({', '.join(fundo['casas'])}): {_pct(fundo['retorno'])} contra "
                 f"{_pct(fundo['mediana_categoria'])} da categoria "
                 f"({_pp(fundo['excesso'])})"
             )
@@ -535,6 +530,12 @@ def _md_performance_section(report: RunReport) -> list[str]:
     return lines
 
 
+def _indice_mediano(casa: dict) -> str:
+    """"1,65x", ou "-" quando a casa nao tem amostra comparavel."""
+    indice = casa.get("indice_mediano")
+    return "-" if indice is None else f"{indice:.2f}x"
+
+
 def _html_performance_section(report: RunReport) -> str:
     performance = report.performance
     if not (performance and performance.get("available")):
@@ -561,6 +562,47 @@ def _html_performance_section(report: RunReport) -> str:
         for e in performance.get("excluded", [])
     )
 
+    # O recorte acionavel do bloco. Ele existia so no markdown - quem recebia o
+    # digest por e-mail via as tres medias da vitrine e nenhum fundo para agir.
+    expostos = fundos_abaixo_da_categoria(performance)
+    bloco_expostos = ""
+    if expostos:
+        itens = "".join(
+            f"<li>{_contagem(f['cotistas'])} cotistas &mdash; {_esc(f['nome'])} "
+            f"({_esc(', '.join(f['casas']))}): {_pct(f['retorno'])} contra "
+            f"{_pct(f['mediana_categoria'])} da categoria ({_pp(f['excesso'])})</li>"
+            for f in expostos[:_MAX_EXPOSTOS]
+        )
+        bloco_expostos = (
+            f'<h3 style="{_H2}font-size:14px;">Fundos de muita gente rendendo '
+            f"abaixo da categoria</h3>"
+            f'<ul style="{_P}padding-left:18px;">{itens}</ul>'
+        )
+
+    # Custo relativo tambem so saia no markdown.
+    custo = report.custo
+    bloco_custo = ""
+    if custo and custo.get("available"):
+        linhas_custo = "".join(
+            f'<tr><td style="{_TD}">{_esc(casa["label"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_indice_mediano(casa)}</td>'
+            f'<td style="{_TD}text-align:right;">{_share(casa["share_caro"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_share(casa["share_barato"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_share(casa["share_liquidez_imediata"])}</td></tr>'
+            for casa in custo["casas"]
+        )
+        bloco_custo = f"""
+  <h3 style="{_H2}font-size:14px;">Custo relativo a categoria</h3>
+  <p style="{_P}font-size:12.5px;color:#898781;">Indice mediano, nao taxa mediana: a taxa
+    bruta entre casas mede o mix da prateleira, nao o preco dos produtos.</p>
+  <table style="{_TABLE}"><thead><tr>
+    <th style="{_TH}">Casa</th>
+    <th style="{_TH}text-align:right;">Indice mediano</th>
+    <th style="{_TH}text-align:right;">Caros</th>
+    <th style="{_TH}text-align:right;">Baratos</th>
+    <th style="{_TH}text-align:right;">Resgate ate D+1</th>
+  </tr></thead><tbody>{linhas_custo}</tbody></table>"""
+
     return f"""
   <h2 style="{_H2}">Rentabilidade da vitrine</h2>
   <p style="{_P}">Cota patrimonial do informe diario, {_esc(periodo['de'])} a
@@ -569,14 +611,16 @@ def _html_performance_section(report: RunReport) -> str:
     que eles tem no <strong>mercado</strong> &mdash; nao o retorno dos clientes dela.</p>
   <table style="{_TABLE}"><thead><tr>
     <th style="{_TH}">Casa</th>
-    <th style="{_TH}text-align:right;">Fundo mediano</th>
-    <th style="{_TH}text-align:right;">Real medio</th>
-    <th style="{_TH}text-align:right;">Cotista medio</th>
+    <th style="{_TH}text-align:right;">Mediana dos fundos</th>
+    <th style="{_TH}text-align:right;">Ponderada por PL</th>
+    <th style="{_TH}text-align:right;">Ponderada por cotistas</th>
     <th style="{_TH}text-align:right;">Gap</th>
     <th style="{_TH}">Abaixo da mediana da categoria</th>
   </tr></thead><tbody>{linhas}</tbody></table>
   <p style="{_P}font-size:12.5px;color:#898781;">Gap positivo: o dinheiro grande esta nos fundos melhores e o
     varejo nos piores. Negativo: o inverso.</p>
+  {bloco_expostos}
+  {bloco_custo}
   {fora}
 """
 
@@ -689,7 +733,7 @@ def _md_flow_section(report: RunReport) -> list[str]:
         "A CVM publica fluxo por **fundo**, nunca por distribuidor: os numeros "
         "por casa sao o fluxo dos fundos que ela exibe, no mercado inteiro.",
         "",
-        "| Casa | Fundos com informe | Captacao de varejo | So ela exibe |",
+        "| Casa | Fundos com informe | Captacao no mercado | So nesta vitrine |",
         "|---|---:|---:|---:|",
     ]
     for casa in flow["casas"]:
@@ -814,8 +858,8 @@ def _html_flow_section(report: RunReport) -> str:
         f'<table style="{_TABLE}"><thead><tr>'
         f'<th style="{_TH}">Casa</th>'
         f'<th style="{_TH}text-align:right;">Com informe</th>'
-        f'<th style="{_TH}text-align:right;">Captacao de varejo</th>'
-        f'<th style="{_TH}text-align:right;">So ela exibe</th>'
+        f'<th style="{_TH}text-align:right;">Captacao no mercado</th>'
+        f'<th style="{_TH}text-align:right;">So nesta vitrine</th>'
         f"</tr></thead><tbody>{linhas}</tbody></table>"
     )
 

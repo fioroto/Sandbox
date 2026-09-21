@@ -1028,8 +1028,8 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
     tabela.add_column("Casa")
     tabela.add_column("Vitrine", justify="right")
     tabela.add_column("Com informe", justify="right")
-    tabela.add_column("Captacao de varejo", justify="right")
-    tabela.add_column("So ela exibe", justify="right")
+    tabela.add_column("Captacao no mercado", justify="right")
+    tabela.add_column("So nesta vitrine", justify="right")
     tabela.add_column("Estrutural (fora)", justify="right")
     for casa in resultado["casas"]:
         liquida = casa["captacao_liquida"]
