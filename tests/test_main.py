@@ -165,6 +165,56 @@ class TestCarregarSnapshots(unittest.TestCase):
         self.assertEqual([s.platform for s in saida], ["xp"])
 
 
+class TestSuperficieDoCli(unittest.TestCase):
+    """Todos os subcomandos e todas as flags, travados num arquivo.
+
+    `main()` tem 309 linhas de argparse: 17 blocos `add_parser` escritos a
+    mao. Qualquer reorganizacao desse corpo pode perder uma flag sem quebrar
+    teste nenhum - os testes existentes exercitam meia duzia de comandos.
+
+    A fixture e o contrato: adicionar flag exige atualiza-la de proposito,
+    perder uma falha aqui nomeando qual.
+    """
+
+    def test_nenhum_subcomando_ou_flag_se_perdeu(self):
+        import json
+        import re
+        import subprocess
+        import sys
+        from pathlib import Path as _Path
+
+        raiz = _Path(__file__).resolve().parent.parent
+        esperado = json.loads(
+            (_Path(__file__).parent / "fixtures" / "cli_surface.json")
+            .read_text(encoding="utf-8")
+        )
+
+        def ajuda(*args: str) -> str:
+            r = subprocess.run(
+                [sys.executable, "-m", "shelf_monitor", *args, "--help"],
+                capture_output=True, text=True, timeout=180, cwd=str(raiz),
+            )
+            self.assertEqual(r.returncode, 0, r.stderr[-300:])
+            return r.stdout
+
+        lista = re.search(r"\{([a-z,\-]+)\}", ajuda())
+        self.assertIsNotNone(lista, "nao consegui ler a lista de subcomandos")
+        comandos = set(lista.group(1).split(","))
+        self.assertEqual(
+            set(esperado), comandos,
+            f"subcomandos que mudaram: {set(esperado) ^ comandos}",
+        )
+
+        for comando in sorted(comandos):
+            with self.subTest(comando=comando):
+                flags = sorted(set(re.findall(r"(--[a-z][a-z-]*)", ajuda(comando))))
+                self.assertEqual(
+                    esperado[comando], flags,
+                    f"flags de '{comando}' mudaram: "
+                    f"{set(esperado[comando]) ^ set(flags)}",
+                )
+
+
 class TestContratoDaRentabilidade(unittest.TestCase):
     def test_os_tres_comandos_expoem_o_opt_in(self):
         """O contrato em `models.RunReport.rentabilidade` exige a flag.

@@ -1,0 +1,123 @@
+{
+ "captacao": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "collect": [
+  "--data-dir",
+  "--first-source-only",
+  "--help",
+  "--platform"
+ ],
+ "custo": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "cvm": [
+  "--data-dir",
+  "--help",
+  "--local-zip"
+ ],
+ "diagnose": [
+  "--browser",
+  "--data-dir",
+  "--help",
+  "--platform"
+ ],
+ "diff": [
+  "--data-dir",
+  "--help",
+  "--platform"
+ ],
+ "doctor": [
+  "--data-dir",
+  "--help"
+ ],
+ "etf": [
+  "--collect-sources",
+  "--data-dir",
+  "--export",
+  "--flow-source",
+  "--force",
+  "--help",
+  "--months",
+  "--output",
+  "--probe-sources"
+ ],
+ "export": [
+  "--collect",
+  "--data-dir",
+  "--first-source-only",
+  "--help",
+  "--output",
+  "--platform",
+  "--skip-cvm",
+  "--with-rentabilidade"
+ ],
+ "insights": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "mandato": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "market": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--local-dir",
+  "--skip-fees"
+ ],
+ "performance": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "rentabilidade": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "report": [
+  "--data-dir",
+  "--help",
+  "--platform",
+  "--send-email",
+  "--with-rentabilidade"
+ ],
+ "run": [
+  "--data-dir",
+  "--first-source-only",
+  "--git-commit",
+  "--help",
+  "--no-market",
+  "--platform",
+  "--send-email",
+  "--skip-cvm",
+  "--with-etf",
+  "--with-rentabilidade"
+ ],
+ "watchlist-discover": [
+  "--data-dir",
+  "--help",
+  "--limit",
+  "--local-zip"
+ ]
+}
