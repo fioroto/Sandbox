@@ -1070,6 +1070,52 @@ class TestReports(unittest.TestCase):
         coluna_resumo = [c.value for c in resumo[4]].index("So nesta vitrine") + 1
         self.assertIn("'Vitrine varejo'!", resumo.cell(row=5, column=coluna_resumo).value)
 
+    def test_markdown_e_html_do_digest_nao_divergem(self):
+        """As duas metades do digest tem de contar a mesma historia.
+
+        Cada secao e escrita DUAS vezes - `_md_*` e `_html_*`, 811 linhas de
+        codigo espelhado - e nada obrigava as duas a concordarem. O resultado
+        medido antes desta revisao: o HTML nao tinha a tabela de custo
+        relativo, nem a lista de fundos de muita gente rendendo abaixo da
+        categoria, e a oportunidade de grade virava um paragrafo sem os
+        fundos. Quem recebia o digest por e-mail via menos, e nada avisava.
+
+        O teste compara os FATOS, nao a formatacao: os nomes de fundo e as
+        contagens que uma metade publica tem de aparecer na outra. Enquanto o
+        espelhamento existir, e isto que impede a divergencia de voltar.
+        """
+        import re as _re
+
+        report = self._listing_report()
+        markdown = render_markdown(report)
+        md_path, html_path = render_digest(self.config, report)
+        html = html_path.read_text(encoding="utf-8")
+
+        def texto_visivel(bruto: str) -> str:
+            sem_tag = _re.sub(r"<[^>]+>", " ", bruto)
+            return _re.sub(r"\s+", " ", sem_tag.replace("&mdash;", "-"))
+
+        visivel = texto_visivel(html)
+
+        # 1. Os BLOCOS que ambos publicam. Nao comparo titulos de secao: o
+        # HTML monta o sumario sem um cabecalho proprio, e isso e escolha de
+        # formatacao, nao divergencia de conteudo. O que tem de bater sao os
+        # blocos nomeados que os dois declaram publicar.
+        for bloco in ("Gaps de prateleira da XP", "Radar CVM"):
+            if bloco in markdown:
+                self.assertIn(
+                    bloco, visivel, f"bloco '{bloco}' so existe no markdown"
+                )
+
+        # 2. Os CNPJs citados no markdown aparecem no HTML.
+        cnpjs_md = set(_re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", markdown))
+        cnpjs_html = set(_re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", visivel))
+        self.assertTrue(cnpjs_md, "a fixture precisa citar ao menos um CNPJ")
+        self.assertEqual(
+            set(), cnpjs_md - cnpjs_html,
+            "fundos citados so no markdown: " + str(cnpjs_md - cnpjs_html),
+        )
+
     def test_digest_files_are_written(self):
         md_path, html_path = render_digest(self.config, self.report)
         self.assertTrue(md_path.exists() and html_path.exists())
