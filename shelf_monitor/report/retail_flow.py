@@ -40,7 +40,8 @@ from shelf_monitor.report.competitive import (
     identifiable_vitrines,
     vitrine_snapshots,
 )
-from shelf_monitor.report.shared import MIN_COBERTURA_VITRINE
+from shelf_monitor.report.shared.informe import ler_filtrado
+from shelf_monitor.report.shared.limiares import MIN_COBERTURA_VITRINE
 
 
 # Abaixo disto a casa nao entra nos rankings: com um punhado de fundos casados, a
@@ -90,9 +91,13 @@ def _num(raw: str) -> float:
         return 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class DailyFlow:
     """Uma linha do informe diario, nos campos que interessam ao fluxo.
+
+    `slots=True` porque esta classe e instanciada aos milhoes: o informe de
+    09/2026 sozinho tem 302 mil linhas, e uma execucao le tres competencias.
+    Sem slots, cada instancia carrega um `__dict__` proprio.
 
     Uma linha e uma SUBCLASSE, nao uma classe. O informe v4 traz `ID_SUBCLASSE`,
     e uma classe com subclasses emite uma linha por subclasse por dia, cada uma
@@ -509,7 +514,6 @@ def build_retail_flow(
     force_download: bool = False,
 ) -> dict:
     """Captacao dos fundos de vitrine, por casa e por fundo."""
-    from shelf_monitor.market.etf_flow import fetch_inf_diario_month
 
     vitrines, fora = vitrine_snapshots(snapshots)
     cruzaveis, sem_cnpj = identifiable_vitrines(vitrines)
@@ -543,11 +547,12 @@ def build_retail_flow(
     for yyyymm in periodos:
         # O mes corrente muda todo dia: baixar de novo e o que mantem a leitura
         # com os pregoes mais recentes em vez do arquivo que sobrou no cache.
+        # O `force` vale para a PRIMEIRA leitura da competencia nesta execucao;
+        # `performance` e `rentabilidade`, que vem depois, reaproveitam.
         corrente = yyyymm == periodos[-1]
-        caminho = fetch_inf_diario_month(
-            config, yyyymm, force=force_download or corrente
+        lidos = ler_filtrado(
+            config, yyyymm, alvo, force=force_download or corrente
         )
-        lidos = read_daily_flows(caminho, alvo) if caminho else []
         if lidos:
             registros.extend(lidos)
             meses_lidos.append(yyyymm)

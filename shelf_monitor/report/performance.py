@@ -75,9 +75,10 @@ from shelf_monitor.report.retail_flow import (
 )
 from shelf_monitor.report.shared import (
     MIN_AMOSTRA_CATEGORIA,
-    ponderada,
     MIN_COBERTURA_JANELA,
     MIN_COBERTURA_VITRINE,
+    ler_competencia,
+    ponderada,
 )
 
 # Fracao dos pregoes do periodo em que o fundo precisa ter sido observado.
@@ -362,7 +363,6 @@ def build_performance(
     force_download: bool = False,
 ) -> dict:
     """Rentabilidade ponderada da vitrine de cada casa, contra a categoria."""
-    from shelf_monitor.market.etf_flow import fetch_inf_diario_month
 
     vitrines, fora = vitrine_snapshots(snapshots)
     cruzaveis, sem_identidade = identifiable_vitrines(vitrines)
@@ -396,10 +396,12 @@ def build_performance(
     ausentes: list[str] = []
     for yyyymm in periodos:
         corrente = yyyymm == periodos[-1]
-        caminho = fetch_inf_diario_month(
+        # Universo inteiro (sem filtro de CNPJ): a mediana de referencia e a da
+        # categoria no mercado, nao na vitrine. Se `retail_flow` ja leu esta
+        # competencia nesta execucao, isto nao toca o disco.
+        parcial = ler_competencia(
             config, yyyymm, force=force_download or corrente
         )
-        parcial = read_daily_flows(caminho, None) if caminho else []
         if parcial:
             registros.extend(parcial)
             lidos.append(yyyymm)

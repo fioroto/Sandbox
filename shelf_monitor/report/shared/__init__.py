@@ -21,6 +21,12 @@ from shelf_monitor.report.shared.limiares import (
     SOBRE_INDICE,
     SUB_INDICE,
 )
+from shelf_monitor.report.shared.informe import (
+    caminho_da_competencia,
+    ler_competencia,
+    ler_filtrado,
+    limpar as limpar_informe,
+)
 from shelf_monitor.report.shared.numeros import (
     mediana,
     ponderada,
@@ -39,6 +45,10 @@ __all__ = [
     "MIN_VITRINE",
     "SOBRE_INDICE",
     "SUB_INDICE",
+    "caminho_da_competencia",
+    "ler_competencia",
+    "ler_filtrado",
+    "limpar_informe",
     "mediana",
     "ponderada",
     "quartis",

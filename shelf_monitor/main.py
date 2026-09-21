@@ -86,6 +86,7 @@ from shelf_monitor.report.rentabilidade import (
     build_rentabilidade,
     print_rentabilidade,
 )
+from shelf_monitor.report.shared import limpar_informe
 from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
@@ -283,6 +284,12 @@ def build_report(
     # ("o `run` so a calcula quando pedida").
     if with_rentabilidade:
         attach_rentabilidade(config, report)
+
+    # Os tres blocos acima compartilham as competencias ja parseadas do informe
+    # diario (~91 MB cada). Passado este ponto ninguem mais le o informe: os
+    # renderers desenham uma foto. Segurar o cache ate o fim do processo seria
+    # carregar centenas de MB pela renderizacao inteira sem nenhum uso.
+    limpar_informe()
 
     return report
 
@@ -728,6 +735,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     attach_custo_e_mandato(config, avulso)
     if getattr(args, "with_rentabilidade", False):
         attach_rentabilidade(config, avulso)
+    limpar_informe()  # ver build_report: a planilha nao le o informe
 
     path = render_spreadsheet(
         config,

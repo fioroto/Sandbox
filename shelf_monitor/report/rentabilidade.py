@@ -75,6 +75,7 @@ from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snap
 from shelf_monitor.report.retail_flow import months_back, read_daily_flows
 from shelf_monitor.report.shared import (
     MIN_COBERTURA_JANELA,
+    ler_competencia,
 )
 
 # Fracao das competencias da janela em que a subclasse precisa aparecer. Ver o
@@ -157,13 +158,18 @@ class SerieMensal:
         return config.cache_dir / "serie" / f"{yyyymm}.csv"
 
     @classmethod
-    def _resumir(cls, caminho: Path) -> dict[tuple[str, str], MesSubclasse]:
-        """Le uma competencia inteira e devolve o resumo por subclasse."""
+    def _resumir(cls, registros: list) -> dict[tuple[str, str], MesSubclasse]:
+        """Resume uma competencia ja lida, por subclasse.
+
+        Recebe os registros em vez do caminho porque `retail_flow` e
+        `performance` ja leram a mesma competencia nesta execucao: o leitor
+        compartilhado devolve a lista parseada e isto nao toca o disco.
+        """
         resumo: dict[tuple[str, str], MesSubclasse] = {}
         primeiro: dict[tuple[str, str], date] = {}
         ultimo: dict[tuple[str, str], date] = {}
         dias: dict[tuple[str, str], set[date]] = {}
-        for registro in read_daily_flows(caminho, None):
+        for registro in registros:
             chave = (registro.cnpj, registro.subclasse)
             item = resumo.get(chave)
             if item is None:
@@ -235,7 +241,6 @@ class SerieMensal:
         progresso=None,
     ) -> SerieMensal:
         """Monta a serie, reusando o cache por competencia quando existe."""
-        from shelf_monitor.market.etf_flow import fetch_inf_diario_month
 
         competencias = months_back(meses)
         dados: dict[tuple[str, str], dict[str, MesSubclasse]] = {}
@@ -246,12 +251,12 @@ class SerieMensal:
             cache = cls._cache_path(config, yyyymm)
             resumo = None if (force or corrente) else cls._ler_cache(cache)
             if resumo is None:
-                caminho = fetch_inf_diario_month(config, yyyymm, force=corrente)
-                if caminho is None:
+                registros = ler_competencia(config, yyyymm, force=corrente)
+                if not registros:
                     if progresso:
                         progresso(yyyymm, None)
                     continue
-                resumo = cls._resumir(caminho)
+                resumo = cls._resumir(registros)
                 if resumo:
                     cls._gravar_cache(cache, resumo)
             if not resumo:
