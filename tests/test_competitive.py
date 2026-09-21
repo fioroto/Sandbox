@@ -9,6 +9,7 @@ Rode com: python -m unittest discover -s tests -v
 """
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -408,6 +409,60 @@ class TestMomentum(unittest.TestCase):
         self.assertEqual(mom["movimentos"], [])
         self.assertEqual(len(mom["sem_base"]), 1)
         self.assertIn("nao tinha vitrine", mom["sem_base"][0]["reason"])
+
+    def test_momentum_e_deterministico_entre_processos(self):
+        """Duas leituras dos mesmos snapshots tem de dar o mesmo JSON.
+
+        `entradas` e `saidas` saiam da diferenca de `dict.keys()`, que e um
+        set: a ordem de iteracao depende do hash de str, que Python randomiza
+        POR PROCESSO. Os cinco `exemplos_entrada` mudavam a cada execucao e,
+        no empate (varias categorias com saldo -1, o caso comum), mudavam
+        tambem quais categorias sobreviviam ao corte de seis.
+
+        O teste roda em subprocessos com PYTHONHASHSEED diferente de proposito:
+        dentro de um processo so a ordem do set e estavel, entao tres chamadas
+        seguidas concordariam mesmo com o bug presente - foi o que a primeira
+        versao deste teste fez, e ela passava nos dois lados.
+        """
+        import json
+        import subprocess
+        import sys
+
+        antes = snapshot("inter", vitrine("inter", 40), dia=date(2026, 9, 13))
+        save_shelf_snapshot(self.config, antes)
+        funds = vitrine("inter", 40)[:30]
+        for i in range(8):
+            funds.append(offer(
+                "inter", f"INTER NOVO {i}", cnpj=f"9999999999{i:04d}",
+                asset_class=AssetClass.ACOES,
+            ))
+        depois = snapshot("inter", funds, dia=date(2026, 9, 19))
+        save_shelf_snapshot(self.config, depois)
+
+        programa = (
+            "import json, sys;"
+            "from shelf_monitor.config import Config;"
+            "from shelf_monitor.report.competitive import build_momentum;"
+            "from shelf_monitor.storage import latest_shelf_snapshot;"
+            f"c = Config(data_dir={self.tmp.name!r});"
+            "s = latest_shelf_snapshot(c, 'inter');"
+            "m = build_momentum(c, [s]);"
+            "print(json.dumps(m['movimentos'], sort_keys=True, default=str))"
+        )
+        saidas = []
+        for semente in ("0", "1", "2"):
+            env = {**os.environ, "PYTHONHASHSEED": semente}
+            r = subprocess.run(
+                [sys.executable, "-c", programa],
+                capture_output=True, text=True, env=env, timeout=120,
+                cwd=str(Path(__file__).resolve().parent.parent),
+            )
+            self.assertEqual(r.returncode, 0, r.stderr[-500:])
+            saidas.append(json.loads(r.stdout))
+
+        self.assertEqual(saidas[0], saidas[1])
+        self.assertEqual(saidas[1], saidas[2])
+        self.assertTrue(saidas[0][0]["exemplos_entrada"], "fixture sem entradas")
 
     def test_duas_vitrines_comparaveis_produzem_entradas_e_saidas(self):
         antes = snapshot("inter", vitrine("inter", 40), dia=date(2026, 9, 13))

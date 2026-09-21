@@ -672,8 +672,14 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
 
         antes = {f.identity: f for f in vitrine_anterior}
         agora = {f.identity: f for f in funds_hoje}
-        entradas = [agora[k] for k in agora.keys() - antes.keys()]
-        saidas = [antes[k] for k in antes.keys() - agora.keys()]
+        # `sorted` porque a diferenca de `dict.keys()` e um set, cuja ordem de
+        # iteracao muda entre processos (hash de str e randomizado). Sem isto,
+        # `exemplos_entrada` traz cinco fundos diferentes a cada execucao e o
+        # empate em `saldo_por_categoria` muda quais categorias sobrevivem ao
+        # corte - duas execucoes seguidas do mesmo codigo, sobre os mesmos
+        # snapshots, davam JSON diferente.
+        entradas = [agora[k] for k in sorted(agora.keys() - antes.keys())]
+        saidas = [antes[k] for k in sorted(antes.keys() - agora.keys())]
 
         por_categoria: dict[str, int] = {}
         for fund in entradas:
@@ -692,8 +698,10 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
             "vitrine_agora": len(funds_hoje),
             "entradas": len(entradas),
             "saidas": len(saidas),
+            # Desempate pelo nome: varias categorias com saldo -1 e o caso
+            # comum, e so o valor absoluto nao decide quais seis ficam.
             "saldo_por_categoria": dict(
-                sorted(por_categoria.items(), key=lambda kv: -abs(kv[1]))[:6]
+                sorted(por_categoria.items(), key=lambda kv: (-abs(kv[1]), kv[0]))[:6]
             ),
             "exemplos_entrada": [f.name[:70] for f in entradas[:5]],
         })
@@ -743,40 +751,22 @@ def _fmt_money(value: float | None) -> str:
     return f"R$ {value:.0f}"
 
 
-def build_xp_decisions(
-    snapshots: list[ShelfSnapshot], baseline_id: str = "xp"
-) -> dict:
-    """Do diagnostico para a decisao: o que a XP faz na segunda-feira.
+def _decisao_consenso(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Fundo que varias concorrentes exibem e a XP nao.
 
-    Cada item traz o numero que o sustenta e o esforco que ele custa, porque uma
-    lista de oportunidades sem custo nao e priorizavel: adicionar fundo de
-    gestora ja distribuida e outra conversa que abrir gestora nova.
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
     """
-    vitrines, excluded = vitrine_snapshots(snapshots)
-    if baseline_id not in vitrines:
-        motivo = next(
-            (e["reason"] for e in excluded if e["platform_id"] == baseline_id),
-            "vitrine ausente nesta execucao",
-        )
-        return {
-            "available": False,
-            "reason": f"vitrine da {_platform_label(baseline_id)} indisponivel: {motivo}",
-            "excluded": excluded,
-        }
-
-    base = vitrines[baseline_id]
-    concorrentes = {pid: fs for pid, fs in vitrines.items() if pid != baseline_id}
-    if not concorrentes:
-        return {
-            "available": False,
-            "reason": "nenhuma vitrine concorrente utilizavel nesta execucao",
-            "excluded": excluded,
-        }
-
     decisoes: list[Decision] = []
-    base_cnpjs = {f.cnpj for f in base if f.cnpj}
-    base_managers = {m for m in (_offer_manager(f) for f in base) if m}
-
     # (a) Consenso: fundo que varias concorrentes exibem e a XP nao. So entram as
     # concorrentes cuja vitrine da para cruzar por CNPJ - com a do Itau a 6%, o
     # "2 de 3 concorrentes" seria contado sobre uma casa que quase nao participa.
@@ -833,6 +823,25 @@ def build_xp_decisions(
             confianca="alta",
         ))
 
+    return decisoes
+
+
+def _decisao_subindexacao(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Categoria em que a vitrine da XP esta rasa.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (b) Sub-indexacao por categoria, com o tamanho da lacuna em fundos.
     posicao = build_positioning(snapshots)
     if posicao.get("available"):
@@ -876,6 +885,25 @@ def build_xp_decisions(
                 confianca="alta",
             ))
 
+    return decisoes
+
+
+def _decisao_acessibilidade(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Ticket de entrada, so sobre minimo da propria vitrine.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (c) Acessibilidade: so sobre minimo publicado PELA VITRINE (ver
     # vitrine_only_values). Quando o baseline nao publica, a conclusao muda de
     # "ticket mais alto" para "ticket nao exibido" - que e outra decisao.
@@ -958,6 +986,25 @@ def build_xp_decisions(
                 confianca="media",
             ))
 
+    return decisoes
+
+
+def _decisao_gestoras(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Gestora com distribuicao ampla e ausente na XP.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (d) Gestoras com distribuicao ampla e ausentes na XP.
     alcance = build_manager_reach(snapshots, baseline_id=baseline_id)
     if alcance.get("available") and alcance["_ausentes"]:
@@ -981,6 +1028,25 @@ def build_xp_decisions(
             confianca="media",
         ))
 
+    return decisoes
+
+
+def _decisao_exclusivos(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """O que so a XP tem - ativo a defender, nao gap.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (e) O que so a XP tem - o ativo a defender, nao um gap a fechar.
     todas_cruzaveis, _ = identifiable_vitrines(vitrines)
     exclusivos = _exclusive_on_vitrine(todas_cruzaveis).get(baseline_id, set())
@@ -1005,6 +1071,55 @@ def build_xp_decisions(
             ),
             esforco="analise",
             confianca="alta",
+        ))
+
+    return decisoes
+
+
+def build_xp_decisions(
+    snapshots: list[ShelfSnapshot], baseline_id: str = "xp"
+) -> dict:
+    """Do diagnostico para a decisao: o que a XP faz na segunda-feira.
+
+    Cada item traz o numero que o sustenta e o esforco que ele custa, porque uma
+    lista de oportunidades sem custo nao e priorizavel: adicionar fundo de
+    gestora ja distribuida e outra conversa que abrir gestora nova.
+    """
+    vitrines, excluded = vitrine_snapshots(snapshots)
+    if baseline_id not in vitrines:
+        motivo = next(
+            (e["reason"] for e in excluded if e["platform_id"] == baseline_id),
+            "vitrine ausente nesta execucao",
+        )
+        return {
+            "available": False,
+            "reason": f"vitrine da {_platform_label(baseline_id)} indisponivel: {motivo}",
+            "excluded": excluded,
+        }
+
+    base = vitrines[baseline_id]
+    concorrentes = {pid: fs for pid, fs in vitrines.items() if pid != baseline_id}
+    if not concorrentes:
+        return {
+            "available": False,
+            "reason": "nenhuma vitrine concorrente utilizavel nesta execucao",
+            "excluded": excluded,
+        }
+
+    decisoes: list[Decision] = []
+    base_cnpjs = {f.cnpj for f in base if f.cnpj}
+    base_managers = {m for m in (_offer_manager(f) for f in base) if m}
+
+    for construir in (
+        _decisao_consenso,
+        _decisao_subindexacao,
+        _decisao_acessibilidade,
+        _decisao_gestoras,
+        _decisao_exclusivos,
+    ):
+        decisoes.extend(construir(
+            base, concorrentes, base_cnpjs, base_managers,
+            baseline_id, snapshots, vitrines,
         ))
 
     return {
