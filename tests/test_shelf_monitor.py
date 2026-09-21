@@ -25,6 +25,10 @@ from shelf_monitor.collectors.cvm import (
 from shelf_monitor.collectors.open_finance import _brand_matches, _flatten_funds
 from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import Config
+try:  # `discover -s tests` poe tests/ no sys.path; `-m unittest tests.X` nao.
+    from fixtures_comuns import temp_config
+except ImportError:  # pragma: no cover - depende de como a suite foi invocada
+    from tests.fixtures_comuns import temp_config
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
 from shelf_monitor.http import SourceUnavailable
 from shelf_monitor.merge import merge_offers, source_summary
@@ -64,11 +68,6 @@ CVM_ZIP = FIXTURES / "cvm" / "registro_fundo_classe.zip"
 OPEN_FINANCE_JSON = FIXTURES / "open_finance" / "funds_page1.json"
 
 
-def temp_config() -> tuple[Config, tempfile.TemporaryDirectory]:
-    tmp = tempfile.TemporaryDirectory()
-    config = Config(data_dir=tmp.name)
-    config.ensure_dirs()
-    return config, tmp
 
 
 class TestNormalize(unittest.TestCase):

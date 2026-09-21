@@ -16,6 +16,10 @@ from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
+try:  # `discover -s tests` poe tests/ no sys.path; `-m unittest tests.X` nao.
+    from fixtures_comuns import temp_config
+except ImportError:  # pragma: no cover - depende de como a suite foi invocada
+    from tests.fixtures_comuns import temp_config
 from shelf_monitor.market import import_market, run_import
 from shelf_monitor.market.fees import parse_fees, resolve_admin_fee
 from shelf_monitor.market.models import FeeUnit, Origin
@@ -24,11 +28,6 @@ from shelf_monitor.market.parse import parse_date, unknown_columns
 FIXTURES = Path(__file__).parent / "fixtures" / "market"
 
 
-def temp_config() -> tuple[Config, tempfile.TemporaryDirectory]:
-    tmp = tempfile.TemporaryDirectory()
-    config = Config(data_dir=tmp.name)
-    config.ensure_dirs()
-    return config, tmp
 
 
 class TestDateParsing(unittest.TestCase):

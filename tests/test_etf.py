@@ -15,6 +15,10 @@ from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
+try:  # `discover -s tests` poe tests/ no sys.path; `-m unittest tests.X` nao.
+    from fixtures_comuns import temp_config
+except ImportError:  # pragma: no cover - depende de como a suite foi invocada
+    from tests.fixtures_comuns import temp_config
 from shelf_monitor.market import import_market
 from shelf_monitor.market.etf import (
     build_etf_catalog,
@@ -36,11 +40,6 @@ from shelf_monitor.market.etf_flow import (
 FIXTURES = Path(__file__).parent / "fixtures" / "etf"
 
 
-def temp_config() -> tuple[Config, tempfile.TemporaryDirectory]:
-    tmp = tempfile.TemporaryDirectory()
-    config = Config(data_dir=tmp.name)
-    config.ensure_dirs()
-    return config, tmp
 
 
 class TestExtractTicker(unittest.TestCase):

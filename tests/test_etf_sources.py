@@ -19,17 +19,16 @@ from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
+try:  # `discover -s tests` poe tests/ no sys.path; `-m unittest tests.X` nao.
+    from fixtures_comuns import temp_config
+except ImportError:  # pragma: no cover - depende de como a suite foi invocada
+    from tests.fixtures_comuns import temp_config
 from shelf_monitor.market import b3_funds, cotahist, fundosnet
 from shelf_monitor.market.etf import EtfMetadata
 from shelf_monitor.market.etf_flow import aggregate_etf_weekly_flows
 from shelf_monitor.market.etf_sources import last_business_day, match_informe_to_catalog
 
 
-def temp_config() -> tuple[Config, tempfile.TemporaryDirectory]:
-    tmp = tempfile.TemporaryDirectory()
-    config = Config(data_dir=tmp.name)
-    config.ensure_dirs()
-    return config, tmp
 
 
 # --- B3 -----------------------------------------------------------------------
