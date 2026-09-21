@@ -485,20 +485,22 @@ function renderVitrine(listing) {
     ],
   })));
 
-  // Custo e ticket: tabela compacta - poucos numeros precisos pedem tabela.
+  // Ticket de entrada: tabela compacta - poucos numeros precisos pedem tabela.
+  // A taxa de administracao NAO entra aqui. O quartil de taxa bruta entre casas
+  // descreve o mix da prateleira (renda fixa ~0,2% a.a., acoes ~2%), nao o
+  // preco do produto - e o bloco "Custo relativo a categoria", cinco secoes
+  // abaixo, dizia isso por escrito enquanto esta tabela seguia publicando a
+  // leitura que ele desautorizava.
   table2(document.getElementById("table-costs"),
-    ["Casa", "Taxa adm q1", "mediana", "q3", "Minimo mediano (R$)", "Cobertura CNPJ"],
+    ["Casa", "Minimo q1", "mediana", "q3", "Cobertura CNPJ"],
     withListing.map(p => {
-      const fee = p.fee_quartiles, min = p.min_quartiles;
-      const pct = v => v === undefined || v === null ? "\u2013" : v.toLocaleString("pt-BR",
-        { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
-      const money = v => v === undefined || v === null ? "\u2013"
+      const min = p.min_quartiles;
+      const money = v => v === undefined || v === null ? "–"
         : "R$ " + v.toLocaleString("pt-BR");
       return [
         p.label,
-        fee ? pct(fee.q1) : "\u2013", fee ? pct(fee.median) : "\u2013",
-        fee ? pct(fee.q3) : "\u2013",
-        min ? money(min.median) : "\u2013",
+        min ? money(min.q1) : "–", min ? money(min.median) : "–",
+        min ? money(min.q3) : "–",
         Math.round((p.cnpj_coverage || 0) * 100) + "%",
       ];
     }));
@@ -1216,9 +1218,11 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
         <div class="chart-scroll" id="chart-arch"></div>
       </div>
       <div>
-        <h3>Custo e ticket por casa</h3>
-        <p class="card-sub">Quartis da taxa de administracao e mediana do minimo &mdash;
-          quartis mostram a forma da prateleira; media esconderia.</p>
+        <h3>Ticket de entrada por casa</h3>
+        <p class="card-sub">Quartis da aplicacao minima &mdash; quartis mostram a forma da
+          prateleira; media esconderia. A taxa saiu daqui: quartil de taxa bruta entre casas
+          mede o <strong>mix</strong> da prateleira, nao o preco, e a leitura que presta esta
+          em &ldquo;Custo relativo a categoria&rdquo;.</p>
         <div id="table-costs"></div>
       </div>
     </div>

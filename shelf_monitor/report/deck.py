@@ -68,7 +68,7 @@ def render_deck(config: Config, report: RunReport) -> Path:
         _gaps(prs, gaps)
     if platforms:
         _architecture(prs, platforms)
-        _costs(prs, platforms)
+        _costs(prs, platforms, data.get("custo"))
     _movements(prs, report)
     _cvm_radar(prs, data)
     _methodology(prs, report, data)
@@ -361,35 +361,84 @@ def _architecture(prs, platforms: list[dict]):
           10, color=_MUTED)
 
 
-def _costs(prs, platforms: list[dict]):
+def _costs(prs, platforms: list[dict], custo: dict | None = None):
+    """Custo relativo a categoria + ticket de entrada, num slide so.
+
+    O deck publicava APENAS os quartis de taxa bruta - justamente a leitura
+    que o dashboard desautoriza duas secoes depois da propria ("comparar a
+    taxa bruta entre casas mede o mix da prateleira, nao o preco"). Uma casa
+    com mais renda fixa (~0,2% a.a.) aparecia mais barata que uma com mais
+    acoes (~2%) sem que nenhum produto custasse diferente, e quem via so o
+    deck nao tinha como saber disso.
+
+    Agora o indice vem primeiro, quando o extrato da CVM permite calcula-lo, e
+    a taxa bruta sai. O ticket fica: aplicacao minima e comparavel entre casas
+    sem depender de mix.
+    """
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "Custo e ticket de entrada",
-           "Quartis da taxa de administracao e mediana do minimo - quartis mostram "
-           "a forma da prateleira; media esconderia")
 
-    def pct(value):
-        return f"{_fmt(value)}%" if value is not None else "-"
-
-    rows = []
-    for p in platforms:
-        fee = p.get("fee_quartiles") or {}
-        minimum = p.get("min_quartiles") or {}
-        rows.append([
-            p["label"],
-            pct(fee.get("q1")), pct(fee.get("median")), pct(fee.get("q3")),
-            f"R$ {_fmt(minimum.get('median'))}" if minimum.get("median") is not None else "-",
-            f"{round((p.get('cnpj_coverage') or 0) * 100)}%",
-        ])
-    _table(
-        slide, 0.6, 1.7, 10.5,
-        ["Casa", "Taxa q1", "Taxa mediana", "Taxa q3", "Minimo mediano", "Cobertura CNPJ"],
-        rows, col_widths=[2.2, 1, 1.2, 1, 1.6, 1.4],
+    tem_indice = bool(custo and custo.get("available"))
+    _title(
+        slide,
+        "Custo relativo a categoria e ticket de entrada" if tem_indice
+        else "Ticket de entrada",
+        "Indice 1,00x = exatamente a mediana da categoria de cada fundo; o que "
+        "decide e a diferenca ENTRE as casas, nao a distancia de 1,00x"
+        if tem_indice else
+        "Quartis da aplicacao minima - quartis mostram a forma da prateleira; "
+        "media esconderia",
     )
-    _text(slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.5,
-          "Taxa e a maxima publicada pela casa (mesma semantica do maxAdminFee do "
-          "Open Finance). Celulas vazias = a fonte nao publica o campo.",
-          10, color=_MUTED)
+
+    def share(value):
+        return f"{round((value or 0) * 100)}%" if value is not None else "-"
+
+    minimos = {p["platform_id"]: (p.get("min_quartiles") or {}) for p in platforms}
+    rotulos = {p["platform_id"]: p["label"] for p in platforms}
+
+    if tem_indice:
+        rows = []
+        for casa in custo["casas"]:
+            minimo = minimos.get(casa["platform_id"], {})
+            indice = casa.get("indice_mediano")
+            rows.append([
+                casa["label"],
+                f"{indice:.2f}x" if indice is not None else "-",
+                share(casa.get("share_caro")),
+                share(casa.get("share_barato")),
+                share(casa.get("share_liquidez_imediata")),
+                f"R$ {_fmt(minimo.get('median'))}" if minimo.get("median") is not None else "-",
+            ])
+        cabecalho = ["Casa", "Indice mediano", "Caros", "Baratos",
+                     "Resgate ate D+1", "Ticket mediano"]
+        larguras = [2.2, 1.6, 1.0, 1.1, 1.7, 1.6]
+        nota = (
+            "Indice = taxa do fundo dividida pela mediana da MESMA categoria no "
+            "universo de varejo da CVM. Nenhuma casa cobra 60% acima do mercado: "
+            "a vitrine exibe a classe de varejo, que carrega a camada de "
+            "distribuicao, e o universo inclui classes sem ela."
+        )
+    else:
+        rows = [
+            [
+                rotulos[pid],
+                f"R$ {_fmt(m.get('q1'))}" if m.get("q1") is not None else "-",
+                f"R$ {_fmt(m.get('median'))}" if m.get("median") is not None else "-",
+                f"R$ {_fmt(m.get('q3'))}" if m.get("q3") is not None else "-",
+            ]
+            for pid, m in minimos.items()
+        ]
+        cabecalho = ["Casa", "Minimo q1", "Minimo mediano", "Minimo q3"]
+        larguras = [2.6, 2.0, 2.2, 2.0]
+        nota = (
+            "Custo relativo a categoria nao calculado: "
+            f"{(custo or {}).get('reason') or 'sem base de mercado importada'}. "
+            "A taxa bruta nao entra no lugar dele - entre casas ela mede o mix "
+            "da prateleira, nao o preco do produto."
+        )
+
+    _table(slide, 0.6, 1.7, 10.5, cabecalho, rows, col_widths=larguras)
+    _text(slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.6, nota, 10, color=_MUTED)
 
 
 def _movements(prs, report: RunReport):

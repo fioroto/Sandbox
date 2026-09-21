@@ -216,7 +216,12 @@ def _style_row(sheet: Worksheet, row: int, columns: int) -> None:
 def _add_consolidated(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> int:
     sheet = workbook.active
     sheet.title = "Consolidado"
-    last = _write_fund_rows(sheet, snapshots, header_row=1, with_exclusive=True)
+    # `with_exclusive=False`: a exclusividade NAO se mede aqui. Esta aba e o
+    # catalogo (todo fundo de varejo, inclusive o que so o Open Finance
+    # publica), e a coluna contava o CNPJ nesse universo - devolvendo resposta
+    # diferente da coluna quase homonima da aba "Vitrine varejo", na mesma
+    # pasta. Exclusividade e conceito de vitrine e mora la, uma vez so.
+    last = _write_fund_rows(sheet, snapshots, header_row=1, with_exclusive=False)
     return last
 
 
@@ -234,6 +239,7 @@ def _add_summary(
     all_snapshots: list[ShelfSnapshot],
     last_row: int,
     generated_at: datetime,
+    listing_last_row: int = 1,
 ) -> None:
     """Resumo por plataforma x classe, todo em formulas sobre o Consolidado."""
     sheet = workbook.create_sheet("Resumo", 0)
@@ -245,7 +251,8 @@ def _add_summary(
     ).font = _NOTE_FONT
 
     classes = [ASSET_CLASS_LABELS[c] for c in AssetClass]
-    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas", "So nesta casa"]
+    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas",
+               "So nesta vitrine"]
     header_row = 4
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -292,13 +299,21 @@ def _add_summary(
         # o valor vem da coleta e esta documentado como tal na legenda.
         managers = len({f.manager_name for f in snapshot.funds if f.manager_name})
         sheet.cell(row=row, column=total_col + 2, value=managers).number_format = _INT
-        sheet.cell(
-            row=row, column=total_col + 3,
-            value=(
-                f'=COUNTIFS({plat_range},{plat_ref},'
-                f'{data.format(col=excl_col)},"Sim")'
-            ),
-        ).number_format = _INT
+        # "So nesta vitrine" conta na aba Vitrine varejo, nao no Consolidado:
+        # exclusividade e conceito de vitrine. Contada sobre o Consolidado, ela
+        # incluia o catalogo Open Finance e inflava o numero - no BTG isso dava
+        # 5.767 "exclusivos" contra 284 da XP, todos fundos que ele administra e
+        # nenhum cliente ve.
+        if listing_last_row > 1:
+            sheet.cell(
+                row=row, column=total_col + 3,
+                value=(
+                    f"=COUNTIFS('Vitrine varejo'!$A$2:$A${listing_last_row},{plat_ref},"
+                    f"'Vitrine varejo'!$L$2:$L${listing_last_row},\"Sim\")"
+                ),
+            ).number_format = _INT
+        else:
+            sheet.cell(row=row, column=total_col + 3, value=0).number_format = _INT
 
         for col in range(1, len(headers) + 1):
             cell = sheet.cell(row=row, column=col)
@@ -324,9 +339,10 @@ def _add_summary(
 
     for line in (
         "Como ler esta planilha:",
-        "  Todos os numeros acima sao formulas sobre a aba Consolidado - filtrar ou corrigir la atualiza aqui.",
-        '  "So nesta casa" conta fundos de varejo cujo CNPJ aparece em uma unica plataforma desta coleta;',
-        "  fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
+        "  As contagens por classe e os totais sao formulas sobre a aba Consolidado (o catalogo);",
+        '  "So nesta vitrine" e formula sobre a aba Vitrine varejo, e nao sobre o Consolidado: exclusividade',
+        "  se mede na vitrine. Contada sobre o catalogo ela somava fundo que a casa administra e ninguem ve.",
+        "  Fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
         "  \"Gestoras distintas\" e um valor da coleta, nao uma formula: contar valores unicos exigiria",
         "  funcao de matriz, que nem todo leitor de planilha avalia da mesma forma.",
         "  Uma plataforma com poucos fundos pode ser fonte parcial, nao prateleira enxuta - confira a aba Coleta.",
@@ -1107,7 +1123,7 @@ def render_spreadsheet(
             retail_flow, performance, rentabilidade, custo, mandato
         ),
     )
-    _add_summary(workbook, usable, snapshots, last_row, generated_at)
+    _add_summary(workbook, usable, snapshots, last_row, generated_at, listing_last_row)
 
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     path = path or (

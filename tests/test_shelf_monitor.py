@@ -1012,14 +1012,39 @@ class TestReports(unittest.TestCase):
         consolidated = workbook["Consolidado"]
         self.assertEqual(consolidated.max_row, 1 + len(self.xp.funds) + len(self.btg.funds))
 
-        # A exclusividade e formula, com intervalo limitado aos dados: uma
-        # referencia a coluna inteira torna a planilha lenta demais para abrir.
-        from shelf_monitor.report.spreadsheet import _COL_EXCLUSIVE
+        cabecalho_consolidado = [c.value for c in consolidated[1]]
+        self.assertNotIn("So nesta casa (por CNPJ)", cabecalho_consolidado)
 
-        formula = consolidated.cell(row=2, column=_COL_EXCLUSIVE).value
+    def test_exclusividade_se_mede_na_vitrine_e_nao_no_catalogo(self):
+        """Uma pasta nao pode ter duas colunas quase homonimas discordando.
+
+        "So nesta casa (por CNPJ)" no Consolidado contava sobre o CATALOGO
+        (todo fundo de varejo, inclusive o que so o Open Finance publica),
+        enquanto "So nesta vitrine" contava sobre a vitrine. No BTG a diferenca
+        chegava a 5.767 contra 284 - tudo fundo que ele administra e nenhum
+        cliente ve. Agora a conta existe num lugar so, sobre a vitrine.
+        """
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        relatorio = self._com_vitrine()
+        path = render_spreadsheet(self.config, relatorio.snapshots)
+        workbook = load_workbook(path)
+
+        # A formula tem intervalo limitado aos dados: uma referencia a coluna
+        # inteira torna a planilha lenta demais para abrir.
+        vitrine = workbook["Vitrine varejo"]
+        coluna = [c.value for c in vitrine[1]].index("So nesta vitrine") + 1
+        formula = vitrine.cell(row=2, column=coluna).value
         self.assertTrue(formula.startswith("=IF("))
         self.assertIn("COUNTIF($C$2:$C$", formula)
         self.assertNotIn("$C:$C", formula)
+
+        # E o Resumo aponta para la, nao para o Consolidado.
+        resumo = workbook["Resumo"]
+        coluna_resumo = [c.value for c in resumo[4]].index("So nesta vitrine") + 1
+        self.assertIn("'Vitrine varejo'!", resumo.cell(row=5, column=coluna_resumo).value)
 
     def test_digest_files_are_written(self):
         md_path, html_path = render_digest(self.config, self.report)
