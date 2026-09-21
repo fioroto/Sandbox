@@ -907,31 +907,22 @@ def _periodos_das_abas(
             f"({periodo.get('pregoes')} pregoes)"
         )
         for aba in ("Rentabilidade ponderada", "Onde esta a gente"):
-            linhas.append((aba, "Cota patrimonial do INF_DIARIO", detalhe))
+            linhas.append((
+                aba,
+                "Cota patrimonial do INF_DIARIO, base no PRIMEIRO PREGAO do periodo",
+                detalhe,
+            ))
 
     if rentabilidade and rentabilidade.get("available"):
         janelas = "; ".join(
             f"{j['rotulo']}: {j['de']} a {j['ate']}"
             for j in rentabilidade.get("janelas") or []
         )
-        linhas.append(
-            ("Rentabilidade por fundo", "Cota patrimonial do INF_DIARIO", janelas)
-        )
-
-    if all(
-        bloco and bloco.get("available")
-        for bloco in (retail_flow, performance, rentabilidade)
-    ):
         linhas.append((
-            "Por que 3 meses aparece com dois valores",
-            "Base do retorno",
-            "'Captacao por fundo' e 'Rentabilidade ponderada' usam a cota do "
-            "PRIMEIRO PREGAO da janela, porque leem so as competencias da janela. "
-            "'Rentabilidade por fundo' usa a cota do FIM DA COMPETENCIA ANTERIOR, "
-            "que e a convencao de lamina e a fonte tem historico para isso. A "
-            "diferenca e o primeiro pregao do periodo: medido em 2026-09-20, o "
-            "Mapfre Confianza sai com 2,99% numa base e 3,05% na outra, nos mesmos "
-            "tres meses.",
+            "Rentabilidade por fundo",
+            "Cota patrimonial do INF_DIARIO, base no FECHAMENTO DA COMPETENCIA "
+            "ANTERIOR (convencao de lamina)",
+            janelas,
         ))
 
     if custo and custo.get("available"):
@@ -1544,7 +1535,11 @@ def _add_performance_sheet(workbook: Workbook, performance: dict) -> None:
         ausentes=periodo.get("meses_ausentes") or [],
         fonte="Cota patrimonial do informe diario da CVM (INF_DIARIO)",
         nota=(
-            f"{periodo.get('pregoes')} pregoes. Referencia: mediana da mesma "
+            f"{periodo.get('pregoes')} pregoes, com a cota do PRIMEIRO PREGAO do "
+            "periodo como base - esta aba responde o retorno ENTRE DUAS DATAS. A "
+            "aba 'Rentabilidade por fundo' usa o fechamento da competencia "
+            "anterior, que e a convencao de lamina, e por isso o mesmo fundo sai "
+            "com numero ligeiramente diferente la. Referencia: mediana da mesma "
             f"categoria no universo oficial ({universo['fundos_com_serie']} fundos, "
             f"{universo['categorias_com_referencia']} categorias com amostra "
             f">= {universo['amostra_minima']}). E o retorno dos fundos que a casa "
@@ -1903,9 +1898,12 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
             "a primeira cota observada dentro da janela. Cota ex-provento: fundo "
             "que distribui aparece abaixo do que o investidor recebeu. PL e "
             "cotistas sao do fundo inteiro, somando todos os distribuidores. "
-            "A aba 'Captacao por fundo' usa outra base - o primeiro pregao da "
-            "janela - entao o mesmo fundo aparece la com numero ligeiramente "
-            "diferente no mesmo intervalo."
+            "As abas 'Rentabilidade ponderada' e 'Captacao por fundo' usam outra "
+            "base - o primeiro pregao do periodo - porque respondem outra "
+            "pergunta: o retorno ENTRE DUAS DATAS. Esta aqui responde o retorno "
+            "DA COMPETENCIA, que e a convencao de lamina. As duas estao certas "
+            "e o mesmo fundo sai com numero ligeiramente diferente nas duas; a "
+            "base de cada uma esta escrita na aba Metodologia."
         ),
     )
 
