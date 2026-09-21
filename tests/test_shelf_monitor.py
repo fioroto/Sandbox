@@ -918,6 +918,31 @@ class TestReports(unittest.TestCase):
         end = content.index("</script>", start)
         json.loads(content[start:end])
 
+    def test_dashboard_embute_os_assets_e_nao_os_referencia(self):
+        """CSS e JS viraram arquivos, mas continuam EMBUTIDOS no HTML.
+
+        O dashboard tem de abrir por file:// sem servidor e sem nada ao lado -
+        e o que permite anexa-lo num e-mail ou abri-lo de um pen drive. Um
+        `<link>` ou `<script src=>` para os assets quebraria isso em silencio:
+        a pagina abriria sem estilo nenhum e sem nenhum grafico.
+
+        O teste tambem falha se um dos arquivos sumir, em vez de gerar um
+        dashboard mudo.
+        """
+        from shelf_monitor.report.dashboard import _ASSETS, _SCRIPT, _STYLE
+
+        self.assertTrue((_ASSETS / "dashboard.css").is_file())
+        self.assertTrue((_ASSETS / "dashboard.js").is_file())
+        self.assertGreater(len(_STYLE), 500, "CSS vazio ou truncado")
+        self.assertGreater(len(_SCRIPT), 5000, "JS vazio ou truncado")
+
+        content = render_dashboard(self.config, self.report).read_text(encoding="utf-8")
+        # Um trecho de cada asset tem de estar DENTRO do HTML.
+        self.assertIn(_STYLE.strip().splitlines()[0], content)
+        self.assertIn("const DATA = JSON.parse", content)
+        self.assertNotIn('href="dashboard.css"', content)
+        self.assertNotIn('src="dashboard.js"', content)
+
     def test_digest_reports_change_and_unavailable_source(self):
         markdown = render_markdown(self._com_vitrine())
         self.assertIn("aplicacao minima", markdown)
