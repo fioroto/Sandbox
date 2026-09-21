@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "platform": "btg",
-  "collected_at": "2026-09-20T08:41:45.016631",
+  "collected_at": "2026-09-20T15:56:20.011516",
   "strategy": "open-finance",
   "strategies": [
     "open-finance",
@@ -278920,7 +278920,7 @@
         "subcategoria_btg": "Crédito Pós",
         "risco": "MODERADO",
         "classificacao_anbima": "RF duração livre crédito livre",
-        "pl": 3917171.3425,
+        "pl": 3915329.5312,
         "publico": "Investidores em geral (Não qualificados)",
         "destaque_assessor": true
       }

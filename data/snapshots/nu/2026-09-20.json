@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "platform": "nu",
-  "collected_at": "2026-09-20T08:45:34.702047",
+  "collected_at": "2026-09-20T16:00:12.475134",
   "strategy": "open-finance",
   "strategies": [
     "open-finance"
