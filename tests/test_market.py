@@ -372,6 +372,59 @@ class TestExport(unittest.TestCase):
         raw = self.paths["mercado"].read_bytes()
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
 
+    def test_as_duas_pernas_do_consolidado_tem_as_mesmas_colunas(self):
+        """O bug que `_fee_columns` foi extraido para impedir, agora travado.
+
+        `_consolidated_rows` monta dois dicts de ~30 chaves - um para a classe
+        RCVM 175, outro para o fundo legado - e a docstring de `_fee_columns`
+        registra que mante-los iguais a mao foi como `codigo_cvm` acabou numa
+        perna so. A extracao cobriu 17 das chaves; as outras continuam
+        escritas duas vezes, entao o invariante precisa de teste.
+
+        Uma coluna que existe numa perna e nao na outra sai vazia para metade
+        do mercado, e o DictWriter nao reclama: ele escreve o cabecalho da
+        primeira linha e preenche o resto com "".
+        """
+        # Sobre os dicts, ANTES da escrita. Pelo CSV este teste nao prova
+        # nada: o DictWriter usa o cabecalho da primeira linha e preenche a
+        # chave que falta com "", e o DictReader devolve todas as chaves do
+        # cabecalho para todas as linhas. A divergencia some no round-trip -
+        # que e exatamente por que ela passou despercebida da primeira vez.
+        from shelf_monitor.market.export import _consolidated_rows
+
+        linhas = _consolidated_rows(self.db)
+        por_origem: dict[str, list[dict]] = {}
+        for linha in linhas:
+            por_origem.setdefault(linha["origem"], []).append(linha)
+        self.assertGreaterEqual(
+            len(por_origem), 2, "a fixture precisa cobrir as duas origens"
+        )
+
+        conjuntos = {
+            origem: set(grupo[0]) for origem, grupo in por_origem.items()
+        }
+        origens = sorted(conjuntos)
+        for outra in origens[1:]:
+            faltando = conjuntos[origens[0]] ^ conjuntos[outra]
+            self.assertEqual(
+                set(), faltando,
+                f"colunas so em uma das pernas ({origens[0]} vs {outra}): {faltando}",
+            )
+
+    def test_toda_linha_da_hierarquia_declara_seu_nivel(self):
+        """`nivel` e o que permite consumir a tabela sem um union.
+
+        Os tres valores sao um contrato publico (estao na tabela do README):
+        `subclasse` quando a classe tem subclasses, `classe` quando ela e a
+        propria unidade, `fundo_legado` para o nao adaptado. Linha sem nivel
+        obriga quem le a adivinhar o grao.
+        """
+        linhas = self._read("hierarquia")
+        self.assertTrue(linhas)
+        niveis = {linha["nivel"] for linha in linhas}
+        self.assertTrue(niveis <= {"subclasse", "classe", "fundo_legado"}, niveis)
+        self.assertNotIn("", niveis, "linha sem nivel declarado")
+
     def test_rerun_is_idempotent(self):
         before = self.paths["mercado"].read_bytes()
         run_import(self.config, local_dir=FIXTURES)
