@@ -682,8 +682,10 @@ renderGaps(DATA.gaps);
 })(DATA.flow);
 
 (function renderPerformance(perf, custo, mandato) {
+  // Mesma guarda do bloco de captacao: bloco indisponivel REMOVE a secao, em
+  // vez de deixar um titulo com o corpo vazio. O `if (!section) return` que
+  // havia aqui era inalcancavel - a secao e parte fixa do template.
   const section = document.getElementById("perf-section");
-  if (!section) return;
   if (!perf || !perf.available) { section.remove(); return; }
 
   const pct = v => (v === null || v === undefined)
@@ -703,7 +705,6 @@ renderGaps(DATA.gaps);
   }
 
   document.getElementById("perf-tiles").innerHTML = perf.casas.map(c => {
-    const m = c.alocacao_abaixo_da_mediana || {};
     const cor = c.gap > 0 ? "var(--good)" : "var(--critical)";
     return `
     <div class="tile">
@@ -940,6 +941,22 @@ table(
 );
 
 // --- Faixas de aplicacao minima ---------------------------------------------
+// O veredito vem pronto do Python (`aggregate.leitura_do_ticket`) para as
+// quatro superficies direm a mesma coisa. Sem ele o bloco era um grafico de
+// barras sem conclusao: mostrava a forma de cada prateleira e parava ai.
+const lt = DATA.leitura_ticket;
+const ltEl = document.getElementById("leitura-ticket");
+if (lt && ltEl) {
+  const teto = "R$ " + lt.teto.toLocaleString("pt-BR");
+  ltEl.innerHTML = lt.baseline_varejo === 0
+    ? `<strong>A vitrine da ${lt.baseline_label} nao tem nenhum fundo abaixo de
+       ${teto}.</strong> A melhor concorrente nessa faixa, ${lt.melhor_label}, tem
+       ${lt.melhor_varejo}. Nao e diferenca de composicao: e a ausencia de uma
+       porta de entrada de varejo.`
+    : `<strong>${lt.baseline_label}: ${lt.baseline_varejo} fundos abaixo de ${teto}</strong>,
+       contra ${lt.melhor_varejo} da ${lt.melhor_label}.`;
+}
+
 const withMins = usable.filter(p => Object.keys(p.min_bands).length);
 renderLegend(document.getElementById("legend-bands"), withMins);
 groupedBars(

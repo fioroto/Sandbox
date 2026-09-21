@@ -238,6 +238,51 @@ _GAP_CATEGORIES = 15
 _GAP_FUNDS_EMBEDDED = 150
 
 
+# Abaixo deste minimo o fundo e porta de entrada de varejo, nao produto de
+# alta renda. O corte e o topo da terceira faixa de MIN_BANDS.
+_TICKET_VAREJO = 5_000.0
+
+
+def leitura_do_ticket(platforms: list[dict], baseline_id: str = "xp") -> dict | None:
+    """O que a distribuicao de aplicacao minima diz que a XP deve fazer.
+
+    O bloco de faixas era um grafico de barras sem veredito: mostrava a forma
+    da prateleira de cada casa e parava ai. Mas a forma diz uma coisa so, e
+    ela e acionavel - medido em 2026-09-21, a vitrine da XP nao tem NENHUM
+    fundo abaixo de R$ 5 mil, contra 230 no BTG e 340 no Itau. Nao e uma
+    diferenca de composicao: e a ausencia de uma porta de entrada.
+
+    Devolve None quando nao ha o que concluir - baseline sem vitrine, ou
+    nenhuma concorrente com faixa publicada.
+    """
+    faixas_varejo = [rotulo for rotulo, _, teto in MIN_BANDS if teto <= _TICKET_VAREJO]
+
+    def conta_varejo(p: dict) -> int:
+        bandas = p.get("min_bands") or p.get("bands") or {}
+        return sum(bandas.get(rotulo, 0) for rotulo in faixas_varejo)
+
+    com_faixa = [p for p in platforms if (p.get("min_bands") or p.get("bands"))]
+    baseline = next((p for p in com_faixa if p["platform_id"] == baseline_id), None)
+    if baseline is None:
+        return None
+    pares = [p for p in com_faixa if p["platform_id"] != baseline_id]
+    if not pares:
+        return None
+
+    meu = conta_varejo(baseline)
+    melhor = max(pares, key=conta_varejo)
+    dele = conta_varejo(melhor)
+    return {
+        "baseline_id": baseline_id,
+        "baseline_label": baseline["label"],
+        "baseline_varejo": meu,
+        "melhor_label": melhor["label"],
+        "melhor_varejo": dele,
+        "teto": _TICKET_VAREJO,
+        "faixas": faixas_varejo,
+    }
+
+
 def build_listing_block(report: RunReport) -> dict:
     """A visao de vitrine: so o que o varejo ve em cada casa.
 
@@ -1000,6 +1045,9 @@ def build_dashboard_data(report: RunReport) -> dict:
         # nao tem prateleira coletada).
         "house_order": list(PLATFORMS),
         "platforms": [s.to_dict() for s in summaries],
+        # O veredito do bloco de aplicacao minima, calculado aqui para as
+        # quatro superficies dizerem a mesma coisa.
+        "leitura_ticket": leitura_do_ticket([s.to_dict() for s in summaries]),
         # O resumo por plataforma ja carrega o que o dashboard desenha; os
         # diffs completos ficam no digest, para nao embutir a prateleira
         # inteira duas vezes no HTML.

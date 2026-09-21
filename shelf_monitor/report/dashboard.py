@@ -251,6 +251,7 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <h2>Aplicacao minima</h2>
     <p class="card-sub">Distribuicao dos fundos da vitrine por faixa de investimento minimo -
       separa quem mira varejo de quem mira alta renda.</p>
+    <p class="card-sub" id="leitura-ticket"></p>
     <div class="legend" id="legend-bands"></div>
     <div class="chart-scroll" id="chart-bands"></div>
     <details><summary>Ver tabela</summary><div id="table-bands"></div></details>

@@ -376,6 +376,62 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
+def _md_para_html(texto: str) -> str:
+    """Converte o `**negrito**` de uma frase curta, escapando o resto.
+
+    Existe porque as frases de veredito sao escritas uma vez, em markdown, e
+    saem nos dois formatos: duplicar o texto para ter uma versao com <strong>
+    seria a mesma divergencia que o resto desta revisao veio apagar.
+    """
+    import re
+
+    partes = re.split(r"\*\*(.+?)\*\*", texto)
+    return "".join(
+        f"<strong>{_esc(parte)}</strong>" if i % 2 else _esc(parte)
+        for i, parte in enumerate(partes)
+    )
+
+
+def _frase_do_ticket(report: RunReport) -> str | None:
+    """O veredito do ticket de entrada, ou None quando nao ha o que concluir.
+
+    Calculado em `aggregate.leitura_do_ticket` para as quatro superficies
+    dizerem a mesma coisa. A distribuicao de aplicacao minima so aparecia no
+    dashboard, como barras sem conclusao - e e onde mora um dos achados mais
+    diretos da coleta.
+    """
+    from shelf_monitor.report.aggregate import leitura_do_ticket, summarize_platform
+
+    exclusive = _exclusive_por_casa(report)
+    resumos = [
+        summarize_platform(s, exclusive.get(s.platform, set())).to_dict()
+        for s in report.snapshots
+    ]
+    leitura = leitura_do_ticket(resumos)
+    if not leitura:
+        return None
+    teto = f"R$ {leitura['teto']:,.0f}".replace(",", ".")
+    if leitura["baseline_varejo"] == 0:
+        return (
+            f"**A vitrine da {leitura['baseline_label']} nao tem nenhum fundo "
+            f"abaixo de {teto}.** A melhor concorrente nessa faixa, "
+            f"{leitura['melhor_label']}, tem {leitura['melhor_varejo']}. Nao e "
+            "diferenca de composicao: e a ausencia de uma porta de entrada de "
+            "varejo."
+        )
+    return (
+        f"{leitura['baseline_label']}: {leitura['baseline_varejo']} fundos "
+        f"abaixo de {teto}, contra {leitura['melhor_varejo']} da "
+        f"{leitura['melhor_label']}."
+    )
+
+
+def _exclusive_por_casa(report: RunReport) -> dict:
+    from shelf_monitor.report.aggregate import _exclusive_cnpjs
+
+    return _exclusive_cnpjs(report.snapshots)
+
+
 def _gaps_ranqueados(report: RunReport) -> dict:
     """Bloco de gaps com a lista ja fundida com a captacao e o esforco.
 
@@ -696,6 +752,10 @@ def render_markdown(report: RunReport) -> str:
 
     # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
     lines += _md_gaps_section(_gaps_ranqueados(report))
+
+    ticket = _frase_do_ticket(report)
+    if ticket:
+        lines += ["## Ticket de entrada", "", ticket, ""]
 
     lines += _md_flow_section(report)
     lines += _md_performance_section(report)
@@ -1237,6 +1297,13 @@ def render_html(report: RunReport) -> str:
         for diff in report.shelf_diffs
     )
 
+    ticket = _frase_do_ticket(report)
+    bloco_ticket = (
+        f'<h2 style="{_H2}">Ticket de entrada</h2>'
+        f'<p style="{_P}">{_md_para_html(ticket)}</p>'
+        if ticket else ""
+    )
+
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1261,6 +1328,8 @@ def render_html(report: RunReport) -> str:
   {nota_base}
 
   {_html_gaps_section(_gaps_ranqueados(report))}
+
+  {bloco_ticket}
 
   {_html_flow_section(report)}
   {_html_performance_section(report)}
