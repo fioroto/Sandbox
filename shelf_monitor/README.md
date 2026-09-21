@@ -57,6 +57,7 @@ python -m shelf_monitor watchlist-discover "BTG"  # refina a watchlist de gestor
 python -m shelf_monitor run --git-commit          # commita snapshots e relatorios
 python -m shelf_monitor run --send-email          # envia o digest por SMTP
 python -m shelf_monitor run --no-market           # nao importar a base se faltar
+python -m shelf_monitor run --with-rentabilidade # tambem o retorno por fundo em janelas (opt-in)
 ```
 
 ### Planilha
@@ -653,8 +654,10 @@ python -m shelf_monitor custo         # taxa de cada fundo contra a categoria de
 python -m shelf_monitor mandato       # o que o regulamento de cada classe autoriza
 ```
 
-Todos aceitam `--json <caminho>` e `--platform`. Os tres ultimos entram tambem na
-planilha, no dashboard e no digest quando o `run` os calcula.
+Todos aceitam `--json <caminho>` e `--platform`. `custo` e `mandato` entram
+sozinhos na planilha, no dashboard e no digest; `rentabilidade` so entra com
+`--with-rentabilidade` em `run`, `report` ou `export`, porque a primeira
+montagem le ate 24 competencias do informe (~2,5 min e ~260 MB).
 
 ### Rentabilidade ponderada (`performance`)
 

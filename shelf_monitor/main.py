@@ -248,6 +248,8 @@ def build_report(
     config: Config,
     snapshots: list[ShelfSnapshot],
     cvm_snapshot: CvmSnapshot | None,
+    *,
+    with_rentabilidade: bool = False,
 ) -> RunReport:
     report = RunReport(generated_at=datetime.now(), snapshots=snapshots)
 
@@ -274,7 +276,13 @@ def build_report(
     attach_retail_flow(config, report)
     attach_performance(config, report)
     attach_custo_e_mandato(config, report)
-    attach_rentabilidade(config, report)
+    # Opt-in, como `--with-etf` e pela mesma razao: a primeira montagem le ate
+    # 24 competencias do informe (~2,5 min e ~260 MB). Rodando sempre, todo
+    # `run`, `collect`, `diff`, `report` e `export` pagava esse custo - contra
+    # o que o proprio contrato em `models.RunReport.rentabilidade` promete
+    # ("o `run` so a calcula quando pedida").
+    if with_rentabilidade:
+        attach_rentabilidade(config, report)
 
     return report
 
@@ -604,7 +612,9 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
     if not args.no_market:
         ensure_market_base(config)
 
-    report = build_report(config, snapshots, cvm_snapshot)
+    report = build_report(
+        config, snapshots, cvm_snapshot, with_rentabilidade=getattr(args, "with_rentabilidade", False)
+    )
     print_summary(report)
     failures = render_outputs(config, report, send_email=args.send_email)
 
@@ -667,8 +677,10 @@ def cmd_diff(config: Config, args: argparse.Namespace) -> None:
 
 def cmd_report(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
+    # `report` era o unico comando que lia snapshot e nao aceitava --platform:
+    # ignorava o filtro em silencio e re-renderizava as cinco casas.
     snapshots: list[ShelfSnapshot] = []
-    for platform_id in PLATFORMS:
+    for platform_id in args.platforms or list(PLATFORMS):
         snapshot = latest_shelf_snapshot(config, platform_id)
         if snapshot:
             snapshots.append(snapshot)
@@ -677,7 +689,10 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
         console.print("[yellow]Nenhum snapshot encontrado. Rode `run` antes.[/]")
         return
 
-    report = build_report(config, snapshots, latest_cvm_snapshot(config))
+    report = build_report(
+        config, snapshots, latest_cvm_snapshot(config),
+        with_rentabilidade=getattr(args, "with_rentabilidade", False),
+    )
     print_summary(report)
     render_outputs(config, report, send_email=getattr(args, "send_email", False))
 
@@ -724,7 +739,8 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     attach_retail_flow(config, avulso)
     attach_performance(config, avulso)
     attach_custo_e_mandato(config, avulso)
-    attach_rentabilidade(config, avulso)
+    if getattr(args, "with_rentabilidade", False):
+        attach_rentabilidade(config, avulso)
 
     path = render_spreadsheet(
         config,
@@ -1351,6 +1367,15 @@ def main() -> None:
             "alem da coleta normal"
         ),
     )
+    run_parser.add_argument(
+        "--with-rentabilidade",
+        action="store_true",
+        help=(
+            "Tambem calcular o retorno de cada fundo em 1m/3m/YTD/12m/24m - "
+            "opt-in: a primeira montagem le ate 24 competencias do INF_DIARIO "
+            "(~2,5 min e ~260 MB); depois vem do cache em data/cache/serie"
+        ),
+    )
     run_parser.set_defaults(func=cmd_run)
 
     collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras", parents=[common])
@@ -1367,8 +1392,14 @@ def main() -> None:
     diff_parser.set_defaults(func=cmd_diff)
 
     report_parser = subparsers.add_parser("report", help="Re-renderizar os relatorios", parents=[common])
+    add_platform_arg(report_parser)
     report_parser.add_argument(
         "--send-email", action="store_true", help="Enviar o digest por SMTP"
+    )
+    report_parser.add_argument(
+        "--with-rentabilidade",
+        action="store_true",
+        help="Tambem calcular o retorno por fundo em janelas (ver `run --help`)",
     )
     report_parser.set_defaults(func=cmd_report)
 
@@ -1384,6 +1415,11 @@ def main() -> None:
     )
     export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
+    export_parser.add_argument(
+        "--with-rentabilidade",
+        action="store_true",
+        help="Tambem incluir a aba de retorno por fundo (ver `run --help`)",
+    )
     export_parser.set_defaults(func=cmd_export)
 
     insights_parser = subparsers.add_parser(
