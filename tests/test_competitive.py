@@ -23,6 +23,11 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.classify import (
+    CATEGORIA_ESTRUTURADO,
+    KEY_CATEGORIA,
+    KEY_VIA,
+)
 from shelf_monitor.report.competitive import (
     _UNCLASSIFIED,
     build_manager_reach,
@@ -58,7 +63,12 @@ def offer(
         sources=sources or [CollectorStrategy.PLAYWRIGHT.value],
     )
     if anbima:
+        # Estado pos-enriquecimento: o cadastro carimbou as duas chaves. Sem
+        # KEY_CATEGORIA o fundo fica fora do eixo comparavel, que e o que
+        # acontece - de proposito - com rotulo publicado so pela casa.
         fund.extra[KEY_ANBIMA] = anbima
+        fund.extra[KEY_CATEGORIA] = anbima
+        fund.extra[KEY_VIA] = "cnpj"
     return fund
 
 
@@ -134,26 +144,88 @@ class TestVitrineSnapshots(unittest.TestCase):
 
 
 class TestCategoryAxes(unittest.TestCase):
-    def test_eixo_grosso_vem_da_classe_de_ativo(self):
+    """Os dois eixos sao duas granularidades da MESMA taxonomia oficial.
+
+    Ate 2026-09-20 eles eram taxonomias diferentes: o grosso vinha da heuristica
+    `AssetClass` e o fino da ANBIMA. Misturar as duas foi o que fez o Itau
+    aparecer com 17x o share das concorrentes em "Renda Fixa" - nao era aposta
+    de prateleira, era o balde grosso que so ele usava, porque so ele nao casava
+    com o cadastro. Com o resolver por nome (shelf_monitor.classify) a cobertura
+    dele foi a 100% e os dois eixos passaram a sair da mesma fonte.
+    """
+
+    def test_eixo_grosso_e_o_nivel_1_da_categoria_oficial(self):
         self.assertEqual(
-            coarse_category(offer("xp", "F", asset_class=AssetClass.ACOES)), "Acoes"
+            coarse_category(offer("xp", "F", anbima="Acoes Livre")), "Acoes"
         )
         self.assertEqual(
-            coarse_category(offer("xp", "F", asset_class=AssetClass.OUTROS)),
-            _UNCLASSIFIED,
+            coarse_category(offer("xp", "F", anbima="Renda Fixa Simples")),
+            "Renda Fixa",
         )
 
-    def test_eixo_fino_nao_usa_o_fallback_da_cvm(self):
-        """O eixo fino e ANBIMA ou nada.
+    def test_heuristica_nao_entra_em_nenhum_dos_eixos(self):
+        """`AssetClass` e inferida do nome, nao lida do cadastro.
 
-        Aceitar o fallback grosso da CVM foi o que fez o Itau (3% de cobertura
-        ANBIMA) aparecer com 17x o share das concorrentes em "Renda Fixa": ele
-        era o unico a usar aquele balde.
+        Deixa-la entrar no eixo comparavel e o bug original: a casa que nao casa
+        com o cadastro ganha um balde so dela e aparece super-indexada nele.
         """
+        so_heuristica = offer("itau", "F", asset_class=AssetClass.ACOES)
+        self.assertEqual(coarse_category(so_heuristica), _UNCLASSIFIED)
+        self.assertEqual(fine_category(so_heuristica), _UNCLASSIFIED)
+
+    def test_eixo_fino_traz_a_categoria_oficial_inteira(self):
         com_anbima = offer("xp", "F", anbima="Renda Fixa Simples")
-        sem_anbima = offer("itau", "F", asset_class=AssetClass.RENDA_FIXA)
         self.assertEqual(fine_category(com_anbima), "Renda Fixa Simples")
-        self.assertEqual(fine_category(sem_anbima), _UNCLASSIFIED)
+
+    def test_categoria_resolvida_por_nome_vale_nos_dois_eixos(self):
+        """O resolver por nome produz categoria oficial em conteudo.
+
+        A diferenca e a procedencia, que fica em `categoria_via` - nao a
+        validade. Uma casa que nao publica CNPJ entra na comparacao pelo mesmo
+        rotulo que as outras.
+        """
+        fund = offer("itau", "ABSOLUTE ALPHA GLOBAL")
+        fund.extra[KEY_CATEGORIA] = "Multimercados Livre"
+        fund.extra[KEY_VIA] = "nome"
+        self.assertEqual(fine_category(fund), "Multimercados Livre")
+        self.assertEqual(coarse_category(fund), "Multimercados")
+
+    def test_rotulo_publicado_pela_casa_nao_entra_no_eixo(self):
+        """Os coletores escrevem em KEY_ANBIMA o rotulo da propria plataforma.
+
+        Medido em 2026-09-20: com o rotulo da casa valendo como oficial, o BTG
+        aparecia apostando em "Direitos Creditorios" que "so ele tem" - o balde
+        era dele (`anbimaRating`, collectors/btg.py:95), nao do cadastro, e
+        nenhuma concorrente usava. E o mesmo erro do eixo grosso heuristico,
+        por outra porta.
+        """
+        so_da_casa = FundOffer(platform="btg", name="F", sources=["api-json"])
+        so_da_casa.extra[KEY_ANBIMA] = "Direitos Creditorios"
+        self.assertEqual(coarse_category(so_da_casa), _UNCLASSIFIED)
+        self.assertEqual(fine_category(so_da_casa), _UNCLASSIFIED)
+
+    def test_resolvido_so_no_nivel_1_fica_fora_do_eixo_fino(self):
+        """Nivel 1 vale no eixo grosso e nao no fino.
+
+        Medido em 2026-09-20: promovendo a resolucao de nivel 1 ao eixo fino, o
+        Itau aparecia com "RENDA FIXA 22,20x" e "MULTIMERCADO so ela" - baldes
+        grossos dentro da comparacao fina, que so ele tinha porque so nele havia
+        fundo resolvido nesse nivel.
+        """
+        fund = offer("itau", "ITAU GLOBAL DINAMICO")
+        fund.extra[KEY_CATEGORIA] = "Multimercados"
+        fund.extra[KEY_VIA] = "nome-rotulo-n1"
+        self.assertEqual(coarse_category(fund), "Multimercados")
+        self.assertEqual(fine_category(fund), _UNCLASSIFIED)
+
+    def test_estruturado_tem_balde_proprio(self):
+        """FIDC e FII nao tem classificacao ANBIMA nem CVM no cadastro - 0%
+        medido. Nao e lacuna de join: e produto que a taxonomia nao cobre."""
+        fund = offer("itau", "ESSENTIAL FIDC SUBCLASSE I")
+        fund.extra[KEY_CATEGORIA] = CATEGORIA_ESTRUTURADO
+        fund.extra[KEY_VIA] = "estruturado"
+        self.assertEqual(coarse_category(fund), "Estruturado")
+        self.assertEqual(fine_category(fund), _UNCLASSIFIED)
 
     def test_casa_sem_cobertura_anbima_fica_fora_do_eixo_fino(self):
         xp = vitrine("xp", 40, anbima="Renda Fixa Simples")
@@ -166,7 +238,7 @@ class TestCategoryAxes(unittest.TestCase):
         self.assertTrue(por_casa["xp"]["fine_over"] or por_casa["xp"]["fine_under"])
         self.assertEqual(por_casa["itau"]["fine_over"], [])
         self.assertEqual(por_casa["itau"]["fine_under"], [])
-        self.assertEqual(por_casa["itau"]["anbima_cov"], 0.0)
+        self.assertEqual(por_casa["itau"]["classificacao_cov"], 0.0)
 
     def test_sem_classificacao_nao_entra_como_aposta(self):
         """"A casa X tem 2,8x mais Sem classificacao" e fato sobre o join com a
@@ -186,8 +258,8 @@ class TestPositioningIndex(unittest.TestCase):
     def test_indice_compara_contra_as_demais_e_nao_contra_o_total(self):
         """Contra o total, a propria casa entraria no denominador e todo indice
         seria puxado para 1 - quanto maior a casa, mais achatado o sinal."""
-        xp = vitrine("xp", 40, asset_class=AssetClass.ACOES)
-        btg = vitrine("btg", 40, asset_class=AssetClass.RENDA_FIXA)
+        xp = vitrine("xp", 40, anbima="Acoes Livre")
+        btg = vitrine("btg", 40, anbima="Renda Fixa Simples")
         pos = build_positioning([snapshot("xp", xp), snapshot("btg", btg)])
         por_casa = {p["platform_id"]: p for p in pos["positions"]}
         acoes = next(b for b in por_casa["xp"]["over_index"] if b["category"] == "Acoes")

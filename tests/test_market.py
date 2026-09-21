@@ -116,8 +116,72 @@ class TestFeesFromExtrato(unittest.TestCase):
         fee = self.fees["42345678000194"]
         self.assertEqual(fee.min_initial, 5000.0)
         self.assertEqual(fee.redemption_payment_days, 3)
+        self.assertEqual(fee.redemption_quotation_days, 1)
         self.assertEqual(fee.performance_fee, 20.0)
         self.assertEqual(fee.performance_fee_benchmark, "IPCA + 5%")
+        self.assertEqual(fee.custody_fee_max, 0.05)
+
+    def test_entry_and_exit_fees_keep_both_units(self):
+        """A fonte discrimina reais e percentual em colunas separadas."""
+        fee = self.fees["42345678000194"]
+        self.assertEqual(fee.has_entry_fee, "S")
+        self.assertEqual(fee.entry_fee_pct, 2.5)
+        self.assertEqual(fee.entry_fee_amount, 0.0)
+        self.assertEqual(fee.has_exit_fee, "S")
+        self.assertEqual(fee.exit_fee_pct, 5.0)
+
+    def test_not_charging_differs_from_not_informing(self):
+        """O flag S/N vem em 100% das linhas; o valor, so quando o flag e S.
+
+        Sem guardar o flag, "nao cobra" e "nao informou" ficariam iguais - e no
+        arquivo real so 0,1% das classes cobram ingresso, entao o valor ausente
+        e a regra, nao a excecao.
+        """
+        fee = self.fees["12345678000191"]
+        self.assertEqual(fee.has_entry_fee, "N")
+        self.assertIsNone(fee.entry_fee_pct)
+        self.assertIsNone(fee.entry_fee_amount)
+
+    def test_mandate_is_read_from_the_extrato(self):
+        """Mandato declarado: o que o regulamento autoriza, nao o que carrega."""
+        fee = self.fees["42345678000194"]
+        self.assertEqual(fee.credit_private, "S")
+        self.assertEqual(fee.credit_private_max, 50.0)
+        self.assertEqual(fee.foreign, "S")
+        self.assertEqual(fee.foreign_max, 20.0)
+        self.assertEqual(fee.derivatives, "S")
+        self.assertEqual(fee.leverage, "S")
+        self.assertEqual(fee.leverage_factor, 100.0)
+        self.assertEqual(fee.mirror_fund, "S")
+
+    def test_blank_flag_is_none_not_no(self):
+        """Coluna vazia nao vira "N" - a fonte deixa FUNDO_ESPELHO em branco em
+        57% das linhas, e chamar isso de "nao e espelho" inventaria o dado."""
+        self.assertIsNone(self.fees["62345678000196"].mirror_fund)
+
+    def test_no_column_the_parser_reads_is_silently_absent(self):
+        """A guarda que faltava quando o mapa de colunas estava errado.
+
+        `_get` devolve None para nome ausente e `unknown_columns` so registra o
+        caminho inverso, entao um nome errado sai vazio para sempre sem avisar.
+        Foi o que aconteceu ate 2026-09-20 com taxa de ingresso, taxa de saida
+        e dias de cotizacao: 0,0% de preenchimento nas 38.547 linhas reais,
+        contra 100% em toda coluna de nome certo. Este teste falha se algum
+        campo que a fixture preenche voltar a sair None.
+        """
+        fee = self.fees["42345678000194"]
+        obrigatorios = [
+            "admin_fee", "performance_fee", "performance_fee_benchmark",
+            "has_entry_fee", "entry_fee_pct", "entry_fee_amount",
+            "has_exit_fee", "exit_fee_pct", "exit_fee_amount",
+            "custody_fee_max", "min_initial",
+            "redemption_quotation_days", "redemption_payment_days",
+            "target_audience", "investment_policy", "long_term_taxation",
+            "credit_private", "credit_private_max", "foreign", "foreign_max",
+            "derivatives", "leverage", "leverage_factor", "mirror_fund",
+        ]
+        vazios = [nome for nome in obrigatorios if getattr(fee, nome) is None]
+        self.assertEqual(vazios, [], f"colunas lidas com nome errado: {vazios}")
 
     def test_without_a_date_column_the_last_delivery_wins(self):
         """Se a CVM renomear DT_COMPTC, travar na primeira linha congelaria a

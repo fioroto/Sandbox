@@ -12,13 +12,16 @@ from pathlib import Path
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import (
     CvmDiff,
+    FundChange,
+    FundOffer,
     RunReport,
     ShelfDiff,
     ShelfSnapshot,
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
-from shelf_monitor.report.aggregate import build_gap_block
+from shelf_monitor.profile import restriction_reason
+from shelf_monitor.report.aggregate import build_gap_block, listing_funds, retail_funds
 
 _FIELD_LABELS = {
     "name": "nome",
@@ -58,6 +61,76 @@ def _platform_label(platform_id: str) -> str:
     return cfg.label if cfg else platform_id
 
 
+# Vitrine x catalogo, e por que o digest inteiro fala em vitrine.
+#
+# `len(snapshot.funds)` conta tudo que a coleta trouxe, e para as casas que
+# publicam Open Finance isso e o que elas ADMINISTRAM, nao o que exibem. Medido
+# em 2026-09-20, a tabela de sumario saia assim: XP 781, BTG 10.073, Itau 2.179.
+# Lido como prateleira - que e como o titulo "Fundos" pedia para ser lido - o
+# BTG tinha treze vezes a XP. Na vitrine sao 634 contra 664, ou seja, empate.
+# Os 9.413 de diferenca sao fundos que nenhum cliente do BTG ve numa tela.
+#
+# O catalogo continua na tabela, em coluna propria e com nome proprio: ele
+# responde outra pergunta (o tamanho da casa como administradora) e some-lo a
+# vitrine nao responde nenhuma.
+
+
+def _na_vitrine(fund: FundOffer) -> bool:
+    """O cliente ve esse fundo na tela da casa - a pertinencia do digest.
+
+    Mesma regra do resto do monitor: varejo, e vindo do canal da propria casa.
+    """
+    return fund.on_listing and restriction_reason(fund) is None
+
+
+def _tamanhos(snapshot: ShelfSnapshot | None) -> tuple[int, int]:
+    """(vitrine, catalogo de varejo) da casa nesta coleta."""
+    if snapshot is None:
+        return 0, 0
+    return len(listing_funds(snapshot)), len(retail_funds(snapshot))
+
+
+def _frase_de_tamanho(snapshot: ShelfSnapshot | None) -> str:
+    """"634 fundos na vitrine (6.618 no catalogo)" - com o catalogo so quando difere.
+
+    Casa sem vitrine alcancavel nao vira "0 fundos na vitrine": zero e um numero
+    e diz que a prateleira esta vazia, quando o que houve foi o monitor nao
+    alcancar a listagem. O motivo entra no lugar do numero.
+    """
+    vitrine, catalogo = _tamanhos(snapshot)
+    if not vitrine:
+        return f"sem vitrine publica coletada; {catalogo} fundos no catalogo Open Finance"
+    if catalogo > vitrine:
+        return f"{vitrine} fundos na vitrine ({catalogo} no catalogo)"
+    return f"{vitrine} fundos na vitrine"
+
+
+def _mudancas_de_vitrine(
+    diff: ShelfDiff, snapshot: ShelfSnapshot | None
+) -> tuple[list[FundOffer], list[FundOffer], list[FundChange], int]:
+    """(entradas, saidas, alteracoes) na vitrine, e quantas ficaram no catalogo.
+
+    O diff roda sobre tudo que foi coletado, e tem de continuar rodando: fundo
+    que aparece so no Open Finance de uma casa e sinal de registro novo. Mas no
+    digest ele nao pode entrar em "entraram na prateleira" - num dia de churn do
+    catalogo do BTG, a secao dele afogaria as mudancas reais de todas as casas.
+    Entao a vitrine vai listada e o catalogo vai contado, em uma linha.
+
+    `changed` so carrega identity e nome, entao a pertinencia dele vem do
+    snapshot atual - as identidades que estao na vitrine de hoje.
+    """
+    vitrine_ids = {f.identity for f in listing_funds(snapshot)} if snapshot else set()
+    entradas = [f for f in diff.added if _na_vitrine(f)]
+    saidas = [f for f in diff.removed if _na_vitrine(f)]
+    alteracoes = [c for c in diff.changed if c.identity in vitrine_ids]
+    so_catalogo = (
+        (len(diff.added) - len(entradas))
+        + (len(diff.removed) - len(saidas))
+        + (len(diff.changed) - len(alteracoes))
+    )
+    return entradas, saidas, alteracoes, so_catalogo
+
+
 def _format_value(value: object) -> str:
     if value is None:
         return "-"
@@ -70,11 +143,20 @@ def _format_value(value: object) -> str:
     return str(value)
 
 
-def _summary_counts(report: RunReport) -> tuple[int, int, int]:
-    added = sum(len(d.added) for d in report.shelf_diffs if not d.is_first_run)
-    removed = sum(len(d.removed) for d in report.shelf_diffs if not d.is_first_run)
-    changed = sum(len(d.changed) for d in report.shelf_diffs if not d.is_first_run)
-    return added, removed, changed
+def _summary_counts(report: RunReport) -> tuple[int, int, int, int]:
+    """(entradas, saidas, alteracoes) de vitrine, e o que mudou so no catalogo."""
+    added = removed = changed = catalogo = 0
+    for diff in report.shelf_diffs:
+        if diff.is_first_run:
+            continue
+        entradas, saidas, alteracoes, so_catalogo = _mudancas_de_vitrine(
+            diff, report.snapshot_for(diff.platform)
+        )
+        added += len(entradas)
+        removed += len(saidas)
+        changed += len(alteracoes)
+        catalogo += so_catalogo
+    return added, removed, changed, catalogo
 
 
 def _summary_sentence(report: RunReport) -> tuple[str, bool]:
@@ -83,7 +165,7 @@ def _summary_sentence(report: RunReport) -> tuple[str, bool]:
     Distingue tres silencios que se parecem no numero mas nao no significado:
     coleta que falhou inteira, primeira coleta, e prateleira estavel.
     """
-    added, removed, changed = _summary_counts(report)
+    added, removed, changed, catalogo = _summary_counts(report)
     collected = [s for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE]
 
     if report.snapshots and not collected:
@@ -96,19 +178,30 @@ def _summary_sentence(report: RunReport) -> tuple[str, bool]:
 
     first_run = all(d.is_first_run for d in report.shelf_diffs) if report.shelf_diffs else True
     if first_run:
-        total = sum(len(s.funds) for s in collected)
+        vitrine = sum(len(listing_funds(s)) for s in collected)
+        catalogo_total = sum(len(retail_funds(s)) for s in collected)
         return (
-            f"Primeira coleta: {total} fundos em {len(collected)} plataforma(s) viram "
-            "a linha de base. As comparacoes comecam na proxima execucao.",
+            f"Primeira coleta: {vitrine} fundos de vitrine em {len(collected)} "
+            f"plataforma(s) viram a linha de base ({catalogo_total} no catalogo de "
+            "varejo). As comparacoes comecam na proxima execucao.",
             False,
         )
 
+    cauda = (
+        f" Outras {catalogo} mudancas ficaram so no catalogo Open Finance, fora da vitrine."
+        if catalogo
+        else ""
+    )
+
     if not (added or removed or changed):
-        return ("Nenhuma mudanca nas prateleiras monitoradas desde a ultima coleta.", False)
+        return (
+            "Nenhuma mudanca nas vitrines monitoradas desde a ultima coleta." + cauda,
+            False,
+        )
 
     return (
         f"{added} fundos entraram, {removed} sairam e {changed} tiveram condicoes "
-        "alteradas nas prateleiras monitoradas.",
+        "alteradas nas vitrines monitoradas." + cauda,
         False,
     )
 
@@ -123,10 +216,10 @@ def _md_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> list[s
         lines += [f"Coleta indisponivel: {snapshot.error or 'motivo nao informado'}.", ""]
         return lines
 
-    total = len(snapshot.funds) if snapshot else 0
+    tamanho = _frase_de_tamanho(snapshot)
     if diff.is_first_run:
         lines += [
-            f"Primeira coleta: {total} fundos registrados como linha de base. "
+            f"Primeira coleta: {tamanho}, como linha de base. "
             "Comparacoes comecam na proxima execucao.",
             "",
         ]
@@ -139,49 +232,56 @@ def _md_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> list[s
             "",
         ]
 
-    if not diff.has_changes:
-        lines += [f"Sem mudancas. Prateleira estavel em {total} fundos.", ""]
+    entradas, saidas, alteracoes, so_catalogo = _mudancas_de_vitrine(diff, snapshot)
+    cauda = (
+        f" Mais {so_catalogo} mudancas so no catalogo Open Finance, fora da vitrine."
+        if so_catalogo
+        else ""
+    )
+
+    if not (entradas or saidas or alteracoes):
+        lines += [f"Sem mudancas na vitrine: {tamanho}.{cauda}", ""]
         return lines
 
     lines += [
-        f"{len(diff.added)} entradas, {len(diff.removed)} saidas, "
-        f"{len(diff.changed)} alteracoes (prateleira em {total} fundos).",
+        f"{len(entradas)} entradas, {len(saidas)} saidas, "
+        f"{len(alteracoes)} alteracoes na vitrine - {tamanho}.{cauda}",
         "",
     ]
 
-    if diff.added:
-        lines.append("**Entraram na prateleira**")
+    if entradas:
+        lines.append("**Entraram na vitrine**")
         lines.append("")
-        for fund in diff.added[:_MAX_LISTED]:
+        for fund in entradas[:_MAX_LISTED]:
             cnpj = f" ({format_cnpj(fund.cnpj)})" if fund.cnpj else ""
             manager = f" - {fund.manager_name}" if fund.manager_name else ""
             lines.append(f"- {fund.name}{cnpj}{manager}")
-        if len(diff.added) > _MAX_LISTED:
-            lines.append(f"- ... e mais {len(diff.added) - _MAX_LISTED} fundos")
+        if len(entradas) > _MAX_LISTED:
+            lines.append(f"- ... e mais {len(entradas) - _MAX_LISTED} fundos")
         lines.append("")
 
-    if diff.removed:
-        lines.append("**Sairam da prateleira**")
+    if saidas:
+        lines.append("**Sairam da vitrine**")
         lines.append("")
-        for fund in diff.removed[:_MAX_LISTED]:
+        for fund in saidas[:_MAX_LISTED]:
             cnpj = f" ({format_cnpj(fund.cnpj)})" if fund.cnpj else ""
             lines.append(f"- {fund.name}{cnpj}")
-        if len(diff.removed) > _MAX_LISTED:
-            lines.append(f"- ... e mais {len(diff.removed) - _MAX_LISTED} fundos")
+        if len(saidas) > _MAX_LISTED:
+            lines.append(f"- ... e mais {len(saidas) - _MAX_LISTED} fundos")
         lines.append("")
 
-    if diff.changed:
+    if alteracoes:
         lines.append("**Mudancas de condicoes**")
         lines.append("")
-        for change in diff.changed[:_MAX_LISTED]:
+        for change in alteracoes[:_MAX_LISTED]:
             details = ", ".join(
                 f"{_FIELD_LABELS.get(c.field, c.field)}: "
                 f"{_format_value(c.old)} -> {_format_value(c.new)}"
                 for c in change.changes
             )
             lines.append(f"- {change.name} - {details}")
-        if len(diff.changed) > _MAX_LISTED:
-            lines.append(f"- ... e mais {len(diff.changed) - _MAX_LISTED} fundos")
+        if len(alteracoes) > _MAX_LISTED:
+            lines.append(f"- ... e mais {len(alteracoes) - _MAX_LISTED} fundos")
         lines.append("")
 
     return lines
@@ -316,6 +416,172 @@ def _md_gaps_section(gaps: dict) -> list[str]:
     return lines
 
 
+def _pct(valor: float | None) -> str:
+    return "-" if valor is None else f"{valor:.2f}%"
+
+
+def _pp(valor: float | None) -> str:
+    return "-" if valor is None else f"{valor:+.2f}pp"
+
+
+def _share(valor: float | None) -> str:
+    return "-" if valor is None else f"{valor:.0%}"
+
+
+def _indice(massa: dict) -> str:
+    """Share do PL sobre share dos fundos. Abaixo de 1, o dinheiro evita os piores."""
+    valor = massa.get("indice_pl")
+    return "-" if valor is None else f"{valor:.2f}"
+
+
+def _contagem(valor: int) -> str:
+    """Numero absoluto. `_inteiro` poe sinal, porque serve a variacao."""
+    return f"{valor:,}".replace(",", ".")
+
+
+def _md_performance_section(report: RunReport) -> list[str]:
+    """Rentabilidade ponderada e custo relativo, na leitura curta do digest.
+
+    A manchete nao e o retorno medio: e o gap entre a ponderada por PL e a
+    ponderada por cotistas, mais quanto do dinheiro e da gente esta em fundo
+    que rende abaixo da propria categoria. Sao as duas linhas que nenhuma outra
+    secao responde.
+    """
+    performance = report.performance
+    if not (performance and performance.get("available")):
+        return []
+
+    periodo = performance["periodo"]
+    lines = [
+        "## Rentabilidade da vitrine",
+        "",
+        f"Cota patrimonial do informe diario, {periodo['de']} a {periodo['ate']} "
+        f"({periodo['pregoes']} pregoes), contra a mediana da mesma categoria no "
+        "universo oficial. E o retorno dos fundos que a casa exibe, com o peso que "
+        "eles tem no **mercado** - nao o retorno dos clientes dela.",
+        "",
+        "| Casa | Fundo mediano | Real medio | Cotista medio | Gap | Abaixo da mediana da categoria |",
+        "|---|---:|---:|---:|---:|---|",
+    ]
+    for casa in performance["casas"]:
+        massa = casa["alocacao_abaixo_da_mediana"]
+        lines.append(
+            f"| {casa['label']} | {_pct(casa['mediana'])} | {_pct(casa['por_pl'])} | "
+            f"{_pct(casa['por_cotista'])} | {_pp(casa['gap'])} | "
+            f"{massa['fundos']} de {massa['de']} ({_share(massa['share_fundos'])}) "
+            f"carregam {_share(massa['share_pl'])} do PL - indice {_indice(massa)} |"
+        )
+    lines.append("")
+    lines.append(
+        "Gap positivo: o dinheiro grande esta nos fundos melhores e o varejo nos "
+        "piores. Negativo: o inverso. O sinal do gap **muda conforme a janela** - "
+        "ele descreve que categorias performaram no periodo, nao a base de clientes."
+    )
+    lines.append("")
+    lines.append(
+        "Indice abaixo de 1 significa que o dinheiro EVITA os fundos piores da "
+        "categoria. Cerca de metade de qualquer universo fica abaixo da mediana por "
+        "construcao, entao a contagem de fundos sozinha nao e sinal de nada."
+    )
+    lines.append("")
+
+    # Os fundos de muita gente que rendem abaixo dos pares - o recorte acionavel.
+    abaixo: list[dict] = []
+    for platform_id, fundos in (performance.get("onde_esta_a_gente") or {}).items():
+        rotulo = next(
+            (c["label"] for c in performance["casas"] if c["platform_id"] == platform_id),
+            platform_id,
+        )
+        for fundo in fundos:
+            if fundo.get("excesso") is not None and fundo["excesso"] < 0:
+                abaixo.append({**fundo, "casa": rotulo})
+    abaixo.sort(key=lambda f: -f["cotistas"])
+    if abaixo:
+        lines.append("**Fundos de muita gente rendendo abaixo da categoria**")
+        lines.append("")
+        for fundo in abaixo[:8]:
+            lines.append(
+                f"- {_contagem(fundo['cotistas'])} cotistas - {fundo['nome']} "
+                f"({fundo['casa']}): {_pct(fundo['retorno'])} contra "
+                f"{_pct(fundo['mediana_categoria'])} da categoria "
+                f"({_pp(fundo['excesso'])})"
+            )
+        lines.append("")
+
+    custo = report.custo
+    if custo and custo.get("available"):
+        lines.append("**Custo relativo a categoria**")
+        lines.append("")
+        lines.append(
+            "Indice mediano, nao taxa mediana: a taxa bruta entre casas mede o mix "
+            "da prateleira, nao o preco dos produtos."
+        )
+        lines.append("")
+        lines.append("| Casa | Indice mediano | Caros | Baratos | Resgate ate D+1 |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for casa in custo["casas"]:
+            indice = casa["indice_mediano"]
+            lines.append(
+                f"| {casa['label']} | "
+                f"{'-' if indice is None else f'{indice:.2f}x'} | "
+                f"{_share(casa['share_caro'])} | {_share(casa['share_barato'])} | "
+                f"{_share(casa['share_liquidez_imediata'])} |"
+            )
+        lines.append("")
+
+    for excluido in performance.get("excluded", []):
+        lines.append(f"> Fora: {excluido['label']} - {excluido['reason']}")
+    if performance.get("excluded"):
+        lines.append("")
+    return lines
+
+
+def _html_performance_section(report: RunReport) -> str:
+    performance = report.performance
+    if not (performance and performance.get("available")):
+        return ""
+
+    periodo = performance["periodo"]
+    linhas = ""
+    for casa in performance["casas"]:
+        massa = casa["alocacao_abaixo_da_mediana"]
+        cor = "#0ca30c" if (casa["gap"] or 0) > 0 else "#d03b3b"
+        linhas += (
+            f'<tr><td style="{_TD}">{_esc(casa["label"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_pct(casa["mediana"])}</td>'
+            f'<td style="{_TD}text-align:right;">{_pct(casa["por_pl"])}</td>'
+            f'<td style="{_TD}text-align:right;"><strong>{_pct(casa["por_cotista"])}</strong></td>'
+            f'<td style="{_TD}text-align:right;color:{cor};">{_pp(casa["gap"])}</td>'
+            f'<td style="{_TD}">{massa["fundos"]} de {massa["de"]} '
+            f'({_share(massa["share_fundos"])}) carregam '
+            f'{_share(massa["share_pl"])} do PL &mdash; indice {_indice(massa)}</td></tr>'
+        )
+
+    fora = "".join(
+        f'<p style="{_P}font-size:12.5px;color:#898781;">Fora: {_esc(e["label"])} &mdash; {_esc(e["reason"])}</p>'
+        for e in performance.get("excluded", [])
+    )
+
+    return f"""
+  <h2 style="{_H2}">Rentabilidade da vitrine</h2>
+  <p style="{_P}">Cota patrimonial do informe diario, {_esc(periodo['de'])} a
+    {_esc(periodo['ate'])} ({periodo['pregoes']} pregoes), contra a mediana da mesma
+    categoria no universo oficial. E o retorno dos fundos que a casa exibe, com o peso
+    que eles tem no <strong>mercado</strong> &mdash; nao o retorno dos clientes dela.</p>
+  <table style="{_TABLE}"><thead><tr>
+    <th style="{_TH}">Casa</th>
+    <th style="{_TH}text-align:right;">Fundo mediano</th>
+    <th style="{_TH}text-align:right;">Real medio</th>
+    <th style="{_TH}text-align:right;">Cotista medio</th>
+    <th style="{_TH}text-align:right;">Gap</th>
+    <th style="{_TH}">Abaixo da mediana da categoria</th>
+  </tr></thead><tbody>{linhas}</tbody></table>
+  <p style="{_P}font-size:12.5px;color:#898781;">Gap positivo: o dinheiro grande esta nos fundos melhores e o
+    varejo nos piores. Negativo: o inverso.</p>
+  {fora}
+"""
+
+
 def render_markdown(report: RunReport) -> str:
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
 
@@ -332,27 +598,44 @@ def render_markdown(report: RunReport) -> str:
     lines.append(f"**{sentence}**" if is_alert else sentence)
     lines.append("")
 
-    lines.append("| Plataforma | Fundos | Status | Entradas | Saidas | Alteracoes |")
-    lines.append("|---|---:|---|---:|---:|---:|")
+    lines.append(
+        "| Plataforma | Vitrine | Catalogo | Status | Entradas | Saidas | Alteracoes |"
+    )
+    lines.append("|---|---:|---:|---|---:|---:|---:|")
+    tem_catalogo_maior = False
     for snapshot in report.snapshots:
         diff = report.diff_for(snapshot.platform)
+        vitrine, catalogo = _tamanhos(snapshot)
+        tem_catalogo_maior = tem_catalogo_maior or catalogo > vitrine
+        if diff and not diff.is_first_run:
+            entradas, saidas, alteracoes, _ = _mudancas_de_vitrine(diff, snapshot)
+        else:
+            entradas = saidas = alteracoes = []
         lines.append(
-            f"| {_platform_label(snapshot.platform)} | {len(snapshot.funds)} | "
+            f"| {_platform_label(snapshot.platform)} | "
+            f"{vitrine if vitrine else 'sem vitrine'} | {catalogo} | "
             f"{snapshot.status.value} | "
-            f"{len(diff.added) if diff and not diff.is_first_run else 0} | "
-            f"{len(diff.removed) if diff and not diff.is_first_run else 0} | "
-            f"{len(diff.changed) if diff and not diff.is_first_run else 0} |"
+            f"{len(entradas)} | {len(saidas)} | {len(alteracoes)} |"
         )
     lines.append("")
+    if tem_catalogo_maior:
+        lines.append(
+            "_Vitrine: fundos de varejo na listagem da propria casa - o que o cliente "
+            "ve, e a unica coluna comparavel entre casas. Catalogo: o que a casa "
+            "administra, somando o Open Finance. Entradas, saidas e alteracoes contam "
+            "a vitrine._"
+        )
+        lines.append("")
 
     # O insight-manchete vem antes do radar: e a leitura XP-centrica da coleta.
     lines += _md_gaps_section(build_gap_block(report.snapshots))
 
     lines += _md_flow_section(report)
+    lines += _md_performance_section(report)
 
     lines += _md_cvm_section(report.cvm_diff, report)
 
-    lines += ["## Prateleiras", ""]
+    lines += ["## Vitrines", ""]
     for diff in report.shelf_diffs:
         lines += _md_shelf_section(diff, report.snapshot_for(diff.platform))
 
@@ -396,7 +679,7 @@ def _competencia(chave: str) -> str:
 
 def _md_flow_section(report: RunReport) -> list[str]:
     flow = report.retail_flow
-    if not flow:
+    if not (flow and flow.get("available")):
         return []
 
     periodo = flow["periodo"]
@@ -505,7 +788,7 @@ def _md_flow_section(report: RunReport) -> list[str]:
 
 def _html_flow_section(report: RunReport) -> str:
     flow = report.retail_flow
-    if not flow:
+    if not (flow and flow.get("available")):
         return ""
 
     periodo = flow["periodo"]
@@ -650,11 +933,10 @@ def _html_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> str:
         )
         return "".join(parts)
 
-    total = len(snapshot.funds) if snapshot else 0
+    tamanho = _frase_de_tamanho(snapshot)
     if diff.is_first_run:
         parts.append(
-            f'<p style="{_P}">Primeira coleta: {total} fundos registrados como linha '
-            "de base.</p>"
+            f'<p style="{_P}">Primeira coleta: {tamanho}, como linha de base.</p>'
         )
         return "".join(parts)
 
@@ -665,47 +947,60 @@ def _html_shelf_section(diff: ShelfDiff, snapshot: ShelfSnapshot | None) -> str:
             f"({_esc(diff.suspect_reason)}). Saidas omitidas para evitar falso churn.</p>"
         )
 
-    if not diff.has_changes:
-        parts.append(f'<p style="{_P}">Sem mudancas. Prateleira estavel em {total} fundos.</p>')
+    entradas, saidas, alteracoes, so_catalogo = _mudancas_de_vitrine(diff, snapshot)
+    cauda = (
+        f" Mais {so_catalogo} mudancas so no catalogo Open Finance, fora da vitrine."
+        if so_catalogo
+        else ""
+    )
+
+    if not (entradas or saidas or alteracoes):
+        parts.append(
+            f'<p style="{_P}">Sem mudancas na vitrine: {tamanho}.{cauda}</p>'
+        )
         return "".join(parts)
 
     parts.append(
-        f'<p style="{_P}">{len(diff.added)} entradas, {len(diff.removed)} saidas, '
-        f"{len(diff.changed)} alteracoes (prateleira em {total} fundos).</p>"
+        f'<p style="{_P}">{len(entradas)} entradas, {len(saidas)} saidas, '
+        f"{len(alteracoes)} alteracoes na vitrine - {tamanho}.{cauda}</p>"
     )
 
-    if diff.added:
-        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>Entraram</strong></p>')
+    if entradas:
+        parts.append(
+            f'<p style="{_P}margin-bottom:6px;"><strong>Entraram na vitrine</strong></p>'
+        )
         parts.append(
             _html_list(
                 [
                     _esc(f.name)
                     + (f" <span style='color:#898781;'>{format_cnpj(f.cnpj)}</span>" if f.cnpj else "")
-                    for f in diff.added[:_MAX_LISTED]
+                    for f in entradas[:_MAX_LISTED]
                 ],
-                len(diff.added),
+                len(entradas),
             )
         )
 
-    if diff.removed:
-        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>Sairam</strong></p>')
+    if saidas:
         parts.append(
-            _html_list([_esc(f.name) for f in diff.removed[:_MAX_LISTED]], len(diff.removed))
+            f'<p style="{_P}margin-bottom:6px;"><strong>Sairam da vitrine</strong></p>'
+        )
+        parts.append(
+            _html_list([_esc(f.name) for f in saidas[:_MAX_LISTED]], len(saidas))
         )
 
-    if diff.changed:
+    if alteracoes:
         parts.append(
             f'<p style="{_P}margin-bottom:6px;"><strong>Mudancas de condicoes</strong></p>'
         )
         items = []
-        for change in diff.changed[:_MAX_LISTED]:
+        for change in alteracoes[:_MAX_LISTED]:
             details = ", ".join(
                 f"{_esc(_FIELD_LABELS.get(c.field, c.field))}: "
                 f"{_esc(_format_value(c.old))} &rarr; <strong>{_esc(_format_value(c.new))}</strong>"
                 for c in change.changes
             )
             items.append(f"{_esc(change.name)} &mdash; {details}")
-        parts.append(_html_list(items, len(diff.changed)))
+        parts.append(_html_list(items, len(alteracoes)))
 
     return "".join(parts)
 
@@ -842,17 +1137,33 @@ def render_html(report: RunReport) -> str:
     summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
 
     rows = ""
+    tem_catalogo_maior = False
     for snapshot in report.snapshots:
         diff = report.diff_for(snapshot.platform)
-        counted = diff and not diff.is_first_run
+        vitrine, catalogo = _tamanhos(snapshot)
+        tem_catalogo_maior = tem_catalogo_maior or catalogo > vitrine
+        if diff and not diff.is_first_run:
+            entradas, saidas, alteracoes, _ = _mudancas_de_vitrine(diff, snapshot)
+        else:
+            entradas = saidas = alteracoes = []
         rows += (
             f'<tr><td style="{_TD}">{_esc(_platform_label(snapshot.platform))}</td>'
-            f'<td style="{_TD}text-align:right;">{len(snapshot.funds)}</td>'
+            f'<td style="{_TD}text-align:right;">{vitrine if vitrine else "sem vitrine"}</td>'
+            f'<td style="{_TD}text-align:right;color:#898781;">{catalogo}</td>'
             f'<td style="{_TD}">{_esc(snapshot.status.value)}</td>'
-            f'<td style="{_TD}text-align:right;">{len(diff.added) if counted else 0}</td>'
-            f'<td style="{_TD}text-align:right;">{len(diff.removed) if counted else 0}</td>'
-            f'<td style="{_TD}text-align:right;">{len(diff.changed) if counted else 0}</td></tr>'
+            f'<td style="{_TD}text-align:right;">{len(entradas)}</td>'
+            f'<td style="{_TD}text-align:right;">{len(saidas)}</td>'
+            f'<td style="{_TD}text-align:right;">{len(alteracoes)}</td></tr>'
         )
+
+    nota_base = (
+        f'<p style="font-size:12px;color:#898781;margin:-6px 0 18px;">'
+        "Vitrine: fundos de varejo na listagem da propria casa &mdash; o que o cliente ve, "
+        "e a unica coluna comparavel entre casas. Catalogo: o que a casa administra, "
+        "somando o Open Finance. Entradas, saidas e alteracoes contam a vitrine.</p>"
+        if tem_catalogo_maior
+        else ""
+    )
 
     shelf_sections = "".join(
         _html_shelf_section(diff, report.snapshot_for(diff.platform))
@@ -873,20 +1184,23 @@ def render_html(report: RunReport) -> str:
 
   <table style="{_TABLE}"><thead><tr>
     <th style="{_TH}">Plataforma</th>
-    <th style="{_TH}text-align:right;">Fundos</th>
+    <th style="{_TH}text-align:right;">Vitrine</th>
+    <th style="{_TH}text-align:right;">Catalogo</th>
     <th style="{_TH}">Status</th>
     <th style="{_TH}text-align:right;">Entradas</th>
     <th style="{_TH}text-align:right;">Saidas</th>
     <th style="{_TH}text-align:right;">Alteracoes</th>
   </tr></thead><tbody>{rows}</tbody></table>
+  {nota_base}
 
   {_html_gaps_section(build_gap_block(report.snapshots))}
 
   {_html_flow_section(report)}
+  {_html_performance_section(report)}
 
   {_html_cvm_section(report)}
 
-  <h2 style="{_H2}">Prateleiras</h2>
+  <h2 style="{_H2}">Vitrines</h2>
   {shelf_sections}
 
   <p style="font-size:12px;color:#898781;margin-top:24px;border-top:1px solid #e1e0d9;padding-top:14px;">

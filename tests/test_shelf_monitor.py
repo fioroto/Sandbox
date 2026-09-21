@@ -12,8 +12,9 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
-from shelf_monitor import main as main_mod
+from shelf_monitor.collectors import cvm as cvm_mod
 from shelf_monitor.collectors.cvm import (
     CvmCollector,
     WatchlistMatcher,
@@ -25,6 +26,7 @@ from shelf_monitor.collectors.open_finance import _brand_matches, _flatten_funds
 from shelf_monitor.collectors.xp import XpCollector
 from shelf_monitor.config import Config
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.http import SourceUnavailable
 from shelf_monitor.merge import merge_offers, source_summary
 from shelf_monitor.models import (
     AssetClass,
@@ -172,11 +174,22 @@ class TestCvmCollector(unittest.TestCase):
                 self.assertEqual(rows[0]["Situacao"], "FASE PRÉ-OPERACIONAL")
 
     def test_corrupted_download_falls_through_to_the_legacy_source(self):
-        """Um zip corrompido levanta BadZipFile, nao SourceUnavailable."""
+        """Um zip corrompido levanta BadZipFile, nao SourceUnavailable.
+
+        O `download` do fallback e substituido porque o que se testa aqui e o
+        encadeamento primaria -> legado, nao a CVM: sem isso o teste passava so
+        em maquina sem rede, e numa maquina conectada o cad_fi real baixava e o
+        status saia `ok`.
+        """
         bad_zip = Path(self.tmp.name) / "corrompido.zip"
         bad_zip.write_text("<html>403 Forbidden</html>", encoding="utf-8")
 
-        snapshot = CvmCollector(self.config).collect(local_zip=bad_zip)
+        def sem_rede(config, url, dest):
+            raise SourceUnavailable("rede bloqueada no teste")
+
+        with mock.patch.object(cvm_mod, "download", sem_rede):
+            snapshot = CvmCollector(self.config).collect(local_zip=bad_zip)
+
         self.assertEqual(snapshot.status, SnapshotStatus.UNAVAILABLE)
         self.assertIn("cad_fi", snapshot.error, "o fallback legado deve ser tentado")
 
@@ -351,12 +364,26 @@ def offer(platform: str, name: str, cnpj: str | None = None, **kwargs) -> FundOf
 
 
 def snapshot_for(
-    platform: str, funds: list[FundOffer], when: datetime, status=SnapshotStatus.OK
+    platform: str,
+    funds: list[FundOffer],
+    when: datetime,
+    status=SnapshotStatus.OK,
+    strategy=CollectorStrategy.OPEN_FINANCE,
 ) -> ShelfSnapshot:
+    """Snapshot de teste, com a procedencia dos fundos declarada.
+
+    Carimba `sources` com a estrategia do snapshot, como os coletores reais
+    fazem. Sem isso o fundo nasce sem procedencia e cai fora da vitrine - o que
+    e correto e nao e o que a maioria destes testes quer dizer: eles descrevem
+    prateleira, e prateleira e o que a casa publica no canal dela.
+    """
+    for fund in funds:
+        if not fund.sources:
+            fund.sources = [strategy.value]
     return ShelfSnapshot(
         platform=platform,
         collected_at=when,
-        strategy=CollectorStrategy.OPEN_FINANCE,
+        strategy=strategy,
         status=status,
         funds=funds,
     )
@@ -793,7 +820,7 @@ class TestReports(unittest.TestCase):
         self.nu = snapshot_for("nu", [], now, status=SnapshotStatus.UNAVAILABLE)
         self.nu.error = "Nu nao expoe prateleira deslogada"
 
-        previous_btg = snapshot_for("btg", [
+        self.previous_btg = previous_btg = snapshot_for("btg", [
             offer("btg", "BTG Renda Fixa CP", "12345678000191",
                   asset_class=AssetClass.RENDA_FIXA, min_initial=1000.0,
                   manager_name="BTG Pactual Asset", admin_fee_pct=0.5),
@@ -819,12 +846,67 @@ class TestReports(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_exclusive_counts_ignore_unavailable_platforms(self):
-        data = build_dashboard_data(self.report)
+        data = build_dashboard_data(self._com_vitrine())
         by_id = {p["platform_id"]: p for p in data["platforms"]}
-        # Verde esta nas duas prateleiras: nao e exclusivo de nenhuma
+        # Verde esta nas duas vitrines: nao e exclusivo de nenhuma
         self.assertEqual(by_id["xp"]["exclusive_count"], 1)
         self.assertEqual(by_id["btg"]["exclusive_count"], 1)
-        self.assertEqual(by_id["nu"]["total_funds"], 0)
+        self.assertEqual(by_id["nu"]["listing_funds"], 0)
+
+    def test_catalog_never_feeds_the_comparison(self):
+        """Fundo que so o Open Finance publica nao entra em metrica de vitrine.
+
+        E a regra que o BTG obrigou a existir: com o catalogo dentro, ele saia
+        com 884 gestoras contra 213 da XP e 5.767 "exclusivos" contra 284 - tudo
+        fundo que ele administra e nenhum cliente ve.
+        """
+        report = self._com_vitrine()
+        btg = next(s for s in report.snapshots if s.platform == "btg")
+        oculto = offer("btg", "BTG Carteira Administrada FIC FIM", "77777777000177",
+                       manager_name="Gestora Que So Ele Administra", min_initial=50.0)
+        oculto.sources = ["open-finance"]
+        btg.funds.append(oculto)
+
+        linha = next(
+            p for p in build_dashboard_data(report)["platforms"]
+            if p["platform_id"] == "btg"
+        )
+        self.assertEqual(linha["listing_funds"], 2, "a vitrine nao cresceu")
+        self.assertEqual(linha["catalog_funds"], 3, "o catalogo cresceu, e fica dito")
+        self.assertNotIn(
+            "Gestora Que So Ele Administra",
+            [m["name"] for m in linha["top_managers"]],
+        )
+        self.assertEqual(linha["exclusive_count"], 1, "o oculto nao vira diferencial")
+
+    def test_platform_without_a_listing_leaves_the_comparison_with_a_reason(self):
+        """Casa so com catalogo sai dos graficos declarando por que."""
+        linha = next(
+            p for p in build_dashboard_data(self.report)["platforms"]
+            if p["platform_id"] == "btg"
+        )
+        self.assertEqual(linha["listing_funds"], 0)
+        self.assertEqual(linha["catalog_funds"], 2)
+        self.assertIn("sem vitrine", linha["listing_reason"])
+
+    def test_motivo_do_bloco_indisponivel_chega_ao_dashboard(self):
+        """O motivo real, nao um generico.
+
+        `main` anexa o bloco mesmo indisponivel justamente para isto: antes ele
+        deixava o campo None, `_bloco` recebia None e a superficie caia num
+        "sem base de mercado" que nao era o que tinha acontecido. O motivo era
+        impresso no console e morria ali.
+        """
+        report = self._com_vitrine()
+        motivo = "categoria com menos de 20 classes comparaveis"
+        report.custo = {"available": False, "reason": motivo}
+        report.retail_flow = {"available": False, "reason": motivo}
+
+        data = build_dashboard_data(report)
+        self.assertFalse(data["custo"]["available"])
+        self.assertEqual(data["custo"]["reason"], motivo)
+        self.assertFalse(data["flow"]["available"])
+        self.assertEqual(data["flow"]["reason"], motivo)
 
     def test_dashboard_is_self_contained(self):
         path = render_dashboard(self.config, self.report)
@@ -838,11 +920,48 @@ class TestReports(unittest.TestCase):
         json.loads(content[start:end])
 
     def test_digest_reports_change_and_unavailable_source(self):
-        markdown = render_markdown(self.report)
+        markdown = render_markdown(self._com_vitrine())
         self.assertIn("aplicacao minima", markdown)
         self.assertIn("Fundo Descontinuado", markdown)
         self.assertIn("Fontes indisponiveis", markdown)
         self.assertIn("pre-operacional", markdown.lower())
+
+    def test_digest_separates_the_window_from_the_catalog(self):
+        """Fundo que entrou so no Open Finance nao vira "entrou na vitrine".
+
+        Num dia de churn do catalogo do BTG - que publica 9.413 fundos que
+        nenhum cliente ve - a secao dele afogaria a mudanca real das outras
+        casas. A vitrine vai listada; o catalogo vai contado, numa frase.
+        """
+        now = datetime.now()
+        vitrine = offer("btg", "BTG Multimercado FIC FIM", "11111111000111")
+        vitrine.sources = ["api-json"]
+        anterior = snapshot_for("btg", [vitrine], now - timedelta(days=1),
+                                strategy=CollectorStrategy.API_JSON)
+
+        entrou_na_vitrine = offer("btg", "BTG Acoes Novo FIC FIA", "22222222000122")
+        entrou_na_vitrine.sources = ["api-json"]
+        so_no_catalogo = offer("btg", "BTG Carteira Fechada FIC FIM", "33333333000133")
+        so_no_catalogo.sources = ["open-finance"]
+        atual = snapshot_for(
+            "btg",
+            [offer("btg", "BTG Multimercado FIC FIM", "11111111000111"),
+             entrou_na_vitrine, so_no_catalogo],
+            now, strategy=CollectorStrategy.API_JSON,
+        )
+        atual.funds[0].sources = ["api-json"]
+
+        report = RunReport(
+            generated_at=now, snapshots=[atual],
+            shelf_diffs=[diff_shelf(atual, anterior)],
+        )
+        markdown = render_markdown(report)
+
+        self.assertIn("BTG Acoes Novo FIC FIA", markdown)
+        self.assertNotIn("BTG Carteira Fechada FIC FIM", markdown)
+        self.assertIn("so no catalogo Open Finance", markdown)
+        # A tabela de sumario conta 1 entrada de vitrine, nao as 2 do diff.
+        self.assertIn("| BTG Pactual | 2 | 3 | ok | 1 | 0 | 0 |", markdown)
 
     def test_external_names_cannot_inject_markup(self):
         """Nome de fundo vem da fonte externa: nao pode virar markup executavel."""
@@ -850,7 +969,7 @@ class TestReports(unittest.TestCase):
         snapshot = snapshot_for("btg", [
             offer("btg", payload, "11111111000191", manager_name=payload,
                   min_initial=100.0),
-        ], datetime.now())
+        ], datetime.now(), strategy=CollectorStrategy.PLAYWRIGHT)
         report = RunReport(
             generated_at=datetime.now(), snapshots=[snapshot],
             shelf_diffs=[diff_shelf(snapshot, None)],
@@ -907,6 +1026,38 @@ class TestReports(unittest.TestCase):
         self.assertTrue(md_path.exists() and html_path.exists())
         html = html_path.read_text(encoding="utf-8")
         self.assertNotIn("<script", html, "digest de e-mail nao deve conter JS")
+
+    def _com_vitrine(self):
+        """Os mesmos snapshots do setUp, agora publicados na vitrine da casa.
+
+        O setUp monta catalogo puro (Open Finance) de proposito: e o fixture do
+        bloco de gaps suprimido, que precisa de uma XP sem vitrine. Quem for
+        exercitar prateleira - resumo por casa, exclusivos, digest de mudanca -
+        carimba a procedencia aqui, porque desde que a comparacao passou a rodar
+        so na vitrine, snapshot sem canal proprio nao descreve prateleira
+        nenhuma.
+        """
+        import copy
+
+        def publicado(snapshot):
+            clone = copy.deepcopy(snapshot)
+            clone.strategy = CollectorStrategy.PLAYWRIGHT
+            for fund in clone.funds:
+                fund.sources = ["playwright"]
+            return clone
+
+        xp, btg = publicado(self.xp), publicado(self.btg)
+        return RunReport(
+            generated_at=datetime.now(),
+            snapshots=[xp, btg, self.nu],
+            shelf_diffs=[
+                diff_shelf(xp, None),
+                diff_shelf(btg, publicado(self.previous_btg)),
+                diff_shelf(self.nu, None),
+            ],
+            cvm_snapshot=self.report.cvm_snapshot,
+            cvm_diff=self.report.cvm_diff,
+        )
 
     def _listing_report(self):
         """Report com vitrines de verdade: XP via navegador, BTG via API.

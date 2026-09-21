@@ -12,12 +12,11 @@ comparacao visual importa (arquitetura aberta).
 """
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import RunReport
-from shelf_monitor.report.aggregate import build_dashboard_data
+from shelf_monitor.report.aggregate import build_dashboard_data, listing_funds
 
 # Paleta de referencia (modo claro) - a mesma do dashboard.
 _INK = "0B0B0B"
@@ -483,7 +482,10 @@ def _methodology(prs, report: RunReport, data: dict):
                       "nao aplicada - base de mercado nao importada "
                       "(python -m shelf_monitor market)."))
     for snapshot in report.snapshots:
-        listing_count = sum(1 for f in snapshot.funds if f.on_listing)
+        # `listing_funds` e nao `f.on_listing` direto: a vitrine de varejo tira
+        # os exclusivos/restritos. Contando so `on_listing`, o deck publicava um
+        # numero de vitrine MAIOR que o do dashboard para a mesma coleta.
+        listing_count = len(listing_funds(snapshot))
         lines.append((
             snapshot.platform,
             f"{snapshot.collected_at.strftime('%d/%m/%Y')} - status "

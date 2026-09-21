@@ -29,6 +29,7 @@ from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import FundOffer, ShelfSnapshot
+from shelf_monitor.normalize import normalize_cnpj
 from shelf_monitor.report.aggregate import (
     _offer_manager,
     _platform_label,
@@ -40,7 +41,6 @@ from shelf_monitor.report.competitive import (
     vitrine_snapshots,
 )
 
-_CNPJ_TRANS = str.maketrans("", "", "./- ")
 
 # Abaixo disto a casa nao entra nos rankings: com um punhado de fundos casados, a
 # soma descreve a amostra que casou, nao a vitrine.
@@ -70,7 +70,16 @@ _WIND_DOWN_RATIO = 0.2
 
 
 def _norm(cnpj: str | None) -> str:
-    return (cnpj or "").translate(_CNPJ_TRANS).strip()
+    """CNPJ do informe na mesma largura da vitrine.
+
+    Usa `normalize_cnpj` em vez de so tirar pontuacao porque o `alvo` de
+    `read_daily_flows` vem de `FundOffer.cnpj`, que ja passou por ela e tem 14
+    digitos. Um informe que serializa o CNPJ como numero perde o zero a
+    esquerda; comparar "1234567000191" com "01234567000191" falhava em silencio
+    no filtro, e o fundo reaparecia como cobertura baixa da casa -
+    indistinguivel de fundo que de fato nao entregou informe.
+    """
+    return normalize_cnpj(cnpj) or ""
 
 
 def _num(raw: str) -> float:
@@ -82,7 +91,15 @@ def _num(raw: str) -> float:
 
 @dataclass
 class DailyFlow:
-    """Uma linha do informe diario, nos campos que interessam ao fluxo."""
+    """Uma linha do informe diario, nos campos que interessam ao fluxo.
+
+    Uma linha e uma SUBCLASSE, nao uma classe. O informe v4 traz `ID_SUBCLASSE`,
+    e uma classe com subclasses emite uma linha por subclasse por dia, cada uma
+    com cota, PL e cotistas proprios. Medido em 2026-09-20 no informe de 09/2026:
+    273 dos 25.307 CNPJs (1,1%) tem mais de uma subclasse, somando R$ 183 bi, e
+    um deles chega a sete. Tratar cada linha como se fosse a classe inteira pega
+    o PL de uma subclasse arbitraria ao lado da captacao de todas.
+    """
 
     cnpj: str
     dia: date
@@ -91,13 +108,18 @@ class DailyFlow:
     pl: float = 0.0
     cota: float = 0.0
     cotistas: int = 0
+    subclasse: str = ""
 
 
-def read_daily_flows(zip_path: Path, alvo: set[str]) -> list[DailyFlow]:
+def read_daily_flows(zip_path: Path, alvo: set[str] | None) -> list[DailyFlow]:
     """Le o informe diario mensal, so para os CNPJs pedidos.
 
     O arquivo tem milhoes de linhas e a vitrine sao centenas de fundos: filtrar
     na leitura e o que mantem a analise rodando em segundos.
+
+    `alvo=None` le o universo inteiro. E o que a mediana de referencia por
+    categoria precisa: comparar um fundo da vitrine contra a mediana dos outros
+    fundos da vitrine mediria a propria prateleira, nao o mercado.
     """
     if not zip_path or not zip_path.exists() or not zipfile.is_zipfile(zip_path):
         return []
@@ -130,6 +152,7 @@ def read_daily_flows(zip_path: Path, alvo: set[str]) -> list[DailyFlow]:
     col_pl = coluna("VL_PATRIM_LIQ")
     col_cota = coluna("VL_QUOTA")
     col_cotst = coluna("NR_COTST")
+    col_sub = coluna("ID_SUBCLASSE")
     if col_cnpj is None or col_data is None:
         return []
 
@@ -138,7 +161,7 @@ def read_daily_flows(zip_path: Path, alvo: set[str]) -> list[DailyFlow]:
         if len(partes) <= col_cnpj:
             continue
         cnpj = _norm(partes[col_cnpj])
-        if cnpj not in alvo:
+        if alvo is not None and cnpj not in alvo:
             continue
         try:
             dia = datetime.strptime(partes[col_data].strip()[:10], "%Y-%m-%d").date()
@@ -156,8 +179,97 @@ def read_daily_flows(zip_path: Path, alvo: set[str]) -> list[DailyFlow]:
             pl=valor(col_pl),
             cota=valor(col_cota),
             cotistas=int(valor(col_cotst)),
+            subclasse=(
+                partes[col_sub].strip()
+                if col_sub is not None and col_sub < len(partes) else ""
+            ),
         ))
     return registros
+
+
+@dataclass
+class ClasseNoPeriodo:
+    """As linhas de um CNPJ consolidadas no nivel da CLASSE, nao da subclasse."""
+
+    cnpj: str
+    dias: int = 0
+    pl_inicio: float = 0.0
+    pl_fim: float = 0.0
+    cotistas_inicio: int = 0
+    cotistas_fim: int = 0
+    captacao_bruta: float = 0.0
+    resgates: float = 0.0
+    # Media dos retornos das subclasses ponderada pelo PL de cada uma. None
+    # quando nenhuma subclasse tem cota utilizavel nas duas pontas.
+    retorno_pct: float | None = None
+
+
+def agrupar_por_classe(registros: list[DailyFlow]) -> dict[str, ClasseNoPeriodo]:
+    """Consolida o informe no nivel da classe, tratando subclasse e retificacao.
+
+    Duas coisas que uma leitura linha-a-linha erra:
+
+    **Uma linha e uma subclasse.** Uma classe com subclasses emite uma linha por
+    subclasse por dia, cada uma com cota, PL e cotistas proprios - 273 dos
+    25.307 CNPJs em 09/2026 (1,1%), somando R$ 183 bi, um deles com sete
+    subclasses. Ordenar as linhas do CNPJ por data e pegar a primeira e a ultima
+    compara pontas de subclasses DIFERENTES.
+
+    O sintoma aparece no proprio numero publicado: em
+    `data/reports/captacao-2026-09-20.json`, o Kapitalo K10 sai com 336 "dias"
+    numa janela de ~56 pregoes - sao 6 subclasses x 56 - e rentabilidade de
+    -59,65%, que e a cota final de uma subclasse dividida pela inicial de outra.
+    Do lado da rentabilidade ponderada, o Kinea RF Absoluto aparecia com 107,70%
+    e 220 "pregoes" pelo mesmo motivo.
+
+    Aqui PL, cotistas e fluxo SOMAM entre subclasses, e o retorno e a media dos
+    retornos delas ponderada pelo PL: somar cotas seria somar precos unitarios
+    de bases diferentes. `dias` passa a contar datas distintas, nao linhas.
+
+    **A CVM retifica o informe.** O mesmo (CNPJ, subclasse, data) aparece mais de
+    uma vez no arquivo do mes (1,03% dos pares em 09/2026). Sem deduplicar, duas
+    versoes do mesmo dia contam como dois pregoes. Vence a ultima ocorrencia, que
+    e a retificacao - o mesmo criterio de `etf_flow._dedupe_by_day`.
+    """
+    por_subclasse: dict[tuple[str, str], dict[date, DailyFlow]] = {}
+    for registro in registros:
+        por_subclasse.setdefault((registro.cnpj, registro.subclasse), {})[
+            registro.dia
+        ] = registro
+
+    agrupado: dict[str, list[dict[date, DailyFlow]]] = {}
+    for (cnpj, _subclasse), dias in por_subclasse.items():
+        agrupado.setdefault(cnpj, []).append(dias)
+
+    saida: dict[str, ClasseNoPeriodo] = {}
+    for cnpj, subclasses in agrupado.items():
+        classe = ClasseNoPeriodo(cnpj=cnpj)
+        observados: set[date] = set()
+        retornos: list[tuple[float, float]] = []
+        for dias in subclasses:
+            observados |= dias.keys()
+            ordenados = sorted(dias)
+            primeira, ultima = dias[ordenados[0]], dias[ordenados[-1]]
+            classe.pl_inicio += primeira.pl
+            classe.pl_fim += ultima.pl
+            classe.cotistas_inicio += primeira.cotistas
+            classe.cotistas_fim += ultima.cotistas
+            classe.captacao_bruta += sum(r.captacao for r in dias.values())
+            classe.resgates += sum(r.resgates for r in dias.values())
+            if primeira.cota > 0 and ultima.cota > 0:
+                retornos.append(
+                    ((ultima.cota / primeira.cota - 1.0) * 100.0, max(ultima.pl, 0.0))
+                )
+        classe.dias = len(observados)
+        if retornos:
+            peso = sum(p for _, p in retornos)
+            classe.retorno_pct = (
+                sum(r * p for r, p in retornos) / peso
+                if peso > 0
+                else sum(r for r, _ in retornos) / len(retornos)
+            )
+        saida[cnpj] = classe
+    return saida
 
 
 @dataclass
@@ -177,6 +289,10 @@ class FundFlow:
     cotistas_fim: int = 0
     cota_inicio: float = 0.0
     cota_fim: float = 0.0
+    # Retorno ja consolidado no nivel da classe (ver agrupar_por_classe). Quando
+    # presente, prevalece sobre a razao das cotas - que so descreve o fundo
+    # inteiro quando ele nao tem subclasses.
+    retorno_pct: float | None = None
     dias: int = 0
     # Serie mensal do proprio fundo, preenchida por consolidate quando ha
     # competencias suficientes - e dela que sai a tendencia.
@@ -192,6 +308,8 @@ class FundFlow:
 
     @property
     def rentabilidade(self) -> float | None:
+        if self.retorno_pct is not None:
+            return self.retorno_pct
         if not self.cota_inicio:
             return None
         return (self.cota_fim / self.cota_inicio - 1.0) * 100.0
@@ -268,6 +386,7 @@ class FundFlow:
             "pl_inicio": round(self.pl_inicio, 2),
             "pl_fim": round(self.pl_fim, 2),
             "variacao_cotistas": self.variacao_cotistas,
+            "cotistas_inicio": self.cotistas_inicio,
             "cotistas_fim": self.cotistas_fim,
             "rentabilidade": (
                 None if self.rentabilidade is None else round(self.rentabilidade, 2)
@@ -297,13 +416,10 @@ def consolidate(
 ) -> list[FundFlow]:
     """Soma o fluxo de cada fundo no periodo, com a serie mensal e a vitrine."""
     series = monthly_by_fund(registros)
-    por_cnpj: dict[str, list[DailyFlow]] = {}
-    for registro in registros:
-        por_cnpj.setdefault(registro.cnpj, []).append(registro)
+    classes = agrupar_por_classe(registros)
 
     fluxos: list[FundFlow] = []
-    for cnpj, linhas in por_cnpj.items():
-        linhas.sort(key=lambda r: r.dia)
+    for cnpj, classe in classes.items():
         oferta = catalogo.get(cnpj)
         if oferta is None:
             continue
@@ -314,15 +430,14 @@ def consolidate(
             categoria=coarse_category(oferta),
             gestora=_offer_manager(oferta),
             vitrines=presenca.get(cnpj, []),
-            captacao_bruta=sum(r.captacao for r in linhas),
-            resgates=sum(r.resgates for r in linhas),
-            pl_inicio=linhas[0].pl,
-            pl_fim=linhas[-1].pl,
-            cotistas_inicio=linhas[0].cotistas,
-            cotistas_fim=linhas[-1].cotistas,
-            cota_inicio=linhas[0].cota,
-            cota_fim=linhas[-1].cota,
-            dias=len(linhas),
+            captacao_bruta=classe.captacao_bruta,
+            resgates=classe.resgates,
+            pl_inicio=classe.pl_inicio,
+            pl_fim=classe.pl_fim,
+            cotistas_inicio=classe.cotistas_inicio,
+            cotistas_fim=classe.cotistas_fim,
+            retorno_pct=classe.retorno_pct,
+            dias=classe.dias,
             meses=series.get(cnpj, []),
         )
         fluxos.append(fluxo)
@@ -545,6 +660,12 @@ def build_retail_flow(
         "fundos_analisados": len(fluxos),
         "baseline_id": baseline_id,
         "casas": [c.to_dict() for c in casas],
+        # A lista INTEIRA, para a planilha. Os rankings abaixo continuam porque
+        # o digest e o dashboard sao superficies de leitura rapida; a planilha e
+        # onde alguem vai conferir o fundo especifico que o fez abrir o arquivo.
+        "fundos": [f.to_dict() for f in sorted(
+            fluxos, key=lambda f: -f.captacao_liquida
+        )],
         "top_captacao": [f.to_dict() for f in captadores[:15]],
         "top_resgate": [f.to_dict() for f in perdedores[:15]],
         "estruturais": [f.to_dict() for f in estruturais[:8]],
@@ -567,12 +688,21 @@ class GradeOpportunity:
     # O fundo e da asset da propria casa que o exibe. Nao e oportunidade
     # transferivel: a XP distribuir o produto proprio do BTG e outra conversa,
     # comercial e estrategica, nao uma inclusao de grade.
-    produto_do_concorrente: bool = False
+    #
+    # None quando o fundo nao tem gestor conhecido em nenhuma vitrine em que
+    # aparece: e "nao verificado", nao "nao e". Continua na lista - o monitor
+    # informa e nao remove -, mas sai contado a parte.
+    produto_do_concorrente: bool | None = False
+
+    @property
+    def gestora_desconhecida(self) -> bool:
+        return self.produto_do_concorrente is None
 
     def to_dict(self) -> dict:
         dados = self.fluxo.to_dict()
         dados["gestora_ja_distribuida"] = self.gestora_ja_distribuida
         dados["produto_do_concorrente"] = self.produto_do_concorrente
+        dados["gestora_desconhecida"] = self.gestora_desconhecida
         return dados
 
 
@@ -609,20 +739,30 @@ def build_grade_opportunities(
     ]
     candidatos.sort(key=lambda f: -f.captacao_liquida)
 
-    # Um fundo e "produto do concorrente" quando a gestora dele e a asset de
-    # alguma casa em cuja vitrine ele aparece - a mesma definicao de casa propria
-    # que o resto do monitor usa (watchlist do radar CVM).
-    def do_concorrente(f: FundFlow) -> bool:
-        oferta = catalogo_ofertas.get(f.cnpj)
-        if oferta is None:
-            return False
-        return any(is_own_product(pid, oferta) for pid in f.vitrines)
-
     catalogo_ofertas: dict[str, FundOffer] = {}
     for platform_id, funds in cruzaveis.items():
         for fund in funds:
             if fund.cnpj:
                 catalogo_ofertas.setdefault(fund.cnpj, fund)
+
+    # Um fundo e "produto do concorrente" quando a gestora dele e a asset de
+    # alguma casa em cuja vitrine ele aparece - a mesma definicao de casa propria
+    # que o resto do monitor usa (watchlist do radar CVM).
+    #
+    # `is_own_product` e tri-estado: None quando o fundo nao tem gestor
+    # conhecido. Um `any()` direto colapsava None em False e o fundo entrava na
+    # lista de transferiveis como se estivesse verificado - a soma publicada
+    # ("restam N fundos, +R$ X MM") afirmava sobre fundo que ninguem checou.
+    def do_concorrente(f: FundFlow) -> bool | None:
+        oferta = catalogo_ofertas.get(f.cnpj)
+        if oferta is None:
+            return None
+        respostas = [is_own_product(pid, oferta) for pid in f.vitrines]
+        if any(r is True for r in respostas):
+            return True
+        if all(r is None for r in respostas):
+            return None
+        return False
 
     oportunidades = [
         GradeOpportunity(
@@ -633,7 +773,7 @@ def build_grade_opportunities(
         for f in candidatos
     ]
 
-    transferiveis = [o for o in oportunidades if not o.produto_do_concorrente]
+    transferiveis = [o for o in oportunidades if o.produto_do_concorrente is not True]
     operacionais = [o for o in transferiveis if o.gestora_ja_distribuida]
     comerciais = [o for o in transferiveis if not o.gestora_ja_distribuida]
     # Intensidade de varejo: quem trouxe MAIS COTISTAS, nao mais reais. Um fundo
@@ -665,6 +805,11 @@ def build_grade_opportunities(
         "total": len(oportunidades),
         "total_transferiveis": len(transferiveis),
         "total_produto_do_concorrente": len(oportunidades) - len(transferiveis),
+        # Dentro dos transferiveis: quantos nao puderam ser verificados porque a
+        # fonte nao publica gestor. Nao saem da lista; saem ditos.
+        "total_gestora_desconhecida": sum(
+            1 for o in transferiveis if o.gestora_desconhecida
+        ),
         "total_operacionais": len(operacionais),
         "total_comerciais": len(comerciais),
         "captacao_somada": round(sum(o.fluxo.captacao_liquida for o in oportunidades), 2),
@@ -781,13 +926,15 @@ def monthly_by_fund(registros: list[DailyFlow]) -> dict[str, list[MonthlyFlow]]:
     for cnpj, meses in por_fundo.items():
         serie: list[MonthlyFlow] = []
         for competencia, linhas in sorted(meses.items()):
-            linhas.sort(key=lambda r: r.dia)
+            # Pelo mesmo motivo de `agrupar_por_classe`: PL e cotistas de uma
+            # linha sao os da subclasse, e a variacao do mes tem de somar todas.
+            classe = agrupar_por_classe(linhas)[cnpj]
             serie.append(MonthlyFlow(
                 competencia=competencia,
-                captacao_liquida=sum(r.captacao - r.resgates for r in linhas),
-                variacao_cotistas=linhas[-1].cotistas - linhas[0].cotistas,
-                pl_fim=linhas[-1].pl,
-                dias=len({r.dia for r in linhas}),
+                captacao_liquida=classe.captacao_bruta - classe.resgates,
+                variacao_cotistas=classe.cotistas_fim - classe.cotistas_inicio,
+                pl_fim=classe.pl_fim,
+                dias=classe.dias,
             ))
         saida[cnpj] = serie
     return saida
@@ -811,16 +958,23 @@ def monthly_by_platform(
     for platform_id, meses in por_casa.items():
         serie: list[MonthlyFlow] = []
         for competencia, linhas in sorted(meses.items()):
+            # Pelo mesmo motivo de `monthly_by_fund`: a consolidacao por classe
+            # e quem deduplica a retificacao da CVM e soma o PL das subclasses.
+            # Somar as linhas cruas contava a retificacao duas vezes na
+            # captacao, e o PL vinha de UMA subclasse arbitraria entre as
+            # empatadas no ultimo dia - nao-deterministico e subestimado. A
+            # serie por casa do dashboard nao fechava com o total da mesma casa
+            # em `PlatformFlow`, que ja passava por aqui.
+            classes = agrupar_por_classe(linhas)
             serie.append(MonthlyFlow(
                 competencia=competencia,
-                captacao_liquida=sum(r.captacao - r.resgates for r in linhas),
-                pl_fim=sum(
-                    max(
-                        (r for r in linhas if r.cnpj == cnpj),
-                        key=lambda r: r.dia,
-                    ).pl
-                    for cnpj in {r.cnpj for r in linhas}
+                captacao_liquida=sum(
+                    c.captacao_bruta - c.resgates for c in classes.values()
                 ),
+                variacao_cotistas=sum(
+                    c.cotistas_fim - c.cotistas_inicio for c in classes.values()
+                ),
+                pl_fim=sum(c.pl_fim for c in classes.values()),
                 dias=len({r.dia for r in linhas}),
             ))
         saida[platform_id] = serie

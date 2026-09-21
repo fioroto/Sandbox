@@ -1593,6 +1593,39 @@ class TestCategoryFallback(unittest.TestCase):
         self.assertEqual(anbima_category(nothing), "Sem classificacao")
 
 
+class TestPlanilhaComArquivoPreso(unittest.TestCase):
+    """O Excel trava o arquivo aberto para escrita.
+
+    Uma execucao de dezenas de minutos nao pode terminar sem planilha porque
+    alguem estava com a anterior aberta - aconteceu em 2026-09-20, com o `run`
+    completo devolvendo "Permission denied" no ultimo passo.
+    """
+
+    def test_cai_para_um_nome_vizinho_quando_o_alvo_esta_travado(self):
+        import tempfile
+        from pathlib import Path as _Path
+        from openpyxl import Workbook
+
+        from shelf_monitor.report.spreadsheet import _salvar
+
+        with tempfile.TemporaryDirectory() as tmp:
+            alvo = _Path(tmp) / "prateleiras-2026-09-20.xlsx"
+            original = Workbook.save
+
+            def travado(self, caminho):
+                if _Path(caminho).name == alvo.name:
+                    raise PermissionError(13, "Permission denied")
+                return original(self, caminho)
+
+            Workbook.save = travado
+            try:
+                destino = _salvar(Workbook(), alvo)
+            finally:
+                Workbook.save = original
+
+        self.assertEqual(destino.name, "prateleiras-2026-09-20-2.xlsx")
+
+
 class TestRetailProfile(unittest.TestCase):
     """Exclusivos/restritos ficam fora da analise principal, com motivo."""
 
@@ -1646,7 +1679,9 @@ class TestRetailProfile(unittest.TestCase):
         report = RunReport(generated_at=datetime(2026, 8, 31), snapshots=[snapshot])
 
         summary = summarize_platform(snapshot, set())
-        self.assertEqual(summary.total_funds, 1, "restrito nao conta na analise")
+        self.assertEqual(summary.listing_funds, 1, "restrito nao conta na analise")
+        self.assertEqual(summary.catalog_funds, 1, "catalogo de varejo tambem exclui o restrito")
+        self.assertEqual(summary.collected_funds, 2, "a coleta trouxe os dois")
 
         listing = build_listing_block(report)
         btg = next(p for p in listing["platforms"] if p["platform_id"] == "btg")

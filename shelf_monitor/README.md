@@ -48,6 +48,11 @@ python -m shelf_monitor collect --platform btg --platform inter
 python -m shelf_monitor cvm                       # so o radar CVM
 python -m shelf_monitor diff                      # recompara os snapshots existentes
 python -m shelf_monitor report                    # re-renderiza os relatorios
+python -m shelf_monitor insights                  # leitura competitiva das vitrines
+python -m shelf_monitor captacao                  # captacao de varejo e grade
+python -m shelf_monitor performance               # rentabilidade ponderada por PL e cotistas
+python -m shelf_monitor custo                     # taxa contra a categoria de cada fundo
+python -m shelf_monitor mandato                   # o que o regulamento autoriza
 python -m shelf_monitor watchlist-discover "BTG"  # refina a watchlist de gestoras
 python -m shelf_monitor run --git-commit          # commita snapshots e relatorios
 python -m shelf_monitor run --send-email          # envia o digest por SMTP
@@ -531,6 +536,23 @@ incluindo o que nunca aparece para o cliente. Todo relatorio separa os dois; um
 filtro por minimo sobre o catalogo nao aproxima a vitrine (no BTG marcaria 5.415
 fundos "varejo" quando a vitrine tem 693; na XP deixaria 9).
 
+A vitrine e a unidade de **toda** comparacao entre casas, e o catalogo so aparece
+rotulado como tal: tamanho por casa, composicao por classe, gestoras distintas,
+faixa de minimo e "diferenciais de prateleira" saem da vitrine; o catalogo vira
+coluna propria ("Catalogo") e a contagem bruta da coleta fica na saude da coleta.
+Ate 20/09/2026 os tres numeros estavam colapsados num "total" no dashboard e no
+digest, e o efeito era grande: a tabela de sumario abria com BTG 10.073 contra XP
+781 (vitrine: 634 contra 664), o BTG aparecia com 884 gestoras contra 213 da XP
+(vitrine: 167 contra 169) e com 5.767 fundos exclusivos contra 284 (vitrine: 284
+contra 337). Nenhum desses numeros descrevia prateleira - descreviam os 9.413
+fundos que so o Open Finance do BTG publica.
+
+Casa sem vitrine alcancavel (hoje o Nu, que nao tem listagem deslogada) sai dos
+blocos comparativos com o motivo escrito, em vez de entrar neles medida pelo
+catalogo. No digest, mudanca que aconteceu so no catalogo tambem nao entra em
+"entraram na vitrine": ela vira uma frase com a contagem, para nao afogar a
+mudanca real das outras casas num dia de churn do catalogo do BTG.
+
 **Normalizacao ANBIMA.** Cada casa descreve categoria do seu jeito ("Credito Pos"
 no BTG, "baixo risco" no Itau). Com a base de mercado importada (o `run` a importa
 sozinho quando ela falta; `python -m shelf_monitor market` faz o mesmo a mao),
@@ -615,6 +637,184 @@ Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
 parser pendente de evidencia parseavel. O campo `cvm_code` da oferta ja existe e o
 extrator generico de JSON o captura, entao quando esse parser chegar o caminho ate
 o registro ja esta pronto.
+
+## Qualidade da prateleira: rentabilidade, custo e mandato
+
+As quatro leituras acima respondem *o que cada casa oferta*. Estas respondem *se o
+que ela oferta e bom, quanto custa e que mandato tem* - a metade que decide uma
+inclusao de grade.
+
+```bash
+python -m shelf_monitor insights      # posicionamento, gestoras, momentum e decisoes
+python -m shelf_monitor captacao      # captacao de varejo e oportunidades de grade
+python -m shelf_monitor performance   # rentabilidade ponderada por PL e por cotistas
+python -m shelf_monitor rentabilidade # retorno por fundo em 1m, 3m, YTD, 12m e 24m
+python -m shelf_monitor custo         # taxa de cada fundo contra a categoria dele
+python -m shelf_monitor mandato       # o que o regulamento de cada classe autoriza
+```
+
+Todos aceitam `--json <caminho>` e `--platform`. Os tres ultimos entram tambem na
+planilha, no dashboard e no digest quando o `run` os calcula.
+
+### Rentabilidade ponderada (`performance`)
+
+Tres numeros, e a diferenca entre eles e o achado:
+
+| Leitura | Formula | Responde |
+|---|---|---|
+| Mediana da vitrine | `mediana(retorno)` | quanto rende o fundo *mediano* da prateleira |
+| Ponderada por PL | `Sigma(retorno x PL) / Sigma PL` | quanto rendeu o *real medio* |
+| Ponderada por cotistas | `Sigma(retorno x cotistas) / Sigma cotistas` | quanto rendeu o *cotista medio* |
+
+O gap entre as duas ponderadas diz onde esta o desalinhamento: positivo, o dinheiro
+grande esta nos fundos bons e o varejo nos piores; negativo, o inverso.
+
+Medido em 2026-09-20, janela 2026-07-01 a 2026-09-18 (56 pregoes):
+
+| Casa | Fundos | Mediana | Por PL | Por cotista | Gap | Abaixo da categoria |
+|---|---:|---:|---:|---:|---:|---|
+| XP | 567 | 2,93% | 2,96% | **3,61%** | -0,65pp | 34% do PL, 34% dos cotistas |
+| BTG | 601 | 2,91% | 3,12% | **3,62%** | -0,50pp | 37% do PL, 32% dos cotistas |
+| Inter | 363 | 2,92% | 3,54% | **3,93%** | -0,39pp | 34% do PL, 33% dos cotistas |
+
+Nas tres o cotista medio rendeu mais que o real medio: o varejo se pulveriza em
+categorias que subiram no periodo (Multimercados Livre, Acoes Livre) enquanto o PL
+grande fica em renda fixa de duracao baixa, onde a dispersao e minima.
+
+**Tres coisas que este numero nao e.** Nao e o retorno dos clientes da casa - a CVM
+publica cota, PL e cotistas por FUNDO, somando todos os distribuidores, entao o peso
+e o do mercado, nao o da base dela. Nao e retorno total: a cota patrimonial e
+ex-provento. E "adequado" so significa algo contra uma referencia, que aqui e a
+mediana da mesma categoria no **universo oficial inteiro**, nao na propria vitrine.
+
+**Uma linha do informe e uma SUBCLASSE, nao uma classe.** Uma classe com subclasses
+emite uma linha por subclasse por dia, cada uma com cota, PL e cotistas proprios -
+273 dos 25.307 CNPJs em 09/2026, somando R$ 183 bi. Ordenar as linhas do CNPJ e pegar
+a primeira e a ultima compara pontas de subclasses diferentes: o Kinea RF Absoluto
+saia com 107,70% de retorno e 220 "pregoes" numa janela de 57. `agrupar_por_classe`
+(em `report/retail_flow.py`) soma PL, cotistas e fluxo entre subclasses, pondera o
+retorno pelo PL de cada uma e deduplica a retificacao do informe.
+
+### Rentabilidade por fundo, em janelas (`rentabilidade`)
+
+Enquanto `performance` responde pela vitrine inteira numa janela so, este responde
+**fundo a fundo em cinco janelas** - 1 mes, 3 meses, YTD, 12 e 24 meses - que e a
+pergunta que se faz olhando uma linha da planilha.
+
+O informe sai num zip por competencia, e ler 24 deles a cada execucao custa minutos.
+Por isso o modulo guarda um **resumo mensal por subclasse** em
+`data/cache/serie/<AAAAMM>.csv` (primeira e ultima cota do mes, PL e cotistas do
+ultimo dia, fluxo somado, pregoes distintos). Competencia ja resumida nao e relida;
+a corrente e sempre refeita, porque muda todo dia. A primeira montagem das 24
+competencias leva ~2,5 minutos; as seguintes, segundos.
+
+**A base de cada janela e a cota do fim da competencia ANTERIOR**, nao a do primeiro
+dia dela - e a convencao de lamina: "12 meses ate setembro" compara 30/09 com 30/09
+do ano anterior. Quando o fundo nao existia la, a base passa a ser a primeira cota
+observada dentro da janela, e o campo `meses` registra sobre quantas competencias o
+numero foi calculado.
+
+> Isso faz o mesmo fundo aparecer com dois valores na mesma pasta: `Captacao por
+> fundo` e `Rentabilidade ponderada` leem so as competencias da janela e usam o
+> primeiro pregao como base; `Rentabilidade por fundo` usa o fechamento anterior.
+> Medido em 2026-09-20, o Mapfre Confianza sai com 2,99% numa e 3,05% na outra nos
+> mesmos tres meses. A aba Metodologia traz essa linha por escrito.
+
+O fundo precisa ter sido observado em **80% das competencias da janela**: sem isso,
+um fundo que so aparece nos dois ultimos meses entraria com retorno de duas
+competencias ao lado de outro com doze. E a janela longa tem **vies de
+sobrevivencia** - 570 fundos da XP em 3 meses contra 507 em 24 -, entao o agregado
+de 24 meses e de sobreviventes e esta para cima. O campo `fundos` de cada janela
+existe para que isso seja visivel em vez de suposto.
+
+Medido em 2026-09-20 (retorno do periodo, nao anualizado):
+
+| Casa | 1 mes | 3 meses | YTD | 12 meses | 24 meses |
+|---|---:|---:|---:|---:|---:|
+| XP (por cotista) | 0,64% | 3,72% | 8,13% | **11,89%** | **30,18%** |
+| BTG (por cotista) | 0,71% | 3,74% | 7,83% | 11,32% | 29,22% |
+| Inter (por cotista) | 0,93% | 4,09% | 6,51% | 9,64% | 26,45% |
+
+O sinal do gap entre a ponderada por PL e a por cotistas **nao e estavel entre
+janelas**: negativo em 3 meses nas tres casas, positivo em YTD e 12 meses, e negativo
+de novo em 24 na XP. Ele descreve que categorias performaram em cada janela, nao uma
+caracteristica da base de clientes - ler o de 3 meses como estrutural foi o erro que
+a serie longa corrigiu.
+
+### Custo relativo a categoria (`custo`)
+
+A metrica de custo anterior comparava a mediana da taxa da vitrine inteira entre
+casas. Ela mede **composicao, nao preco**: uma casa com mais renda fixa (~0,2% ao ano)
+aparece mais barata que uma com mais acoes (~2%) sem que nenhum produto custe
+diferente. No lugar, cada fundo e comparado com a mediana da **propria categoria** e o
+que se agrega e o indice.
+
+Tres guardas que o dado exige, cada uma com o efeito medido:
+
+- **Taxa polimorfica.** `TAXA_ADM` carrega percentual ao ano e valor fixo em reais no
+  mesmo campo. Entram so as classes em percentual; sem isso um fundo de "R$ 30.000 por
+  ano" lidera o ranking como se cobrasse 30.000%.
+- **Idade da entrega.** O extrato vai de 2015-10-02 a 2026-08-28. Acima de 24 meses a
+  classe sai. ~40% do mercado com taxa nao reentrega o extrato - por isso o piso de
+  cobertura e 0,4 e a cobertura sai impressa ao lado de todo indice.
+- **A referencia e o universo de VAREJO.** Das 13.093 classes com taxa percentual e
+  entrega recente, 47,2% sao exclusivas, 21,1% cobram zero (master ou feeder que cobra
+  na outra ponta) e 1.368 sao de publico profissional. Com tudo dentro, a mediana de
+  "Multimercados Livre" cai para 0,080% e a primeira execucao devolveu indice mediano
+  de **6,79x** com 82% da vitrine do BTG marcada como cara. Aplicando ao universo a
+  mesma regra de varejo que `profile.restriction_reason` ja aplica a vitrine, as
+  medianas passam a 0,800% em Multimercados Livre, 1,300% em Acoes Livre e 1,500% em
+  Multimercados Macro. **Investidor qualificado continua dentro** - a decisao e de
+  `profile.py:12-13` e nao se desfaz aqui por conveniencia.
+
+Medido em 2026-09-20: XP 1,65x, BTG 1,50x, Inter 1,57x. Nenhuma delas cobra 60% acima
+do mercado - a vitrine exibe a classe de varejo, que carrega a camada de distribuicao,
+enquanto o universo inclui classes da mesma estrategia sem essa camada. O que decide e
+a **diferenca entre as casas** e o fundo individual muito acima da propria categoria,
+nao a distancia de 1,00x.
+
+Um resultado negativo que vale registrar: a coluna "com porta menor" (existe classe
+mais barata do mesmo fundo?) sai em zero. Das 22.027 estruturas com aplicacao minima,
+apenas 13 tem duas ou mais classes com minimo e **5** tem minimos diferentes. Onde as
+condicoes comerciais variam de fato e a subclasse, e `subclasses.csv` nao traz minimo
+nem taxa: o extrato e entregue por CNPJ de classe.
+
+### Mandato declarado (`mandato`)
+
+Das 117 colunas do extrato, o parser consumia 17. O bloco maior das que sobravam
+descreve **o que cada classe pode carregar**: credito privado, ativo no exterior,
+derivativos, exposicao acima do patrimonio e fundo espelho.
+
+A palavra que governa tudo e *autorizado*. Um fundo pode ter autorizacao para 100% de
+credito privado e carregar 10%; medir exposicao realizada exigiria a carteira mensal
+(CDA), que nao esta no escopo. Nenhum rotulo diz "carrega" onde o dado diz "pode
+carregar".
+
+Share da vitrine que autoriza cada coisa, em 2026-09-20:
+
+| Casa | Credito privado | Exterior | Derivativos | Alavancagem | Espelho |
+|---|---:|---:|---:|---:|---:|
+| XP | 69% | 63% | 61% | 35% | 10% |
+| BTG | 61% | 65% | 70% | 43% | 11% |
+| Inter | 63% | 67% | 64% | 40% | 10% |
+
+Como no posicionamento por categoria, o que se publica e o **indice contra as demais
+casas**, nao o share bruto: com a propria no denominador, todo indice e puxado para 1.
+
+### O que o extrato deixou de perder
+
+`market/fees.py` procurava `VL_TAXA_ENTRADA`, `VL_TAXA_SAIDA`, `QT_DIA_CONVER_COTA` e
+`VL_SALDO_MIN`. Nenhum desses nomes existe nas 117 colunas do arquivo, que traz
+`TAXA_INGRESSO_REAL`/`TAXA_INGRESSO_PR`, `TAXA_SAIDA_REAL`/`TAXA_SAIDA_PR` e
+`QT_DIA_CONVERSAO_COTA` - e nao tem coluna de saldo minimo. Como `_get` devolve `None`
+em silencio para nome ausente e `unknown_columns` so registra o caminho inverso, a
+falha nao levantava nada: medido em `taxas.csv`, toda coluna de nome certo saia em
+100% e toda coluna de nome errado em 0,0%, nas 38.547 linhas.
+
+Corrigido, `dias_cotizacao_resgate` passou de 0% a 100%, e ingresso e saida aparecem
+nas 44 (0,1%) e 1.281 (3,3%) classes que de fato cobram. `saldo_minimo` foi removido em
+vez de renomeado - a fonte nao tem o dado. A fixture do teste foi regerada a partir do
+cabecalho real: ela casava com o parser, nao com o arquivo, e por isso o teste passava.
 
 ## Como o monitor evita falso alarme
 

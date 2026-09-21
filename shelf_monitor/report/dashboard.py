@@ -14,10 +14,9 @@ from shelf_monitor.config import Config
 from shelf_monitor.models import RunReport
 from shelf_monitor.report.aggregate import build_dashboard_data
 
-# Paleta categorica validada (scripts/validate_palette.js) - slots 1..5, na ordem.
-# A cor segue a plataforma, nunca a posicao no ranking.
-_SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
-_SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
+# A paleta categorica validada (scripts/validate_palette.js) vive nas variaveis
+# CSS --serie-1..5 de `_STYLE`, que e de onde o JS a le. As duas listas Python
+# que existiam aqui eram uma terceira copia dos mesmos hexes, nunca referenciada.
 
 _STYLE = """
 .flow-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.65; }
@@ -346,7 +345,30 @@ function table(mount, columns, rows) {
     `<tbody>${body}</tbody></table></div>`;
 }
 
-const usable = DATA.platforms.filter(p => p.status !== "unavailable" && p.total_funds > 0);
+/* A base comparativa e a vitrine, sempre. Casa sem vitrine alcancavel nao entra
+   nos graficos medida pelo catalogo Open Finance - sai com motivo, em
+   `foraDaComparacao`, que cada bloco imprime no rodape. */
+const usable = DATA.platforms.filter(p => p.status !== "unavailable" && p.listing_funds > 0);
+const foraDaComparacao = DATA.platforms.filter(
+  p => p.status !== "unavailable" && !p.listing_funds && p.catalog_funds > 0);
+
+/* Rodape de proveniencia: quem ficou fora do bloco, e por que. Sobe ate a
+   section porque o alvo costuma estar dentro de um <details> fechado, e nota de
+   metodologia que so aparece se o leitor expandir a tabela nao e nota. */
+function notaFora(alvo) {
+  const mount = alvo && (alvo.closest ? alvo.closest("section") : null);
+  if (!mount || !foraDaComparacao.length) return;
+  /* Travessao em vez de parenteses: o rotulo da casa ja traz os seus
+     ("Nu (Nubank)"), e o motivo tambem ("(estrategia: open-finance)"). */
+  const nomes = foraDaComparacao
+    .map(p => `${p.label} — ${p.listing_reason || "sem vitrine"}, ` +
+      `${p.catalog_funds.toLocaleString("pt-BR")} no catalogo`).join("; ");
+  const nota = document.createElement("p");
+  nota.className = "card-sub";
+  nota.style.marginTop = "10px";
+  nota.textContent = `Fora da comparacao: ${nomes}.`;
+  mount.appendChild(nota);
+}
 
 // --- Matriz de classes ------------------------------------------------------
 /* --- Vitrine de varejo ---------------------------------------------------- */
@@ -788,6 +810,160 @@ renderGaps(DATA.gaps);
     (fora.length ? `Fora da analise: ${fora.join("; ")}.` : "");
 })(DATA.flow);
 
+(function renderPerformance(perf, custo, mandato) {
+  const section = document.getElementById("perf-section");
+  if (!section) return;
+  if (!perf || !perf.available) { section.remove(); return; }
+
+  const pct = v => (v === null || v === undefined)
+    ? "-" : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+  const pp = v => (v === null || v === undefined)
+    ? "-" : (v > 0 ? "+" : "") + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "pp";
+  const share = v => (v === null || v === undefined) ? "-" : Math.round(v * 100) + "%";
+
+  const periodo = perf.periodo || {};
+  const universo = perf.universo || {};
+  const nota = document.getElementById("perf-nota");
+  if (nota) {
+    nota.textContent = `${periodo.de} a ${periodo.ate} (${periodo.pregoes} pregoes). ` +
+      `Referencia: mediana da mesma categoria no universo oficial - ` +
+      `${(universo.fundos_com_serie || 0).toLocaleString("pt-BR")} fundos, ` +
+      `${universo.categorias_com_referencia} categorias com amostra >= ${universo.amostra_minima}.`;
+  }
+
+  document.getElementById("perf-tiles").innerHTML = perf.casas.map(c => {
+    const m = c.alocacao_abaixo_da_mediana || {};
+    const cor = c.gap > 0 ? "var(--good)" : "var(--critical)";
+    return `
+    <div class="tile">
+      <div class="label">${c.label}</div>
+      <div class="value">${pct(c.por_cotista)}</div>
+      <div class="note">por cotista &middot; por PL ${pct(c.por_pl)} &middot;
+        mediana ${pct(c.mediana)}<br>
+        gap <strong style="color:${cor}">${pp(c.gap)}</strong> &middot;
+        ${c.com_serie} de ${c.vitrine} fundos com serie</div>
+    </div>`;
+  }).join("");
+
+  // Tres barras por casa: mediana, por PL, por cotista. A escala comeca no
+  // menor valor menos uma folga, senao tres numeros entre 2,9% e 3,6% viram
+  // tres barras visualmente iguais.
+  const valores = perf.casas.flatMap(c => [c.mediana, c.por_pl, c.por_cotista])
+    .filter(v => v !== null && v !== undefined);
+  if (valores.length) {
+    const min = Math.min(...valores), max = Math.max(...valores);
+    const base = min - (max - min) * 0.25 - 0.01;
+    const span = (max - base) || 1;
+    const larguraCasa = 150, alturaMax = 120;
+    const w = perf.casas.length * larguraCasa + 40, h = alturaMax + 70;
+    const series = [
+      ["mediana", "Fundo mediano", "var(--muted)"],
+      ["por_pl", "Real medio", "var(--s1)"],
+      ["por_cotista", "Cotista medio", "var(--good)"],
+    ];
+    const barras = perf.casas.map((c, i) => {
+      const x0 = 30 + i * larguraCasa;
+      return series.map(([chave, rotulo, cor], j) => {
+        const v = c[chave];
+        if (v === null || v === undefined) return "";
+        const alt = Math.max(2, ((v - base) / span) * alturaMax);
+        const x = x0 + j * 38;
+        const y = 20 + alturaMax - alt;
+        return `<rect x="${x}" y="${y}" width="30" height="${alt}" fill="${cor}" rx="2">
+            <title>${c.label} - ${rotulo}: ${pct(v)}</title></rect>
+          <text x="${x + 15}" y="${y - 5}" text-anchor="middle" font-size="10"
+            fill="var(--text-primary)">${pct(v)}</text>`;
+      }).join("") +
+      `<text x="${x0 + 57}" y="${alturaMax + 40}" text-anchor="middle" font-size="11"
+        fill="var(--text-primary)">${c.label}</text>`;
+    }).join("");
+    document.getElementById("perf-chart").innerHTML =
+      `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img">
+        <title>Retorno do periodo por casa, nas tres leituras</title>${barras}</svg>`;
+    document.getElementById("perf-legend").innerHTML = series.map(
+      ([, rotulo, cor]) => `<span><span class="swatch" style="background:${cor}"></span>${rotulo}</span>`).join("");
+  }
+
+  // Massa mal alocada: quanto do dinheiro e da gente esta abaixo da mediana da
+  // propria categoria. E a linha que o resto do relatorio nao responde.
+  document.getElementById("perf-massa").innerHTML =
+    '<table class="matrix"><thead><tr><th class="rowh">Casa</th>' +
+    "<th>Fundos abaixo da mediana</th><th>% dos fundos</th><th>% do PL</th>" +
+    "<th>Indice PL</th></tr></thead><tbody>" +
+    perf.casas.map(c => {
+      const m = c.alocacao_abaixo_da_mediana || {};
+      const cor = m.indice_pl === null || m.indice_pl === undefined ? "var(--text-primary)"
+        : m.indice_pl < 1 ? "var(--good)" : "var(--critical)";
+      return `<tr><th class="rowh">${c.label}</th>
+        <td><span class="cell">${m.fundos} de ${m.de}</span></td>
+        <td><span class="cell">${share(m.share_fundos)}</span></td>
+        <td><span class="cell">${share(m.share_pl)}</span></td>
+        <td><span class="cell" style="color:${cor}">${
+          m.indice_pl === null || m.indice_pl === undefined ? "-" : m.indice_pl.toFixed(2)
+        }</span></td></tr>`;
+    }).join("") + "</tbody></table>";
+
+  // Custo: indice mediano, nao taxa mediana.
+  const bloco = document.getElementById("custo-bloco");
+  if (custo && custo.available && bloco) {
+    bloco.innerHTML =
+      '<table class="matrix"><thead><tr><th class="rowh">Casa</th>' +
+      "<th>Indice mediano</th><th>Caros</th><th>Baratos</th>" +
+      "<th>Sem entrada/saida</th><th>Resgate ate D+1</th></tr></thead><tbody>" +
+      custo.casas.map(c => `<tr><th class="rowh">${c.label}</th>
+        <td><span class="cell">${c.indice_mediano === null ? "-" : c.indice_mediano.toFixed(2) + "x"}</span></td>
+        <td><span class="cell">${share(c.share_caro)}</span></td>
+        <td><span class="cell">${share(c.share_barato)}</span></td>
+        <td><span class="cell">${share(c.share_sem_entrada_ou_saida)}</span></td>
+        <td><span class="cell">${share(c.share_liquidez_imediata)}</span></td></tr>`).join("") +
+      "</tbody></table>";
+  } else if (bloco) {
+    bloco.innerHTML = `<p class="card-sub">Custo nao calculado: ${(custo || {}).reason || "sem base de mercado"}</p>`;
+  }
+
+  // Mandato: share por dimensao, com o indice contra as demais casas.
+  const mbloco = document.getElementById("mandato-bloco");
+  if (mandato && mandato.available && mbloco) {
+    const dims = [];
+    const porCasa = {};
+    (mandato.linhas || []).forEach(l => {
+      if (!dims.some(d => d[0] === l.chave)) dims.push([l.chave, l.rotulo]);
+      (porCasa[l.platform_id] = porCasa[l.platform_id] || {})[l.chave] = l;
+    });
+    const head = '<tr><th class="rowh">Casa</th>' +
+      dims.map(([, r]) => `<th>${r.replace(/ autorizad[oa]/, "")}</th>`).join("") + "</tr>";
+    const body = (mandato.casas || []).map(c => {
+      const cells = dims.map(([chave]) => {
+        const l = (porCasa[c.platform_id] || {})[chave];
+        if (!l) return '<td><span class="cell zero">s/dado</span></td>';
+        const cor = l.aposta === "acima" ? "var(--good)"
+          : l.aposta === "abaixo" ? "var(--critical)" : "var(--text-primary)";
+        const idx = l.so_ela ? "so ela" : l.indice.toFixed(2) + "x";
+        return `<td title="${share(l.share_pares)} nas concorrentes (${idx})">
+          <span class="cell" style="color:${cor}">${share(l.share)}</span></td>`;
+      }).join("");
+      return `<tr><th class="rowh">${c.label}</th>${cells}</tr>`;
+    }).join("");
+    mbloco.innerHTML = `<table class="matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  } else if (mbloco) {
+    mbloco.innerHTML = `<p class="card-sub">Mandato nao calculado: ${(mandato || {}).reason || "sem base de mercado"}</p>`;
+  }
+
+  const fora = (perf.excluded || []).concat((custo || {}).excluded || []);
+  const vistos = new Set();
+  const linhas = fora.filter(e => {
+    const chave = e.platform_id + "|" + e.reason;
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+  if (linhas.length) {
+    document.getElementById("perf-coverage").innerHTML =
+      "<strong>Fora destes blocos:</strong> " +
+      linhas.map(e => `${e.label} (${e.reason})`).join(" &middot; ");
+  }
+})(DATA.performance, DATA.custo, DATA.mandato);
+
 
 (function renderRestricted(block) {
   const mount = document.getElementById("table-restricted");
@@ -827,10 +1003,11 @@ table(
   document.getElementById("table-classes"),
   [{ key: "label", label: "Plataforma" },
    ...DATA.class_order.map(c => ({ key: c, label: c, num: true })),
-   { key: "total_funds", label: "Total", num: true }],
-  usable.map(p => ({ label: p.label, total_funds: p.total_funds,
+   { key: "listing_funds", label: "Vitrine", num: true }],
+  usable.map(p => ({ label: p.label, listing_funds: p.listing_funds,
     ...Object.fromEntries(DATA.class_order.map(c => [c, p.by_class[c] || 0])) }))
 );
+notaFora(document.getElementById("table-classes"));
 
 // --- Profundidade: gestoras representadas -----------------------------------
 horizontalBars(
@@ -840,6 +1017,7 @@ horizontalBars(
   })).sort((a, b) => b.value - a.value),
   { ariaLabel: "Gestoras distintas representadas por plataforma" }
 );
+notaFora(document.getElementById("chart-managers"));
 // Quais gestoras concentram a prateleira - onde a casa realmente aposta.
 table(
   document.getElementById("table-top-managers"),
@@ -864,6 +1042,7 @@ groupedBars(
   })),
   { height: 220, ariaLabel: "Distribuicao de aplicacao minima por plataforma" }
 );
+notaFora(document.getElementById("chart-bands"));
 table(
   document.getElementById("table-bands"),
   [{ key: "label", label: "Plataforma" },
@@ -884,6 +1063,7 @@ horizontalBars(
   })).sort((a, b) => b.value - a.value),
   { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
 );
+notaFora(document.getElementById("chart-exclusive"));
 
 // --- Radar CVM --------------------------------------------------------------
 const cvm = DATA.cvm;
@@ -928,32 +1108,49 @@ table(
   document.getElementById("table-sources"),
   [{ key: "label", label: "Plataforma" },
    { key: "statusPill", label: "Status", raw: true },
-   { key: "strategy", label: "Estrategia" }, { key: "total_funds", label: "Fundos", num: true },
-   { key: "coverage", label: "Com CNPJ", num: true }, { key: "detail", label: "Observacao" }],
+   { key: "strategy", label: "Estrategia" },
+   { key: "listing_funds", label: "Vitrine", num: true },
+   { key: "catalog_funds", label: "Catalogo", num: true },
+   { key: "coverage", label: "CNPJ na vitrine", num: true },
+   { key: "detail", label: "Observacao" }],
   DATA.platforms.map(p => ({
     label: p.label,
     statusPill: `<span class="pill ${p.status}">${p.status}</span>`,
     strategy: p.strategy,
-    total_funds: p.total_funds,
-    coverage: p.total_funds ? Math.round(p.cnpj_coverage * 100) + "%" : "-",
-    detail: p.error || "-",
+    listing_funds: p.listing_funds.toLocaleString("pt-BR"),
+    catalog_funds: p.catalog_funds.toLocaleString("pt-BR"),
+    coverage: p.listing_funds ? Math.round(p.cnpj_coverage * 100) + "%" : "-",
+    detail: p.error || p.listing_reason || "-",
   }))
 );
 """
 
 
 def _stat_tiles(data: dict) -> str:
-    usable = [p for p in data["platforms"] if p["status"] != "unavailable" and p["total_funds"]]
-    total_funds = sum(p["total_funds"] for p in usable)
+    """As quatro manchetes - em vitrine, que e a unidade que o resto do painel usa.
+
+    O tile de topo somava os catalogos ("13.967 fundos mapeados", dos quais
+    9.413 eram o Open Finance do BTG sozinho) e o segundo chamava de
+    "Prateleira da XP" o catalogo dela. Dois numeros grandes que nao descreviam
+    prateleira nenhuma, no lugar da tela em que o leitor mais confia.
+    """
+    usable = [p for p in data["platforms"] if p["status"] != "unavailable" and p["listing_funds"]]
+    listing_total = sum(p["listing_funds"] for p in usable)
+    catalog_total = sum(
+        p["catalog_funds"] for p in data["platforms"] if p["status"] != "unavailable"
+    )
     cvm = data.get("cvm", {})
     pre_op = sum(h["pre_operational"] for h in cvm.get("houses", [])) if cvm.get("available") else 0
     xp = next((p for p in data["platforms"] if p["platform_id"] == "xp"), None)
 
+    milhar = lambda n: f"{n:,}".replace(",", ".")  # noqa: E731
+
     tiles = [
-        ("Fundos mapeados", f"{total_funds:,}".replace(",", "."),
-         f"{len(usable)} de {len(data['platforms'])} plataformas coletadas"),
-        ("Prateleira da XP", f"{xp['total_funds']:,}".replace(",", ".") if xp and xp["total_funds"] else "-",
-         "baseline de comparacao"),
+        ("Fundos em vitrine", milhar(listing_total),
+         f"{len(usable)} de {len(data['platforms'])} casas com vitrine alcancavel; "
+         f"{milhar(catalog_total)} no catalogo Open Finance"),
+        ("Vitrine da XP", milhar(xp["listing_funds"]) if xp and xp["listing_funds"] else "-",
+         "baseline de comparacao - o que o cliente ve"),
         ("Registrados na CVM", f"{cvm.get('total', 0):,}".replace(",", ".") if cvm.get("available") else "-",
          "gestoras ligadas as casas monitoradas"),
         ("Em fase pre-operacional", str(pre_op) if cvm.get("available") else "-",
@@ -1066,10 +1263,50 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
     <div class="coverage" id="flow-coverage"></div>
   </section>
 
+  <section class="card" id="perf-section">
+    <h2>Rentabilidade e custo da vitrine</h2>
+    <p class="card-sub">Tres leituras do mesmo periodo: quanto rende o fundo <strong>mediano</strong>
+      da prateleira, quanto rendeu o <strong>real medio</strong> (ponderado por PL) e quanto rendeu o
+      <strong>cotista medio</strong> (ponderado por numero de cotistas). A diferenca entre as duas
+      ultimas diz onde esta o desalinhamento: gap positivo, o dinheiro grande esta nos fundos bons e
+      o varejo nos piores; negativo, o inverso. E o retorno dos fundos que a casa exibe, com o peso
+      que eles tem no <strong>mercado</strong> - nao o retorno dos clientes dela: a CVM publica cota,
+      PL e cotistas por fundo, somando todos os distribuidores. Cota ex-provento.</p>
+    <p class="card-sub" id="perf-nota"></p>
+    <div class="tiles" id="perf-tiles"></div>
+    <div class="legend" id="perf-legend"></div>
+    <div class="chart-scroll" id="perf-chart"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Onde esta o dinheiro em relacao a mediana da categoria</h3>
+    <p class="card-sub">Quanto do PL da vitrine esta em fundo que rende abaixo da mediana da
+      <strong>propria categoria</strong> no universo oficial. O numero que decide e o
+      <strong>indice</strong> &mdash; share do PL dividido pelo share de fundos: abaixo de 1 o
+      dinheiro <strong>evita</strong> os piores da categoria, acima de 1 se concentra neles.
+      Cerca de metade de qualquer universo fica abaixo da mediana por construcao, entao a
+      contagem de fundos sozinha nao e sinal de nada. Fundo sem categoria com amostra
+      suficiente fica fora do denominador.</p>
+    <div class="matrix-scroll" id="perf-massa"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Custo relativo a categoria</h3>
+    <p class="card-sub">Indice mediano, nao taxa mediana: comparar a taxa bruta entre casas mede o
+      <strong>mix</strong> da prateleira (renda fixa custa ~0,2% ao ano, acoes ~2%), nao o preco dos
+      produtos. 1,00x e exatamente a mediana da categoria de cada fundo.</p>
+    <div class="matrix-scroll" id="custo-bloco"></div>
+
+    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Mandato declarado</h3>
+    <p class="card-sub">Share da vitrine cujo regulamento <strong>autoriza</strong> cada coisa - nunca
+      o que a carteira carrega. Um fundo pode ter autorizacao para 100% de credito privado e carregar
+      10%; medir exposicao realizada exigiria a carteira mensal (CDA), fora do escopo. Verde acima das
+      concorrentes, vermelho abaixo.</p>
+    <div class="matrix-scroll" id="mandato-bloco"></div>
+    <div class="coverage" id="perf-coverage"></div>
+  </section>
+
   <section class="card">
     <h2>Amplitude por classe de ativo</h2>
-    <p class="card-sub">Quantos fundos cada casa oferta em cada classe - a leitura mais direta
-      de onde cada prateleira e forte.</p>
+    <p class="card-sub">Quantos fundos cada casa <strong>exibe</strong> em cada classe - a leitura
+      mais direta de onde cada prateleira e forte. Conta a vitrine; o catalogo Open Finance
+      mede o que a casa administra e nao entra em nenhum eixo comparativo.</p>
     <div class="legend" id="legend-classes"></div>
     <div class="chart-scroll" id="chart-classes"></div>
     <details><summary>Ver tabela</summary><div id="table-classes"></div></details>
@@ -1077,8 +1314,10 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
   <section class="card">
     <h2>Profundidade: gestoras representadas</h2>
-    <p class="card-sub">Numero de gestoras distintas na prateleira. Amplitude sem profundidade
-      indica concentracao em poucas casas de gestao.</p>
+    <p class="card-sub">Numero de gestoras distintas na <strong>vitrine</strong>. Amplitude sem
+      profundidade indica concentracao em poucas casas de gestao. Contada no catalogo, a
+      distribuidora que tambem administra muito fundo fechado aparece com o dobro de
+      gestoras sem ter posto uma so a mais na tela do cliente.</p>
     <div class="chart-scroll" id="chart-managers"></div>
     <details><summary>Ver as maiores gestoras de cada prateleira</summary>
       <div id="table-top-managers"></div></details>
@@ -1086,8 +1325,8 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
   <section class="card">
     <h2>Aplicacao minima</h2>
-    <p class="card-sub">Distribuicao dos fundos por faixa de investimento minimo - separa quem
-      mira varejo de quem mira alta renda.</p>
+    <p class="card-sub">Distribuicao dos fundos da vitrine por faixa de investimento minimo -
+      separa quem mira varejo de quem mira alta renda.</p>
     <div class="legend" id="legend-bands"></div>
     <div class="chart-scroll" id="chart-bands"></div>
     <details><summary>Ver tabela</summary><div id="table-bands"></div></details>
@@ -1095,9 +1334,11 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 
   <section class="card">
     <h2>Diferenciais de prateleira</h2>
-    <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas oferta -
-      o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio, que fica fora
-      desta analise. Considera somente casas com coleta bem-sucedida.</p>
+    <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas <strong>exibe
+      na vitrine</strong> - o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio,
+      que fica fora desta analise. Vitrine dos dois lados: o que a casa apenas administra e
+      ninguem ve na tela nao e diferencial de prateleira. Considera somente casas com coleta
+      bem-sucedida.</p>
     <div class="chart-scroll" id="chart-exclusive"></div>
   </section>
 

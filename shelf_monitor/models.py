@@ -399,10 +399,6 @@ class ShelfDiff:
     def is_first_run(self) -> bool:
         return self.prev_date is None
 
-    @property
-    def has_changes(self) -> bool:
-        return bool(self.added or self.removed or self.changed)
-
     def to_dict(self) -> dict:
         return {
             "platform": self.platform,
@@ -455,10 +451,6 @@ class CvmDiff:
         return self.prev_date is None
 
     @property
-    def has_changes(self) -> bool:
-        return bool(self.new_registrations or self.situation_changes or self.cancelled)
-
-    @property
     def launches(self) -> list[CvmSituationChange]:
         return [c for c in self.situation_changes if c.is_launch]
 
@@ -496,6 +488,19 @@ class RunReport:
     # nao estava disponivel - as superficies omitem o bloco em vez de inventar.
     retail_flow: dict | None = None
     grade_opportunities: dict | None = None
+    # Rentabilidade da vitrine ponderada por PL e por cotistas
+    # (report.performance.build_performance). None quando o informe diario nao
+    # estava disponivel - as superficies omitem o bloco em vez de inventar.
+    performance: dict | None = None
+    # Custo relativo a categoria (report.custo) e mandato declarado
+    # (report.mandato). Ambos saem do extrato da CVM, entao dependem da base de
+    # mercado importada - None quando ela falta.
+    custo: dict | None = None
+    mandato: dict | None = None
+    # Rentabilidade por fundo em janelas (1m, 3m, YTD, 12m, 24m), de
+    # report.rentabilidade. Custa a leitura de ate 24 competencias do informe,
+    # entao o `run` so a calcula quando pedida.
+    rentabilidade: dict | None = None
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

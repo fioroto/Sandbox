@@ -6,7 +6,12 @@ Uso:
     python -m shelf_monitor cvm                    # so o radar CVM
     python -m shelf_monitor diff
     python -m shelf_monitor report                 # re-renderiza a partir dos snapshots
-    python -m shelf_monitor insights               # leitura competitiva das vitrines\n    python -m shelf_monitor captacao               # captacao de varejo e oportunidades de grade
+    python -m shelf_monitor insights               # leitura competitiva das vitrines
+    python -m shelf_monitor captacao               # captacao de varejo e oportunidades de grade
+    python -m shelf_monitor performance            # rentabilidade ponderada por PL e cotistas
+    python -m shelf_monitor rentabilidade          # retorno por fundo em 1m, 3m, YTD, 12m e 24m
+    python -m shelf_monitor custo                  # taxa de cada fundo contra a categoria dele
+    python -m shelf_monitor mandato                # o que o regulamento de cada classe autoriza
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
@@ -74,6 +79,13 @@ from shelf_monitor.report.etf_report import (
     print_etf_summary,
 )
 from shelf_monitor.report.mailer import build_subject, send_digest
+from shelf_monitor.report.custo import build_custo, print_custo
+from shelf_monitor.report.mandato import build_mandato, print_mandato
+from shelf_monitor.report.performance import build_performance, print_performance
+from shelf_monitor.report.rentabilidade import (
+    build_rentabilidade,
+    print_rentabilidade,
+)
 from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
@@ -260,6 +272,9 @@ def build_report(
         report.cvm_diff = diff_cvm(cvm_snapshot, previous_cvm)
 
     attach_retail_flow(config, report)
+    attach_performance(config, report)
+    attach_custo_e_mandato(config, report)
+    attach_rentabilidade(config, report)
 
     return report
 
@@ -281,7 +296,14 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
         return
 
     if not flow.get("available"):
+        # Anexa mesmo assim: os renderers ja checam `available`, e o que se
+        # perdia era o MOTIVO. Sem isto o campo ficava None, `aggregate._bloco`
+        # recebia None e o dashboard caia num "sem base de mercado" generico -
+        # mesmo quando a causa real era outra (categoria sem amostra, rede
+        # fora). O motivo existia, era impresso aqui, e morria antes da
+        # superficie que um comite le.
         console.print(f"[yellow]Captacao nao calculada:[/] {flow.get('reason')}")
+        report.retail_flow = flow
         return
 
     report.retail_flow = flow
@@ -291,6 +313,77 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         console.print(f"[yellow]Oportunidades de grade nao calculadas:[/] {_short(str(exc))}")
+
+
+def attach_performance(config: Config, report: RunReport) -> None:
+    """Anexa a rentabilidade ponderada ao relatorio.
+
+    Mesma politica do fluxo: nunca derruba a execucao, e quando a fonte falta a
+    superficie omite o bloco. Custa mais que a captacao porque le o informe do
+    universo inteiro - a mediana de referencia por categoria precisa do mercado,
+    nao so da vitrine.
+    """
+    try:
+        performance = build_performance(config, report.snapshots)
+    except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
+        console.print(
+            f"[yellow]Rentabilidade nao calculada:[/] {_short(str(exc))} "
+            "(os demais blocos seguem normalmente)"
+        )
+        return
+
+    if not performance.get("available"):
+        console.print(
+            f"[yellow]Rentabilidade nao calculada:[/] {performance.get('reason')}"
+        )
+    report.performance = performance
+
+
+def attach_rentabilidade(config: Config, report: RunReport) -> None:
+    """Anexa a rentabilidade por janela ao relatorio.
+
+    Custa a leitura de ate 24 competencias do informe na primeira vez; depois o
+    resumo mensal vem do cache e so a competencia corrente e refeita. Como todo
+    bloco opcional, uma falha aqui nao derruba a execucao.
+    """
+    serie_dir = config.cache_dir / "serie"
+    if not serie_dir.exists():
+        console.print(
+            "[bold]Montando a serie mensal de 24 competencias[/] pela primeira vez "
+            "(~2,5 min e ~260 MB). Nas proximas execucoes so a competencia "
+            f"corrente e refeita - o resto vem de {serie_dir}."
+        )
+    try:
+        bloco = build_rentabilidade(config, report.snapshots)
+    except Exception as exc:  # noqa: BLE001 - bloco opcional
+        console.print(f"[yellow]Rentabilidade por fundo nao calculada:[/] {_short(str(exc))}")
+        return
+    if not bloco.get("available"):
+        console.print(
+            f"[yellow]Rentabilidade por fundo nao calculada:[/] {bloco.get('reason')}"
+        )
+    report.rentabilidade = bloco
+
+
+def attach_custo_e_mandato(config: Config, report: RunReport) -> None:
+    """Anexa custo relativo e mandato declarado ao relatorio.
+
+    Os dois saem do extrato da CVM ja em disco, entao nao dependem de rede - mas
+    dependem da base importada. Sem ela o bloco e omitido com motivo, como todos
+    os outros.
+    """
+    for nome, construtor, destino in (
+        ("Custo", build_custo, "custo"),
+        ("Mandato", build_mandato, "mandato"),
+    ):
+        try:
+            bloco = construtor(config, report.snapshots)
+        except Exception as exc:  # noqa: BLE001 - bloco opcional
+            console.print(f"[yellow]{nome} nao calculado:[/] {_short(str(exc))}")
+            continue
+        if not bloco.get("available"):
+            console.print(f"[yellow]{nome} nao calculado:[/] {bloco.get('reason')}")
+        setattr(report, destino, bloco)
 
 
 def render_outputs(
@@ -345,6 +438,10 @@ def render_outputs(
             enrichment=report.enrichment_stats,
             retail_flow=report.retail_flow,
             grade=report.grade_opportunities,
+            performance=report.performance,
+            rentabilidade=report.rentabilidade,
+            custo=report.custo,
+            mandato=report.mandato,
         )
     except ImportError:
         spreadsheet_note = "instale openpyxl para gerar a planilha"
@@ -625,6 +722,9 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     # sai sem captacao seria uma segunda versao do mesmo arquivo.
     avulso = RunReport(generated_at=datetime.now(), snapshots=snapshots)
     attach_retail_flow(config, avulso)
+    attach_performance(config, avulso)
+    attach_custo_e_mandato(config, avulso)
+    attach_rentabilidade(config, avulso)
 
     path = render_spreadsheet(
         config,
@@ -635,6 +735,10 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         enrichment=enrichment,
         retail_flow=avulso.retail_flow,
         grade=avulso.grade_opportunities,
+        performance=avulso.performance,
+        rentabilidade=avulso.rentabilidade,
+        custo=avulso.custo,
+        mandato=avulso.mandato,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()
@@ -751,6 +855,132 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
         )
         console.print()
         console.print(f"[green]Analise em JSON:[/] {destino}")
+
+
+def cmd_performance(config: Config, args: argparse.Namespace) -> None:
+    """Rentabilidade da vitrine ponderada por PL e por numero de cotistas.
+
+    Responde se os fundos onde estao o dinheiro e as pessoas rendem de forma
+    adequada - "adequada" medido contra a mediana da mesma categoria no
+    universo oficial, nao contra a propria prateleira.
+    """
+    config.ensure_dirs()
+    platform_ids = args.platforms or list(PLATFORMS)
+
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in platform_ids:
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+
+    if not snapshots:
+        console.print(
+            "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
+            "de rentabilidade parte da vitrine ja coletada."
+        )
+        return
+
+    if enrich_snapshots(config, snapshots) is None:
+        warn_market_missing()
+
+    console.print(
+        f"[bold]Lendo o informe diario da CVM[/] para o universo inteiro "
+        f"({args.months} meses) - a mediana de referencia precisa do mercado, "
+        "nao so da vitrine..."
+    )
+    resultado = build_performance(
+        config, snapshots, meses=args.months, force_download=args.force
+    )
+    print_performance(resultado)
+
+    if args.json:
+        destino = Path(args.json)
+        limpo = {k: v for k, v in resultado.items() if not k.startswith("_")}
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(
+            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
+            encoding="utf-8",
+        )
+        console.print()
+        console.print(f"[green]Analise em JSON:[/] {destino}")
+
+
+def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
+    """Rentabilidade de cada fundo de vitrine em 1m, 3m, YTD, 12m e 24m."""
+    snapshots = _snapshots_enriquecidos(config, args)
+    if not snapshots:
+        console.print("[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes.")
+        return
+
+    console.print(
+        f"[bold]Montando a serie mensal[/] de ate {args.months} competencias. "
+        "Competencia ja resumida vem do cache em data/cache/serie/; a corrente e "
+        "sempre refeita."
+    )
+
+    def progresso(yyyymm: str, quantos: int | None) -> None:
+        if quantos is None:
+            console.print(f"  [yellow]{yyyymm}: indisponivel[/]")
+
+    resultado = build_rentabilidade(
+        config, snapshots, meses=args.months,
+        force_download=args.force, progresso=progresso,
+    )
+    print_rentabilidade(resultado)
+    _talvez_json(args, resultado)
+
+
+def _snapshots_enriquecidos(
+    config: Config, args: argparse.Namespace
+) -> list[ShelfSnapshot]:
+    """Vitrines ja coletadas, enriquecidas. Vazio quando nao ha snapshot."""
+    config.ensure_dirs()
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in args.platforms or list(PLATFORMS):
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+    if not snapshots:
+        return []
+    if enrich_snapshots(config, snapshots) is None:
+        warn_market_missing()
+    return snapshots
+
+
+def cmd_custo(config: Config, args: argparse.Namespace) -> None:
+    """Custo da vitrine relativo a mediana da categoria de cada fundo."""
+    snapshots = _snapshots_enriquecidos(config, args)
+    if not snapshots:
+        console.print("[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes.")
+        return
+    resultado = build_custo(config, snapshots)
+    print_custo(resultado)
+    _talvez_json(args, resultado)
+
+
+def cmd_mandato(config: Config, args: argparse.Namespace) -> None:
+    """Mandato declarado das vitrines - o que o regulamento autoriza."""
+    snapshots = _snapshots_enriquecidos(config, args)
+    if not snapshots:
+        console.print("[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes.")
+        return
+    resultado = build_mandato(config, snapshots)
+    print_mandato(resultado)
+    _talvez_json(args, resultado)
+
+
+def _talvez_json(args: argparse.Namespace, resultado: dict) -> None:
+    if not getattr(args, "json", None):
+        return
+    destino = Path(args.json)
+    limpo = {k: v for k, v in resultado.items() if not k.startswith("_")}
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(
+        json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
+    console.print()
+    console.print(f"[green]Analise em JSON:[/] {destino}")
 
 
 def cmd_market(config: Config, args: argparse.Namespace) -> None:
@@ -1185,6 +1415,56 @@ def main() -> None:
         "--json", help="Tambem gravar a analise completa neste caminho (.json)"
     )
     captacao_parser.set_defaults(func=cmd_captacao)
+
+    performance_parser = subparsers.add_parser(
+        "performance",
+        help="Rentabilidade da vitrine ponderada por PL e por cotistas",
+        parents=[common],
+    )
+    add_platform_arg(performance_parser)
+    performance_parser.add_argument(
+        "--months", type=int, default=3,
+        help="Meses de informe diario a ler (default: 3)",
+    )
+    performance_parser.add_argument(
+        "--force", action="store_true",
+        help="Forcar re-download dos informes mesmo com cache",
+    )
+    performance_parser.add_argument(
+        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+    )
+    performance_parser.set_defaults(func=cmd_performance)
+
+    rent_parser = subparsers.add_parser(
+        "rentabilidade",
+        help="Rentabilidade de cada fundo de vitrine em 1m, 3m, YTD, 12m e 24m",
+        parents=[common],
+    )
+    add_platform_arg(rent_parser)
+    rent_parser.add_argument(
+        "--months", type=int, default=24,
+        help="Competencias do informe a considerar (default: 24)",
+    )
+    rent_parser.add_argument(
+        "--force", action="store_true",
+        help="Refazer o resumo mensal mesmo com cache",
+    )
+    rent_parser.add_argument(
+        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+    )
+    rent_parser.set_defaults(func=cmd_rentabilidade)
+
+    for nome, ajuda, funcao in (
+        ("custo", "Custo da vitrine relativo a categoria de cada fundo", cmd_custo),
+        ("mandato", "Mandato declarado das vitrines (o que o regulamento autoriza)",
+         cmd_mandato),
+    ):
+        parser_extra = subparsers.add_parser(nome, help=ajuda, parents=[common])
+        add_platform_arg(parser_extra)
+        parser_extra.add_argument(
+            "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+        )
+        parser_extra.set_defaults(func=funcao)
 
     market_parser = subparsers.add_parser(
         "market",

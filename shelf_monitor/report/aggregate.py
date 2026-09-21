@@ -5,10 +5,11 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from shelf_monitor.classify import KEY_CATEGORIA
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
 from shelf_monitor.normalize import format_cnpj, name_slug, normalize_text
-from shelf_monitor.profile import restriction_reason, split_by_profile
+from shelf_monitor.profile import split_by_profile
 from shelf_monitor.models import (
     AssetClass,
     FundOffer,
@@ -48,14 +49,42 @@ def band_for(value: float | None) -> str | None:
 
 @dataclass
 class PlatformSummary:
-    """Uma linha da matriz competitiva de prateleira."""
+    """Uma linha da matriz competitiva de prateleira - medida na VITRINE.
+
+    Os tres numeros de tamanho existem porque sao tres perguntas diferentes, e
+    mistura-los foi o artefato que este bloco veio corrigir:
+
+    - `listing_funds`: fundos de varejo na vitrine da casa. E a UNICA base de
+      toda comparacao entre casas. Tudo que este objeto descreve (classes,
+      gestoras, faixas de minimo, taxa mediana, exclusivos) sai daqui.
+    - `catalog_funds`: fundos de varejo que a casa administra, vitrine mais
+      catalogo Open Finance. Descreve a casa como administradora, nao como
+      distribuidora. Aparece rotulado, nunca num eixo comparativo.
+    - `collected_funds`: tudo que a coleta trouxe, restritos inclusive. Serve a
+      saude da coleta e a mais nada.
+
+    Medido em 2026-09-20, com os tres colapsados num "total": o BTG aparecia com
+    884 gestoras contra 213 da XP, 5.767 fundos exclusivos contra 284, e taxa
+    mediana de 0,75% contra 1,40%. Nenhum desses numeros era sobre a prateleira
+    do BTG - eram sobre os 9.413 fundos que so o Open Finance dele publica, o
+    que a casa administra e o cliente nunca ve. Na vitrine as mesmas casas ficam
+    em 167 contra 169 gestoras e 284 contra 337 exclusivos, que e a comparacao
+    que alguem queria fazer.
+
+    Casa sem vitrine alcancavel (o Nu, hoje) sai com `listing_funds = 0` e
+    `listing_reason` preenchido: fica fora dos graficos com motivo declarado,
+    em vez de entrar neles medida pelo catalogo.
+    """
 
     platform_id: str
     label: str
     status: str
     strategy: str
     error: str | None
-    total_funds: int
+    listing_funds: int
+    catalog_funds: int = 0
+    collected_funds: int = 0
+    listing_reason: str | None = None
     by_class: dict[str, int] = field(default_factory=dict)
     distinct_managers: int = 0
     top_managers: list[tuple[str, int]] = field(default_factory=list)
@@ -72,7 +101,10 @@ class PlatformSummary:
             "status": self.status,
             "strategy": self.strategy,
             "error": self.error,
-            "total_funds": self.total_funds,
+            "listing_funds": self.listing_funds,
+            "catalog_funds": self.catalog_funds,
+            "collected_funds": self.collected_funds,
+            "listing_reason": self.listing_reason,
             "by_class": self.by_class,
             "distinct_managers": self.distinct_managers,
             "top_managers": [{"name": n, "count": c} for n, c in self.top_managers],
@@ -131,26 +163,69 @@ def is_own_product(platform_id: str, fund: FundOffer) -> bool | None:
     return any(p.search(normalized) for p in patterns)
 
 
-def anbima_category(fund: FundOffer) -> str:
-    """Categoria do fundo, na melhor fonte disponivel, em tres camadas.
+def categoria_oficial(fund: FundOffer) -> str | None:
+    """Categoria do fundo vinda da base da CVM, ou None.
 
-    1. Classificacao ANBIMA oficial - so existe para fundo aderente a ANBIMA;
-    2. Classificacao CVM oficial (Renda Fixa/Acoes/Multimercado/Cambial) - o
-       registro sempre a tem, entao um fundo casado nunca fica "sem classe";
-    3. a heuristica sobre nome/categoria da casa, quando nem o join houve.
-    Rotulos ficam como estao (a granularidade diferente e visivel por si), e o
-    "Sem classificacao" sobra so para quem nao tem CNPJ casado nem nome legivel.
+    Escrita em `categoria_oficial` por duas fontes, ambas o cadastro da CVM:
+    o join por identidade (`enrich.enrich_offer`) e o resolver por nome
+    (`shelf_monitor.classify`). Qual delas resolveu fica em `categoria_via`,
+    entao a superficie pode mostrar procedencia em vez de um rotulo sem origem.
+
+    Duas coisas NAO entram aqui, pelo mesmo motivo - nao sao lidas do cadastro:
+
+    - a heuristica `AssetClass`, inferida do nome;
+    - `classificacao_anbima` quando ela veio da propria casa. Os coletores
+      escrevem nessa chave o rotulo publicado pela plataforma, e misturar os
+      dois da a cada casa um balde que so ela usa.
     """
-    official = fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM)
-    if official:
-        return official
+    return fund.extra.get(KEY_CATEGORIA) or None
+
+
+def categoria_comparavel(fund: FundOffer) -> str | None:
+    """Rotulo do fundo no eixo fino comparavel entre casas. None = fora.
+
+    Devolver None em vez de um rotulo de consolo e o ponto: um fundo sem
+    categoria oficial nao pertence a uma comparacao de composicao de
+    prateleira, e o bloco que o excluir tem de dizer quantos excluiu.
+    """
+    return categoria_oficial(fund)
+
+
+def anbima_category(fund: FundOffer) -> str:
+    """Categoria do fundo para os blocos descritivos, sempre com um rotulo.
+
+    Difere de `categoria_comparavel` em aceitar duas fontes que aquela recusa:
+    o rotulo publicado pela propria casa e a heuristica `AssetClass`. Listar um
+    fundo do Itau como "Renda Fixa" numa tabela de inventario e util e
+    inofensivo; o que nao se pode e usar esse rotulo para dizer que o Itau
+    aposta mais em renda fixa que os pares - para isso existe
+    `categoria_comparavel`, que so aceita o cadastro.
+    """
+    rotulo = (
+        categoria_oficial(fund)
+        or fund.extra.get(KEY_ANBIMA)
+        or fund.extra.get(KEY_CVM)
+    )
+    if rotulo:
+        return rotulo
     if fund.asset_class != AssetClass.OUTROS:
         return ASSET_CLASS_LABELS[fund.asset_class]
     return "Sem classificacao"
 
 
-def _listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
+def listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
+    """A vitrine de varejo da casa - a base de toda comparacao entre casas.
+
+    Publica de proposito: e a regra de pertinencia que o dashboard, o digest e
+    a leitura competitiva precisam compartilhar. Qualquer bloco que compare
+    casas e nao passe por aqui esta comparando o catalogo Open Finance de uma
+    com a prateleira da outra.
+    """
     return [f for f in retail_funds(snapshot) if f.on_listing]
+
+
+# Alias interno: o modulo inteiro chamava assim antes de a funcao virar publica.
+_listing_funds = listing_funds
 
 
 def _listing_presence(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
@@ -292,19 +367,21 @@ def retail_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
 
 
 def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
-    """CNPJs de varejo presentes em exatamente uma plataforma coletada.
+    """CNPJs de varejo que aparecem na vitrine de exatamente uma casa.
 
     E o conceito COMPETITIVO ("so esta casa oferta"), nao o regulatorio
     ("fundo exclusivo de um investidor") - os regulatorios nem entram aqui.
     So considera snapshots utilizaveis: uma coleta que falhou tornaria
     diferencial todo fundo das demais casas.
+
+    Vitrine dos dois lados, pela mesma razao que os gaps: contado sobre o
+    catalogo, o BTG saia com 5.767 "diferenciais de prateleira" contra 284 da
+    XP. Quase nenhum era diferencial - eram fundos que so ele administra e
+    ninguem, nem o cliente dele, ve numa prateleira. Na vitrine sao 284 contra
+    337, e ai a palavra "diferencial" significa o que diz.
     """
     usable = [s for s in snapshots if s.status != SnapshotStatus.UNAVAILABLE and s.funds]
-    presence: dict[str, set[str]] = {}
-    for snapshot in usable:
-        for fund in retail_funds(snapshot):
-            if fund.cnpj:
-                presence.setdefault(fund.cnpj, set()).add(snapshot.platform)
+    presence = _listing_presence(usable)
 
     exclusive: dict[str, set[str]] = {s.platform: set() for s in usable}
     for cnpj, platforms in presence.items():
@@ -585,11 +662,27 @@ def build_gap_block(
 def summarize_platform(
     snapshot: ShelfSnapshot, exclusive_cnpjs: set[str]
 ) -> PlatformSummary:
+    """A linha comparativa da casa, medida na vitrine e so nela.
+
+    O catalogo continua contado (`catalog_funds`) para quem quiser a casa como
+    administradora, mas nenhuma metrica descritiva sai dele: comparar a vitrine
+    de uma casa com o catalogo de outra e o que fazia o BTG aparecer com 4x as
+    gestoras da XP.
+    """
     platform_cfg = PLATFORMS.get(snapshot.platform)
     label = platform_cfg.label if platform_cfg else snapshot.platform
 
     # A analise principal ve so o varejo; os restritos vao ao bloco auxiliar.
-    funds: list[FundOffer] = retail_funds(snapshot)
+    catalog: list[FundOffer] = retail_funds(snapshot)
+    funds: list[FundOffer] = [f for f in catalog if f.on_listing]
+
+    reason = None
+    if not funds:
+        reason = (
+            f"sem vitrine publica coletada (estrategia: {snapshot.strategy.value})"
+            if catalog
+            else "sem fundos de varejo nesta coleta"
+        )
     by_class: dict[str, int] = {}
     for asset_class in AssetClass:
         count = sum(1 for f in funds if f.asset_class == asset_class)
@@ -619,7 +712,10 @@ def summarize_platform(
         status=snapshot.status.value,
         strategy=snapshot.strategy.value,
         error=snapshot.error,
-        total_funds=len(funds),
+        listing_funds=len(funds),
+        catalog_funds=len(catalog),
+        collected_funds=len(snapshot.funds),
+        listing_reason=reason,
         by_class=by_class,
         distinct_managers=len(managers),
         top_managers=sorted(managers.items(), key=lambda kv: kv[1], reverse=True)[:10],
@@ -665,11 +761,25 @@ def build_restricted_block(report: RunReport) -> dict:
 _FLOW_EMBEDDED = 8
 
 
+def _bloco(payload: dict | None) -> dict:
+    """Bloco opcional pronto para o JSON do dashboard.
+
+    Os campos com prefixo `_` carregam os objetos de dominio, que existem para
+    os renderers em Python e nao serializam - e o JSON do dashboard vai inteiro
+    para dentro do HTML.
+    """
+    if not payload or not payload.get("available"):
+        return {"available": False, "reason": (payload or {}).get("reason")}
+    return {k: v for k, v in payload.items() if not k.startswith("_")}
+
+
 def _flow_payload(report: RunReport) -> dict:
     """Recorte de captacao que o dashboard desenha."""
     flow = report.retail_flow
-    if not flow:
-        return {"available": False}
+    if not (flow and flow.get("available")):
+        # O bloco indisponivel chega aqui COM o motivo: `main` o anexa em vez de
+        # deixar None, justamente para o motivo sobreviver ate a superficie.
+        return {"available": False, "reason": (flow or {}).get("reason")}
 
     grade = report.grade_opportunities or {}
     return {
@@ -691,6 +801,7 @@ def _flow_payload(report: RunReport) -> dict:
             "total": grade.get("total", 0),
             "total_transferiveis": grade.get("total_transferiveis", 0),
             "total_produto_do_concorrente": grade.get("total_produto_do_concorrente", 0),
+            "total_gestora_desconhecida": grade.get("total_gestora_desconhecida", 0),
             "total_operacionais": grade.get("total_operacionais", 0),
             "total_comerciais": grade.get("total_comerciais", 0),
             "captacao_transferivel": grade.get("captacao_transferivel", 0.0),
@@ -710,7 +821,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         for snapshot in report.snapshots
     ]
     # XP primeiro: e o baseline contra o qual as demais sao lidas.
-    summaries.sort(key=lambda s: (s.platform_id != "xp", -s.total_funds))
+    summaries.sort(key=lambda s: (s.platform_id != "xp", -s.listing_funds))
 
     cvm_payload: dict = {"available": False}
     if report.cvm_snapshot:
@@ -782,6 +893,12 @@ def build_dashboard_data(report: RunReport) -> dict:
         # Captacao entra ja calculada pelo build_report: o dashboard nao le o
         # informe diario da CVM por conta propria - o payload e uma foto.
         "flow": _flow_payload(report),
+        # Rentabilidade ponderada e custo relativo entram ja calculados, como a
+        # captacao: o dashboard desenha uma foto, nao le o informe nem o
+        # extrato por conta propria.
+        "performance": _bloco(report.performance),
+        "custo": _bloco(report.custo),
+        "mandato": _bloco(report.mandato),
         "enrichment": report.enrichment,
         "class_order": class_order,
         "band_order": [label for label, _, _ in MIN_BANDS],

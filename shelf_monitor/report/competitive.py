@@ -9,7 +9,7 @@ Tres regras que valem para tudo aqui:
 **A base e a vitrine, nunca o catalogo.** Posicionamento e o que o cliente ve na
 tela. O catalogo Open Finance mede o que a casa administra, o que e outra
 pergunta - somar os 10.073 do BTG contra os 668 da XP compararia coisas
-diferentes e daria um numero espetacularmente errado. Reusamos `_listing_funds`
+diferentes e daria um numero espetacularmente errado. Reusamos `listing_funds`
 do aggregate para que a regra de pertinencia (varejo + vitrine) exista num unico
 lugar.
 
@@ -30,17 +30,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from shelf_monitor.config import PLATFORMS, Config
-from shelf_monitor.enrich import KEY_ANBIMA
-from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot, SnapshotStatus
+from shelf_monitor.classify import (
+    CATEGORIA_ESTRUTURADO,
+    KEY_VIA,
+    label_nivel1,
+    so_nivel1,
+)
+from shelf_monitor.config import Config
+from shelf_monitor.models import FundOffer, ShelfSnapshot, SnapshotStatus
 from shelf_monitor.report.aggregate import (
-    ASSET_CLASS_LABELS,
     _canonical_order,
-    _listing_funds,
+    listing_funds,
     _median,
     _offer_manager,
     _platform_label,
     anbima_category,
+    categoria_comparavel,
     is_own_product,
 )
 from shelf_monitor.storage import load_shelf_snapshot, shelf_snapshot_dates
@@ -89,45 +94,91 @@ def _has_field(funds: list[FundOffer], attr: str) -> bool:
     return _coverage(funds, attr) >= _MIN_FIELD_COVERAGE
 
 
-# Os dois eixos de categoria, e por que sao dois.
+# Os dois eixos de categoria, e por que agora sao o MESMO eixo em duas
+# granularidades.
 #
-# Medido em 2026-09-19 nas vitrines: a classificacao ANBIMA cobre 100% do BTG,
-# 86% da XP, 78% do Inter e **3% do Itau**. Ja `asset_class` (Renda Fixa, Acoes,
-# Multimercado, Cambial, Internacional, Previdencia) cobre 93% a 100% das quatro.
+# Ate 2026-09-20 eram duas taxonomias: o eixo grosso vinha da heuristica
+# `asset_class` e o fino da ANBIMA. A mistura produzia numero espetacularmente
+# errado - sem casar com o cadastro, um fundo do Itau caia no rotulo grosso
+# "Renda Fixa", que as outras casas quase nao usavam, e o Itau aparecia com 17x
+# o share das concorrentes ali e 11x em "Multimercado". Nao era aposta de
+# prateleira: era o balde que so ele usava, porque so ele nao casava.
 #
-# Comparar indice de concentracao no eixo fino misturando as duas coisas produz
-# numero espetacularmente errado: sem casar com a ANBIMA, um fundo do Itau cai no
-# rotulo grosso "Renda Fixa", que as outras casas quase nao usam - e o Itau
-# aparecia com 17x o share das concorrentes em "Renda Fixa" e 11x em
-# "Multimercado". Nao era aposta de prateleira, era o balde que so ele usava.
+# A causa nunca foi a taxonomia, e sim a identidade: o Itau publica CNPJ em 5,9%
+# da vitrine, e nenhuma casa publica codigo CVM. ANBIMA e CVM tinham exatamente
+# a mesma cobertura em toda casa - onde o join acontece as duas chegam juntas,
+# onde nao acontece nenhuma chega.
 #
-# Por isso o eixo COMPARAVEL e o grosso, onde todas entram; o eixo FINO e uma
-# segunda camada, restrita a quem tem cobertura ANBIMA, com os demais excluidos
-# por escrito.
-_MIN_ANBIMA_COVERAGE = 0.5
+# Com `shelf_monitor.classify` resolvendo a categoria pelo nome quando falta
+# identidade, a cobertura do Itau foi a 100% e os dois eixos passaram a sair da
+# mesma fonte: o grosso e o nivel 1 da categoria oficial, o fino e ela inteira.
+# Tres guardas mantem a comparacao honesta, e cada uma corrige um artefato
+# medido: rotulo publicado pela casa nao vale como oficial (o BTG aparecia com
+# "Direitos Creditorios" que so ele tem); fundo resolvido so no nivel 1 nao
+# entra no eixo fino (o Itau aparecia com "RENDA FIXA 22,20x"); e produto
+# estruturado tem balde proprio (a XP aparecia apostando "16,6x mais
+# Estruturado", que e tipo de produto, nao composicao de prateleira).
+#
+# O limiar abaixo deixou de medir cobertura ANBIMA e passou a medir cobertura de
+# CLASSIFICACAO, por qualquer das vias. Com a cascata, as quatro vitrines ficam
+# entre 94% e 100%.
+_MIN_CLASSIFICACAO = 0.5
 
 # Rotulo unico para o que nao tem classe conhecida. Fica fora do ranking de
 # apostas: "a casa X tem 2,8x mais Sem classificacao" e um fato sobre o join com a
 # base oficial, nao sobre a estrategia da casa.
 _UNCLASSIFIED = "Sem classificacao"
 
+# Produto que o cadastro da CVM nao classifica (FIDC, FII, FIP...). Fica de
+# fora do ranking de apostas como o "Sem classificacao", mas por outro motivo:
+# ali falta join, aqui a taxonomia simplesmente nao cobre o produto.
+#
+# Deixa-lo dentro produzia numero enganoso: medido em 2026-09-20, a XP aparecia
+# apostando "16,6x mais Estruturado" que as concorrentes. Nao e composicao de
+# prateleira - e que 6,7% da vitrine dela sao FIDC/FII, contra 0,6% do BTG, e o
+# balde existe justamente porque a ANBIMA nao classifica esses produtos. A
+# diferenca e real e merece bloco proprio, nao uma linha no ranking de apostas.
+_ESTRUTURADO = "Estruturado"
+
+# Rotulos que contam no total mas nao disputam indice de concentracao.
+_FORA_DO_EIXO = frozenset({_UNCLASSIFIED, _ESTRUTURADO})
+
 
 def coarse_category(fund: FundOffer) -> str:
-    """Classe do fundo no eixo comparavel entre todas as casas."""
-    if fund.asset_class == AssetClass.OUTROS:
+    """Nivel 1 da categoria oficial - o eixo grosso, comparavel entre casas."""
+    categoria = categoria_comparavel(fund)
+    if not categoria:
         return _UNCLASSIFIED
-    return ASSET_CLASS_LABELS[fund.asset_class]
+    if categoria == CATEGORIA_ESTRUTURADO:
+        return _ESTRUTURADO
+    return label_nivel1(categoria)
 
 
 def fine_category(fund: FundOffer) -> str:
-    """Categoria ANBIMA, so quando ela existe de fato (sem o fallback da CVM)."""
-    return fund.extra.get(KEY_ANBIMA) or _UNCLASSIFIED
+    """A categoria oficial inteira - o eixo fino, mesma taxonomia do grosso.
+
+    Fundo resolvido so no nivel 1 fica de fora: ele tem categoria para o eixo
+    grosso e nao para o fino, e promove-lo aqui criaria um balde grosso dentro
+    da comparacao fina - o artefato que o eixo unico veio corrigir.
+    """
+    categoria = categoria_comparavel(fund)
+    if not categoria or categoria == CATEGORIA_ESTRUTURADO:
+        return _UNCLASSIFIED
+    if so_nivel1(fund.extra.get(KEY_VIA)):
+        return _UNCLASSIFIED
+    return categoria
 
 
-def anbima_coverage(funds: list[FundOffer]) -> float:
+def classificacao_coverage(funds: list[FundOffer]) -> float:
+    """Fracao da vitrine com categoria do cadastro, por qualquer via.
+
+    Mede classificacao, nao ANBIMA: o resolver por nome devolve categoria
+    ANBIMA tanto quanto o join por CNPJ devolve. O que muda e a procedencia,
+    que fica em `categoria_via`.
+    """
     if not funds:
         return 0.0
-    return sum(1 for f in funds if f.extra.get(KEY_ANBIMA)) / len(funds)
+    return sum(1 for f in funds if categoria_comparavel(f)) / len(funds)
 
 
 def _counts(funds: list[FundOffer], categoria) -> dict[str, int]:
@@ -145,11 +196,11 @@ def _shares(funds: list[FundOffer], categoria) -> dict[str, float]:
     teria todos os shares diluidos e pareceria sub-indexada em tudo.
     """
     counts = _counts(funds, categoria)
-    classificados = sum(n for cat, n in counts.items() if cat != _UNCLASSIFIED)
+    classificados = sum(n for cat, n in counts.items() if cat not in _FORA_DO_EIXO)
     if not classificados:
         return {}
     return {
-        cat: n / classificados for cat, n in counts.items() if cat != _UNCLASSIFIED
+        cat: n / classificados for cat, n in counts.items() if cat not in _FORA_DO_EIXO
     }
 
 
@@ -186,13 +237,18 @@ class PlatformPosition:
     categories: int
     over_index: list[CategoryBet] = field(default_factory=list)
     under_index: list[CategoryBet] = field(default_factory=list)
-    # Eixo fino ANBIMA - vazio para quem nao tem cobertura (ver _MIN_ANBIMA_COVERAGE).
+    # Eixo fino - vazio para quem nao tem cobertura (ver _MIN_CLASSIFICACAO).
     fine_over: list[CategoryBet] = field(default_factory=list)
     fine_under: list[CategoryBet] = field(default_factory=list)
-    anbima_cov: float = 0.0
+    classificacao_cov: float = 0.0
     median_min: float | None = None
     retail_ticket_share: float | None = None
-    median_admin_fee: float | None = None
+    # Mediana da taxa da vitrine INTEIRA - mede composicao, nao preco: uma casa
+    # com mais renda fixa (~0,2% ao ano) sai "mais barata" que uma com mais
+    # acoes (~2%) sem que produto nenhum custe diferente. O nome diz isso para
+    # que ninguem a leia como custo. O custo comparavel esta em `report.custo`,
+    # que divide cada fundo pela mediana da propria categoria.
+    median_admin_fee_mix: float | None = None
     own_product_share: float | None = None
     distinct_managers: int | None = None
     top3_manager_share: float | None = None
@@ -211,10 +267,10 @@ class PlatformPosition:
             "under_index": [b.to_dict() for b in self.under_index],
             "fine_over": [b.to_dict() for b in self.fine_over],
             "fine_under": [b.to_dict() for b in self.fine_under],
-            "anbima_cov": round(self.anbima_cov, 3),
+            "classificacao_cov": round(self.classificacao_cov, 3),
             "median_min": self.median_min,
             "retail_ticket_share": self.retail_ticket_share,
-            "median_admin_fee": self.median_admin_fee,
+            "median_admin_fee_mix": self.median_admin_fee_mix,
             "own_product_share": self.own_product_share,
             "distinct_managers": self.distinct_managers,
             "top3_manager_share": self.top3_manager_share,
@@ -244,7 +300,7 @@ def vitrine_snapshots(snapshots: list[ShelfSnapshot]) -> tuple[dict[str, list[Fu
                 "reason": "coleta indisponivel nesta execucao",
             })
             continue
-        listing = _listing_funds(snapshot)
+        listing = listing_funds(snapshot)
         if not listing:
             excluded.append({
                 "platform_id": snapshot.platform, "label": label,
@@ -383,16 +439,16 @@ def build_positioning(snapshots: list[ShelfSnapshot]) -> dict:
 
         over, under = _bets(funds, peers, coarse_category)
 
-        # Eixo fino: so entra quem tem cobertura ANBIMA, e a comparacao e contra
-        # os pares que TAMBEM tem - comparar categoria fina contra quem nao a
-        # publica mediria a cobertura do join, nao a prateleira.
-        cobertura = anbima_coverage(funds)
+        # Eixo fino: so entra quem tem cobertura de classificacao, e a
+        # comparacao e contra os pares que TAMBEM tem - comparar categoria fina
+        # contra quem nao a tem mediria a cobertura do join, nao a prateleira.
+        cobertura = classificacao_coverage(funds)
         fine_peers = [
             f for pid, fs in vitrines.items()
-            if pid != platform_id and anbima_coverage(fs) >= _MIN_ANBIMA_COVERAGE
+            if pid != platform_id and classificacao_coverage(fs) >= _MIN_CLASSIFICACAO
             for f in fs
         ]
-        if cobertura >= _MIN_ANBIMA_COVERAGE and fine_peers:
+        if cobertura >= _MIN_CLASSIFICACAO and fine_peers:
             fine_over, fine_under = _bets(funds, fine_peers, fine_category)
         else:
             fine_over, fine_under = [], []
@@ -436,10 +492,10 @@ def build_positioning(snapshots: list[ShelfSnapshot]) -> dict:
             under_index=under[:4],
             fine_over=fine_over[:4],
             fine_under=fine_under[:4],
-            anbima_cov=cobertura,
+            classificacao_cov=cobertura,
             median_min=median_min,
             retail_ticket_share=retail_share,
-            median_admin_fee=median_fee,
+            median_admin_fee_mix=median_fee,
             own_product_share=own_share,
             distinct_managers=distinct,
             top3_manager_share=top3_share,
@@ -597,7 +653,7 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
 
         caminho = config.platform_snapshots_dir(platform_id) / f"{max(anteriores).isoformat()}.json"
         anterior = load_shelf_snapshot(caminho)
-        vitrine_anterior = _listing_funds(anterior)
+        vitrine_anterior = listing_funds(anterior)
         if not vitrine_anterior:
             sem_base.append({
                 "platform_id": platform_id, "label": label,
@@ -1021,12 +1077,12 @@ def print_competitive_view(view: dict) -> None:
         if finos:
             fine = Table(title="Eixo fino ANBIMA - so casas com cobertura", title_style="bold")
             fine.add_column("Casa")
-            fine.add_column("ANBIMA", justify="right")
+            fine.add_column("Classif.", justify="right")
             fine.add_column("Categorias em que lidera")
             for p_ in finos:
                 fine.add_row(
                     p_["label"],
-                    f"{p_['anbima_cov']:.0%}",
+                    f"{p_['classificacao_cov']:.0%}",
                     ", ".join(f"{b['category']} {_fmt_index(b['index'])}" for b in p_["fine_over"][:3]) or "-",
                 )
             console.print(fine)
@@ -1034,7 +1090,8 @@ def print_competitive_view(view: dict) -> None:
                 if p_ not in finos:
                     console.print(
                         f"   [dim]{p_['label']} fora do eixo fino: cobertura ANBIMA de "
-                        f"{p_['anbima_cov']:.0%} - as classes dela vem da heuristica de nome.[/]"
+                        f"{p_['classificacao_cov']:.0%} - o resto da vitrine dela nao "
+                        f"casou com o cadastro por nenhuma via.[/]"
                     )
     for e in pos.get("excluded", []):
         console.print(f"   [dim]fora: {e['label']} - {e['reason']}[/]")
