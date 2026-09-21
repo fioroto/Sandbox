@@ -432,6 +432,166 @@ def _offer_manager(fund: FundOffer) -> str | None:
     return manager.strip() if manager else None
 
 
+def _gap_funds(
+    competitor_snaps: list[ShelfSnapshot],
+    baseline_cnpjs: set[str],
+    baseline_managers: set[str],
+    baseline_slugs: dict[str, str],
+) -> list[dict]:
+    """A lista nominal de gaps, ordenada por presenca e PL.
+
+    Extraida de `build_gap_block`, que reunia universo, lista nominal e
+    cobertura por categoria em 251 linhas. As tres sao etapas distintas: esta
+    responde QUAIS fundos faltam, a de categoria responde ONDE a vitrine esta
+    rasa, e o universo decide quem entra na conta.
+
+    As duas colunas heuristicas (`manager_on_xp`, `possible_xp_equivalent`)
+    informam e nunca removem um fundo da lista.
+    """
+    # Exemplares por CNPJ de gap: (casa, fundo) de cada vitrine concorrente.
+    offers_by_cnpj: dict[str, list[tuple[str, FundOffer]]] = {}
+    for snapshot in competitor_snaps:
+        for fund in _listing_funds(snapshot):
+            if fund.cnpj and fund.cnpj not in baseline_cnpjs:
+                offers_by_cnpj.setdefault(fund.cnpj, []).append(
+                    (snapshot.platform, fund)
+                )
+
+    funds: list[dict] = []
+    for cnpj, offers in offers_by_cnpj.items():
+        houses = _canonical_order({platform for platform, _ in offers})
+        # Exemplar de maior confianca: classificacao oficial primeiro, depois
+        # quem apareceu em mais fontes da propria casa.
+        rep = max(
+            (fund for _, fund in offers),
+            key=lambda f: (
+                bool(f.extra.get(KEY_ANBIMA) or f.extra.get(KEY_CVM)),
+                len(f.sources),
+            ),
+        )
+        category = anbima_category(rep)
+
+        manager = next(
+            (m for m in (_offer_manager(f) for _, f in offers) if m), None
+        )
+        minimums = [f.min_initial for _, f in offers if f.min_initial is not None]
+        fees = [f.admin_fee_pct for _, f in offers if f.admin_fee_pct is not None]
+        pl = next(
+            (
+                f.extra.get(KEY_PL)
+                for _, f in offers
+                if f.extra.get(KEY_PL) is not None
+            ),
+            None,
+        )
+        funds.append(
+            {
+                "cnpj": cnpj,
+                "cnpj_display": format_cnpj(cnpj),
+                "name": rep.name,
+                "category": category,
+                "manager": manager,
+                "houses": houses,
+                "houses_label": ", ".join(_platform_label(h) for h in houses),
+                "houses_count": len(houses),
+                "min_initial": min(minimums) if minimums else None,
+                "admin_fee_pct": min(fees) if fees else None,
+                "pl_cvm": pl,
+                "manager_on_xp": (
+                    normalize_text(manager) in baseline_managers
+                    if manager
+                    else None
+                ),
+                "possible_xp_equivalent": baseline_slugs.get(name_slug(rep.name)),
+            }
+        )
+
+    funds.sort(key=lambda f: (-f["houses_count"], -(f["pl_cvm"] or 0), f["name"]))
+
+    return funds
+
+
+def _gap_categories(
+    baseline_listing: list[FundOffer],
+    competitor_snaps: list[ShelfSnapshot],
+    funds: list[dict],
+) -> list[dict]:
+    """Cobertura por categoria: vitrine do baseline contra cada concorrente.
+
+    Responde ONDE a vitrine esta rasa, que e outra pergunta da lista nominal -
+    uma categoria pode ter poucos gaps e ainda assim ser a maior lacuna
+    relativa.
+
+    A contagem de gaps por categoria e derivada de `funds` em vez de recebida
+    pronta: era uma variavel que as duas etapas partilhavam dentro do corpo de
+    251 linhas, e passa-la adiante manteria o acoplamento que a extracao veio
+    desfazer.
+    """
+    gap_categories: Counter = Counter(f["category"] for f in funds)
+    # Cobertura por categoria: vitrine XP vs. vitrine de cada concorrente.
+    baseline_by_category: Counter = Counter(
+        anbima_category(f) for f in baseline_listing
+    )
+    competitor_by_category: dict[str, Counter] = {
+        s.platform: Counter(anbima_category(f) for f in _listing_funds(s))
+        for s in competitor_snaps
+    }
+
+    # Desempate pelo nome. `Counter.most_common` mantem a ordem de insercao
+    # entre empatados, entao a fatia dependia de em que ordem os CNPJs foram
+    # percorridos la atras - duas categorias com o mesmo numero de gaps
+    # trocavam de lugar ao refatorar, sem nada ter mudado no dado.
+    top_categories = [
+        c for c, _ in sorted(gap_categories.items(), key=lambda kv: (-kv[1], kv[0]))
+    ][:_GAP_CATEGORIES]
+    categories: list[dict] = []
+    for category in top_categories:
+        by_platform = {
+            pid: counter.get(category, 0)
+            for pid, counter in competitor_by_category.items()
+        }
+        best_id = max(by_platform, key=lambda pid: by_platform[pid])
+        categories.append(
+            {
+                "category": category,
+                "xp": baseline_by_category.get(category, 0),
+                "by_platform": by_platform,
+                "best_competitor": {
+                    "platform_id": best_id,
+                    "label": _platform_label(best_id),
+                    "count": by_platform[best_id],
+                },
+                "gap_count": gap_categories[category],
+            }
+        )
+    other_gaps = sum(
+        n for cat, n in gap_categories.items() if cat not in top_categories
+    )
+    if other_gaps:
+        categories.append(
+            {
+                "category": "Outras",
+                "xp": sum(
+                    n
+                    for cat, n in baseline_by_category.items()
+                    if cat not in top_categories
+                ),
+                "by_platform": {
+                    pid: sum(
+                        n
+                        for cat, n in counter.items()
+                        if cat not in top_categories
+                    )
+                    for pid, counter in competitor_by_category.items()
+                },
+                "best_competitor": None,
+                "gap_count": other_gaps,
+            }
+        )
+
+    return categories
+
+
 def build_gap_block(
     snapshots: list[ShelfSnapshot], baseline_id: str | None = None
 ) -> dict:
@@ -551,122 +711,10 @@ def build_gap_block(
         if slug:
             baseline_slugs.setdefault(slug, fund.name)
 
-    # Exemplares por CNPJ de gap: (casa, fundo) de cada vitrine concorrente.
-    offers_by_cnpj: dict[str, list[tuple[str, FundOffer]]] = {}
-    for snapshot in competitor_snaps:
-        for fund in _listing_funds(snapshot):
-            if fund.cnpj and fund.cnpj not in baseline_cnpjs:
-                offers_by_cnpj.setdefault(fund.cnpj, []).append(
-                    (snapshot.platform, fund)
-                )
-
-    funds: list[dict] = []
-    gap_categories: Counter = Counter()
-    for cnpj, offers in offers_by_cnpj.items():
-        houses = _canonical_order({platform for platform, _ in offers})
-        # Exemplar de maior confianca: classificacao oficial primeiro, depois
-        # quem apareceu em mais fontes da propria casa.
-        rep = max(
-            (fund for _, fund in offers),
-            key=lambda f: (
-                bool(f.extra.get(KEY_ANBIMA) or f.extra.get(KEY_CVM)),
-                len(f.sources),
-            ),
-        )
-        category = anbima_category(rep)
-        gap_categories[category] += 1
-
-        manager = next(
-            (m for m in (_offer_manager(f) for _, f in offers) if m), None
-        )
-        minimums = [f.min_initial for _, f in offers if f.min_initial is not None]
-        fees = [f.admin_fee_pct for _, f in offers if f.admin_fee_pct is not None]
-        pl = next(
-            (
-                f.extra.get(KEY_PL)
-                for _, f in offers
-                if f.extra.get(KEY_PL) is not None
-            ),
-            None,
-        )
-        funds.append(
-            {
-                "cnpj": cnpj,
-                "cnpj_display": format_cnpj(cnpj),
-                "name": rep.name,
-                "category": category,
-                "manager": manager,
-                "houses": houses,
-                "houses_label": ", ".join(_platform_label(h) for h in houses),
-                "houses_count": len(houses),
-                "min_initial": min(minimums) if minimums else None,
-                "admin_fee_pct": min(fees) if fees else None,
-                "pl_cvm": pl,
-                "manager_on_xp": (
-                    normalize_text(manager) in baseline_managers
-                    if manager
-                    else None
-                ),
-                "possible_xp_equivalent": baseline_slugs.get(name_slug(rep.name)),
-            }
-        )
-
-    funds.sort(key=lambda f: (-f["houses_count"], -(f["pl_cvm"] or 0), f["name"]))
-
-    # Cobertura por categoria: vitrine XP vs. vitrine de cada concorrente.
-    baseline_by_category: Counter = Counter(
-        anbima_category(f) for f in baseline_listing
+    funds = _gap_funds(
+        competitor_snaps, baseline_cnpjs, baseline_managers, baseline_slugs
     )
-    competitor_by_category: dict[str, Counter] = {
-        s.platform: Counter(anbima_category(f) for f in _listing_funds(s))
-        for s in competitor_snaps
-    }
-
-    top_categories = [c for c, _ in gap_categories.most_common(_GAP_CATEGORIES)]
-    categories: list[dict] = []
-    for category in top_categories:
-        by_platform = {
-            pid: counter.get(category, 0)
-            for pid, counter in competitor_by_category.items()
-        }
-        best_id = max(by_platform, key=lambda pid: by_platform[pid])
-        categories.append(
-            {
-                "category": category,
-                "xp": baseline_by_category.get(category, 0),
-                "by_platform": by_platform,
-                "best_competitor": {
-                    "platform_id": best_id,
-                    "label": _platform_label(best_id),
-                    "count": by_platform[best_id],
-                },
-                "gap_count": gap_categories[category],
-            }
-        )
-    other_gaps = sum(
-        n for cat, n in gap_categories.items() if cat not in top_categories
-    )
-    if other_gaps:
-        categories.append(
-            {
-                "category": "Outras",
-                "xp": sum(
-                    n
-                    for cat, n in baseline_by_category.items()
-                    if cat not in top_categories
-                ),
-                "by_platform": {
-                    pid: sum(
-                        n
-                        for cat, n in counter.items()
-                        if cat not in top_categories
-                    )
-                    for pid, counter in competitor_by_category.items()
-                },
-                "best_competitor": None,
-                "gap_count": other_gaps,
-            }
-        )
+    categories = _gap_categories(baseline_listing, competitor_snaps, funds)
 
     return {
         "available": True,
