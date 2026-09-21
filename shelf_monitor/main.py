@@ -659,12 +659,7 @@ def cmd_cvm(config: Config, args: argparse.Namespace) -> None:
 
 
 def cmd_diff(config: Config, args: argparse.Namespace) -> None:
-    platform_ids = args.platforms or list(PLATFORMS)
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in platform_ids:
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
+    snapshots = carregar_snapshots(config, args.platforms)
 
     if not snapshots:
         console.print("[yellow]Nenhum snapshot encontrado. Rode `collect` antes.[/]")
@@ -679,11 +674,7 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
     config.ensure_dirs()
     # `report` era o unico comando que lia snapshot e nao aceitava --platform:
     # ignorava o filtro em silencio e re-renderizava as cinco casas.
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in args.platforms or list(PLATFORMS):
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
+    snapshots = carregar_snapshots(config, args.platforms)
 
     if not snapshots:
         console.print("[yellow]Nenhum snapshot encontrado. Rode `run` antes.[/]")
@@ -706,11 +697,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         snapshots = collect_platforms(config, platform_ids, args.first_source_only)
         cvm_snapshot = None if args.skip_cvm else collect_cvm(config)
     else:
-        snapshots = []
-        for platform_id in platform_ids:
-            snapshot = latest_shelf_snapshot(config, platform_id)
-            if snapshot:
-                snapshots.append(snapshot)
+        snapshots = carregar_snapshots(config, platform_ids)
         cvm_snapshot = None if args.skip_cvm else latest_cvm_snapshot(config)
 
         if not snapshots:
@@ -772,24 +759,13 @@ def cmd_insights(config: Config, args: argparse.Namespace) -> None:
     reexecutada e discutida quantas vezes for preciso sem bater nos sites - e o
     que separa "rodar o monitor" de "olhar o resultado".
     """
-    config.ensure_dirs()
-    platform_ids = args.platforms or list(PLATFORMS)
-
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in platform_ids:
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
-
+    snapshots = _snapshots_enriquecidos(config, args)
     if not snapshots:
         console.print(
             "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
             "competitiva e feita sobre o que ja foi coletado."
         )
         return
-
-    if enrich_snapshots(config, snapshots) is None:
-        warn_market_missing()
 
     datas = sorted({s.snapshot_date for s in snapshots})
     console.print(
@@ -800,22 +776,12 @@ def cmd_insights(config: Config, args: argparse.Namespace) -> None:
     view = build_competitive_view(config, snapshots)
     print_competitive_view(view)
 
-    if args.json:
-        destino = Path(args.json)
-        # `_positions`, `_reaches` e `_decisoes` carregam os objetos para quem
-        # chama em Python; no JSON sairiam como lixo nao serializavel.
-        limpo = {
-            bloco: {k: v for k, v in dados.items() if not k.startswith("_")}
-            if isinstance(dados, dict) else dados
-            for bloco, dados in view.items()
-        }
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(
-            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
-            encoding="utf-8",
-        )
-        console.print()
-        console.print(f"[green]Visao em JSON:[/] {destino}")
+    # `_positions`, `_reaches` e `_decisoes` carregam os objetos para quem chama
+    # em Python; no JSON sairiam como lixo nao serializavel.
+    _talvez_json(args, view, payload={
+        bloco: _sem_privados(dados) if isinstance(dados, dict) else dados
+        for bloco, dados in view.items()
+    })
 
 
 def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
@@ -824,24 +790,13 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
     Usa os snapshots ja gravados mais o informe diario da CVM: o fluxo vem do
     INF_DIARIO, a vitrine vem da ultima coleta de cada casa.
     """
-    config.ensure_dirs()
-    platform_ids = args.platforms or list(PLATFORMS)
-
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in platform_ids:
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
-
+    snapshots = _snapshots_enriquecidos(config, args)
     if not snapshots:
         console.print(
             "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a analise de "
             "captacao parte da vitrine ja coletada."
         )
         return
-
-    if enrich_snapshots(config, snapshots) is None:
-        warn_market_missing()
 
     console.print(
         f"[bold]Lendo o informe diario da CVM[/] para os fundos de vitrine "
@@ -856,21 +811,10 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
     )
     print_retail_flow(resultado, oportunidades)
 
-    if args.json:
-        destino = Path(args.json)
-        limpo = {
-            "captacao": {k: v for k, v in resultado.items() if not k.startswith("_")},
-            "oportunidades": {
-                k: v for k, v in oportunidades.items() if not k.startswith("_")
-            },
-        }
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(
-            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
-            encoding="utf-8",
-        )
-        console.print()
-        console.print(f"[green]Analise em JSON:[/] {destino}")
+    _talvez_json(args, resultado, payload={
+        "captacao": _sem_privados(resultado),
+        "oportunidades": _sem_privados(oportunidades),
+    })
 
 
 def cmd_performance(config: Config, args: argparse.Namespace) -> None:
@@ -880,24 +824,13 @@ def cmd_performance(config: Config, args: argparse.Namespace) -> None:
     adequada - "adequada" medido contra a mediana da mesma categoria no
     universo oficial, nao contra a propria prateleira.
     """
-    config.ensure_dirs()
-    platform_ids = args.platforms or list(PLATFORMS)
-
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in platform_ids:
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
-
+    snapshots = _snapshots_enriquecidos(config, args)
     if not snapshots:
         console.print(
             "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
             "de rentabilidade parte da vitrine ja coletada."
         )
         return
-
-    if enrich_snapshots(config, snapshots) is None:
-        warn_market_missing()
 
     console.print(
         f"[bold]Lendo o informe diario da CVM[/] para o universo inteiro "
@@ -908,17 +841,7 @@ def cmd_performance(config: Config, args: argparse.Namespace) -> None:
         config, snapshots, meses=args.months, force_download=args.force
     )
     print_performance(resultado)
-
-    if args.json:
-        destino = Path(args.json)
-        limpo = {k: v for k, v in resultado.items() if not k.startswith("_")}
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(
-            json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
-            encoding="utf-8",
-        )
-        console.print()
-        console.print(f"[green]Analise em JSON:[/] {destino}")
+    _talvez_json(args, resultado)
 
 
 def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
@@ -946,16 +869,24 @@ def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
     _talvez_json(args, resultado)
 
 
+def carregar_snapshots(
+    config: Config, platform_ids: list[str] | None = None
+) -> list[ShelfSnapshot]:
+    """O ultimo snapshot de cada casa pedida, pulando as que nao tem nenhum."""
+    snapshots: list[ShelfSnapshot] = []
+    for platform_id in platform_ids or list(PLATFORMS):
+        snapshot = latest_shelf_snapshot(config, platform_id)
+        if snapshot:
+            snapshots.append(snapshot)
+    return snapshots
+
+
 def _snapshots_enriquecidos(
     config: Config, args: argparse.Namespace
 ) -> list[ShelfSnapshot]:
     """Vitrines ja coletadas, enriquecidas. Vazio quando nao ha snapshot."""
     config.ensure_dirs()
-    snapshots: list[ShelfSnapshot] = []
-    for platform_id in args.platforms or list(PLATFORMS):
-        snapshot = latest_shelf_snapshot(config, platform_id)
-        if snapshot:
-            snapshots.append(snapshot)
+    snapshots = carregar_snapshots(config, args.platforms)
     if not snapshots:
         return []
     if enrich_snapshots(config, snapshots) is None:
@@ -985,11 +916,25 @@ def cmd_mandato(config: Config, args: argparse.Namespace) -> None:
     _talvez_json(args, resultado)
 
 
-def _talvez_json(args: argparse.Namespace, resultado: dict) -> None:
+def _sem_privados(bloco: dict) -> dict:
+    """Tira as chaves `_`, que carregam objetos de dominio nao serializaveis."""
+    return {k: v for k, v in bloco.items() if not k.startswith("_")}
+
+
+def _talvez_json(
+    args: argparse.Namespace, resultado: dict, payload: dict | None = None
+) -> None:
+    """Grava o `--json`, se pedido.
+
+    `payload` existe para os dois comandos cujo recorte nao e um bloco simples:
+    `insights` limpa bloco a bloco e `captacao` junta dois blocos num envelope.
+    Sem ele, os dois mantinham copia integral da escrita - e `performance`
+    mantinha uma copia byte a byte deste corpo, logo acima da extracao.
+    """
     if not getattr(args, "json", None):
         return
     destino = Path(args.json)
-    limpo = {k: v for k, v in resultado.items() if not k.startswith("_")}
+    limpo = payload if payload is not None else _sem_privados(resultado)
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(
         json.dumps(limpo, indent=2, ensure_ascii=False, default=str) + "\n",
