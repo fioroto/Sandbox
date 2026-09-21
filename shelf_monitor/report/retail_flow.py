@@ -40,11 +40,12 @@ from shelf_monitor.report.competitive import (
     identifiable_vitrines,
     vitrine_snapshots,
 )
+from shelf_monitor.report.shared import MIN_COBERTURA_VITRINE
 
 
 # Abaixo disto a casa nao entra nos rankings: com um punhado de fundos casados, a
 # soma descreve a amostra que casou, nao a vitrine.
-_MIN_MATCH_RATIO = 0.5
+_MIN_MATCH_RATIO = MIN_COBERTURA_VITRINE
 
 # Um fundo com PL irrisorio produz percentual de captacao instavel (R$ 10 mil
 # sobre R$ 50 mil e +20%, e nao e noticia). Fica nos totais, fora do ranking.

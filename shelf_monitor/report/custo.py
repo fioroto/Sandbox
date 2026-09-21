@@ -74,18 +74,24 @@ from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
+from shelf_monitor.report.shared import (
+    BARATO,
+    CARO,
+    MIN_AMOSTRA_CATEGORIA,
+    MIN_COBERTURA_CUSTO,
+)
 
 # Acima disto a entrega e historico, nao condicao vigente. Dois anos cobrem
 # classes que nao reentregam todo ano sem deixar passar a entrega de 2015.
 _MAX_IDADE_MESES = 24
 
 # Minimo de classes numa categoria para a mediana dela servir de referencia.
-_MIN_AMOSTRA_CATEGORIA = 20
+_MIN_AMOSTRA_CATEGORIA = MIN_AMOSTRA_CATEGORIA
 
 # Acima deste indice o fundo cobra caro para a categoria dele; abaixo do outro,
 # barato. A faixa no meio e ruido de arredondamento entre classes parecidas.
-_CARO = 1.3
-_BARATO = 0.7
+_CARO = CARO
+_BARATO = BARATO
 
 # Resgate ate D+1 e o que o varejo trata como liquidez imediata.
 _LIQUIDEZ_IMEDIATA = 1
@@ -96,7 +102,7 @@ _LIQUIDEZ_IMEDIATA = 1
 # reentrega o extrato, e exigir 50% de cobertura excluia toda casa - o numero
 # passava a dizer "ninguem mensuravel" em vez de "custo da prateleira". O piso
 # ficou onde a fonte permite, e a cobertura sai ao lado de todo indice.
-_MIN_COBERTURA = 0.4
+_MIN_COBERTURA = MIN_COBERTURA_CUSTO
 
 
 def _idade_meses(referencia: date | None, hoje: date | None = None) -> int | None:

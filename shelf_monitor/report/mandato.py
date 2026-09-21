@@ -38,15 +38,21 @@ from shelf_monitor.models import ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj, parse_number
 from shelf_monitor.report.aggregate import _platform_label
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
+from shelf_monitor.report.shared import (
+    MIN_COBERTURA_VITRINE,
+    mediana,
+    SOBRE_INDICE,
+    SUB_INDICE,
+)
 
 # Minimo de fundos com o campo preenchido para a casa entrar naquela dimensao.
 # Mesma regra do resto do monitor: com meia vitrine respondida, o share descreve
 # a amostra que casou.
-_MIN_COBERTURA = 0.5
+_MIN_COBERTURA = MIN_COBERTURA_VITRINE
 
 # Fora desta faixa a diferenca e aposta declarada, nao arredondamento.
-_SOBRE_INDICE = 1.35
-_SUB_INDICE = 0.7
+_SOBRE_INDICE = SOBRE_INDICE
+_SUB_INDICE = SUB_INDICE
 
 # Quantas apostas o bloco publica, e quantas o console imprime. Nomeados
 # porque sao decisao de leitura, nao detalhe: a lista existe para caber numa
@@ -150,16 +156,10 @@ class MandatoCasa:
         return sum(1 for v in respondidos if v) / len(respondidos)
 
     def teto_mediano(self, chave: str) -> float | None:
-        valores = sorted(
+        return mediana(
             v for c in self.classes
             if c.autoriza(chave) and (v := c.tetos.get(chave)) is not None
         )
-        if not valores:
-            return None
-        meio = len(valores) // 2
-        if len(valores) % 2:
-            return valores[meio]
-        return (valores[meio - 1] + valores[meio]) / 2
 
     def to_dict(self) -> dict:
         return {

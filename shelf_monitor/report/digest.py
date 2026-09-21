@@ -9,7 +9,7 @@ import html
 from datetime import date
 from pathlib import Path
 
-from shelf_monitor.config import PLATFORMS, Config
+from shelf_monitor.config import Config
 from shelf_monitor.models import (
     CvmDiff,
     FundChange,
@@ -21,6 +21,7 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import restriction_reason
+from shelf_monitor.report.shared import rotulo_da_casa
 from shelf_monitor.report.aggregate import build_gap_block, listing_funds, retail_funds
 
 _FIELD_LABELS = {
@@ -56,9 +57,7 @@ def _gap_footnotes(gaps: dict) -> list[str]:
     return notes
 
 
-def _platform_label(platform_id: str) -> str:
-    cfg = PLATFORMS.get(platform_id)
-    return cfg.label if cfg else platform_id
+_platform_label = rotulo_da_casa
 
 
 # Vitrine x catalogo, e por que o digest inteiro fala em vitrine.

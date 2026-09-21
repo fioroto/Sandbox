@@ -15,7 +15,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from shelf_monitor.config import PLATFORMS, Config
+from shelf_monitor.config import Config
 from shelf_monitor.enrich import (
     EnrichmentStats,
     KEY_ANBIMA,
@@ -33,6 +33,7 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import split_by_profile
+from shelf_monitor.report.shared import rotulo_da_casa
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
     build_gap_block,
@@ -116,9 +117,7 @@ def _yes_no(value: bool | None) -> str:
     return "Sim" if value else "Nao"
 
 
-def _platform_label(platform_id: str) -> str:
-    cfg = PLATFORMS.get(platform_id)
-    return cfg.label if cfg else platform_id
+_platform_label = rotulo_da_casa
 
 
 def _style_header(sheet: Worksheet, row: int, columns: int) -> None:

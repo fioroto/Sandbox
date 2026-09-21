@@ -73,6 +73,12 @@ from shelf_monitor.report.retail_flow import (
     months_back,
     read_daily_flows,
 )
+from shelf_monitor.report.shared import (
+    MIN_AMOSTRA_CATEGORIA,
+    ponderada,
+    MIN_COBERTURA_JANELA,
+    MIN_COBERTURA_VITRINE,
+)
 
 # Fracao dos pregoes do periodo em que o fundo precisa ter sido observado.
 #
@@ -85,7 +91,7 @@ from shelf_monitor.report.retail_flow import (
 #
 # 80% tolera feriado e atraso de entrega sem deixar passar fundo que nasceu no
 # meio do periodo.
-_MIN_COBERTURA_JANELA = 0.8
+_MIN_COBERTURA_JANELA = MIN_COBERTURA_JANELA
 
 # Piso absoluto, para o caso de o proprio periodo ser curto.
 _MIN_PREGOES = 20
@@ -93,12 +99,12 @@ _MIN_PREGOES = 20
 # Minimo de fundos numa categoria para a mediana dela servir de referencia. Com
 # meia duzia, um fundo atipico move a mediana e todo mundo vira "acima" ou
 # "abaixo" dela por artefato de amostra.
-_MIN_AMOSTRA_CATEGORIA = 20
+_MIN_AMOSTRA_CATEGORIA = MIN_AMOSTRA_CATEGORIA
 
 # Minimo de fundos casados para a casa entrar nos agregados ponderados. Mesma
 # regra que o fluxo usa: abaixo disso a soma descreve a amostra que casou, nao a
 # vitrine.
-_MIN_COBERTURA = 0.5
+_MIN_COBERTURA = MIN_COBERTURA_VITRINE
 
 
 @dataclass
@@ -161,11 +167,14 @@ class RetornoFundo:
 
 
 def _ponderada(fundos: list[RetornoFundo], peso) -> float | None:
-    """Media de retorno ponderada por um peso. None quando o peso soma zero."""
-    total = sum(max(peso(f), 0.0) for f in fundos)
-    if total <= 0:
-        return None
-    return sum(f.retorno * max(peso(f), 0.0) for f in fundos) / total
+    """Media de retorno ponderada por um peso. None quando o peso soma zero.
+
+    `sem_peso="none"` e a semantica deste bloco especificamente: o numero e
+    "quanto rendeu o real medio", e sem real nenhum nao ha real medio. Os
+    outros blocos que ponderam caem para a media simples - a diferenca e
+    deliberada e esta documentada em `shared.numeros.ponderada`.
+    """
+    return ponderada(fundos, lambda f: f.retorno, peso, sem_peso="none")
 
 
 @dataclass

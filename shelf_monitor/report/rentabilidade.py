@@ -73,10 +73,13 @@ from shelf_monitor.normalize import parse_number
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
 from shelf_monitor.report.retail_flow import months_back, read_daily_flows
+from shelf_monitor.report.shared import (
+    MIN_COBERTURA_JANELA,
+)
 
 # Fracao das competencias da janela em que a subclasse precisa aparecer. Ver o
 # docstring: abaixo disso a media somaria periodos de tamanhos diferentes.
-_MIN_COBERTURA = 0.8
+_MIN_COBERTURA = MIN_COBERTURA_JANELA
 
 # Janelas publicadas, na ordem em que saem. YTD e resolvido em tempo de execucao
 # porque depende do ano corrente.

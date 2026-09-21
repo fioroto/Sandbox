@@ -49,18 +49,23 @@ from shelf_monitor.report.aggregate import (
     is_own_product,
 )
 from shelf_monitor.storage import load_shelf_snapshot, shelf_snapshot_dates
+from shelf_monitor.report.shared import (
+    MIN_VITRINE,
+    SOBRE_INDICE,
+    SUB_INDICE,
+)
 
 # Abaixo disto a vitrine nao sustenta leitura de posicionamento: um punhado de
 # fundos destacados na home nao e a prateleira da casa.
-_MIN_VITRINE = 30
+_MIN_VITRINE = MIN_VITRINE
 
 # Fracao minima de um campo preenchido para a metrica daquele campo valer. Com
 # 30% de cobertura a mediana descreve o terco que foi publicado, nao a vitrine.
 _MIN_FIELD_COVERAGE = 0.5
 
 # Indice fora desta faixa e aposta declarada, nao ruido de arredondamento.
-_OVER_INDEX = 1.35
-_UNDER_INDEX = 0.7
+_OVER_INDEX = SOBRE_INDICE
+_UNDER_INDEX = SUB_INDICE
 
 # Uma categoria com meia duzia de fundos gera indice instavel (um fundo a mais
 # dobra o share). Fora do ranking de apostas, mas continua contada no total.

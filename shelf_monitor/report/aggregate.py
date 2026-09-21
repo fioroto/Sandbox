@@ -10,6 +10,12 @@ from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
 from shelf_monitor.normalize import format_cnpj, name_slug, normalize_text
 from shelf_monitor.profile import split_by_profile
+from shelf_monitor.report.shared import (
+    mediana,
+    ordem_canonica,
+    quartis,
+    rotulo_da_casa,
+)
 from shelf_monitor.models import (
     AssetClass,
     FundOffer,
@@ -116,30 +122,8 @@ class PlatformSummary:
         }
 
 
-def _median(values: list[float]) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[mid]
-    return (ordered[mid - 1] + ordered[mid]) / 2
-
-
-def _quartiles(values: list[float]) -> dict | None:
-    """q1/mediana/q3 - quartis dizem a forma da prateleira; media esconde."""
-    if len(values) < 4:
-        return None
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    lower = ordered[:mid]
-    upper = ordered[mid + 1 :] if len(ordered) % 2 else ordered[mid:]
-    return {
-        "q1": round(_median(lower), 4),
-        "median": round(_median(ordered), 4),
-        "q3": round(_median(upper), 4),
-        "n": len(ordered),
-    }
+_median = mediana
+_quartiles = quartis
 
 
 def _own_product_patterns(platform_id: str) -> list[re.Pattern] | None:
@@ -390,15 +374,12 @@ def _exclusive_cnpjs(snapshots: list[ShelfSnapshot]) -> dict[str, set[str]]:
     return exclusive
 
 
-def _platform_label(platform_id: str) -> str:
-    return PLATFORMS[platform_id].label if platform_id in PLATFORMS else platform_id
+# Alias de compatibilidade: seis modulos importavam este nome privado daqui.
+# A definicao agora vive em `report.shared.plataformas`, publica.
+_platform_label = rotulo_da_casa
 
 
-def _canonical_order(platform_ids: set[str]) -> list[str]:
-    """Ordem canonica das casas (a mesma das cores dos graficos)."""
-    ordered = [pid for pid in PLATFORMS if pid in platform_ids]
-    ordered.extend(sorted(platform_ids - set(PLATFORMS)))
-    return ordered
+_canonical_order = ordem_canonica
 
 
 def _offer_manager(fund: FundOffer) -> str | None:
