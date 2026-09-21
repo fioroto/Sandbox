@@ -384,7 +384,9 @@ def _gaps_ranqueados(report: RunReport) -> dict:
     Sao a mesma pergunta; agora a ordem e uma so.
     """
     gaps = build_gap_block(report.snapshots)
-    return {**gaps, "funds": ranquear_gaps(gaps.get("funds") or [], report)}
+    return {**gaps, "funds": ranquear_gaps(
+        gaps.get("funds") or [], report.retail_flow, report.grade_opportunities
+    )}
 
 
 def _md_gaps_section(gaps: dict) -> list[str]:

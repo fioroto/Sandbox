@@ -835,7 +835,11 @@ def _esforco_do_gap(fundo: dict) -> str:
     return ESFORCO_ABRIR_GESTORA
 
 
-def ranquear_gaps(gap_funds: list[dict], report: RunReport) -> list[dict]:
+def ranquear_gaps(
+    gap_funds: list[dict],
+    retail_flow: dict | None = None,
+    grade: dict | None = None,
+) -> list[dict]:
     """Funde a lista de gaps com a captacao, e ordena por quanto ela vale.
 
     Ate aqui o monitor publicava TRES listas de "fundo que a XP nao tem", com
@@ -856,13 +860,14 @@ def ranquear_gaps(gap_funds: list[dict], report: RunReport) -> list[dict]:
     if not gap_funds:
         return gap_funds
 
+    fluxo, oportunidades = retail_flow or {}, grade or {}
     fluxo_por_cnpj: dict[str, dict] = {}
-    for bloco in ((report.retail_flow or {}).get("top_captacao") or [],
-                  (report.retail_flow or {}).get("top_resgate") or [],
-                  (report.grade_opportunities or {}).get("mais_varejo") or [],
-                  (report.grade_opportunities or {}).get("operacionais") or [],
-                  (report.grade_opportunities or {}).get("comerciais") or [],
-                  (report.grade_opportunities or {}).get("produto_do_concorrente") or []):
+    for bloco in (fluxo.get("top_captacao") or [],
+                  fluxo.get("top_resgate") or [],
+                  oportunidades.get("mais_varejo") or [],
+                  oportunidades.get("operacionais") or [],
+                  oportunidades.get("comerciais") or [],
+                  oportunidades.get("produto_do_concorrente") or []):
         for fundo in bloco:
             if fundo.get("cnpj"):
                 fluxo_por_cnpj.setdefault(fundo["cnpj"], fundo)
@@ -965,7 +970,9 @@ def build_dashboard_data(report: RunReport) -> dict:
     # A lista completa de gaps vai a planilha (que chama build_gap_block
     # direto); o HTML embute so o topo para o payload nao inchar.
     gaps = build_gap_block(report.snapshots)
-    gap_funds = ranquear_gaps(gaps.get("funds") or [], report)
+    gap_funds = ranquear_gaps(
+        gaps.get("funds") or [], report.retail_flow, report.grade_opportunities
+    )
 
     return {
         "generated_at": report.generated_at.isoformat(),

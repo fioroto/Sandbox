@@ -281,16 +281,27 @@ def _gaps(prs, gaps: dict):
 
     funds = gaps.get("funds") or []
     if funds:
-        _text(slide, 0.6, 3.1, 7.5, 0.35, "Maiores gaps (por presenca)", 13, bold=True)
+        # "por presenca" era o criterio antigo. A lista chega ordenada por
+        # esforco de incluir e, dentro de cada faixa, pela captacao - a mesma
+        # ordem do dashboard, do digest e da planilha. Num slide de decisao,
+        # abrir pelo que nao se transfere seria o pior comeco possivel.
+        _text(slide, 0.6, 3.1, 7.5, 0.35,
+              "Maiores gaps (pelo que da para incluir)", 13, bold=True)
+
+        def mm(valor):
+            if valor is None:
+                return "-"
+            return f"{valor / 1e6:+,.0f} MM".replace(",", ".")
+
         _table(
             slide, 0.6, 3.5, 7.5,
-            ["Fundo", "Categoria", "Casas", "Menor min", "Menor taxa"],
+            ["Fundo", "Categoria", "Casas", "Captacao", "Esforco"],
             [
                 [clip(f["name"]), f["category"], f["houses_label"],
-                 money(f["min_initial"]), pct(f["admin_fee_pct"])]
+                 mm(f.get("captacao_liquida")), f.get("esforco") or "-"]
                 for f in funds[:8]
             ],
-            col_widths=[3.2, 1.7, 1.4, 1.0, 0.9], size=10,
+            col_widths=[2.7, 1.5, 1.2, 1.0, 1.1], size=10,
         )
 
     categories = gaps.get("categories") or []

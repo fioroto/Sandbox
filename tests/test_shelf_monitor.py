@@ -1140,7 +1140,11 @@ class TestReports(unittest.TestCase):
 
         gaps = workbook["Gaps XP"]
         self.assertEqual(gaps.cell(row=2, column=1).value, "Kapitalo Zeta FIC FIM")
-        formula = gaps.cell(row=2, column=12).value
+        # Pelo cabecalho e nao por indice fixo: a aba ganhou as colunas de
+        # captacao e esforco, e um indice cravado quebra a cada coluna nova
+        # sem que nada de fato tenha se perdido.
+        coluna = [c.value for c in gaps[1]].index("Verificacao vs. Vitrine varejo") + 1
+        formula = gaps.cell(row=2, column=coluna).value
         self.assertTrue(formula.startswith("=IF("))
         self.assertIn("COUNTIFS('Vitrine varejo'!$A$2:$A$", formula)
         self.assertNotIn("$A:$A", formula)

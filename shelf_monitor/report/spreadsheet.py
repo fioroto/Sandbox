@@ -37,6 +37,7 @@ from shelf_monitor.report.shared import rotulo_da_casa
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
     build_gap_block,
+    ranquear_gaps,
     is_own_product,
 )
 
@@ -587,16 +588,29 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> in
 
 
 def _add_gaps_sheets(
-    workbook: Workbook, snapshots: list[ShelfSnapshot], listing_last_row: int
+    workbook: Workbook,
+    snapshots: list[ShelfSnapshot],
+    listing_last_row: int,
+    retail_flow: dict | None = None,
+    grade: dict | None = None,
 ) -> None:
     """Abas "Gaps XP" e "Gaps por categoria": vitrine concorrente x vitrine XP.
 
-    Os numeros vem de build_gap_block - os mesmos do dashboard, digest e deck.
+    Os numeros vem de build_gap_block - os mesmos do dashboard, digest e deck -
+    e a ORDEM vem de `ranquear_gaps`, a mesma das outras tres superficies:
+    esforco de incluir primeiro, captacao dentro de cada faixa. Sem isso a
+    planilha era a unica a abrir por presenca e PL, e o leitor que comparava
+    as duas achava que eram listas diferentes.
+
     A coluna de verificacao e formula sobre a aba "Vitrine varejo" (intervalo
     limitado as linhas de dado): reage a correcoes manuais na vitrine sem
     reexportar.
     """
     block = build_gap_block(snapshots)
+    if block.get("available"):
+        block = {**block, "funds": ranquear_gaps(
+            block["funds"], retail_flow, grade
+        )}
 
     sheet = workbook.create_sheet("Gaps XP")
     if not block.get("available"):
@@ -615,7 +629,10 @@ def _add_gaps_sheets(
 
     headers = [
         ("Fundo", 52), ("CNPJ", 20), ("Categoria oficial", 34), ("Gestora", 34),
-        ("Nº casas", 10), ("Casas", 30), ("Menor minimo (R$)", 18),
+        ("Nº casas", 10), ("Casas", 30),
+        ("Captacao no mercado (R$)", 22), ("Cotistas ganhos no mercado", 24),
+        ("Esforco de incluir", 26),
+        ("Menor minimo (R$)", 18),
         ("Menor taxa adm (%)", 17), ("PL CVM (R$)", 18),
         ("Gestora na vitrine XP", 20), ("Possivel equivalente XP (heuristica)", 40),
         ("Verificacao vs. Vitrine varejo", 26),
@@ -636,6 +653,9 @@ def _add_gaps_sheets(
             fund["manager"] or "",
             fund["houses_count"],
             fund["houses_label"],
+            fund.get("captacao_liquida"),
+            fund.get("variacao_cotistas"),
+            fund.get("esforco") or "",
             fund["min_initial"],
             fund["admin_fee_pct"],
             fund["pl_cvm"],
@@ -649,21 +669,23 @@ def _add_gaps_sheets(
             cell.border = _BORDER
         sheet.cell(row=row, column=5).number_format = _INT
         sheet.cell(row=row, column=7).number_format = _MONEY
-        sheet.cell(row=row, column=8).number_format = _PCT
-        sheet.cell(row=row, column=9).number_format = _MONEY
+        sheet.cell(row=row, column=8).number_format = _INT
+        sheet.cell(row=row, column=10).number_format = _MONEY
+        sheet.cell(row=row, column=11).number_format = _PCT
+        sheet.cell(row=row, column=12).number_format = _MONEY
         if listing_last_row > 1:
             plat_range = f"'Vitrine varejo'!$A$2:$A${listing_last_row}"
             cnpj_range = f"'Vitrine varejo'!$C$2:$C${listing_last_row}"
             sheet.cell(
-                row=row, column=12,
+                row=row, column=15,
                 value=(
                     f'=IF($B{row}="","",IF(COUNTIFS({plat_range},'
                     f'"{baseline_label}",{cnpj_range},$B{row})=0,'
                     f'"Confirma gap","{baseline_label} vitrina - revisar"))'
                 ),
             )
-            sheet.cell(row=row, column=12).font = _BODY_FONT
-            sheet.cell(row=row, column=12).border = _BORDER
+            sheet.cell(row=row, column=15).font = _BODY_FONT
+            sheet.cell(row=row, column=15).border = _BORDER
 
     if row > 1:
         sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row}"
@@ -1094,7 +1116,7 @@ def render_spreadsheet(
     listing_last_row = _add_listing_sheet(workbook, usable)
     # Gaps recebem os snapshots completos: o proprio bloco decide quem entra
     # no universo e lista os excluidos com motivo.
-    _add_gaps_sheets(workbook, snapshots, listing_last_row)
+    _add_gaps_sheets(workbook, snapshots, listing_last_row, retail_flow, grade)
     _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)

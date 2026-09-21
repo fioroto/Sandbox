@@ -9,9 +9,7 @@ que da para incluir.
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
 
-from shelf_monitor.models import RunReport
 from shelf_monitor.report.aggregate import (
     ESFORCO_ABRIR_GESTORA,
     ESFORCO_INDEFINIDO,
@@ -37,11 +35,9 @@ def gap(nome: str, *, cnpj: str, gestora: str | None, casas: list[str],
     }
 
 
-def relatorio(top_captacao: list[dict] | None = None) -> RunReport:
-    return RunReport(
-        generated_at=datetime(2026, 9, 20),
-        retail_flow={"available": True, "top_captacao": top_captacao or []},
-    )
+def relatorio(top_captacao: list[dict] | None = None) -> dict:
+    """O bloco de captacao, que e o unico insumo externo do ranqueamento."""
+    return {"available": True, "top_captacao": top_captacao or []}
 
 
 class TestEsforco(unittest.TestCase):
