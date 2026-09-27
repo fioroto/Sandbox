@@ -373,7 +373,13 @@ class TestSuperficies(unittest.TestCase):
         html = html_path.read_text(encoding="utf-8")
         self.assertIn('title="acelerando"', html)
         self.assertIn("<strong>GOLD11</strong>", html)
-        self.assertIn("background:#1E7B34", html)
+        # A grade pinta pelo valor, na escala divergente dos tokens de status (o
+        # maior |fluxo| de cada tabela no tom cheio), e nao mais pelo estado nas
+        # cores saturadas da planilha.
+        from shelf_monitor.report.shared.estilo import BOM, CRITICO
+
+        self.assertTrue(f'bgcolor="{BOM}"' in html or f'bgcolor="{CRITICO}"' in html)
+        self.assertNotIn("#1E7B34", html)
         self.assertIn("href=", html)
 
     def test_planilha_abre_pela_captacao_mensal(self):

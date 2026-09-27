@@ -8,11 +8,13 @@ fluxo vem da janela de informes do Fundos.NET.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.market.etf_competicao import (
+    casa_da_gestora,
     curto,
     nome_com_ticker,
     pct,
@@ -21,20 +23,32 @@ from shelf_monitor.market.etf_competicao import (
     reais,
     reais_mil,
 )
-from shelf_monitor.report.digest import (
-    _EMAIL_BODY,
-    _EMAIL_CARD,
-    _H2,
-    _LI,
-    _P,
-    _TABLE,
-    _TD,
-    _TH,
-    _esc,
-    _md_para_html,
+from shelf_monitor.report.etf_captacao import nome_curto
+from shelf_monitor.report.shared.email_xp import (
+    cabecalho,
+    casca,
+    chamada,
+    esc,
+    faixa,
+    fontes_html,
+    legenda,
+    mais,
+    md_para_html,
+    miudo,
+    nota,
+    pontuado,
+    secao,
+    tabela,
 )
+from shelf_monitor.report.shared.estilo import contorno_da_casa, cor_da_casa
 from shelf_monitor.report.shared.fontes import CVM_BALANCETE_FIE, CVM_CADASTRO, FUNDOS_NET
-from shelf_monitor.texto import competencia_br, contagem, data_br
+from shelf_monitor.report.shared.graficos_email import (
+    Linha,
+    barras,
+    figura,
+    numeros_em_destaque,
+)
+from shelf_monitor.texto import competencia_br, contagem, data_br, milhar
 
 _FONTES = (CVM_BALANCETE_FIE, CVM_CADASTRO, FUNDOS_NET)
 _MAX_GESTORAS = 12
@@ -317,29 +331,232 @@ def render_etf_markdown(bloco: dict, gerado_em: datetime | None = None) -> str:
 
 
 # --- HTML -------------------------------------------------------------------
+#
+# O padrao executivo da XP (shared/email_xp.py e shared/graficos_email.py) e a
+# secao 5 da linguagem visual: as leituras viram numeros e uma tabela de
+# "tema e prazo | numeros"; cada bloco abre por uma figura com titulo que
+# afirma, calculado dos dados; toda lista de ETF ou de segmento e tabela; a
+# metodologia fica numa linha cada, no fim. O markdown continua com as frases
+# inteiras - e o que se le no texto puro.
+
+_ROTULO_DO_MONITOR = "Monitor de ETFs"
+_MAX_BARRAS = 10
 
 
-def _tabela_html(cabecalho: list[tuple[str, bool]], linhas: list[list[str]]) -> str:
-    """(titulo, alinhar a direita) por coluna; celulas ja escapadas."""
-    th = "".join(
-        f'<th style="{_TH}{"text-align:right;" if direita else ""}">{_esc(t)}</th>'
-        for t, direita in cabecalho
-    )
-    corpo = "".join(
-        "<tr>" + "".join(
-            f'<td style="{_TD}{"text-align:right;" if direita else ""}">{celula}</td>'
-            for celula, (_, direita) in zip(linha, cabecalho)
-        ) + "</tr>"
-        for linha in linhas
-    )
-    return f'<table style="{_TABLE}"><thead><tr>{th}</tr></thead><tbody>{corpo}</tbody></table>'
+def _marca(gestora: str | None, foco: bool) -> dict:
+    """Cor da gestora: a da casa monitorada a que ela pertence (XP, BTG, Itau,
+    Nu, Inter), cinza para as demais - nunca um matiz novo."""
+    casa = casa_da_gestora(gestora) or ""
+    return {"cor": cor_da_casa(casa), "contorno": contorno_da_casa(casa), "destaque": foco}
 
 
-def _lista_html(itens: list[str]) -> str:
+def _prazo_do_pl(bloco: dict) -> str:
+    """"balancete de ago/2026 (data-base 31/08/2026)"."""
     return (
-        '<ul style="margin:0 0 14px;padding-left:18px;">'
-        + "".join(f'<li style="{_LI}">{item}</li>' for item in itens)
-        + "</ul>"
+        f"balancete de {competencia_br(bloco['competencia'])} "
+        f"(data-base {data_br(bloco.get('data_pl'))})"
+    )
+
+
+def _comparacao(bloco: dict) -> str:
+    return f"de {competencia_br(bloco['competencia_inicio'])} a {competencia_br(bloco['competencia'])}"
+
+
+def _fonte(*fontes) -> str:
+    return "Fonte: " + "; ".join(md_para_html(f"[{f.nome}]({f.url})") for f in fontes) + "."
+
+
+def _rotulo(texto: str, detalhe: str = "") -> str:
+    """Celula de tema: o tema em negrito e o prazo (ou a unidade) miudo embaixo."""
+    return f"<strong>{esc(texto)}</strong>" + (miudo(esc(detalhe)) if detalhe else "")
+
+
+def _leituras(bloco: dict, foco: str) -> str:
+    """Os numeros-chave da casa em foco e a tabela "tema e prazo | numeros".
+
+    Tomam o lugar das frases de leitura (que seguem no markdown): cada linha
+    diz o tema e o prazo a esquerda e so numero a direita, com o ponto medio no lugar
+    de conjuncao.
+    """
+    base = next((g for g in bloco["gestoras"] if g["foco"]), None)
+    lider = bloco["gestoras"][0] if bloco["gestoras"] else None
+    lidera = [s for s in bloco["segmentos"] if s["foco_status"] == "lidera"]
+    corte = reais((bloco.get("limiares") or {}).get("pl_oportunidade"))
+    sem_etf = [s for s in bloco["oportunidades"] if s["foco_share"] is None]
+    pequena = [s for s in bloco["oportunidades"] if s["foco_share"] is not None]
+    grupos, _estreias, recentes, total_pre = _lancamentos(bloco)
+    pre_do_foco = sum(contagem_.get(foco, 0) for _, contagem_ in grupos)
+    cotistas = bloco.get("cotistas") or {}
+
+    numeros = []
+    if base:
+        numeros += [
+            (f"{base['posicao']}ª", f"gestora em PL de ETF, de {len(bloco['gestoras'])}", True),
+            (pct(base["share"]), f"do PL de ETFs ({reais(base['pl'])})"),
+            (str(len(lidera)), "segmentos liderados" if len(lidera) != 1 else "segmento liderado"),
+            (str(len(sem_etf)), f"segmentos sem ETF acima de {corte}"),
+            (f"{pre_do_foco} de {total_pre}", "ETFs em fase pré-operacional"),
+        ]
+        if base.get("share_cotistas") is not None:
+            numeros.append((pct(base["share_cotistas"]), "dos cotistas de ETF"))
+
+    linhas = []
+    if base and lider:
+        linhas.append([
+            _rotulo("PL de ETFs", _prazo_do_pl(bloco)),
+            esc(pontuado(
+                f"{reais(bloco['pl_total'])} em {bloco['etfs_com_pl']} ETFs",
+                f"{foco} {base['posicao']}ª, {reais(base['pl'])} ({pct(base['share'])})",
+                f"líder {curto(lider['gestora'])}, {pct(lider['share'])}",
+            )),
+        ])
+    if lidera:
+        linhas.append([
+            _rotulo(f"Onde a {foco} lidera", "% do PL do segmento"),
+            esc(pontuado(*(f"{s['segmento']} {pct(s['foco_share'], 0)}" for s in lidera))),
+        ])
+    if sem_etf:
+        linhas.append([
+            _rotulo(f"Sem ETF da {foco}", f"segmentos acima de {corte}"),
+            esc(pontuado(
+                f"{contagem(len(sem_etf), 'segmento', 'segmentos')}, "
+                f"{reais(sum(s['pl'] for s in sem_etf))}",
+                *(f"{s['segmento']} {reais(s['pl'])} ({curto(s['lider'])})" for s in sem_etf[:4]),
+            )),
+        ])
+    if pequena:
+        linhas.append([
+            _rotulo("Onde é pequena", "participação e posição no segmento"),
+            esc(pontuado(*(
+                f"{s['segmento']} {pct(s['foco_share'])} ({s['foco_posicao']}ª de {s['gestoras']})"
+                for s in pequena[:4]
+            ))),
+        ])
+    if base and bloco["competencia_inicio"] != bloco["competencia"]:
+        movimentos = sorted(
+            (s for s in bloco["segmentos"] if s.get("foco_delta_pp") is not None),
+            key=lambda s: -abs(s["foco_delta_pp"]),
+        )[:3]
+        linhas.append([
+            _rotulo(f"Participação da {foco}", _comparacao(bloco)),
+            esc(pontuado(
+                f"{pct(base['share_inicio'])} → {pct(base['share'])}",
+                *(f"{s['segmento']} {pp(s['foco_delta_pp'])}" for s in movimentos),
+            )),
+        ])
+    if total_pre or recentes:
+        do_foco = sum(1 for l in recentes if l["foco"])
+        linhas.append([
+            _rotulo("Lançamentos"),
+            esc(pontuado(
+                f"{total_pre} pré-operacionais, {pre_do_foco} da {foco}" if total_pre else "",
+                f"{contagem(len(recentes), 'estreia', 'estreias')} depois de "
+                f"{data_br(bloco.get('data_pl'))} ({reais(sum(l['pl'] for l in recentes))}), "
+                f"{do_foco} da {foco}" if recentes else "",
+            )),
+        ])
+    if base and cotistas.get("total"):
+        janela = f"informes de {data_br(cotistas.get('de'))} a {data_br(cotistas.get('ate'))}"
+        linhas.append([
+            _rotulo("Cotistas", janela),
+            esc(pontuado(
+                f"{foco} {milhar(base['cotistas'])} ({pct(base['share_cotistas'])} dos cotistas)",
+                f"{reais_mil(base['pl_por_cotista'])} por cotista, contra "
+                f"{reais_mil(bloco['pl_total'] / cotistas['total'])} no mercado",
+            )),
+        ])
+    return (
+        secao("Principais leituras")
+        + numeros_em_destaque(numeros)
+        + tabela(["Tema e prazo", "Números"], linhas, larguras={0: 32})
+    )
+
+
+def _figura_das_gestoras(bloco: dict, foco: str) -> str:
+    """Participacao no PL por gestora, a casa em foco destacada."""
+    gestoras = bloco["gestoras"][:_MAX_BARRAS]
+    if not any(g["foco"] for g in gestoras):
+        gestoras += [g for g in bloco["gestoras"] if g["foco"]]
+    linhas = [
+        Linha(g["gestora"], g["share"], pct(g["share"]), **_marca(g["gestora"], g["foco"]))
+        for g in gestoras if g.get("share")
+    ]
+    if not linhas:
+        return ""
+    lider = bloco["gestoras"][0]
+    base = next((g for g in bloco["gestoras"] if g["foco"]), None)
+    titulo = f"{curto(lider['gestora'])} lidera o PL de ETFs, com {pct(lider['share'])}"
+    if base and base is not lider:
+        titulo += f"; {foco} é a {base['posicao']}ª, com {pct(base['share'])}"
+    elif base:
+        titulo = f"{foco} lidera o PL de ETFs, com {pct(base['share'])}"
+    return figura(
+        titulo,
+        pontuado("Participação no PL de ETFs, %", _prazo_do_pl(bloco)),
+        barras(linhas),
+        _fonte(CVM_BALANCETE_FIE),
+    )
+
+
+def _figura_dos_segmentos(bloco: dict, foco: str) -> str:
+    """Participacao da casa em foco em cada segmento em que tem ETF."""
+    presentes = sorted(
+        (s for s in bloco["segmentos"] if s["foco_share"]), key=lambda s: -s["foco_share"]
+    )
+    # Abaixo de 1% a barra nao se ve; esses segmentos vao por nome no rodape.
+    miudos = [s for s in presentes if s["foco_share"] < 0.01]
+    presentes = [s for s in presentes if s["foco_share"] >= 0.01]
+    if not presentes:
+        return ""
+    linhas = [
+        Linha(s["segmento"], s["foco_share"], pct(s["foco_share"], 0), **_marca(foco, False))
+        for s in presentes
+    ]
+    lidera = sum(1 for s in bloco["segmentos"] if s["foco_status"] == "lidera")
+    corte = (bloco.get("limiares") or {}).get("pl_oportunidade")
+    sem_etf = [s for s in bloco["oportunidades"] if s["foco_share"] is None]
+    titulo = (
+        f"{foco} lidera {contagem(lidera, 'segmento', 'segmentos')} de "
+        f"{len(bloco['segmentos'])}"
+        + (f"; não tem ETF em {len(sem_etf)} acima de {reais(corte)}" if sem_etf else "")
+    )
+    return figura(
+        titulo,
+        pontuado(f"Participação da {foco} no PL de cada segmento em que tem ETF, %",
+                 _prazo_do_pl(bloco)),
+        barras(linhas),
+        (f"Abaixo de 1%: {esc(', '.join(s['segmento'] for s in miudos))}. " if miudos else "")
+        + _fonte(CVM_BALANCETE_FIE),
+    )
+
+
+def _figura_dos_lancamentos(bloco: dict, foco: str, gerado_em: datetime) -> str:
+    """ETFs em fase pre-operacional por gestora."""
+    pre = [l for l in bloco["lancamentos"] if l["chave"] == "pre_operacional"]
+    if not pre:
+        return ""
+    por_gestora: dict[str, int] = {}
+    for lancamento in pre:
+        por_gestora[lancamento["gestora"]] = por_gestora.get(lancamento["gestora"], 0) + 1
+    ordem = sorted(por_gestora.items(), key=lambda kv: (-kv[1], kv[0] != foco, kv[0]))
+    linhas = [
+        Linha(curto(g), n, str(n), **_marca(g, g == foco)) for g, n in ordem
+    ]
+    do_foco = por_gestora.get(foco, 0)
+    lider, maior = ordem[0]
+    if lider == foco:
+        titulo = f"{foco} prepara mais lançamentos: {do_foco} dos {len(pre)} ETFs pré-operacionais"
+    else:
+        titulo = (
+            f"{curto(lider)} prepara mais lançamentos ({maior}); {foco} tem {do_foco} dos "
+            f"{len(pre)} ETFs pré-operacionais"
+        )
+    return figura(
+        titulo,
+        pontuado("ETFs registrados na CVM e ainda sem operar, por gestora",
+                 f"cadastro lido em {gerado_em:%d/%m/%Y}"),
+        barras(linhas),
+        _fonte(CVM_CADASTRO),
     )
 
 
@@ -348,170 +565,213 @@ def render_etf_html(bloco: dict, gerado_em: datetime | None = None) -> str:
     foco = bloco.get("foco") or "casa em foco"
     titulo = f"Competição em ETFs - {foco}"
     if not bloco.get("available"):
-        corpo = f'<p style="{_P}">{_esc(bloco.get("reason"))}</p>'
+        corpo = chamada(esc(bloco.get("reason")))
+        previa = esc(bloco.get("reason"))
     else:
-        corpo = _corpo_html(bloco, foco)
-    return f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(titulo)}</title></head>
-<body style="{_EMAIL_BODY}">
-<div style="{_EMAIL_CARD}">
-  <h1 style="font-size:19px;font-weight:600;margin:0 0 4px;">{_esc(titulo)}</h1>
-  <p style="font-size:13px;color:#898781;margin:0 0 18px;">
-    Gestoras e segmentos de ETF &middot; execução de {gerado_em:%d/%m/%Y %H:%M}</p>
-  {corpo}
-</div>
-</body></html>
-"""
+        corpo = _corpo_html(bloco, foco, gerado_em)
+        previa = esc(re.sub(r"\*\*|\[|\]\([^)]*\)", "", bloco["leitura"][0])) if bloco["leitura"] else ""
+    corpo = (
+        cabecalho("Gestoras e segmentos de ETF", titulo, f"Execução de {gerado_em:%d/%m/%Y %H:%M}")
+        + corpo
+    )
+    return casca(
+        esc(titulo), previa, corpo, faixa(_ROTULO_DO_MONITOR, f"{gerado_em:%d/%m/%Y}")
+    )
 
 
-def _mensal_html(bloco: dict) -> str:
+def _tabela_de_gestoras(bloco: dict) -> str:
+    gestoras = bloco["gestoras"][:_MAX_GESTORAS]
+    return tabela(
+        ["#", "Gestora", "ETFs", "PL", "Part.", "Var. (pp)", "Cotistas", "PL/cotista", "Lidera"],
+        [
+            [
+                str(g["posicao"]), esc(g["gestora"]), str(g["etfs"]), esc(reais(g["pl"])),
+                esc(pct(g["share"])), esc(pp(g["delta_share_pp"])), esc(pct(g["share_cotistas"])),
+                esc(reais_mil(g["pl_por_cotista"])),
+                esc(contagem(len(g["lidera"]), "segmento", "segmentos") if g["lidera"] else "-"),
+            ]
+            for g in gestoras
+        ],
+        direita={0, 2, 3, 4, 5, 6, 7, 8}, sinal={5}, compacta=True,
+        base=[g["foco"] for g in gestoras],
+    )
+
+
+def _tabela_mensal(bloco: dict) -> str:
     mensal = _mensal(bloco)
     if not mensal:
         return ""
     competencias, gestoras = mensal
-    tabela = _tabela_html(
-        [("Gestora", False), *[(competencia_br(c), True) for c in competencias]],
+    return legenda(
+        f"**Participação no PL, competência a competência** · {_comparacao(bloco)}"
+    ) + tabela(
+        ["Gestora", *[competencia_br(c) for c in competencias]],
+        [[esc(g["gestora"]), *[esc(pct(g["share"][c])) for c in competencias]] for g in gestoras],
+        direita=range(1, len(competencias) + 1), base=[g["foco"] for g in gestoras],
+    )
+
+
+def _tabela_de_segmentos(bloco: dict, foco: str) -> str:
+    segmentos = bloco["segmentos"]
+    return tabela(
+        ["Segmento", "PL", "Líder", foco, "Posição", "Var. (pp)", "Lançando"],
         [
             [
-                f"<strong>{_esc(g['gestora'])}</strong>" if g["foco"] else _esc(g["gestora"]),
-                *[_esc(pct(g["share"][c])) for c in competencias],
+                esc(s["segmento"]), esc(_pl(s["pl"])),
+                esc(f"{curto(s['lider'])} {pct(s['share_lider'], 0)}" if s["lider"] else "-"),
+                esc(_situacao(s)), esc(s["foco_posicao"] or "-"), esc(pp(s["foco_delta_pp"])),
+                md_para_html(_lancando(s, foco)),
             ]
-            for g in gestoras
+            for s in segmentos
         ],
+        direita={1, 3, 4, 5}, sinal={5}, compacta=True,
+        base=[s["foco_status"] == "lidera" for s in segmentos],
     )
-    return f'<p style="{_P}">Participação no PL, competência a competência:</p>{tabela}'
 
 
-def _corpo_html(bloco: dict, foco: str) -> str:
-    def forte(texto: str, sim: bool = True) -> str:
-        return f"<strong>{_esc(texto)}</strong>" if sim else _esc(texto)
+def _lista_de_etfs(lancamentos: list[dict], com_data: bool) -> str:
+    """Gestora | Ticker | ETF | Segmento | PL (com a data embaixo, se houver)."""
+    mostrados = lancamentos[:_MAX_ESTREIAS]
+    return tabela(
+        ["Gestora", "Ticker", "ETF", "Segmento", "PL"],
+        [
+            [
+                esc(curto(l["gestora"])), f"<strong>{esc(l['ticker'])}</strong>" if l.get("ticker") else "-",
+                esc(nome_curto(l["nome"])), esc(l["segmento"]),
+                esc(reais(l["pl"])) + (miudo(f"em {data_br(l['data_pl'])}") if com_data else ""),
+            ]
+            for l in mostrados
+        ],
+        direita={4}, compacta=True, base=[l["foco"] for l in mostrados],
+    ) + mais(len(lancamentos) - len(mostrados), "na planilha, aba Lançamentos")
 
+
+def _notas_curtas(bloco: dict) -> list[str]:
+    """"Como ler" em uma linha cada; as frases inteiras ficam no markdown."""
+    return [
+        f"Segmento lido do nome do ETF: a CVM deixa vazios benchmark e classificação dos "
+        f"{bloco['etfs_catalogo']} ETFs do cadastro.",
+        "Dentro do segmento, variação de participação é fluxo (mesmo índice, mesma "
+        "valorização); menos exata onde o segmento junta índices diferentes.",
+        "Cotista contado uma vez por ETF (quem tem dois conta duas vezes), no maior valor "
+        "da janela de informes.",
+        "Pré-operacional: registrado e sem operar. Estreia: sem PL na primeira competência e "
+        "com PL na última. Quem estreou depois do balancete sai com o PL do último informe e "
+        "fica fora das somas.",
+    ]
+
+
+def _corpo_html(bloco: dict, foco: str, gerado_em: datetime) -> str:
+    limiares = bloco.get("limiares") or {}
+    corte = reais(limiares.get("pl_oportunidade"))
+    pequena = pct(limiares.get("share_pequena"), 0)
     partes = [
-        f'<p style="{_P}"><strong>Prazos:</strong> {_esc("; ".join(prazos_etf(bloco)))}.</p>',
-        _lista_html([_md_para_html(frase) for frase in bloco["leitura"]]),
-        f'<h2 style="{_H2}">Gestoras de ETF</h2>',
-        _tabela_html(
-            [("#", True), ("Gestora", False), ("ETFs", True), ("PL", True),
-             ("Participação", True), ("Variação (pp)", True), ("Cotistas", True),
-             ("PL por cotista", True), ("Lidera", False)],
-            [
-                [
-                    str(g["posicao"]), forte(g["gestora"], g["foco"]), str(g["etfs"]),
-                    _esc(reais(g["pl"])), _esc(pct(g["share"])), _esc(pp(g["delta_share_pp"])),
-                    _esc(pct(g["share_cotistas"])), _esc(reais_mil(g["pl_por_cotista"])),
-                    _esc(", ".join(g["lidera"]) or "-"),
-                ]
-                for g in bloco["gestoras"][:_MAX_GESTORAS]
-            ],
-        ),
-        _mensal_html(bloco),
-        f'<h2 style="{_H2}">Segmentos</h2>',
-        f'<p style="{_P}">O que cada ETF replica, do maior mercado para o menor. A coluna '
-        f'{_esc(foco)} é a participação dela no PL do segmento; a variação é da primeira à '
-        "última competência.</p>",
-        _tabela_html(
-            [("Segmento", False), ("PL", True), ("Líder", False), (foco, True),
-             ("Posição", True), ("Variação (pp)", True), ("Lançando", False)],
-            [
-                [
-                    _esc(s["segmento"]), _esc(_pl(s["pl"])),
-                    _esc(f"{s['lider']} ({pct(s['share_lider'], 0)})" if s["lider"] else "-"),
-                    forte(_situacao(s), s["foco_status"] == "lidera"),
-                    _esc(s["foco_posicao"] or "-"), _esc(pp(s["foco_delta_pp"])),
-                    _md_para_html(_lancando(s, foco)),
-                ]
-                for s in bloco["segmentos"]
-            ],
-        ),
+        nota(esc("Prazos: " + " · ".join(prazos_etf(bloco)) + ".")),
+        _leituras(bloco, foco),
+        secao("Gestoras de ETF"),
+        _figura_das_gestoras(bloco, foco),
+        _tabela_de_gestoras(bloco),
+        _tabela_mensal(bloco),
+        secao("Segmentos"),
+        _figura_dos_segmentos(bloco, foco),
+        legenda(f"**Todos os segmentos** · do maior PL ao menor · {foco}: participação no "
+                f"PL do segmento · variação {_comparacao(bloco)}"),
+        _tabela_de_segmentos(bloco, foco),
     ]
     if bloco["oportunidades"]:
-        limiares = bloco.get("limiares") or {}
         partes += [
-            f'<h2 style="{_H2}">Oportunidades: onde a {_esc(foco)} é pequena ou não tem ETF</h2>',
-            f'<p style="{_P}">Segmentos acima de {_esc(reais(limiares.get("pl_oportunidade")))} '
-            f'em que ela tem menos de {_esc(pct(limiares.get("share_pequena"), 0))} do PL, do '
-            "maior para o menor:</p>",
-            _lista_html([
-                f'{forte(s["segmento"])} &mdash; {_esc(reais(s["pl"]))}, líder '
-                f'{_esc(s["lider"])} ({_esc(pct(s["share_lider"], 0))}); '
-                f"{_esc(_posicao_do_foco(s, foco))}"
-                + (
-                    f"; concorrentes lançando: {_esc(', '.join(_rivais_lancando(s, foco)))}"
-                    if _rivais_lancando(s, foco) else ""
-                )
-                for s in bloco["oportunidades"]
-            ]),
+            secao(f"Oportunidades: onde a {esc(foco)} é pequena ou não tem ETF"),
+            legenda(f"**Segmentos acima de {corte}** com menos de {pequena} da {foco} · "
+                    "do maior PL ao menor"),
+            tabela(
+                ["Segmento", "PL", "Líder", foco, "Lançando"],
+                [
+                    [
+                        f"<strong>{esc(s['segmento'])}</strong>", esc(reais(s["pl"])),
+                        esc(f"{curto(s['lider'])} {pct(s['share_lider'], 0)}"),
+                        esc(
+                            f"{pct(s['foco_share'])}, {s['foco_posicao']}ª de {s['gestoras']}"
+                            if s["foco_share"] is not None else "sem ETF"
+                        ) + (
+                            miudo(f"{_em_lancamento(s)} em lançamento")
+                            if s["foco_pre_operacionais"] or s["foco_recentes"] else ""
+                        ),
+                        esc(", ".join(_rivais_lancando(s, foco)) or "-"),
+                    ]
+                    for s in bloco["oportunidades"]
+                ],
+                direita={1}, compacta=True, larga=True,
+            ),
         ]
     if bloco["defesa"]:
         partes += [
-            f'<h2 style="{_H2}">Defesa: onde a {_esc(foco)} lidera</h2>',
-            _lista_html([
-                f'{forte(s["segmento"])} &mdash; {_esc(reais(s["pl"]))}, '
-                f'{_esc(pct(s["foco_share"]))} do segmento ({_esc(pp(s["foco_delta_pp"]))} no '
-                f'período); atrás: {_esc(s["segundo"] or "-")} ({_esc(pct(s["share_segundo"]))})'
-                + (
-                    f"; concorrentes lançando: {_esc(', '.join(_rivais_lancando(s, foco)))}"
-                    if _rivais_lancando(s, foco) else ""
-                )
-                for s in bloco["defesa"]
-            ]),
+            secao(f"Defesa: onde a {esc(foco)} lidera"),
+            tabela(
+                ["Segmento", "PL", foco, "Var. (pp)", "2º", "Lançando"],
+                [
+                    [
+                        f"<strong>{esc(s['segmento'])}</strong>", esc(reais(s["pl"])),
+                        esc(pct(s["foco_share"])), esc(pp(s["foco_delta_pp"])),
+                        esc(f"{curto(s['segundo'])} {pct(s['share_segundo'])}" if s["segundo"] else "-"),
+                        esc(", ".join(_rivais_lancando(s, foco)) or "-"),
+                    ]
+                    for s in bloco["defesa"]
+                ],
+                direita={1, 2, 3}, sinal={3}, compacta=True,
+            ),
         ]
     grupos, estreias, recentes, total_pre = _lancamentos(bloco)
     if grupos or estreias or recentes:
-        partes.append(f'<h2 style="{_H2}">Lançamentos</h2>')
+        partes += [secao("Lançamentos"), _figura_dos_lancamentos(bloco, foco, gerado_em)]
         if grupos:
             partes += [
-                f'<p style="{_P}"><strong>Em fase pré-operacional: {total_pre} ETFs</strong> '
-                "&mdash; registrados na CVM, ainda sem operar. Por segmento:</p>",
-                _lista_html([
-                    f"{_esc(segmento)}: "
-                    + _gestoras_contadas(
-                        {k: v for k, v in contagem.items()}, foco,
-                        lambda t: f"<strong>{_esc(t)}</strong>",
-                    )
-                    for segmento, contagem in grupos
-                ]),
+                legenda(f"**Em fase pré-operacional: {total_pre} ETFs** · registrados na CVM, "
+                        "ainda sem operar"),
+                tabela(
+                    ["Segmento", "ETFs", "Gestoras"],
+                    [
+                        [
+                            esc(segmento), str(sum(contagem_.values())),
+                            _gestoras_contadas_html(contagem_, foco),
+                        ]
+                        for segmento, contagem_ in grupos
+                    ],
+                    direita={1}, compacta=True,
+                ),
             ]
         if estreias:
-            itens = [
-                f'{forte(l["gestora"], l["foco"])} &mdash; {_esc(nome_com_ticker(l["nome"], l.get("ticker")))} '
-                f'({_esc(l["segmento"])}): {_esc(reais(l["pl"]))}'
-                for l in estreias[:_MAX_ESTREIAS]
-            ]
-            resto = len(estreias) - _MAX_ESTREIAS
-            if resto > 0:
-                itens.append(f"... e mais {resto} (planilha, aba Lançamentos)")
             partes += [
-                f'<p style="{_P}"><strong>Começaram a operar {_esc(_periodo_das_estreias(bloco))}: '
-                f"{contagem(len(estreias), 'ETF', 'ETFs')}</strong>, do maior PL para o menor:</p>",
-                _lista_html(itens),
+                legenda(f"**Começaram a operar {_periodo_das_estreias(bloco)}: "
+                        f"{contagem(len(estreias), 'ETF', 'ETFs')}** · do maior PL ao menor"),
+                _lista_de_etfs(estreias, com_data=False),
             ]
         if recentes:
-            itens = [
-                f'{forte(l["gestora"], l["foco"])} &mdash; {_esc(nome_com_ticker(l["nome"], l.get("ticker")))} '
-                f'({_esc(l["segmento"])}): {_esc(reais(l["pl"]))} em {data_br(l["data_pl"])}'
-                for l in recentes[:_MAX_ESTREIAS]
-            ]
-            resto = len(recentes) - _MAX_ESTREIAS
-            if resto > 0:
-                itens.append(f"... e mais {resto} (planilha, aba Lançamentos)")
             partes += [
-                f'<p style="{_P}"><strong>Começaram a operar depois do balancete de '
-                f"{data_br(bloco.get('data_pl'))}: {contagem(len(recentes), 'ETF', 'ETFs')}"
-                "</strong>, com o PL do último informe no Fundos.NET, do maior para o menor:</p>",
-                _lista_html(itens),
+                legenda(f"**Começaram a operar depois do balancete de "
+                        f"{data_br(bloco.get('data_pl'))}: {contagem(len(recentes), 'ETF', 'ETFs')}** "
+                        "· PL do último informe no Fundos.NET"),
+                _lista_de_etfs(recentes, com_data=True),
             ]
     partes += [
-        f'<h2 style="{_H2}">Como ler</h2>',
-        _lista_html([_esc(nota) for nota in _notas(bloco)]),
-        f'<h2 style="{_H2}">Fontes</h2>',
-        f'<p style="{_P}">Onde conferir cada número deste relatório:</p>',
-        _lista_html([_md_para_html(linha) for linha in _linhas_de_fontes()]),
+        secao("Como ler"),
+        *(nota(esc(linha)) for linha in _notas_curtas(bloco)),
+        fontes_html(_FONTES),
     ]
-    return "\n  ".join(partes)
+    return "\n".join(p for p in partes if p)
 
+
+def _em_lancamento(segmento: dict) -> int:
+    """ETFs da casa em foco no segmento que ainda nao entraram no PL do balancete."""
+    return len(segmento["foco_pre_operacionais"]) + len(segmento["foco_recentes"])
+
+
+def _gestoras_contadas_html(contagem_: dict[str, int], foco: str | None) -> str:
+    """"BTG (2), Itau, **XP**" - como `_gestoras_contadas`, com cada nome escapado."""
+    partes = []
+    for gestora, n in sorted(contagem_.items(), key=lambda kv: (-kv[1], kv[0])):
+        texto = esc(f"{curto(gestora)} ({n})" if n > 1 else curto(gestora))
+        partes.append(f"<strong>{texto}</strong>" if gestora == foco else texto)
+    return ", ".join(partes)
 
 def write_etf_digest(
     config: Config, bloco: dict, gerado_em: datetime | None = None

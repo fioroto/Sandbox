@@ -19,6 +19,7 @@ Rode com: python -m unittest discover -s tests -v
 """
 from __future__ import annotations
 
+import re
 import unittest
 from datetime import date, datetime
 from unittest import mock
@@ -339,7 +340,10 @@ class TestEstreiaDepoisDoBalancete(unittest.TestCase):
             md,
         )
         html = render_etf_html(self.bloco, datetime(2026, 9, 24, 10, 0))
-        self.assertIn("R$ 5 mi em 16/09/2026", html)
+        # No HTML a estreia e uma linha de tabela: o PL e a data embaixo dele.
+        texto = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+        self.assertIn("AGGX11", texto)
+        self.assertIn("R$ 5 mi em 16/09/2026", texto)
 
     def test_um_so_concorda_no_singular(self):
         catalogo, serie, informes = _cenario()
@@ -378,7 +382,9 @@ class TestSuperficies(unittest.TestCase):
         self.assertIn("Prefixado (IRF-M e Tesouro pré): **XP**", md)
         self.assertIn("[Balancete de fundos estruturados da CVM](https://dados.cvm.gov.br/dataset/fie-doc-balancete)", md)
         html = html_path.read_text(encoding="utf-8")
-        self.assertIn("<strong>Prazos:</strong>", html)
+        # Os prazos numa nota curta no topo, e cada figura com o dela.
+        self.assertIn("Prazos: PL: balancete de FIE de ago/2026 (data-base 31/08/2026)", html)
+        self.assertIn("comparação: de jun/2026 (data-base 30/06/2026) a ago/2026", html)
         self.assertIn('href="https://dados.cvm.gov.br/dataset/fie-doc-balancete"', html)
 
     def test_planilha_abre_pela_competicao(self):
