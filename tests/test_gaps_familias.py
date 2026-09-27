@@ -451,12 +451,26 @@ class TestSuperficies(_ComPasta):
         html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", render_html(relatorio, self.config)))
         import html as html_mod
         html = html_mod.unescape(html)
-        frase = frase_do_funil(build_gap_block(
+        bloco = build_gap_block(
             relatorio.snapshots, familias=self.mapa, distribuivel=relatorio.distribuivel
-        ))
+        )
+        frase = frase_do_funil(bloco)
         self.assertIn(frase, markdown)
-        self.assertIn(frase, html)
+        # No e-mail o funil e o grafico, sem a frase que o narrava (secao 5 da
+        # linguagem visual): os mesmos numeros, no titulo e em cada segmento.
+        funil = bloco["funil"]
+        self.assertIn(
+            f"{funil['reais']} dos {funil['aparentes']} gaps aparentes são reais", html
+        )
+        for rotulo, chave in (
+            ("Já cobertos", "cobertos"), ("Outra liquidez", "outra_liquidez"),
+            ("Reais: estratégia", "estrategia"), ("Reais: gestora", "gestora"),
+            ("Reais: sem carteira", "sem_dado"),
+        ):
+            if funil.get(chave):
+                self.assertIn(f"{rotulo} {funil[chave]}", html)
         self.assertIn("Já cobertos", markdown)
+        self.assertIn("Já cobertos", html)
         cnpjs_md = set(re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", markdown))
         cnpjs_html = set(re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", html))
         self.assertIn(mascara(ALFA_ACCESS), cnpjs_md)

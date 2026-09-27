@@ -6,10 +6,16 @@ sem JS e com largura contida - pronto para colar num e-mail.
 from __future__ import annotations
 
 import html
+import re
 from datetime import date
 from pathlib import Path
 
-from shelf_monitor.config import Config
+from shelf_monitor.config import PLATFORMS, Config
+from shelf_monitor.familias import (
+    LIMIAR_DISTANCIA_CARTEIRA,
+    LIMIAR_ESPELHO,
+    LIMIAR_SOBREPOSICAO,
+)
 from shelf_monitor.models import (
     BLOCO_CNPJ,
     BLOCO_COTISTAS,
@@ -29,12 +35,81 @@ from shelf_monitor.report.shared import (
     rotulo_da_casa,
 )
 from shelf_monitor.report.retail_flow import leitura_da_captacao
-from shelf_monitor.texto import competencia_br, contagem, meses_br, milhar, periodo_br
+from shelf_monitor.texto import (
+    competencia_br,
+    contagem,
+    data_br,
+    meses_br,
+    milhar,
+    periodo_br,
+)
+from shelf_monitor.report.shared.estilo import (
+    COMPONENTE_1,
+    RAMPA,
+    TINTA,
+    TINTA_2,
+    contorno_da_casa,
+    cor_da_casa,
+)
 from shelf_monitor.report.shared.fontes import (
     CVM_CADASTRO,
+    CVM_CDA,
+    CVM_EXTRATO,
     CVM_INFORME_DIARIO,
     Fonte,
     fontes_do_relatorio,
+)
+# A casca, a tabela e os estilos do e-mail moram em shared/email_xp.py (os
+# relatorios de ETF usam os mesmos). `_EMAIL_BODY`, `_EMAIL_CARD`, `_H2`, `_LI`,
+# `_P`, `_TABLE`, `_TD`, `_TH`, `_esc`, `_md_para_html` e `_cor_do_valor` seguem
+# importaveis daqui pelos nomes de antes.
+from shelf_monitor.report.shared.email_xp import (  # noqa: F401
+    CHAMADA as _CHAMADA,
+    CINZA as _CINZA,
+    EMAIL_BODY as _EMAIL_BODY,
+    EMAIL_CARD as _EMAIL_CARD,
+    H2 as _H2,
+    H3 as _H3,
+    LEGENDA as _LEGENDA,
+    LI as _LI,
+    LINK as _LINK,
+    MIUDO_CINZA as _MIUDO_CINZA,
+    NOTA as _NOTA,
+    P as _P,
+    RETRANCA as _RETRANCA,
+    TABLE as _TABLE,
+    TD as _TD,
+    TH as _TH,
+    TRACO as _TRACO,
+    UL as _UL,
+    casca as _casca_do_email,
+    cor_do_valor as _cor_do_valor,
+    esc as _esc,
+    faixa as _faixa,
+    fontes_html as _fontes_html,
+    fundo_html as _fundo_html,
+    legenda as _legenda,
+    mais as _mais,
+    md_para_html as _md_para_html,
+    pontuado as _linha,
+    tabela as _tabela,
+)
+from shelf_monitor.report.shared.graficos_email import (
+    Celula,
+    Linha,
+    LinhaDeCalor,
+    Oposta,
+    Segmento,
+    Serie,
+    barra_segmentada,
+    barras,
+    barras_divergentes,
+    barras_opostas,
+    colunas_por_casa,
+    figura,
+    grades_por_casa,
+    mapa_de_calor,
+    numeros_em_destaque,
 )
 from shelf_monitor.report.performance import (
     _MAX_EXPOSTOS,
@@ -435,41 +510,6 @@ def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
     return lines
 
 
-def _negrito_html(texto: str) -> str:
-    import re
-
-    partes = re.split(r"\*\*(.+?)\*\*", texto)
-    return "".join(
-        f"<strong>{_esc(parte)}</strong>" if i % 2 else _esc(parte)
-        for i, parte in enumerate(partes)
-    )
-
-
-_LINK_MD = r"\[([^\]]+)\]\((https?://[^)\s]+)\)"
-
-
-def _md_para_html(texto: str) -> str:
-    """Converte o `**negrito**` e os `[links](url)` de uma frase, escapando o resto.
-
-    Existe porque as frases de veredito sao escritas uma vez, em markdown, e
-    saem nos dois formatos: duplicar o texto para ter uma versao com <strong>
-    seria a mesma divergencia que o resto desta revisao veio apagar. Os links
-    sao as fontes citadas no texto (ver report/shared/fontes.py).
-    """
-    import re
-
-    saida = []
-    pos = 0
-    for m in re.finditer(_LINK_MD, texto):
-        saida.append(_negrito_html(texto[pos:m.start()]))
-        saida.append(
-            f'<a href="{_esc(m.group(2))}" style="color:#1a5fb4;">{_esc(m.group(1))}</a>'
-        )
-        pos = m.end()
-    saida.append(_negrito_html(texto[pos:]))
-    return "".join(saida)
-
-
 def _frase_do_ticket(report: RunReport) -> str | None:
     """O veredito do ticket de entrada, ou None quando nao ha o que concluir.
 
@@ -815,120 +855,123 @@ def _indice_mediano(casa: dict) -> str:
 
 
 def _html_tabela_rentabilidade(bloco: dict, sem_cotistas: str | None) -> str:
-    linhas = ""
+    """Uma linha por casa, so numero: o texto "258 de 552 (47%) carregam 23% do
+    PL - indice 0,48" virou quatro colunas."""
+    cabecalho = ["Casa", "Mediana dos fundos", "Ponderada por PL"]
+    if not sem_cotistas:
+        cabecalho += ["Ponderada por cotistas", "Gap"]
+    cabecalho += ["Fundos abaixo", "% fundos", "% PL", "Índice"]
+    linhas, negrito = [], []
     for casa in bloco["casas"]:
         massa = casa["alocacao_abaixo_da_mediana"]
-        cor = "#0ca30c" if (casa["gap"] or 0) > 0 else "#d03b3b"
-        por_cotista = "" if sem_cotistas else (
-            f'<td style="{_TD}text-align:right;"><strong>{_pct(casa["por_cotista"])}</strong></td>'
-            f'<td style="{_TD}text-align:right;color:{cor};">{_pp(casa["gap"])}</td>'
-        )
-        linhas += (
-            f'<tr><td style="{_TD}">{_esc(casa["label"])}</td>'
-            f'<td style="{_TD}text-align:right;">{_pct(casa["mediana"])}</td>'
-            f'<td style="{_TD}text-align:right;">{_pct(casa["por_pl"])}</td>'
-            f"{por_cotista}"
-            f'<td style="{_TD}">{massa["fundos"]} de {massa["de"]} '
-            f'({_share(massa["share_fundos"])}) carregam '
-            f'{_share(massa["share_pl"])} do PL &mdash; índice {_indice(massa)}</td></tr>'
-        )
-    cabecalho_cotistas = "" if sem_cotistas else (
-        f'<th style="{_TH}text-align:right;">Ponderada por cotistas</th>'
-        f'<th style="{_TH}text-align:right;">Gap</th>'
+        linha = [_esc(casa["label"]), _pct(casa["mediana"]), _pct(casa["por_pl"])]
+        if not sem_cotistas:
+            linha += [f"<strong>{_pct(casa['por_cotista'])}</strong>", _pp(casa["gap"])]
+        linha += [
+            f"{massa['fundos']} de {massa['de']}", _share(massa["share_fundos"]),
+            _share(massa["share_pl"]), _indice(massa),
+        ]
+        linhas.append(linha)
+        negrito.append(_e_base(casa.get("platform_id")))
+    colunas = range(1, len(cabecalho))
+    return _tabela(
+        cabecalho, linhas, direita=colunas, base=negrito, compacta=True,
+        sinal={4} if not sem_cotistas else (),
     )
-    return f"""<table style="{_TABLE}"><thead><tr>
-    <th style="{_TH}">Casa</th>
-    <th style="{_TH}text-align:right;">Mediana dos fundos</th>
-    <th style="{_TH}text-align:right;">Ponderada por PL</th>
-    {cabecalho_cotistas}
-    <th style="{_TH}">Abaixo da mediana da categoria</th>
-  </tr></thead><tbody>{linhas}</tbody></table>"""
 
 
-def _html_performance_section(report: RunReport) -> str:
+def _html_performance_section(report: RunReport, omitir: frozenset = frozenset()) -> str:
     blocos = blocos_de_rentabilidade(report.performance_12m, report.performance)
     if not blocos:
         return ""
     principal = blocos[0]
     sem_cotistas = report.suprime(BLOCO_COTISTAS)
+    partes = [f'<h2 style="{_RETRANCA}">{_TRACO}Rentabilidade da vitrine</h2>']
 
-    prazos = " e ".join(
-        _prazo(b, lambda texto: f"<strong>{_esc(texto)}</strong>") for b in blocos
-    )
-    tabelas = ""
-    for bloco in blocos:
+    # Sem a figura (orcamento do e-mail), a ressalva do rodape dela sobe para
+    # uma linha de abertura - e o que impede ler o numero como retorno do cliente.
+    if "rentabilidade" in omitir:
+        partes.append(
+            f'<p style="{_P}">Cota ex-provento do '
+            f'{_md_para_html(f"[informe diário da CVM]({CVM_INFORME_DIARIO.url})")}, '
+            "com o peso de mercado: não é o retorno dos clientes da casa.</p>"
+        )
+    for i, bloco in enumerate(blocos):
         janela = janela_do_bloco(bloco)
-        tabelas += (
-            f'<h3 style="{_H2}font-size:14px;">Em {_esc(janela["rotulo"])} '
-            f'<span style="font-weight:400;color:#898781;">'
+        partes.append(
+            f'<h3 style="{_H3}">Em {_esc(janela["rotulo"])} '
+            f'<span style="font-weight:400;{_CINZA}">'
             f'({periodo_br(janela.get("de"), janela.get("ate"))})</span></h3>'
-            f"{_html_tabela_rentabilidade(bloco, sem_cotistas)}"
         )
+        if "rentabilidade" not in omitir:
+            partes.append(_figura_da_rentabilidade(bloco, primeira=i == 0))
+        partes.append(_html_tabela_rentabilidade(bloco, sem_cotistas))
 
-    fora = "".join(
-        f'<p style="{_P}font-size:12.5px;color:#898781;">Fora: {_esc(e["label"])} &mdash; {_esc(e["reason"])}</p>'
-        for e in _excluidos(blocos)
+    indice = (
+        "Índice = % do PL ÷ % dos fundos abaixo da mediana da categoria; abaixo de 1, "
+        "o dinheiro evita os piores."
     )
-
-    # O recorte acionavel do bloco. Ele existia so no markdown - quem recebia o
-    # digest por e-mail via as tres medias da vitrine e nenhum fundo para agir.
-    expostos = [] if sem_cotistas else fundos_abaixo_da_categoria(principal)
-    bloco_expostos = ""
-    if expostos:
-        itens = "".join(
-            f"<li>{_contagem(f['cotistas'])} cotistas &mdash; {_esc(f['nome'])} "
-            f"({_esc(', '.join(f['casas']))}): {_pct(f['retorno'])} contra "
-            f"{_pct(f['mediana_categoria'])} da categoria ({_pp(f['excesso'])})</li>"
-            for f in expostos[:_MAX_EXPOSTOS]
-        )
-        bloco_expostos = (
-            f'<h3 style="{_H2}font-size:14px;">Fundos de muita gente rendendo '
-            f"abaixo da categoria em {_esc(janela_do_bloco(principal)['rotulo'])}</h3>"
-            f'<ul style="{_P}padding-left:18px;">{itens}</ul>'
-        )
-
-    # Custo relativo tambem so saia no markdown.
-    custo = report.custo
-    bloco_custo = ""
-    if custo and custo.get("available"):
-        linhas_custo = "".join(
-            f'<tr><td style="{_TD}">{_esc(casa["label"])}</td>'
-            f'<td style="{_TD}text-align:right;">{_indice_mediano(casa)}</td>'
-            f'<td style="{_TD}text-align:right;">{_share(casa["share_caro"])}</td>'
-            f'<td style="{_TD}text-align:right;">{_share(casa["share_barato"])}</td>'
-            f'<td style="{_TD}text-align:right;">{_share(casa["share_liquidez_imediata"])}</td></tr>'
-            for casa in custo["casas"]
-        )
-        bloco_custo = f"""
-  <h3 style="{_H2}font-size:14px;">Custo relativo à categoria</h3>
-  <p style="{_P}font-size:12.5px;color:#898781;">Índice mediano, não taxa mediana: a taxa
-    bruta entre casas mede o mix da prateleira, não o preço dos produtos.</p>
-  <table style="{_TABLE}"><thead><tr>
-    <th style="{_TH}">Casa</th>
-    <th style="{_TH}text-align:right;">Índice mediano</th>
-    <th style="{_TH}text-align:right;">Caros</th>
-    <th style="{_TH}text-align:right;">Baratos</th>
-    <th style="{_TH}text-align:right;">Resgate até D+1</th>
-  </tr></thead><tbody>{linhas_custo}</tbody></table>"""
-
-    nota_cotistas = (
+    gap = (
         f"Sem ponderação por cotistas: {_esc(sem_cotistas)}." if sem_cotistas
-        else "Gap positivo: o dinheiro grande está nos fundos melhores e o "
-        "varejo nos piores. Negativo: o inverso. O sinal do gap muda conforme a "
-        "janela."
+        else "Gap = ponderada por PL − por cotistas; positivo: o dinheiro grande está "
+        "nos fundos melhores. O sinal muda com a janela."
     )
-    return f"""
-  <h2 style="{_H2}">Rentabilidade da vitrine</h2>
-  <p style="{_P}">Prazos: {prazos}. Cota patrimonial do {_md_para_html(f"[informe diário da CVM]({CVM_INFORME_DIARIO.url})")},
-    ex-provento, contra a mediana da mesma categoria no universo oficial, no mesmo prazo.
-    É o retorno dos fundos que a casa exibe, com o peso que eles têm no
-    <strong>mercado</strong> &mdash; não o retorno dos clientes dela.</p>
-  {tabelas}
-  <p style="{_P}font-size:12.5px;color:#898781;">{nota_cotistas}</p>
-  {bloco_expostos}
-  {bloco_custo}
-  {fora}
-"""
+    partes.append(f'<p style="{_NOTA}">{gap} {indice}</p>')
+    if "pl_abaixo" not in omitir:
+        partes.append(_figura_do_pl_abaixo_da_mediana(principal))
+
+    # O recorte acionavel do bloco: fundos com muita gente atras dos pares.
+    expostos = [] if sem_cotistas else fundos_abaixo_da_categoria(principal)
+    if expostos:
+        partes.append(
+            f'<h3 style="{_H3}">Fundos de muita gente rendendo '
+            f"abaixo da categoria em {_esc(janela_do_bloco(principal)['rotulo'])}</h3>"
+        )
+        partes.append(_tabela(
+            ["Fundo", "Cotistas", "Retorno", "Mediana cat.", "Atrás", "Casas"],
+            [
+                [
+                    _fundo_html(f["nome"], format_cnpj(f["cnpj"]) if f.get("cnpj") else None),
+                    _contagem(f["cotistas"]), _pct(f["retorno"]),
+                    _pct(f["mediana_categoria"]), _pp(f["excesso"]),
+                    _esc(_casas_curtas(f["casas"])),
+                ]
+                for f in expostos[:_MAX_EXPOSTOS]
+            ],
+            direita={1, 2, 3, 4},
+        ))
+
+    custo = report.custo
+    if custo and custo.get("available"):
+        partes.append(f'<h3 style="{_H3}">Custo relativo à categoria</h3>')
+        figura_do_custo = "" if "custo" in omitir else _figura_do_custo(report)
+        partes.append(figura_do_custo or (
+            f'<p style="{_NOTA}">Índice, não taxa: a taxa bruta mede o mix da '
+            "prateleira. 1,00x = mediana da categoria.</p>"
+        ))
+        partes.append(_tabela(
+            ["Casa", "Índice mediano", "Caros", "Baratos", "Resgate até D+1"],
+            [
+                [
+                    _esc(casa["label"]), _indice_mediano(casa), _share(casa["share_caro"]),
+                    _share(casa["share_barato"]), _share(casa["share_liquidez_imediata"]),
+                ]
+                for casa in custo["casas"]
+            ],
+            direita={1, 2, 3, 4},
+            base=[_e_base(casa.get("platform_id")) for casa in custo["casas"]],
+        ))
+
+    fora = _excluidos(blocos)
+    if fora:
+        partes.append(
+            f'<p style="{_NOTA}">Fora: '
+            + "; ".join(
+                f"{_esc(e['label'])}, {_esc(_motivo_curto(e['reason']))}" for e in fora
+            )
+            + ".</p>"
+        )
+    return "".join(partes)
 
 
 def _link(fonte: Fonte) -> str:
@@ -1114,6 +1157,12 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
     As duas versoes eram escritas a mao, lado a lado, e divergiam - a
     oportunidade de grade saia com os fundos no markdown e sem eles no HTML.
     Montada uma vez, a divergencia deixa de ser possivel.
+
+    O e-mail le menos texto que o markdown (secao 5 da linguagem visual), entao
+    alguns blocos carregam chaves so do HTML, que o markdown ignora:
+    `curto` (a versao de uma linha; "" = o HTML omite o bloco), `figura` (a
+    figura que ocupa o lugar do paragrafo), `fundos` (a lista como linhas de
+    tabela) e `numeros` (a frase de contagem como numeros em destaque).
     """
     flow = report.retail_flow
     if not (flow and flow.get("available")):
@@ -1130,11 +1179,18 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             "publica fluxo por **fundo**, nunca por distribuidor: os números por casa "
             "são o fluxo dos fundos que ela exibe, no mercado inteiro."
         ),
+        "figura": "captacao",
+        "curto": (
+            f"[Informe diário da CVM]({CVM_INFORME_DIARIO.url}) · "
+            f"{_janela_da_captacao(periodo)} · fluxo por fundo, não por distribuidor."
+        ),
     }]
 
+    # A leitura em frases narra o grafico e a tabela de composicao: no e-mail,
+    # que tem os dois, ela sai.
     leitura = leitura_da_captacao(flow, report.suprimidos)
     if leitura:
-        blocos.append({"tipo": "lista", "titulo": None, "itens": leitura})
+        blocos.append({"tipo": "lista", "titulo": None, "itens": leitura, "curto": ""})
 
     # Composicao do saldo de cada casa.
     cabecalho = ["Casa", "Fundos com informe", "Captação líquida", "% do PL"]
@@ -1163,8 +1219,17 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             ]
         linhas.append(linha)
         sem_gestora += casa.get("sem_gestora", 0)
-    blocos.append({"tipo": "tabela", "cabecalho": cabecalho, "linhas": linhas})
-    blocos.append({"tipo": "nota", "texto": (
+    blocos.append({
+        "tipo": "tabela", "id": "composicao", "cabecalho": cabecalho, "linhas": linhas,
+    })
+    curto = _linha(
+        "Compartilhados + só nesta vitrine = captação líquida" if not sem_cnpj else "",
+        "% do PL: sobre o PL de início",
+        "Produto próprio: gestora da própria casa (watchlist do radar CVM)"
+        + (f", {sem_gestora} sem gestora conhecida fora" if sem_gestora else "")
+        if not sem_proprio else "",
+    ) + "." + (f" Sem o corte produto próprio x terceiros: {sem_proprio}." if sem_proprio else "")
+    blocos.append({"curto": curto, "tipo": "nota", "texto": (
         ("Compartilhados e só nesta vitrine somam a captação líquida. " if not sem_cnpj else "")
         + "% do PL: captação líquida sobre o PL de início dos mesmos fundos."
         + (
@@ -1183,6 +1248,8 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
         blocos.append({"tipo": "p", "texto": (
             "**Por família de ativo** - captação líquida dos fundos de cada vitrine. "
             "Na última coluna cada fundo conta uma vez, mesmo exibido por várias casas."
+        ), "curto": (
+            "**Por família de ativo** · na última coluna, cada fundo conta uma vez"
         )})
         blocos.append({
             "tipo": "tabela",
@@ -1208,7 +1275,7 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             "**Tendência** - média diária de captação por competência. A média diária "
             "existe porque o mês corrente tem menos pregões que os fechados; comparar "
             "totais seria comparar calendários."
-        )})
+        ), "figura": "mensal", "curto": "**Tendência** · média diária por competência"})
         linhas = []
         for platform_id, serie in (flow.get("serie_por_casa") or {}).items():
             por_competencia = {m["competencia"]: m for m in serie}
@@ -1219,36 +1286,47 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             linhas.append([_platform_label(platform_id), *celulas])
         blocos.append({
             "tipo": "tabela",
+            "id": "mensal",
             "cabecalho": ["Casa", *[_competencia(c) for c in competencias]],
             "linhas": linhas,
         })
 
     por_casa = flow.get("tendencia_por_casa") or {}
     linhas = []
+    # As mesmas parcelas em numero, para o HTML pintar o mapa de calor sem
+    # reler o texto da celula; e de quem e cada linha, para a casa-base.
+    parcelas: list[list[float]] = []
+    casas_do_ritmo: list[str] = []
     for casa in flow["casas"]:
         por_estado = por_casa.get(casa["platform_id"]) or {}
         total = sum(por_estado.values())
         if not total:
             continue
-        parcela = lambda n: f"{n / total:.0%}"  # noqa: E731
-        linhas.append([
-            casa["label"], str(total),
-            parcela(sum(por_estado.get(k, 0) for k in _CAPTANDO)),
-            parcela(por_estado.get("acelerando", 0)),
-            parcela(por_estado.get("virou_saida", 0)),
-            parcela(por_estado.get("saida_persistente", 0)),
-        ])
+        numeros = [
+            sum(por_estado.get(k, 0) for k in _CAPTANDO) / total,
+            por_estado.get("acelerando", 0) / total,
+            por_estado.get("virou_saida", 0) / total,
+            por_estado.get("saida_persistente", 0) / total,
+        ]
+        linhas.append([casa["label"], str(total), *(f"{n:.0%}" for n in numeros)])
+        parcelas.append(numeros)
+        casas_do_ritmo.append(casa["platform_id"])
     if linhas:
         blocos.append({"tipo": "p", "texto": (
             "**Tendência dos fundos, por casa** - parcela dos fundos de cada vitrine "
             "(com PL de ao menos R$ 1 mi no início) em cada ritmo. Captando: "
             "acelerando, estável, desacelerando ou que virou entrada no último mês."
+        ), "figura": "ritmo", "curto": (
+            "**Tendência dos fundos, por casa** · % dos fundos em cada ritmo"
         )})
         blocos.append({
             "tipo": "tabela",
+            "id": "ritmo",
             "cabecalho": ["Casa", "Fundos", "Captando", "Acelerando", "Virou saída",
                           "Saída persistente"],
             "linhas": linhas,
+            "parcelas": parcelas,
+            "casas": casas_do_ritmo,
         })
 
     criterio = "dinheiro e cotistas" if com_cotistas else "dinheiro"
@@ -1265,6 +1343,7 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             blocos.append({
                 "tipo": "lista", "titulo": titulo,
                 "itens": [_item_de_fundo(f, com_cotistas) for f in fundos[:_FLOW_LISTED]],
+                "fundos": fundos[:_FLOW_LISTED], "com_cotistas": com_cotistas,
             })
 
     if flow.get("total_estruturais"):
@@ -1273,6 +1352,10 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             "estrutural (fluxo maior "
             "que o próprio patrimônio, ou fundo esvaziado) ficam fora de todas as "
             "somas: é dinheiro trocando de veículo, não demanda."
+        ), "curto": (
+            f"{contagem(flow['total_estruturais'], 'fundo', 'fundos')} com movimento "
+            "estrutural (fluxo maior que o PL, ou fundo esvaziado) fora das somas: "
+            "troca de veículo, não demanda."
         )})
 
     # A grade e "fundo que capta fora da vitrine da XP", por CNPJ: sai junto.
@@ -1282,6 +1365,18 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             f" e {_inteiro(grade['cotistas_transferivel'])} cotistas" if com_cotistas else ""
         )
         blocos.append({"tipo": "h3", "texto": "Oportunidade de grade"})
+        numeros = [
+            (milhar(grade["total_transferiveis"]), "fundos transferíveis para a XP", True),
+            (_mm(grade["captacao_transferivel"]), "captação deles"),
+        ]
+        if com_cotistas:
+            numeros.append((_inteiro(grade["cotistas_transferivel"]), "cotistas deles"))
+        numeros += [
+            (milhar(grade["total_operacionais"]), "de gestora que a XP já distribui"),
+            (milhar(grade["total_comerciais"]), "exigem abrir gestora"),
+            (f"{milhar(grade['total_produto_do_concorrente'])} de {milhar(grade['total'])}",
+             "produto próprio do concorrente: não se transfere"),
+        ]
         blocos.append({"tipo": "p", "texto": (
             f"{grade['total']} fundos captam varejo fora da vitrine da XP, mas "
             f"{grade['total_produto_do_concorrente']} são produto próprio da casa "
@@ -1289,7 +1384,7 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
             f"fundos, {_mm(grade['captacao_transferivel'])}**{cotistas} - "
             f"{grade['total_operacionais']} de gestora que a XP já distribui, "
             f"{grade['total_comerciais']} exigem abrir gestora."
-        )})
+        ), "numeros": numeros})
         itens = []
         for fundo in (grade.get("mais_varejo") or [])[:_FLOW_LISTED]:
             esforco = (
@@ -1303,7 +1398,11 @@ def _captacao_em_blocos(report: RunReport) -> list[dict]:
                 f"{fundo['nome']} - {_mm(fundo['captacao_liquida'])}{detalhe} - {esforco}"
             )
         if itens:
-            blocos.append({"tipo": "lista", "titulo": None, "itens": itens})
+            blocos.append({
+                "tipo": "lista", "titulo": None, "itens": itens,
+                "fundos": (grade.get("mais_varejo") or [])[:_FLOW_LISTED],
+                "com_cotistas": com_cotistas, "com_esforco": True,
+            })
     return blocos
 
 
@@ -1333,268 +1432,956 @@ def _md_flow_section(report: RunReport) -> list[str]:
     return lines
 
 
-def _cor_do_valor(texto: str) -> str:
-    """Verde para saldo positivo, vermelho para negativo - so em celula de valor."""
-    if texto.startswith("+"):
-        return "color:#2c6e4b;"
-    if texto.startswith("-") and len(texto) > 1:
-        return "color:#a3402b;"
-    return ""
+def _html_tabela_de_bloco(bloco: dict, base: str = "") -> str:
+    """A tabela de um bloco de captacao: primeira coluna texto, o resto numero,
+    com a cor do sinal. Mais de cinco colunas sai compacta, para caber nos 600 px
+    do e-mail no computador; no telefone ela rola dentro da propria caixa.
+
+    Na composicao, a cobertura ("606 de 636 (95%)") desce para baixo do nome da
+    casa, miuda: como coluna, ela quebrava em tres linhas e alongava a tabela.
+    """
+    cabecalho = list(bloco["cabecalho"])
+    linhas = [[_esc(c) for c in linha] for linha in bloco["linhas"]]
+    if bloco.get("id") == "composicao":
+        del cabecalho[1]
+        linhas = [
+            [f'{casa}<br><small style="{_MIUDO_CINZA}">{cobertura} com informe</small>',
+             *resto]
+            for casa, cobertura, *resto in linhas
+        ]
+    # "+3.489,5 MM (345 fundos)": a contagem desce para baixo do valor, miuda,
+    # e o valor fica numa linha so.
+    contagem_miuda = rf'\1<br><small style="{_MIUDO_CINZA}">\2</small>'
+    linhas = [
+        [re.sub(r"^(.+?) \(([\d.]+ fundos?)\)$", contagem_miuda, c) for c in linha]
+        for linha in linhas
+    ]
+    colunas = range(1, len(cabecalho))
+    # A linha da casa-base: o rotulo dela abre a linha (antes da cobertura).
+    marcadas = [bool(base) and linha[0].split("<br>")[0] == _esc(base) for linha in linhas]
+    return _tabela(
+        cabecalho, linhas, direita=colunas, sinal=colunas, base=marcadas,
+        compacta=len(cabecalho) > 5,
+    )
 
 
-def _html_flow_section(report: RunReport) -> str:
+def _tabela_de_fundos_da_captacao(bloco: dict, janela: str) -> str:
+    """Uma lista de fundos da captacao como tabela: Fundo | Captacao | Cotistas | Casas.
+
+    O ticket por cotista novo vai miudo sob os cotistas, quando e curto: acima
+    de R$ 999 mil ele e o sinal de fluxo institucional, e o numero cheio fica na
+    planilha.
+    """
+    com_cotistas = bloco.get("com_cotistas")
+    com_esforco = bloco.get("com_esforco")
+    cabecalho = ["Fundo", f"Captação {janela}".strip()]
+    if com_cotistas:
+        cabecalho.append("Cotistas")
+    cabecalho.append("Casas")
+    if com_esforco:
+        cabecalho.append("Esforço")
+    linhas = []
+    for fundo in bloco["fundos"]:
+        # Sem o CNPJ: nas listas de mercado o nome basta, e o CNPJ esta na
+        # planilha - cada byte conta no orcamento do e-mail.
+        linha = [_esc(fundo["nome"]), _mm(fundo["captacao_liquida"])]
+        if com_cotistas:
+            cotistas = _inteiro(fundo["variacao_cotistas"])
+            ticket = fundo.get("ticket_por_cotista")
+            if ticket and len(_mil(ticket)) <= len("R$ 999 mil"):
+                cotistas += f'<br><small style="{_MIUDO_CINZA}">{_mil(ticket)} cada</small>'
+            linha.append(cotistas)
+        linha.append(_esc(_casas_curtas(fundo.get("vitrines") or [])))
+        if com_esforco:
+            linha.append(
+                "gestora já distribuída" if fundo.get("gestora_ja_distribuida")
+                else "abrir gestora"
+            )
+        linhas.append(linha)
+    larguras = {0: 46, 1: 17}
+    if com_cotistas:
+        larguras[2] = 14
+    return _tabela(
+        cabecalho, linhas, direita={1, 2} if com_cotistas else {1}, sinal={1},
+        larguras=larguras,
+    )
+
+
+def _html_flow_section(report: RunReport, omitir: frozenset = frozenset()) -> str:
+    """A captacao no e-mail: figura no lugar do paragrafo, tabela no lugar da lista.
+
+    Os blocos sao os mesmos do markdown (`_captacao_em_blocos`); o HTML le as
+    chaves so dele (`figura`, `curto`, `fundos`, `numeros`) e desenha menos
+    texto: a leitura em frases sai, porque o grafico e a tabela de composicao
+    mostram os mesmos numeros.
+    """
     blocos = _captacao_em_blocos(report)
     if not blocos:
         return ""
-    parts = [f'<h2 style="{_H2}">Captação dos fundos de vitrine</h2>']
+    flow = report.retail_flow
+    janela = meses_br(len((flow.get("periodo") or {}).get("meses_lidos") or []))
+    ritmo = next((b for b in blocos if b.get("id") == "ritmo"), None)
+    figuras = {
+        "captacao": lambda: _figura_da_captacao(flow),
+        "mensal": lambda: _figura_mensal(flow),
+        "ritmo": lambda: _figura_do_ritmo(ritmo, flow) if ritmo else "",
+    }
+    parts = [f'<h2 style="{_RETRANCA}">{_TRACO}Captação dos fundos de vitrine</h2>']
+    ritmo_desenhado = False
     for bloco in blocos:
         tipo = bloco["tipo"]
+        curto = bloco.get("curto")
+        if curto == "":
+            continue
         if tipo == "p":
-            parts.append(f'<p style="{_P}">{_md_para_html(bloco["texto"])}</p>')
+            nome = bloco.get("figura")
+            desenho = figuras[nome]() if nome and nome not in omitir else ""
+            if desenho:
+                parts.append(desenho)
+                ritmo_desenhado = ritmo_desenhado or nome == "ritmo"
+            elif bloco.get("numeros"):
+                parts.append(numeros_em_destaque(bloco["numeros"]))
+            elif curto is not None:
+                parts.append(f'<p style="{_LEGENDA}">{_md_para_html(curto)}</p>')
+            else:
+                parts.append(f'<p style="{_P}">{_md_para_html(bloco["texto"])}</p>')
         elif tipo == "nota":
-            parts.append(
-                f'<p style="{_P}font-size:12.5px;color:#898781;">'
-                f'{_md_para_html(bloco["texto"])}</p>'
-            )
+            parts.append(f'<p style="{_NOTA}">{_md_para_html(curto or bloco["texto"])}</p>')
         elif tipo == "h3":
             parts.append(f'<h3 style="{_H3}">{_esc(bloco["texto"])}</h3>')
         elif tipo == "lista":
             if bloco["titulo"]:
+                destaque, _, resto = bloco["titulo"].partition(" - ")
                 parts.append(
-                    f'<p style="{_P}margin-bottom:6px;"><strong>{_esc(bloco["titulo"])}'
-                    "</strong></p>"
+                    f'<p style="{_LEGENDA}"><strong style="color:{TINTA};">'
+                    f"{_esc(destaque)}</strong>{' · ' + _esc(resto) if resto else ''}</p>"
                 )
-            itens = "".join(
-                f'<li style="{_LI}">{_md_para_html(item)}</li>' for item in bloco["itens"]
-            )
-            parts.append(f'<ul style="margin:0 0 14px;padding-left:18px;">{itens}</ul>')
+            if bloco.get("fundos"):
+                parts.append(_tabela_de_fundos_da_captacao(bloco, janela))
+            else:
+                itens = "".join(f"<li>{_md_para_html(item)}</li>" for item in bloco["itens"])
+                parts.append(f'<ul style="{_UL}">{itens}</ul>')
         elif tipo == "tabela":
-            cabecalho = "".join(
-                f'<th style="{_TH}{"" if i == 0 else "text-align:right;"}">{_esc(t)}</th>'
-                for i, t in enumerate(bloco["cabecalho"])
-            )
-            corpo = "".join(
-                "<tr>" + "".join(
-                    f'<td style="{_TD}{"" if i == 0 else "text-align:right;" + _cor_do_valor(c)}">'
-                    f"{_esc(c)}</td>"
-                    for i, c in enumerate(linha)
-                ) + "</tr>"
-                for linha in bloco["linhas"]
-            )
-            parts.append(
-                f'<table style="{_TABLE}"><thead><tr>{cabecalho}</tr></thead>'
-                f"<tbody>{corpo}</tbody></table>"
-            )
+            # O mapa de calor E a tabela de ritmo: mesmas celulas, pintadas.
+            if bloco is ritmo and ritmo_desenhado:
+                continue
+            parts.append(_html_tabela_de_bloco(bloco, _platform_label(flow.get("baseline_id") or "")))
     return "".join(parts)
 
 
 # --- HTML para e-mail --------------------------------------------------------
 
-_EMAIL_BODY = "margin:0;padding:24px 12px;background:#f4f4f2;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b0b0b;"
-_EMAIL_CARD = "max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e1e0d9;border-radius:10px;padding:24px;"
-_H2 = "font-size:16px;font-weight:600;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid #e1e0d9;"
-_H3 = "font-size:14px;font-weight:600;margin:18px 0 6px;"
-_P = "font-size:14px;line-height:1.55;margin:0 0 12px;color:#52514e;"
-_LI = "font-size:13.5px;line-height:1.5;margin-bottom:5px;color:#0b0b0b;"
-_TABLE = "border-collapse:collapse;width:100%;font-size:13px;margin-bottom:14px;"
-_TH = "text-align:left;padding:7px 8px;background:#f9f9f7;border-bottom:1px solid #e1e0d9;font-size:12px;color:#52514e;"
-_TD = "padding:7px 8px;border-bottom:1px solid #f0efec;"
+
+def _e_base(platform_id: str | None) -> bool:
+    """A casa-base de toda leitura (a XP no monitor de fundos)."""
+    cfg = PLATFORMS.get(platform_id or "")
+    return bool(cfg and cfg.is_baseline)
 
 
-def _esc(value: object) -> str:
-    return html.escape(str(value))
+def _marca(platform_id: str | None) -> dict:
+    """Cor, destaque e contorno da marca da casa numa figura.
+
+    O contorno preto e o que faz o amarelo da XP aparecer no branco
+    (`estilo.contorno_da_casa`); as outras casas ficam sem ele.
+    """
+    return {
+        "cor": cor_da_casa(platform_id or ""),
+        "destaque": _e_base(platform_id),
+        "contorno": contorno_da_casa(platform_id or ""),
+    }
 
 
-def _html_list(items: list[str], total: int) -> str:
-    rows = "".join(f'<li style="{_LI}">{item}</li>' for item in items)
-    more = (
-        f'<li style="{_LI}color:#898781;">... e mais '
-        f'{contagem(total - len(items), "fundo", "fundos")}</li>'
-        if total > len(items)
-        else ""
-    )
-    return f'<ul style="margin:0 0 14px;padding-left:20px;">{rows}{more}</ul>'
+def _fonte_html(*fontes: Fonte) -> str:
+    """"Fonte: <link>." - o rodape de figura, com o endereco publico."""
+    return "Fonte: " + "; ".join(_md_para_html(_link(f)) for f in fontes) + "."
 
 
-def _html_shelf_section(
-    diff: ShelfDiff, snapshot: ShelfSnapshot | None, url: str | None = None
-) -> str:
-    rotulo = _esc(_platform_label(diff.platform))
-    titulo = (
-        f'<a href="{_esc(url)}" style="color:#0b0b0b;">{rotulo}</a>' if url else rotulo
-    )
-    parts = [f'<h3 style="{_H3}">{titulo}</h3>']
+def _data_das_coletas(datas) -> str:
+    """"coleta de 26/09/2026", ou "coletas de 25/09/2026 a 26/09/2026"."""
+    dias = sorted({d for d in datas if d})
+    if not dias:
+        return ""
+    if len(dias) == 1:
+        return f"coleta de {data_br(dias[0])}"
+    return f"coletas {periodo_br(dias[0], dias[-1])}"
 
-    if snapshot and snapshot.status == SnapshotStatus.UNAVAILABLE:
-        parts.append(
-            f'<p style="{_P}">Coleta indisponível: '
-            f'{_esc(snapshot.error or "motivo não informado")}.</p>'
-        )
-        return "".join(parts)
 
-    tamanho = _frase_de_tamanho(snapshot)
-    if diff.nova_linha_de_base:
-        parts.append(
-            f'<p style="{_P}">Nova linha de base: {tamanho}. '
-            f"{_esc(_capitalizar(diff.suspect_reason))}.</p>"
-        )
-        return "".join(parts)
-    if diff.is_first_run:
-        parts.append(
-            f'<p style="{_P}">Primeira coleta: {tamanho}, como linha de base.</p>'
-        )
-        return "".join(parts)
-
-    if diff.suspect:
-        parts.append(
-            f'<p style="{_P}background:#fff8e6;border-left:3px solid #fab219;'
-            f'padding:8px 10px;border-radius:4px;"><strong>Coleta suspeita</strong> '
-            f"({_esc(diff.suspect_reason)}). Saídas omitidas para evitar falso churn.</p>"
-        )
-
-    entradas, saidas, alteracoes, so_catalogo = _mudancas_de_vitrine(diff, snapshot)
-    cauda = (
-        f" Mais {contagem(so_catalogo, 'mudança', 'mudanças')} só no catálogo Open Finance, "
-        "fora da vitrine."
-        if so_catalogo
-        else ""
+def _quando_do_relatorio(report: RunReport) -> str:
+    return _data_das_coletas(
+        s.snapshot_date for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE
     )
 
-    if not (entradas or saidas or alteracoes):
-        parts.append(
-            f'<p style="{_P}">Sem mudanças na vitrine: {tamanho}.{cauda}</p>'
-        )
-        return "".join(parts)
 
-    parts.append(
-        f'<p style="{_P}">{_movimento(entradas, saidas, alteracoes)} na vitrine - '
-        f"{tamanho}.{cauda}</p>"
+def _lider_e_base(linhas: list) -> tuple:
+    """A primeira linha (a lista ja chega ordenada) e a da casa-base, se houver."""
+    return linhas[0], next((linha for linha in linhas if linha.destaque), None)
+
+
+def _empatadas(linhas: list) -> list:
+    """As linhas empatadas com a primeira - contagem empata, e "a maior" mente."""
+    return [linha for linha in linhas if linha.valor == linhas[0].valor]
+
+
+# --- figuras do e-mail -------------------------------------------------------
+#
+# Uma funcao por figura: monta as linhas a partir do bloco, escreve o titulo que
+# afirma a leitura (e nao o nome do grafico) e o subtitulo com unidade e prazo.
+# Sem dado, devolvem "" - e a secao segue so com a tabela, que e a versao em
+# tabela de cada figura e continua sempre logo abaixo dela.
+
+
+def _figura_do_sumario(report: RunReport) -> str:
+    """Tamanho da vitrine de cada casa - a unica coluna comparavel entre casas."""
+    linhas, sem_vitrine, datas = [], [], []
+    for snapshot in report.snapshots:
+        if snapshot.status == SnapshotStatus.UNAVAILABLE:
+            continue
+        vitrine, _ = _tamanhos(snapshot)
+        rotulo = _platform_label(snapshot.platform)
+        if not vitrine:
+            sem_vitrine.append(rotulo)
+            continue
+        datas.append(snapshot.snapshot_date)
+        linhas.append(Linha(rotulo, vitrine, milhar(vitrine), **_marca(snapshot.platform)))
+    if not linhas:
+        return ""
+    linhas.sort(key=lambda linha: (-linha.valor, not linha.destaque))
+    lider, base = _lider_e_base(linhas)
+    fundos = contagem(int(lider.valor), "fundo", "fundos")
+    empate = _empatadas(linhas)
+    if len(linhas) == 1:
+        titulo = f"{lider.rotulo} tem {fundos} na vitrine"
+    elif len(empate) > 1:
+        titulo = (
+            f"{_juntar([linha.rotulo for linha in empate])} empatam na maior vitrine: "
+            f"{fundos}"
+        )
+    elif base is None or base is lider:
+        segunda = linhas[1]
+        titulo = f"{lider.rotulo} tem a maior vitrine: {fundos}; {segunda.rotulo}, {segunda.texto}"
+    else:
+        titulo = (
+            f"{lider.rotulo} tem a maior vitrine: {fundos}; {base.rotulo} fica em "
+            f"{linhas.index(base) + 1}º, com {base.texto}"
+        )
+    fonte = f"{_esc(_juntar(sem_vitrine))}: sem vitrine pública coletada." if sem_vitrine else ""
+    return figura(
+        titulo,
+        _linha("Fundos de varejo na vitrine", _data_das_coletas(datas)),
+        barras(linhas),
+        fonte,
     )
 
-    if entradas:
-        parts.append(
-            f'<p style="{_P}margin-bottom:6px;"><strong>Entraram na vitrine</strong></p>'
+
+def _figura_do_funil(gaps: dict, quando: str) -> str:
+    """De aparente a real: a barra unica segmentada pelo veredito da carteira."""
+    funil = gaps.get("funil") or {}
+    aparentes = funil.get("aparentes") or 0
+    if not (gaps.get("carteira") or {}).get("available") or not aparentes:
+        return ""
+    reais = funil.get("reais") or 0
+
+    def parte(rotulo: str, chave: str, cor: str) -> Segmento:
+        return Segmento(rotulo, funil.get(chave) or 0, milhar(funil.get(chave) or 0), cor)
+
+    # Da esquerda para a direita, como o funil se le: o que ja esta coberto, o
+    # que so falta em outra liquidez e os gaps reais, do mais ao menos claro.
+    segmentos = [
+        parte("Já cobertos", "cobertos", RAMPA[1]),
+        parte("Outra liquidez", "outra_liquidez", RAMPA[2]),
+        parte("Reais: estratégia", "estrategia", RAMPA[6]),
+        parte("Reais: gestora", "gestora", RAMPA[5]),
+        parte("Reais: sem carteira", "sem_dado", RAMPA[4]),
+    ]
+    if reais == aparentes:
+        titulo = (
+            "O único gap aparente é real" if aparentes == 1
+            else f"Todos os {milhar(aparentes)} gaps aparentes são reais"
         )
-        parts.append(
-            _html_list(
-                [
-                    _esc(f.name)
-                    + (f" <span style='color:#898781;'>{format_cnpj(f.cnpj)}</span>" if f.cnpj else "")
-                    for f in entradas[:_MAX_LISTED]
-                ],
-                len(entradas),
+    elif not reais:
+        titulo = (
+            "O único gap aparente já está coberto" if aparentes == 1
+            else f"Nenhum dos {milhar(aparentes)} gaps aparentes é real"
+        )
+    else:
+        titulo = (
+            f"{milhar(reais)} dos {milhar(aparentes)} gaps aparentes "
+            f"{'é real' if reais == 1 else 'são reais'}"
+        )
+    base = gaps.get("baseline_label") or "XP"
+    return figura(
+        titulo,
+        _linha(f"Fundos em vitrine concorrente e fora da {base}", "veredito pela carteira", quando),
+        barra_segmentada(segmentos),
+        f"{_esc(_nota_da_carteira(gaps))} {_fonte_html(CVM_CDA)}",
+    )
+
+
+def _nota_da_carteira(gaps: dict) -> str:
+    """A metodologia do veredito em uma linha: carteira usada, cobertura, limiares.
+
+    A frase inteira (`notas_da_cobertura`) segue no markdown; no e-mail ela vira
+    a nota do rodape do funil, com os mesmos limiares de `familias`.
+    """
+    carteira = gaps.get("carteira") or {}
+    competencias = carteira.get("competencias") or []
+    recuo = (
+        f" ({', '.join(competencia_br(c) for c in competencias[1:])} se faltar)"
+        if len(competencias) > 1 else ""
+    )
+    return _linha(
+        f"Carteira CDA de {competencia_br(competencias[0]) if competencias else '-'}{recuo}",
+        f"{milhar(carteira.get('com_carteira', 0))} de "
+        f"{milhar(gaps.get('gaps_aparentes', 0))} com carteira",
+        f"espelho: ≥ {LIMIAR_ESPELHO:.0%} do PL num só fundo",
+        f"equivalente: mesma gestora e categoria, ≤ {LIMIAR_DISTANCIA_CARTEIRA:.0%} da "
+        f"carteira em outra faixa e ≥ {LIMIAR_SOBREPOSICAO:.0%} em comum",
+    ) + "."
+
+
+def _figura_das_categorias(gaps: dict, quando: str) -> str:
+    """Onde os gaps reais se concentram, por categoria ANBIMA."""
+    categorias = [
+        c for c in gaps.get("categories", [])[:_GAP_CATEGORY_ROWS] if c.get("gap_count")
+    ]
+    # Uma barra so nao compara nada: a tabela logo abaixo ja diz o mesmo.
+    if len(categorias) < 2:
+        return ""
+    reais = "gaps reais" if (gaps.get("carteira") or {}).get("available") else "gaps"
+    linhas = sorted(
+        (Linha(c["category"], c["gap_count"], milhar(c["gap_count"]), COMPONENTE_1)
+         for c in categorias),
+        key=lambda linha: -linha.valor,
+    )
+    empate = _empatadas(linhas)
+    verbo = "têm" if len(empate) > 1 else "tem"
+    return figura(
+        f"{_juntar([linha.rotulo for linha in empate])} {verbo} mais {reais}: "
+        f"{contagem(int(linhas[0].valor), 'fundo', 'fundos')}",
+        _linha(
+            f"{_capitalizar(reais)} por categoria ANBIMA",
+            f"{contagem(len(linhas), 'categoria', 'categorias')} com mais", quando,
+        ),
+        barras(linhas, rotulo_em_cima=True),
+    )
+
+
+def _janela_da_captacao(periodo: dict) -> str:
+    """"3 meses, de 01/07/2026 a 25/09/2026"."""
+    meses = periodo.get("meses_lidos") or []
+    texto = periodo_br(periodo.get("de"), periodo.get("ate"))
+    return f"{meses_br(len(meses))}, {texto}" if meses else texto
+
+
+def _figura_da_captacao(flow: dict) -> str:
+    """Quem capta e quem perde: barras divergentes a partir do zero vermelho."""
+    base_id = flow.get("baseline_id")
+    linhas = sorted(
+        (
+            Linha(c["label"], c["captacao_liquida"], _mm(c["captacao_liquida"]),
+                  **_marca(c["platform_id"]))
+            for c in flow.get("casas") or []
+        ),
+        key=lambda linha: -linha.valor,
+    )
+    if not linhas:
+        return ""
+    lider, base = _lider_e_base(linhas)
+    if lider.valor < 0:
+        titulo = f"Todas as casas têm saída líquida; {lider.rotulo} perde menos: {lider.texto}"
+    elif base is None or base is lider or len(linhas) == 1:
+        titulo = f"{lider.rotulo} lidera a captação: {lider.texto}"
+    else:
+        titulo = (
+            f"{lider.rotulo} lidera a captação; {base.rotulo} fica em "
+            f"{linhas.index(base) + 1}º" + (", com saída líquida" if base.valor < 0 else "")
+        )
+    return figura(
+        titulo,
+        _linha("Captação líquida por vitrine, R$ milhões (MM)",
+               _janela_da_captacao(flow.get("periodo") or {})),
+        barras_divergentes(linhas),
+        "Fluxo por fundo, no mercado inteiro, não por distribuidor. "
+        + _fonte_html(CVM_INFORME_DIARIO),
+    )
+
+
+def _figura_mensal(flow: dict) -> str:
+    """Ritmo por competencia: colunas de ganho e perda, uma miniatura por casa."""
+    competencias = flow.get("competencias") or []
+    serie_por_casa = flow.get("serie_por_casa") or {}
+    if not competencias or not serie_por_casa:
+        return ""
+    base_id = flow.get("baseline_id")
+    ordem = [
+        c["platform_id"] for c in flow.get("casas") or [] if c["platform_id"] in serie_por_casa
+    ]
+    ordem += [pid for pid in serie_por_casa if pid not in ordem]
+    # A casa-base abre a fileira; as outras na ordem da tabela.
+    ordem.sort(key=lambda pid: pid != base_id)
+
+    series, medias = [], {}
+    for pid in ordem:
+        por_mes = {m["competencia"]: m["media_diaria"] for m in serie_por_casa[pid]}
+        medias[pid] = por_mes
+        ultimo = next((c for c in reversed(competencias) if por_mes.get(c) is not None), None)
+        series.append(Serie(
+            _platform_label(pid),
+            tuple(por_mes.get(c) for c in competencias),
+            nota=f"{competencia_br(ultimo)}: {_mm(por_mes[ultimo])}/dia" if ultimo else "",
+            **_marca(pid),
+        ))
+    corpo = colunas_por_casa(series, [competencia_br(c).split("/")[0] for c in competencias])
+    if not corpo:
+        return ""
+
+    alvo = base_id if base_id in medias else ordem[0]
+    valores = [(c, medias[alvo][c]) for c in competencias if medias[alvo].get(c) is not None]
+    if not valores:
+        return ""
+    competencia, ultimo = valores[-1]
+    mes = competencia_br(competencia)
+    if len(valores) < 2:
+        leitura = f"{_mm(ultimo)}/dia em {mes}"
+    else:
+        anterior = valores[-2][1]
+        if anterior < 0 <= ultimo:
+            verbo = "volta a captar"
+        elif anterior >= 0 > ultimo:
+            verbo = "passa a perder dinheiro"
+        elif ultimo < 0:
+            verbo = "saída se aprofunda" if ultimo < anterior else "saída diminui"
+        else:
+            verbo = "captação acelera" if ultimo > anterior else "captação desacelera"
+        leitura = f"{verbo} em {mes}, com {_mm(ultimo)}/dia"
+    periodo = flow.get("periodo") or {}
+    return figura(
+        f"{_platform_label(alvo)}: {leitura}",
+        _linha("Média diária por competência, MM/dia",
+               periodo_br(periodo.get("de"), periodo.get("ate")), "mesma escala"),
+        corpo,
+        f"Média diária porque {_esc(competencia_br(competencias[-1]))} vai só até "
+        f"{_esc(data_br(periodo.get('ate')))}. " + _fonte_html(CVM_INFORME_DIARIO),
+    )
+
+
+def _figura_do_ritmo(bloco: dict, flow: dict) -> str:
+    """A tabela de ritmo dos fundos como mapa de calor - as mesmas celulas."""
+    # A contagem de fundos vai sob o nome da casa, e nao numa coluna: com ela,
+    # o mapa passava da largura do telefone.
+    linhas = [
+        LinhaDeCalor(
+            texto[0],
+            tuple(Celula(n * 100, t) for n, t in zip(numeros, texto[2:])),
+            _e_base(pid),
+            contagem(int(texto[1]), "fundo", "fundos"),
+        )
+        for pid, texto, numeros in zip(bloco["casas"], bloco["linhas"], bloco["parcelas"])
+    ]
+    corpo = mapa_de_calor(bloco["cabecalho"][2:], linhas)
+    if not corpo:
+        return ""
+    persistente = {pid: numeros[3] for pid, numeros in zip(bloco["casas"], bloco["parcelas"])}
+    base_id = flow.get("baseline_id")
+    if base_id in persistente and len(persistente) > 1:
+        outras = {pid: v for pid, v in persistente.items() if pid != base_id}
+        melhor = min(outras, key=outras.get)
+        if persistente[base_id] <= outras[melhor]:
+            titulo = (
+                f"{_platform_label(base_id)} tem a menor parcela de fundos em saída "
+                f"persistente: {persistente[base_id]:.0%}"
             )
-        )
-
-    if saidas:
-        parts.append(
-            f'<p style="{_P}margin-bottom:6px;"><strong>Saíram da vitrine</strong></p>'
-        )
-        parts.append(
-            _html_list([_esc(f.name) for f in saidas[:_MAX_LISTED]], len(saidas))
-        )
-
-    if alteracoes:
-        parts.append(
-            f'<p style="{_P}margin-bottom:6px;"><strong>Mudanças de condições</strong></p>'
-        )
-        items = []
-        for change in alteracoes[:_MAX_LISTED]:
-            details = ", ".join(
-                f"{_esc(_FIELD_LABELS.get(c.field, c.field))}: "
-                f"{_esc(_format_value(c.old))} &rarr; <strong>{_esc(_format_value(c.new))}</strong>"
-                for c in change.changes
+        else:
+            titulo = (
+                f"{_platform_label(base_id)} tem {persistente[base_id]:.0%} dos fundos em "
+                f"saída persistente; {_platform_label(melhor)}, {outras[melhor]:.0%}"
             )
-            items.append(f"{_esc(change.name)} &mdash; {details}")
-        parts.append(_html_list(items, len(alteracoes)))
+    else:
+        pior = max(persistente, key=persistente.get)
+        titulo = (
+            f"{_platform_label(pior)} tem a maior parcela de fundos em saída "
+            f"persistente: {persistente[pior]:.0%}"
+        )
+    return figura(
+        titulo,
+        _linha("% dos fundos de cada vitrine por ritmo de captação",
+               _janela_da_captacao(flow.get("periodo") or {})),
+        corpo,
+        "Captando inclui acelerando · fundos com PL de ao menos R$ 1 mi no início.",
+    )
 
-    return "".join(parts)
+
+def _figura_da_rentabilidade(bloco: dict, primeira: bool = True) -> str:
+    """Retorno ponderado por PL por casa, numa janela; com negativo, divergente.
+
+    A ressalva que evita a leitura errada (e o peso do mercado, nao o retorno
+    dos clientes) vai so no rodape da primeira janela.
+    """
+    janela = janela_do_bloco(bloco)
+    linhas = sorted(
+        (
+            Linha(c["label"], c["por_pl"], _pct(c["por_pl"]), **_marca(c.get("platform_id")))
+            for c in bloco.get("casas", []) if c.get("por_pl") is not None
+        ),
+        key=lambda linha: -linha.valor,
+    )
+    if not linhas:
+        return ""
+    corpo = (
+        barras_divergentes(linhas) if any(linha.valor < 0 for linha in linhas)
+        else barras(linhas)
+    )
+    lider, base = _lider_e_base(linhas)
+    rotulo = janela["rotulo"]
+    titulo = f"{lider.rotulo} tem a maior rentabilidade ponderada por PL em {rotulo}: {lider.texto}"
+    if base is not None and base is not lider:
+        titulo += f"; {base.rotulo}, {base.texto}"
+    nota = _linha(
+        f"Base: {janela['base']}" if janela.get("base") else "",
+        f"{_contagem(janela['pregoes'])} pregões" if janela.get("pregoes") else "",
+        "cota ex-provento, com o peso de mercado: não é o retorno dos clientes da casa"
+        if primeira else "",
+    )
+    return figura(
+        titulo,
+        _linha("Retorno ponderado pelo PL, em %",
+               f"{rotulo}, {periodo_br(janela.get('de'), janela.get('ate'))}"),
+        corpo,
+        (f"{_esc(nota)}. " if nota else "") + _fonte_html(CVM_INFORME_DIARIO),
+    )
 
 
-def _html_cvm_section(report: RunReport) -> str:
+def _figura_do_pl_abaixo_da_mediana(bloco: dict) -> str:
+    """Quanto do dinheiro esta em fundo abaixo da propria categoria: 100 pontos por casa."""
+    janela = janela_do_bloco(bloco)
+    linhas = [
+        Linha(c["label"], massa["share_pl"], f"{_share(massa['share_pl'])} do PL",
+              **_marca(c.get("platform_id")))
+        for c in bloco.get("casas", [])
+        if (massa := c.get("alocacao_abaixo_da_mediana") or {}).get("share_pl") is not None
+    ]
+    corpo = grades_por_casa(linhas)
+    if not corpo:
+        return ""
+    ordenadas = sorted(linhas, key=lambda linha: linha.valor)
+    melhor, base = _lider_e_base(ordenadas)
+    rotulo = janela["rotulo"]
+    if base is None or base is melhor:
+        titulo = (
+            f"{melhor.rotulo} tem a menor parcela do PL em fundos abaixo da mediana da "
+            f"categoria em {rotulo}: {_share(melhor.valor)}"
+        )
+    else:
+        titulo = (
+            f"{base.rotulo} tem {_share(base.valor)} do PL em fundos abaixo da mediana "
+            f"da categoria em {rotulo}; {melhor.rotulo}, {_share(melhor.valor)}"
+        )
+    return figura(
+        titulo,
+        _linha("% do PL em fundos abaixo da mediana da categoria",
+               f"{rotulo}, {periodo_br(janela.get('de'), janela.get('ate'))}",
+               "1 quadrado = 1%"),
+        corpo,
+        _fonte_html(CVM_INFORME_DIARIO),
+    )
+
+
+def _figura_do_custo(report: RunReport) -> str:
+    """Indice mediano de custo por casa, contra a mediana da categoria."""
+    custo = report.custo or {}
+    linhas = sorted(
+        (
+            Linha(c["label"], c["indice_mediano"], _indice_mediano(c),
+                  **_marca(c.get("platform_id")))
+            for c in custo.get("casas", []) if c.get("indice_mediano") is not None
+        ),
+        key=lambda linha: linha.valor,
+    )
+    if not linhas:
+        return ""
+    barata, base = _lider_e_base(linhas)
+    if len(linhas) == 1:
+        titulo = f"{barata.rotulo} cobra {barata.texto} a mediana da categoria"
+    elif base is None or base is barata:
+        titulo = f"{barata.rotulo} é a casa mais barata contra a categoria: {barata.texto}"
+    elif base is linhas[-1]:
+        titulo = (
+            f"{base.rotulo} é a casa mais cara contra a categoria: {base.texto}; "
+            f"{barata.rotulo}, {barata.texto}"
+        )
+    else:
+        titulo = (
+            f"{barata.rotulo} é a casa mais barata contra a categoria: {barata.texto}; "
+            f"{base.rotulo}, {base.texto}"
+        )
+    return figura(
+        titulo,
+        _linha("Taxa de administração ÷ mediana da categoria (1,00x = mediana)",
+               _quando_do_relatorio(report)),
+        barras(linhas),
+        "Índice, não taxa: a taxa bruta mede o mix da prateleira. O nível carrega a "
+        "camada de distribuição; decide a diferença entre casas. "
+        + _fonte_html(CVM_EXTRATO),
+    )
+
+
+def _figura_do_radar(report: RunReport) -> str:
+    """Fundos registrados e ainda nao lancados, por casa."""
     snapshot = report.cvm_snapshot
-    parts = [f'<h2 style="{_H2}">Radar CVM &mdash; visão antecipada</h2>']
+    linhas = []
+    for house, funds in snapshot.by_house().items():
+        pre_operacionais = sum(1 for f in funds if f.is_pre_operational)
+        if pre_operacionais:
+            linhas.append(Linha(
+                _platform_label(house), pre_operacionais, milhar(pre_operacionais),
+                **_marca(house),
+            ))
+    if not linhas:
+        return ""
+    linhas.sort(key=lambda linha: (-linha.valor, not linha.destaque))
+    lider, base = _lider_e_base(linhas)
+    empate = _empatadas(linhas)
+    verbo = "têm" if len(empate) > 1 else "tem"
+    titulo = (
+        f"{_juntar([linha.rotulo for linha in empate])} {verbo} mais fundos "
+        f"pré-operacionais: {lider.texto}"
+    )
+    if base is not None and base not in empate:
+        titulo += f"; {base.rotulo}, {base.texto}"
+    return figura(
+        titulo,
+        _linha("Registrados na CVM e ainda não lançados, por casa",
+               f"cadastro de {data_br(snapshot.collected_at.date())}"),
+        barras(linhas),
+        _fonte_html(CVM_CADASTRO),
+    )
+
+
+def _figura_das_vitrines(report: RunReport) -> str:
+    """Entradas a direita e saidas a esquerda do zero, por casa, desde a coleta anterior."""
+    linhas, antes, depois, suspeitas = [], [], [], []
+    alteracoes = 0
+    for diff in report.shelf_diffs:
+        snapshot = report.snapshot_for(diff.platform)
+        if diff.is_first_run or (snapshot and snapshot.status == SnapshotStatus.UNAVAILABLE):
+            continue
+        entradas, saidas, alteradas, _ = _mudancas_de_vitrine(diff, snapshot)
+        alteracoes += len(alteradas)
+        if diff.suspect:
+            suspeitas.append(_platform_label(diff.platform))
+        antes.append(diff.prev_date)
+        depois.append(diff.curr_date)
+        linhas.append(Oposta(
+            _platform_label(diff.platform), len(saidas), len(entradas),
+            f"-{len(saidas)}" if saidas else "0",
+            f"+{len(entradas)}" if entradas else "0",
+            **_marca(diff.platform),
+        ))
+    total_entradas = sum(linha.direita for linha in linhas)
+    total_saidas = sum(linha.esquerda for linha in linhas)
+    if not (total_entradas or total_saidas):
+        return ""
+    if total_entradas and total_saidas:
+        titulo = (
+            f"As vitrines ganham {contagem(total_entradas, 'fundo', 'fundos')} e "
+            f"perdem {milhar(total_saidas)}"
+        )
+    elif total_entradas:
+        titulo = (
+            f"As vitrines ganham {contagem(total_entradas, 'fundo', 'fundos')} e não "
+            "perdem nenhum"
+        )
+    else:
+        titulo = (
+            f"As vitrines perdem {contagem(total_saidas, 'fundo', 'fundos')} e não "
+            "ganham nenhum"
+        )
+    notas = []
+    if alteracoes:
+        notas.append(contagem(
+            alteracoes,
+            "alteração de condições, na tabela abaixo.",
+            "alterações de condições, na tabela abaixo.",
+        ))
+    if suspeitas:
+        notas.append(f"Coleta suspeita em {_juntar(suspeitas)}: saídas omitidas.")
+    return figura(
+        titulo,
+        _linha("Entradas (à direita) e saídas (à esquerda) da vitrine",
+               periodo_br(min(antes), max(depois))),
+        barras_opostas(linhas),
+        _esc(" ".join(notas)),
+    )
+
+
+# --- secoes em HTML ----------------------------------------------------------
+#
+# Secao 5 da linguagem visual: lista de fundos vira tabela, introducao cabe numa
+# linha (ou some, quando a figura logo abaixo ja diz o que o bloco mede e o
+# prazo), metodologia vai para a nota miuda. O markdown continua com as frases
+# inteiras - e a parte em texto do e-mail.
+
+_CASA_CURTA = {"xp": "XP", "btg": "BTG", "itau": "Itaú", "nu": "Nu", "inter": "Inter"}
+
+
+def _casas_curtas(casas: list[str]) -> str:
+    """"XP, BTG, Inter": id ou rotulo de casa, no nome curto das colunas Casas.
+
+    Casa com rotulo trocado pelo modulo (o Itau Private da previdencia) ou fora
+    do registro fica com o rotulo inteiro - o nome curto e do rotulo padrao.
+    """
+    por_rotulo = {cfg.label: pid for pid, cfg in PLATFORMS.items()}
+    saida = []
+    for casa in casas:
+        pid = casa if casa in PLATFORMS else por_rotulo.get(casa)
+        rotulo = _platform_label(pid) if pid else casa
+        padrao = pid is not None and rotulo == PLATFORMS[pid].label
+        saida.append(_CASA_CURTA.get(pid, rotulo) if padrao else rotulo)
+    return ", ".join(saida)
+
+
+def _motivo_curto(motivo: str | None) -> str:
+    """A primeira oracao do motivo de exclusao; o detalhe fica no markdown."""
+    texto = motivo or "motivo não informado"
+    for corte in (" (", ";", " - "):
+        texto = texto.split(corte)[0]
+    return texto.strip()
+
+
+# --- vitrines ------------------------------------------------------------------
+
+
+_DETALHE_DO_CAMPO = " → "
+
+
+def _html_vitrines(report: RunReport, urls: dict[str, str]) -> str:
+    """Todas as mudancas de vitrine numa tabela: Casa | Movimento | Fundo | Detalhe.
+
+    O estado de cada casa (primeira coleta, nova linha de base, coleta suspeita,
+    sem mudanca, o que mudou so no catalogo) vira uma nota curta cada, embaixo.
+    O tamanho de cada vitrine ja esta no sumario e nao se repete aqui.
+    """
+    linhas: list[list[str]] = []
+    notas: list[str] = []
+    alertas: list[str] = []
+    primeira, sem_mudanca, so_catalogo, sobra = [], [], [], 0
+    for diff in report.shelf_diffs:
+        snapshot = report.snapshot_for(diff.platform)
+        rotulo = _platform_label(diff.platform)
+        if snapshot and snapshot.status == SnapshotStatus.UNAVAILABLE:
+            alertas.append(
+                f"{_esc(rotulo)}: coleta indisponível "
+                f"({_esc(_motivo_curto(snapshot.error))})."
+            )
+            continue
+        if diff.nova_linha_de_base:
+            alertas.append(
+                f"Nova linha de base em {_esc(rotulo)}: "
+                f"{_esc(diff.suspect_reason or 'a coleta passou a ver a vitrine')}."
+            )
+            continue
+        if diff.is_first_run:
+            primeira.append(rotulo)
+            continue
+        if diff.suspect:
+            alertas.append(
+                f"Coleta suspeita em {_esc(rotulo)} ({_esc(diff.suspect_reason)}): "
+                "saídas omitidas para evitar falso churn."
+            )
+        entradas, saidas, alteracoes, catalogo = _mudancas_de_vitrine(diff, snapshot)
+        if catalogo:
+            so_catalogo.append(f"{rotulo} {milhar(catalogo)}")
+        if not (entradas or saidas or alteracoes):
+            sem_mudanca.append(rotulo)
+            continue
+        casa = (
+            f'<a href="{_esc(urls[diff.platform])}" style="{_LINK}">{_esc(rotulo)}</a>'
+            if urls.get(diff.platform) else _esc(rotulo)
+        )
+        movimentos = [
+            ("Entrou", _fundo_html(f.name, format_cnpj(f.cnpj) if f.cnpj else None),
+             f"gestora {_esc(f.manager_name)}" if f.manager_name else "")
+            for f in entradas[:_MAX_LISTED]
+        ] + [
+            ("Saiu", _fundo_html(f.name, format_cnpj(f.cnpj) if f.cnpj else None), "")
+            for f in saidas[:_MAX_LISTED]
+        ] + [
+            ("Alterou", _esc(c.name), "; ".join(
+                f"{_esc(_FIELD_LABELS.get(m.field, m.field))}: {_esc(_format_value(m.old))}"
+                f"{_DETALHE_DO_CAMPO}<strong>{_esc(_format_value(m.new))}</strong>"
+                for m in c.changes
+            ))
+            for c in alteracoes[:_MAX_LISTED]
+        ]
+        sobra += sum(max(0, len(lista) - _MAX_LISTED) for lista in (entradas, saidas, alteracoes))
+        # A casa e o cabecalho do grupo, e nao uma coluna: no telefone a coluna
+        # a mais espremia o fundo e o detalhe.
+        linhas.append(casa)
+        linhas += [list(movimento) for movimento in movimentos]
+
+    if primeira:
+        notas.insert(0, f"Primeira coleta, linha de base: {_esc(_juntar(primeira))}.")
+    if sem_mudanca:
+        notas.append(f"Sem mudança na vitrine: {_esc(_juntar(sem_mudanca))}.")
+    if so_catalogo:
+        notas.append(
+            f"Só no catálogo Open Finance, fora da vitrine: {_esc(', '.join(so_catalogo))}."
+        )
+    partes = [f'<p style="{_CHAMADA}">{" ".join(alertas)}</p>'] if alertas else []
+    if linhas:
+        com_detalhe = any(linha[2] for linha in linhas if not isinstance(linha, str))
+        partes.append(_tabela(
+            ["Movimento", "Fundo"] + (["Detalhe"] if com_detalhe else []),
+            [
+                linha if isinstance(linha, str) or com_detalhe else linha[:2]
+                for linha in linhas
+            ],
+            larguras={0: 16},
+        ))
+        partes.append(_mais(sobra, "mudanças no dashboard e na planilha"))
+    if notas:
+        partes.append(f'<p style="{_NOTA}">{" ".join(notas)}</p>')
+    return "".join(partes)
+
+
+# --- radar CVM -----------------------------------------------------------------
+
+
+def _html_cvm_section(report: RunReport, omitir: frozenset = frozenset()) -> str:
+    snapshot = report.cvm_snapshot
+    parts = [f'<h2 style="{_RETRANCA}">{_TRACO}Radar CVM &mdash; visão antecipada</h2>']
 
     if not snapshot or snapshot.status == SnapshotStatus.UNAVAILABLE:
         error = snapshot.error if snapshot else "extrato não coletado"
         parts.append(f'<p style="{_P}">Extrato da CVM indisponível: {_esc(error)}.</p>')
         return "".join(parts)
 
-    pre_op_total = sum(1 for f in snapshot.funds if f.is_pre_operational)
-    parts.append(
-        f'<p style="{_P}">{contagem(len(snapshot.funds), "fundo", "fundos")} de gestoras '
-        f"ligadas às casas monitoradas, {_contagem(pre_op_total)} em fase pré-operacional "
-        "(registrados e ainda não "
-        f"lançados). Fonte: {_md_para_html(_link(CVM_CADASTRO))}.</p>"
-    )
+    figura_do_radar = "" if "radar" in omitir else _figura_do_radar(report)
+    parts.append(figura_do_radar or (
+        f'<p style="{_LEGENDA}">Fundos das gestoras ligadas às casas · '
+        f"cadastro de {data_br(snapshot.collected_at.date())} · "
+        f"Fonte: {_md_para_html(_link(CVM_CADASTRO))}.</p>"
+    ))
 
-    rows = "".join(
-        f'<tr><td style="{_TD}">{_esc(_platform_label(house))}</td>'
-        f'<td style="{_TD}text-align:right;">{_contagem(len(funds))}</td>'
-        f'<td style="{_TD}text-align:right;">'
-        f'{_contagem(sum(1 for f in funds if f.is_pre_operational))}</td></tr>'
-        for house, funds in sorted(snapshot.by_house().items())
-    )
-    parts.append(
-        f'<table style="{_TABLE}"><thead><tr>'
-        f'<th style="{_TH}">Casa</th>'
-        f'<th style="{_TH}text-align:right;">Registrados</th>'
-        f'<th style="{_TH}text-align:right;">Pré-operacionais</th>'
-        f"</tr></thead><tbody>{rows}</tbody></table>"
-    )
+    por_casa = sorted(snapshot.by_house().items())
+    linhas = [
+        [
+            _esc(_platform_label(house)), _contagem(len(funds)),
+            _contagem(sum(1 for f in funds if f.is_pre_operational)),
+        ]
+        for house, funds in por_casa
+    ]
+    linhas.append([
+        "Total", _contagem(len(snapshot.funds)),
+        _contagem(sum(1 for f in snapshot.funds if f.is_pre_operational)),
+    ])
+    parts.append(_tabela(
+        ["Casa", "Registrados", "Pré-operacionais"], linhas, direita={1, 2},
+        base=[_e_base(house) for house, _ in por_casa] + [False], total=True,
+    ))
 
     diff = report.cvm_diff
     if not diff:
         return "".join(parts)
 
-    if diff.new_registrations:
-        title = (
-            "Fundos registrados e ainda não lançados"
-            if diff.is_first_run
-            else "Novos registros na CVM"
-        )
-        parts.append(f'<p style="{_P}margin-bottom:6px;"><strong>{title}</strong></p>')
-        items = [
-            f"[{_esc(_platform_label(f.house))}] {_esc(f.name)}"
-            f" <span style='color:#898781;'>{format_cnpj(f.cnpj)}</span>"
-            + (f" &middot; registrado em {_esc(f.registered_at)}" if f.registered_at else "")
-            for f in diff.new_registrations[:_MAX_LISTED]
-        ]
-        parts.append(_html_list(items, len(diff.new_registrations)))
+    movimentos: list[tuple[str, object, str, str | None]] = []
+    sobra = 0
 
-    if diff.launches:
-        parts.append(
-            f'<p style="{_P}margin-bottom:6px;"><strong>Entraram em operação</strong></p>'
+    def juntar(fundos: list, rotulo, data) -> None:
+        nonlocal sobra
+        sobra += max(0, len(fundos) - _MAX_LISTED)
+        for item in fundos[:_MAX_LISTED]:
+            fundo = getattr(item, "fund", item)
+            movimentos.append((fundo.house, fundo, rotulo(item), data(item)))
+
+    if diff.is_first_run:
+        juntar(diff.new_registrations, lambda f: "Registrado, não lançado",
+               lambda f: f.registered_at)
+        legenda = "**Registrados e ainda não lançados**"
+    else:
+        juntar(
+            diff.new_registrations,
+            lambda f: "Novo registro" + (" · pré-operacional" if f.is_pre_operational else ""),
+            lambda f: f.registered_at,
         )
-        parts.append(
-            _html_list(
+        juntar(diff.launches, lambda c: "Entrou em operação",
+               lambda c: c.fund.situation_started_at)
+        juntar(
+            [c for c in diff.situation_changes if not c.is_launch],
+            lambda c: f"{c.old_situation or '-'} → {c.new_situation or '-'}",
+            lambda c: c.fund.situation_started_at,
+        )
+        juntar(diff.cancelled, lambda f: "Saiu do cadastro", lambda f: None)
+        legenda = (
+            f"**Movimentos no cadastro** · desde {data_br(diff.prev_date)}"
+            if diff.prev_date else "**Movimentos no cadastro**"
+        )
+    if movimentos:
+        # A data vai sob o movimento, miuda: quatro colunas nao cabem no telefone.
+        parts.append(_legenda(legenda))
+        parts.append(_tabela(
+            ["Casa", "Fundo", "Movimento"],
+            [
                 [
-                    f"[{_esc(_platform_label(c.fund.house))}] {_esc(c.fund.name)}"
-                    for c in diff.launches[:_MAX_LISTED]
-                ],
-                len(diff.launches),
-            )
-        )
-
+                    _esc(_casas_curtas([casa])),
+                    _fundo_html(fundo.name, format_cnpj(fundo.cnpj)),
+                    _esc(movimento)
+                    + (f'<br><small style="{_MIUDO_CINZA}">{data_br(data)}</small>'
+                       if data else ""),
+                ]
+                for casa, fundo, movimento, data in movimentos
+            ],
+            larguras={0: 10, 2: 30},
+            base=[_e_base(casa) for casa, *_ in movimentos],
+        ))
+        parts.append(_mais(sobra, "no dashboard e na planilha"))
     return "".join(parts)
 
 
-def _html_gaps_section(gaps: dict) -> str:
-    parts = [f'<h2 style="{_H2}">Gaps de prateleira da XP</h2>']
+# --- gaps ----------------------------------------------------------------------
+
+
+def _notas_curtas_dos_gaps(gaps: dict, com_funil: bool) -> list[str]:
+    """As notas do bloco de gaps em uma linha cada; a metodologia da carteira
+    fica no rodape do funil quando ele sai."""
+    notas = ["Vitrine contra vitrine, por CNPJ; o catálogo Open Finance não conta."]
+    if gaps.get("excluded"):
+        notas.append("Fora: " + "; ".join(
+            f"{e['label']}, {_motivo_curto(e['reason'])}" for e in gaps["excluded"]
+        ) + ".")
+    for nota in notas_da_cobertura(gaps):
+        if nota.startswith("Espelho e equivalência"):
+            if not com_funil:
+                notas.append(_nota_da_carteira(gaps))
+            continue
+        notas.append(nota)
+    return notas
+
+
+def _html_gaps_section(
+    gaps: dict, quando: str = "", omitir: frozenset = frozenset(), janela: str = ""
+) -> str:
+    parts = [f'<h2 style="{_RETRANCA}">{_TRACO}Gaps de prateleira da XP</h2>']
     if gaps.get("nao_se_aplica"):
         parts.append(
-            f'<p style="{_P}"><strong>Não se aplica a este monitor:</strong> '
+            f'<p style="{_CHAMADA}"><strong>Não se aplica a este monitor:</strong> '
             f"{_esc(gaps.get('reason'))}.</p>"
         )
         return "".join(parts)
     if not gaps.get("available"):
         parts.append(
-            f'<p style="{_P}"><strong>Análise suprimida nesta execução:</strong> '
+            f'<p style="{_CHAMADA}"><strong>Análise suprimida nesta execução:</strong> '
             f"{_esc(gaps.get('reason'))}.</p>"
         )
         return "".join(parts)
 
-    if not gaps["total_gaps"] and not gaps.get("gaps_liquidez"):
+    # O funil desenhado diz o que a frase de abertura dizia; sem ele (sem
+    # carteira, ou fora do orcamento), a frase volta.
+    funil = "" if "funil" in omitir else _figura_do_funil(gaps, quando)
+    tem_gaps = gaps["total_gaps"] or gaps.get("gaps_liquidez")
+    if funil:
+        parts.append(funil)
+    elif not tem_gaps:
         parts.append(
             f'<p style="{_P}">'
             + _esc(
@@ -1605,74 +2392,108 @@ def _html_gaps_section(gaps: dict) -> str:
             + "</p>"
         )
     else:
-        parts.append(f'<p style="{_P}">{_esc(_abertura_dos_gaps(gaps))}</p>')
-        items = ""
-        for fund in gaps["funds"][:_GAP_LISTED]:
-            captacao = fund.get("captacao_liquida")
-            fluxo = f" - {_mm(captacao)} de captação" if captacao is not None else ""
-            esforco = f" - {fund['esforco']}" if fund.get("esforco") else ""
-            items += (
-                f'<li style="{_LI}">{_esc(fund["name"])} ({_esc(fund["cnpj_display"])}) '
-                f"- {_esc(fund['category'])} - casas: {_esc(fund['houses_label'])}"
-                f"{_esc(fluxo)}{_esc(esforco)}</li>"
-            )
-        remaining = len(gaps["funds"]) - min(_GAP_LISTED, len(gaps["funds"]))
-        if remaining > 0:
-            items += (
-                f'<li style="{_LI}">... e mais {remaining} '
-                "(dashboard e planilha)</li>"
-            )
-        parts.append(f'<ul style="margin:0 0 12px;padding-left:20px;">{items}</ul>')
+        parts.append(f'<p style="{_P}">{_esc(frase_do_funil(gaps) or _abertura_curta(gaps))}</p>')
+
+    if tem_gaps:
+        reais = "Gaps reais" if (gaps.get("carteira") or {}).get("available") else "Gaps"
+        fundos = gaps["funds"][:_GAP_LISTED]
+        if fundos:
+            parts.append(_legenda(
+                f"**{reais}, os {len(fundos)} primeiros** · por esforço de fechar e "
+                "captação; produto próprio do concorrente no fim"
+            ))
+            parts.append(_tabela(
+                ["Fundo", "Categoria", "Casas", f"Captação {janela}".strip(), "Esforço"],
+                [
+                    [
+                        _fundo_html(f["name"], f.get("cnpj_display")),
+                        _esc(f["category"]),
+                        _esc(_casas_curtas(f.get("houses") or [])),
+                        _mm(f["captacao_liquida"]) if f.get("captacao_liquida") is not None
+                        else "-",
+                        _esc(f.get("esforco") or "-"),
+                    ]
+                    for f in fundos
+                ],
+                direita={3}, sinal={3}, compacta=True,
+                larguras={0: 34, 1: 24, 2: 9, 3: 15},
+            ))
+            parts.append(_mais(len(gaps["funds"]) - len(fundos), "no dashboard e na planilha"))
 
         categories = gaps["categories"][:_GAP_CATEGORY_ROWS]
         if categories:
-            rows = ""
-            for entry in categories:
-                best = entry["best_competitor"]
-                best_label = f"{best['label']} ({best['count']})" if best else "-"
-                rows += (
-                    f'<tr><td style="{_TD}">{_esc(entry["category"])}</td>'
-                    f'<td style="{_TD}text-align:right;">{entry["xp"]}</td>'
-                    f'<td style="{_TD}">{_esc(best_label)}</td>'
-                    f'<td style="{_TD}text-align:right;">{entry["gap_count"]}</td>'
-                    f'<td style="{_TD}text-align:right;">{entry.get("cobertos", 0)}</td></tr>'
-                )
-            parts.append(
-                f'<table style="{_TABLE}"><thead><tr>'
-                f'<th style="{_TH}">Categoria</th>'
-                f'<th style="{_TH}text-align:right;">XP</th>'
-                f'<th style="{_TH}">Melhor concorrente</th>'
-                f'<th style="{_TH}text-align:right;">Gaps reais</th>'
-                f'<th style="{_TH}text-align:right;">Cobertos</th>'
-                f"</tr></thead><tbody>{rows}</tbody></table>"
-            )
+            if "categorias" not in omitir:
+                parts.append(_figura_das_categorias(gaps, quando))
+            parts.append(_tabela(
+                ["Categoria", "XP", "Melhor concorrente", "Gaps reais", "Cobertos"],
+                [
+                    [
+                        _esc(entry["category"]), str(entry["xp"]),
+                        _esc(
+                            f"{entry['best_competitor']['label']} "
+                            f"({entry['best_competitor']['count']})"
+                            if entry["best_competitor"] else "-"
+                        ),
+                        str(entry["gap_count"]), str(entry.get("cobertos", 0)),
+                    ]
+                    for entry in categories
+                ],
+                direita={1, 3, 4},
+            ))
 
     cobertos = gaps.get("cobertos") or []
     if cobertos:
-        parts.append(
-            f'<p style="{_P}"><strong>Já cobertos</strong> ({milhar(len(cobertos))}, '
-            "os primeiros; a lista inteira com a evidência está na aba 'Gaps "
-            "cobertos' da planilha):</p>"
-        )
-        items = "".join(
-            f'<li style="{_LI}">{_esc(_linha_do_coberto(fund))}</li>'
-            for fund in cobertos[:_GAP_COBERTOS_LISTED]
-        )
-        parts.append(f'<ul style="margin:0 0 12px;padding-left:20px;">{items}</ul>')
+        mostrados = cobertos[:_GAP_COBERTOS_LISTED]
+        parts.append(_legenda(
+            f"**Já cobertos** · {milhar(len(cobertos))}; os {len(mostrados)} primeiros "
+            "(lista completa na aba 'Gaps cobertos' da planilha)"
+        ))
+        linhas = []
+        for fund in mostrados:
+            v = fund.get("veredito") or {}
+            resgate = (
+                f"D+{v['dmais']} / D+{v['dmais_cobre']}"
+                if v.get("dmais") is not None and v.get("dmais_cobre") is not None else "-"
+            )
+            como = (v.get("rotulo") or "-").removeprefix("coberto por ")
+            linhas.append([
+                _fundo_html(fund["name"], fund.get("cnpj_display")),
+                _fundo_html(v.get("nome_cobre") or "-",
+                            format_cnpj(v["cobre"]) if v.get("cobre") else None),
+                _esc(como), resgate,
+            ])
+        parts.append(_tabela(
+            ["Fundo concorrente", "Coberto por", "Como", "Resgate gap / XP"], linhas,
+            direita={3}, larga=True,
+        ))
 
-    notes = " ".join(_esc(note) for note in _gap_footnotes(gaps))
-    parts.append(f'<p style="font-size:12px;color:#898781;margin:0 0 12px;">{notes}</p>')
+    notes = " ".join(_esc(note) for note in _notas_curtas_dos_gaps(gaps, bool(funil)))
+    parts.append(f'<p style="{_NOTA}">{notes}</p>')
+    if gaps.get("baseline_warning"):
+        parts.insert(1, f'<p style="{_CHAMADA}"><strong>Atenção:</strong> '
+                        f"{_esc(gaps['baseline_warning'])}.</p>")
     return "".join(parts)
 
 
-def render_html(report: RunReport, config: Config | None = None) -> str:
-    generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
-    identidade = config if config is not None else Config
-    fontes_config = config if config is not None else Config()
-    sentence, is_alert = _summary_sentence(report)
-    summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
+def _abertura_curta(gaps: dict) -> str:
+    """Sem o mapa de familias: a contagem CNPJ contra CNPJ, sem a frase de ordem."""
+    return (
+        f"{gaps['total_gaps']} fundos de varejo em vitrines concorrentes e fora da "
+        f"vitrine da XP ({gaps['multi_house_gaps']} em 2 ou mais casas)."
+    )
 
-    rows = ""
+
+# --- fontes --------------------------------------------------------------------
+
+
+def _html_fontes(report: RunReport, config: Config) -> str:
+    """As fontes como tabela: nome com link | o que fornece (e os arquivos lidos)."""
+    return _fontes_html(fontes_do_relatorio(report, config))
+
+
+def _html_tabela_do_sumario(report: RunReport) -> tuple[str, bool]:
+    """A tabela do sumario, e se alguma casa tem catalogo maior que a vitrine."""
+    linhas, negrito = [], []
     tem_catalogo_maior = False
     for snapshot in report.snapshots:
         diff = report.diff_for(snapshot.platform)
@@ -1682,88 +2503,138 @@ def render_html(report: RunReport, config: Config | None = None) -> str:
             entradas, saidas, alteracoes, _ = _mudancas_de_vitrine(diff, snapshot)
         else:
             entradas = saidas = alteracoes = []
-        rows += (
-            f'<tr><td style="{_TD}">{_esc(_platform_label(snapshot.platform))}</td>'
-            f'<td style="{_TD}text-align:right;">'
-            f'{_contagem(vitrine) if vitrine else "sem vitrine"}</td>'
-            f'<td style="{_TD}text-align:right;color:#898781;">{_contagem(catalogo)}</td>'
-            f'<td style="{_TD}">{_esc(snapshot.status.value)}</td>'
-            f'<td style="{_TD}text-align:right;">{len(entradas)}</td>'
-            f'<td style="{_TD}text-align:right;">{len(saidas)}</td>'
-            f'<td style="{_TD}text-align:right;">{len(alteracoes)}</td></tr>'
-        )
+        linhas.append([
+            _esc(_platform_label(snapshot.platform)),
+            _contagem(vitrine) if vitrine else "sem vitrine",
+            f'<span style="{_CINZA}">{_contagem(catalogo)}</span>',
+            _esc(snapshot.status.value),
+            str(len(entradas)), str(len(saidas)), str(len(alteracoes)),
+        ])
+        negrito.append(_e_base(snapshot.platform))
+    tabela = _tabela(
+        ["Plataforma", "Vitrine", "Catálogo", "Status", "Entradas", "Saídas", "Alterações"],
+        linhas, direita={1, 2, 4, 5, 6}, base=negrito,
+    )
+    return tabela, tem_catalogo_maior
 
+
+# Orcamento do e-mail. O Gmail corta a mensagem com mais de ~102 KB de HTML: o
+# leitor ve o comeco e um link "Exibir mensagem inteira", e o resto some. As
+# figuras sao a parte que cresce (tabela de celulas coloridas), e sao todas a
+# versao grafica de uma tabela que fica no e-mail - entao, passado o orcamento,
+# elas saem uma a uma, da que menos acrescenta a que mais, e o rodape avisa.
+# Medido em 2026-09-27 com os dados reais: ~97 KB com todas as figuras.
+_ORCAMENTO_DO_EMAIL = 100_000
+_FIGURAS_POR_CORTE = (
+    ("pl_abaixo", "PL abaixo da mediana"),
+    ("mensal", "captação mês a mês"),
+    ("categorias", "gaps por categoria"),
+    ("radar", "radar CVM"),
+    ("vitrines", "entradas e saídas"),
+    ("sumario", "tamanho das vitrines"),
+    ("custo", "custo"),
+    ("ritmo", "ritmo dos fundos"),
+    ("rentabilidade", "rentabilidade"),
+    ("funil", "funil de gaps"),
+    ("captacao", "captação por casa"),
+)
+
+
+def render_html(report: RunReport, config: Config | None = None) -> str:
+    """O digest em HTML de e-mail, dentro do orcamento de tamanho do Gmail."""
+    montar = _montador_do_html(report, config)
+    html = montar(())
+    cortes = [chave for chave, _ in _FIGURAS_POR_CORTE]
+    for n in range(1, len(cortes) + 1):
+        if len(html.encode("utf-8")) <= _ORCAMENTO_DO_EMAIL:
+            break
+        html = montar(tuple(cortes[:n]))
+    return html
+
+
+def _montador_do_html(report: RunReport, config: Config | None):
+    """Monta as partes fixas uma vez; devolve `montar(omitidas) -> html`."""
+    generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
+    identidade = config if config is not None else Config
+    fontes_config = config if config is not None else Config()
+    sentence, is_alert = _summary_sentence(report)
+    summary = f"<strong>{_esc(sentence)}</strong>" if is_alert else _esc(sentence)
+
+    tabela_do_sumario, tem_catalogo_maior = _html_tabela_do_sumario(report)
     nota_base = (
-        f'<p style="font-size:12px;color:#898781;margin:-6px 0 18px;">'
-        "Vitrine: fundos de varejo na listagem da própria casa &mdash; o que o cliente vê, "
-        "é a única coluna comparável entre casas. Catálogo: o que a casa administra, "
-        "somando o Open Finance. Entradas, saídas e alterações contam a vitrine.</p>"
+        f'<p style="{_NOTA}">Vitrine: o que o cliente vê na listagem da casa, a única '
+        "coluna comparável · Catálogo: o que ela administra, com o Open Finance · "
+        "entradas, saídas e alterações contam a vitrine.</p>"
         if tem_catalogo_maior
         else ""
     )
 
     urls = _urls_das_vitrines(fontes_config, report)
-    shelf_sections = "".join(
-        _html_shelf_section(diff, report.snapshot_for(diff.platform), urls.get(diff.platform))
-        for diff in report.shelf_diffs
-    )
-    itens_fontes = "".join(
-        f'<li style="{_LI}">{_md_para_html(linha)}</li>'
-        for linha in _linhas_de_fontes(report, fontes_config)
-    )
-    bloco_fontes = (
-        f'<h2 style="{_H2}">Fontes</h2>'
-        f'<p style="{_P}">Onde conferir cada número deste relatório:</p>'
-        f'<ul style="margin:0 0 14px;padding-left:18px;">{itens_fontes}</ul>'
-        if itens_fontes else ""
-    )
+    vitrines = _html_vitrines(report, urls)
+    bloco_fontes = _html_fontes(report, fontes_config)
 
     ticket = _frase_do_ticket(report)
     bloco_ticket = (
-        f'<h2 style="{_H2}">Ticket de entrada</h2>'
+        f'<h2 style="{_RETRANCA}">{_TRACO}Ticket de entrada</h2>'
         f'<p style="{_P}">{_md_para_html(ticket)}</p>'
         if ticket else ""
     )
 
-    return f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(identidade.titulo_relatorio)}</title></head>
-<body style="{_EMAIL_BODY}">
-<div style="{_EMAIL_CARD}">
-  <h1 style="font-size:19px;font-weight:600;margin:0 0 4px;">{_esc(identidade.titulo_relatorio)}</h1>
-  <p style="font-size:13px;color:#898781;margin:0 0 18px;">
-    {_esc(identidade.descricao_relatorio)} &middot; execução de {_esc(generated)}</p>
+    # A faixa preta do topo, como a barra de navegacao do deck: o rotulo do
+    # monitor em caixa alta a esquerda, a data da execucao a direita.
+    faixa = _faixa(identidade.rotulo_assunto, report.generated_at.strftime("%d/%m/%Y"))
+    lede = (
+        f'<p style="{_CHAMADA}font-size:15px;">{summary}</p>' if is_alert
+        else f'<p style="font-size:16px;line-height:1.5;color:{TINTA};margin:0 0 16px;">'
+        f"{summary}</p>"
+    )
+    gaps = _gaps_ranqueados(report)
+    periodo = (report.retail_flow or {}).get("periodo") or {}
+    janela = meses_br(len(periodo["meses_lidos"])) if periodo.get("meses_lidos") else ""
+    quando = _quando_do_relatorio(report)
+    nomes = dict(_FIGURAS_POR_CORTE)
 
-  <p style="{_P}">{summary}</p>
+    def montar(omitidas: tuple[str, ...]) -> str:
+        omitir = frozenset(omitidas)
+        nota_de_corte = (
+            f'<p style="{_NOTA}">Para caber no limite de tamanho do Gmail, '
+            f"{contagem(len(omitidas), 'gráfico ficou', 'gráficos ficaram')} de fora "
+            f"({_esc(_juntar([nomes[c] for c in omitidas]))}); as tabelas trazem os "
+            "mesmos números.</p>"
+            if omitidas else ""
+        )
+        corpo = f"""
+  <p style="{_RETRANCA}font-weight:700;margin:0 0 14px;padding:0;border:0;">{_TRACO}{_esc(identidade.descricao_relatorio)}</p>
+  <h1 style="font-size:28px;line-height:32px;font-weight:800;letter-spacing:-0.02em;color:{TINTA};margin:0 0 8px;">{_esc(identidade.titulo_relatorio)}</h1>
+  <p style="font-size:14px;line-height:20px;color:{TINTA_2};margin:0;">Execução de {_esc(generated)}</p>
 
-  <table style="{_TABLE}"><thead><tr>
-    <th style="{_TH}">Plataforma</th>
-    <th style="{_TH}text-align:right;">Vitrine</th>
-    <th style="{_TH}text-align:right;">Catálogo</th>
-    <th style="{_TH}">Status</th>
-    <th style="{_TH}text-align:right;">Entradas</th>
-    <th style="{_TH}text-align:right;">Saídas</th>
-    <th style="{_TH}text-align:right;">Alterações</th>
-  </tr></thead><tbody>{rows}</tbody></table>
+  <h2 style="{_RETRANCA}">{_TRACO}Sumário</h2>
+  {lede}
+  {"" if "sumario" in omitir else _figura_do_sumario(report)}
+  {tabela_do_sumario}
   {nota_base}
 
-  {_html_gaps_section(_gaps_ranqueados(report))}
+  {_html_gaps_section(gaps, quando, omitir, janela)}
 
   {bloco_ticket}
 
-  {_html_flow_section(report)}
-  {_html_performance_section(report)}
+  {_html_flow_section(report, omitir)}
+  {_html_performance_section(report, omitir)}
 
-  {_html_cvm_section(report)}
+  {_html_cvm_section(report, omitir)}
 
-  <h2 style="{_H2}">Vitrines</h2>
-  {shelf_sections}
+  <h2 style="{_RETRANCA}">{_TRACO}Vitrines</h2>
+  {"" if "vitrines" in omitir else _figura_das_vitrines(report)}
+  {vitrines}
 
   {bloco_fontes}
-</div>
-</body></html>
+  {nota_de_corte}
 """
+        return _casca_do_email(
+            _esc(identidade.titulo_relatorio), _esc(sentence), corpo, faixa
+        )
+
+    return montar
 
 
 def render_digest(config: Config, report: RunReport) -> tuple[Path, Path]:

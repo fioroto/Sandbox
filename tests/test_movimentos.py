@@ -218,7 +218,17 @@ class TestUmaDefinicaoDeMovimento(unittest.TestCase):
 
         esperado = "1 entrada, 1 saída, 1 alteração na vitrine"
         self.assertIn(esperado, render_markdown(self.report))
-        self.assertIn(esperado, render_html(self.report))
+        # No e-mail a linha da casa virou tabela (secao 5 da linguagem visual):
+        # um movimento por linha, com o fundo, e as contagens que restam em
+        # texto continuam concordando com o numero.
+        html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", render_html(self.report)))
+        self.assertIn("Entrou BTG Novo Ações FIC FIA", html)
+        self.assertIn("Saiu BTG Beta FIC FIM", html)
+        self.assertIn("Alterou BTG Alfa FIC FIM", html)
+        self.assertIn("1 alteração de condições", html)
+        self.assertIn("Só no catálogo Open Finance, fora da vitrine: BTG Pactual 3", html)
+        for errado in ("1 entradas", "1 saídas", "1 alterações"):
+            self.assertNotIn(errado, html)
         self.assertIn("Mais 3 mudanças só no catálogo", render_markdown(self.report))
         self.assertIn(
             "1 fundo entrou, 1 saiu e 1 teve condições alteradas", render_markdown(self.report)

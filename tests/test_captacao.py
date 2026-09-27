@@ -253,13 +253,19 @@ class TestLeitura(unittest.TestCase):
 
 class TestSuperficies(unittest.TestCase):
     def test_digest_md_e_html_publicam_os_mesmos_numeros(self):
-        from shelf_monitor.report.digest import _html_flow_section, _md_flow_section
+        from shelf_monitor.report.digest import _html_flow_section, _md_flow_section, _mm
 
         report = _relatorio()
         md = "\n".join(_md_flow_section(report))
         html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _html_flow_section(report)))
-        for valor in re.findall(r"[+-][\d.]+,\d MM|[+-]R\$ [\d.,]+ (?:mi|bi)|[+-]\d+,\d\d%", md):
+        for valor in re.findall(r"[+-][\d.]+,\d MM|[+-]\d+,\d\d%", md):
             self.assertIn(valor, html)
+        # A leitura em frases ("-R$ 450 mi") sai do e-mail, que tem o grafico e a
+        # tabela de composicao (secao 5 da linguagem visual). O saldo de cada
+        # casa que ela narrava continua la, em MM.
+        self.assertRegex(md, r"[+-]R\$ [\d.,]+ (?:mi|bi)")
+        for casa in report.retail_flow["casas"]:
+            self.assertIn(_mm(casa["captacao_liquida"]), html)
         # Rotulo da casa, nunca o id; ticket por cotista novo nas listas.
         self.assertIn("XP Investimentos", md)
         self.assertNotRegex(md, r" - (xp|btg)(,|$)")
