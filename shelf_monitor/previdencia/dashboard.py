@@ -435,8 +435,7 @@ def _painel_vitrine(resumo: dict[str, str], data: dict, seguradoras: dict[str, d
 
     <h3>Matriz casa &times; classe ANBIMA</h3>
     <p class="card-sub">Contagem de fundos da vitrine por classificação ANBIMA oficial (join por
-      CNPJ com o registro CVM; a vitrine sem CNPJ, pela categoria resolvida pelo nome). Mais
-      escuro = mais fundos.</p>
+      CNPJ com o registro CVM; a vitrine sem CNPJ, pela categoria resolvida pelo nome).</p>
     <div class="matrix-scroll" id="matrix-vitrine"></div>
 
     <div class="subgrid" style="margin-top:22px">
