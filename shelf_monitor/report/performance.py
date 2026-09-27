@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import csv
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 
 from shelf_monitor.config import Config
@@ -81,6 +82,7 @@ from shelf_monitor.report.shared import (
     ler_competencia,
     ponderada,
 )
+from shelf_monitor.texto import competencia_br, meses_br, milhar, periodo_br
 
 # Fracao dos pregoes do periodo em que o fundo precisa ter sido observado.
 #
@@ -287,6 +289,25 @@ class PerformanceCasa:
         }
 
 
+def _pregoes_do_periodo(registros: list[DailyFlow]) -> int:
+    """Dias com cota no periodo: a contagem mais comum entre os fundos que
+    informaram ate o ultimo dia.
+
+    A uniao das datas contava fundo que publica cota em dia sem pregao: em
+    2026-09-24, 61 dias de 01/07 a 23/09, quando o calendario tem 60 dias uteis -
+    e 60 e o que esta regra da. A mesma da serie mensal
+    (`SerieMensal.calendario`).
+    """
+    por_fundo: dict[str, set] = {}
+    for registro in registros:
+        por_fundo.setdefault(registro.cnpj, set()).add(registro.dia)
+    if not por_fundo:
+        return 0
+    ultimo = max(max(dias) for dias in por_fundo.values())
+    contagens = Counter(len(d) for d in por_fundo.values() if max(d) == ultimo)
+    return contagens.most_common(1)[0][0] if contagens else 0
+
+
 def _consolidar(
     registros: list[DailyFlow],
 ) -> dict[str, tuple[float, float, int, int, float, int]]:
@@ -355,14 +376,41 @@ def medianas_de_referencia(
     return medianas, amostras
 
 
-def build_performance(
-    config: Config,
-    snapshots: list[ShelfSnapshot],
-    meses: int = 3,
-    force_download: bool = False,
-) -> dict:
-    """Rentabilidade ponderada da vitrine de cada casa, contra a categoria."""
+def janela_do_bloco(bloco: dict) -> dict:
+    """O descritor de janela do bloco: rotulo, datas, pregoes e base.
 
+    Bloco gravado antes de 2026-09-24 nao tem `janela` (a fixture de
+    previdencia, por exemplo): o descritor sai do `periodo`, com a base do
+    informe diario, que era a unica janela que existia.
+    """
+    janela = bloco.get("janela")
+    if janela:
+        return janela
+    periodo = bloco.get("periodo") or {}
+    meses = len(periodo.get("meses_lidos") or []) or 3
+    return {
+        "rotulo": meses_br(meses),
+        "meses": meses,
+        "de": periodo.get("de"),
+        "ate": periodo.get("ate"),
+        "pregoes": periodo.get("pregoes"),
+        "competencias": periodo.get("meses_lidos") or [],
+        "base": "cota do primeiro pregão do período",
+    }
+
+
+def blocos_de_rentabilidade(*blocos: dict | None) -> list[dict]:
+    """Os blocos disponiveis, na ordem recebida - do prazo mais longo ao curto."""
+    return [b for b in blocos if b and b.get("available")]
+
+
+def tem_vitrine_com_cnpj(snapshots: list[ShelfSnapshot]) -> bool:
+    """Ha alguma vitrine cujo retorno da para buscar no informe?"""
+    return bool(_vitrines_cruzaveis(snapshots)[0])
+
+
+def _vitrines_cruzaveis(snapshots: list[ShelfSnapshot]) -> tuple[dict, list[dict]]:
+    """As vitrines que publicam CNPJ, e as que ficam de fora com o motivo."""
     vitrines, fora = vitrine_snapshots(snapshots)
     cruzaveis, sem_identidade = identifiable_vitrines(vitrines)
     # O motivo generico de `identifiable_vitrines` fala em cruzar casas; aqui a
@@ -371,20 +419,36 @@ def build_performance(
     # e nenhuma serie e indexada por nome.
     sem_cnpj = [
         {**item, "reason": (
-            "sem CNPJ na vitrine nao ha como buscar a serie de cota no informe "
-            f"diario ({item['reason']})"
+            "sem CNPJ na vitrine não há como buscar a série de cota no informe "
+            f"diário ({item['reason']})"
         )}
         for item in sem_identidade
     ]
+    return cruzaveis, fora + sem_cnpj
+
+
+_SEM_CNPJ = (
+    "nenhuma vitrine publica CNPJ o bastante para buscar o informe diário - sem "
+    "CNPJ não há como ligar o fundo à série de cota"
+)
+
+
+def build_performance(
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    meses: int = 3,
+    force_download: bool = False,
+    categorias: dict[str, str] | None = None,
+) -> dict:
+    """Rentabilidade ponderada da vitrine de cada casa, na janela curta.
+
+    Sai do informe diario, com a cota do PRIMEIRO PREGAO do periodo como base -
+    o retorno entre duas datas. A janela de 12 meses sai de
+    `build_performance_mensal`; as duas compartilham tudo depois do retorno.
+    """
+    cruzaveis, excluidos = _vitrines_cruzaveis(snapshots)
     if not cruzaveis:
-        return {
-            "available": False,
-            "reason": (
-                "nenhuma vitrine publica CNPJ o bastante para buscar o informe "
-                "diario - sem CNPJ nao ha como ligar o fundo a serie de cota"
-            ),
-            "excluded": fora + sem_cnpj,
-        }
+        return {"available": False, "reason": _SEM_CNPJ, "excluded": excluidos}
 
     # O informe e lido para o UNIVERSO INTEIRO, nao so para a vitrine: a
     # mediana de referencia precisa do mercado, e compara-la contra os proprios
@@ -411,24 +475,139 @@ def build_performance(
         return {
             "available": False,
             "reason": (
-                "nenhum informe diario disponivel para o periodo - rode com a "
+                "nenhum informe diário disponível para o período - rode com a "
                 "rede liberada para dados.cvm.gov.br"
             ),
-            "excluded": fora + sem_cnpj,
+            "excluded": excluidos,
         }
 
     consolidado = _consolidar(registros)
-    categorias = categorias_por_cnpj(config)
-    medianas, amostras = medianas_de_referencia(consolidado, categorias)
-
     dias = sorted({r.dia for r in registros})
     periodo = {
         "de": dias[0].isoformat() if dias else None,
         "ate": dias[-1].isoformat() if dias else None,
         "meses_lidos": lidos,
         "meses_ausentes": ausentes,
-        "pregoes": len(dias),
+        "pregoes": _pregoes_do_periodo(registros),
     }
+    janela = {
+        "rotulo": meses_br(meses),
+        "meses": meses,
+        "de": periodo["de"],
+        "ate": periodo["ate"],
+        "pregoes": periodo["pregoes"],
+        "competencias": periodos,
+        "base": "cota do primeiro pregão do período",
+        "serie": "diaria",
+    }
+    return _montar(config, cruzaveis, excluidos, consolidado, periodo, janela, categorias)
+
+
+def build_performance_mensal(
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    serie,
+    meses: int = 12,
+    categorias: dict[str, str] | None = None,
+) -> dict:
+    """A mesma leitura em 12 meses, sobre a serie mensal do informe.
+
+    Janela curta comprime a dispersao (ver "Ressalva de janela" acima): em tres
+    meses dominados pelo CDI quase tudo fica a centesimos da mediana da
+    categoria. Doze meses separam o fundo que ficou para tras de verdade.
+
+    A base e a convencao de lamina: a cota do fechamento da competencia de
+    calendario anterior a janela; o fim e a ultima cota da competencia
+    corrente. Em 2026-09-24, "12 meses" foi de 30/09/2025 a 23/09/2026. E a
+    mesma conta da coluna "12 meses" da aba 'Rentabilidade por fundo'.
+
+    `serie` e uma `rentabilidade.SerieMensal` com pelo menos `meses + 1`
+    competencias - a de base e as da janela.
+    """
+    from shelf_monitor.report.rentabilidade import _mes_anterior
+
+    cruzaveis, excluidos = _vitrines_cruzaveis(snapshots)
+    if not cruzaveis:
+        return {"available": False, "reason": _SEM_CNPJ, "excluded": excluidos}
+
+    if serie is None:
+        return {
+            "available": False,
+            "reason": "série mensal do informe diário indisponível nesta execução",
+            "excluded": excluidos,
+        }
+    competencias = serie.janela_de_calendario(meses)
+    lidas = [m for m in competencias if m in serie.meses]
+    if not lidas:
+        return {
+            "available": False,
+            "reason": (
+                "nenhuma competência do informe diário na série mensal - rode com "
+                "a rede liberada para dados.cvm.gov.br"
+            ),
+            "excluded": excluidos,
+        }
+
+    base = _mes_anterior(competencias[0])
+    tem_base = serie.garantir_datas(config, base)
+    serie.garantir_datas(config, competencias[-1])
+    consolidado = serie.consolidar(competencias)
+    if not consolidado:
+        return {
+            "available": False,
+            "reason": (
+                f"nenhum fundo com série de cota em {len(lidas)} das {meses} "
+                f"competências da janela ({competencia_br(competencias[0])} a "
+                f"{competencia_br(competencias[-1])})"
+            ),
+            "excluded": excluidos,
+        }
+
+    # "de" e o dia da cota-base: o fechamento da competencia anterior, ou o
+    # primeiro pregao da janela quando a serie nao tem aquela competencia.
+    de = serie.calendario(base)[1] if tem_base else serie.calendario(competencias[0])[0]
+    ate = serie.calendario(competencias[-1])[1]
+    pregoes = sum(serie.calendario(m)[2] for m in lidas)
+    periodo = {
+        "de": de.isoformat() if de else None,
+        "ate": ate.isoformat() if ate else None,
+        "meses_lidos": lidas,
+        "meses_ausentes": [m for m in competencias if m not in lidas],
+        "pregoes": pregoes,
+    }
+    janela = {
+        "rotulo": meses_br(meses),
+        "meses": meses,
+        "de": periodo["de"],
+        "ate": periodo["ate"],
+        "pregoes": pregoes,
+        "competencias": competencias,
+        "competencia_base": base if tem_base else None,
+        "serie": "mensal",
+        "base": (
+            f"cota do fechamento de {competencia_br(base)}" if tem_base
+            else "primeira cota da janela"
+        ),
+    }
+    return _montar(config, cruzaveis, excluidos, consolidado, periodo, janela, categorias)
+
+
+def _montar(
+    config: Config,
+    cruzaveis: dict,
+    excluidos: list[dict],
+    consolidado: dict[str, tuple],
+    periodo: dict,
+    janela: dict,
+    categorias: dict[str, str] | None = None,
+) -> dict:
+    """Do retorno por CNPJ ao bloco: referencia por categoria, casas e listas.
+
+    Igual nas duas janelas - o que muda entre elas e so de onde vem o retorno.
+    """
+    if categorias is None:
+        categorias = categorias_por_cnpj(config)
+    medianas, amostras = medianas_de_referencia(consolidado, categorias)
 
     catalogo: dict[str, FundOffer] = {}
     presenca: dict[str, list[str]] = {}
@@ -479,8 +658,8 @@ def build_performance(
                 "label": casa.label,
                 "reason": (
                     f"apenas {casa.com_serie} de {casa.vitrine} fundos da vitrine "
-                    "tem serie de cota no periodo - a ponderacao descreveria a "
-                    "amostra que casou, nao a vitrine"
+                    f"têm série de cota em {janela['rotulo']} - a ponderação "
+                    "descreveria a amostra que casou, não a vitrine"
                 ),
             })
             continue
@@ -489,15 +668,19 @@ def build_performance(
     if not casas:
         return {
             "available": False,
-            "reason": "nenhuma vitrine com cobertura suficiente de serie de cota",
-            "excluded": fora + sem_cnpj + sem_amostra,
+            "reason": (
+                f"nenhuma vitrine com cobertura suficiente de série de cota em "
+                f"{janela['rotulo']}"
+            ),
+            "excluded": excluidos + sem_amostra,
         }
 
     return {
         "available": True,
+        "janela": janela,
         "periodo": periodo,
         "participantes": [c.platform_id for c in casas],
-        "excluded": fora + sem_cnpj + sem_amostra,
+        "excluded": excluidos + sem_amostra,
         "universo": {
             "fundos_com_serie": len(consolidado),
             "categorias_com_referencia": len(medianas),
@@ -606,11 +789,11 @@ def fundos_abaixo_da_categoria(performance: dict) -> list[dict]:
 
 
 def _pct(valor: float | None) -> str:
-    return "-" if valor is None else f"{valor:6.2f}%"
+    return "-" if valor is None else f"{valor:6.2f}%".replace(".", ",")
 
 
 def _pp(valor: float | None) -> str:
-    return "-" if valor is None else f"{valor:+.2f}pp"
+    return "-" if valor is None else f"{valor:+.2f}pp".replace(".", ",")
 
 
 def print_performance(resultado: dict) -> None:
@@ -620,8 +803,11 @@ def print_performance(resultado: dict) -> None:
 
     console = Console()
     console.print()
+    janela = resultado.get("janela") or {}
+    rotulo = janela.get("rotulo")
     console.print(
-        "[bold]Rentabilidade da vitrine[/] - o fundo mediano, o real medio e o cotista medio"
+        f"[bold]Rentabilidade da vitrine{' em ' + rotulo if rotulo else ''}[/] - "
+        "o fundo mediano, o real médio e o cotista médio"
     )
     if not resultado.get("available"):
         console.print(f"   [yellow]{resultado.get('reason')}[/]")
@@ -631,15 +817,20 @@ def print_performance(resultado: dict) -> None:
 
     periodo = resultado["periodo"]
     universo = resultado["universo"]
+    base = f", base na {janela['base']}" if janela.get("base") else ""
     console.print(
-        f"   [dim]{periodo['de']} a {periodo['ate']} ({periodo['pregoes']} pregoes). "
-        f"Referencia: mediana da categoria no universo oficial "
-        f"({universo['fundos_com_serie']} fundos, "
+        f"   [dim]{periodo_br(periodo['de'], periodo['ate'])} "
+        f"({milhar(periodo['pregoes'])} pregões{base}). "
+        f"Referência: mediana da mesma categoria no universo oficial, no mesmo prazo "
+        f"({milhar(universo['fundos_com_serie'])} fundos, "
         f"{universo['categorias_com_referencia']} categorias com amostra "
         f">= {universo['amostra_minima']}).[/]"
     )
 
-    table = Table(title="Retorno do periodo, por casa", title_style="bold")
+    table = Table(
+        title=f"Retorno em {rotulo}, por casa" if rotulo else "Retorno do período, por casa",
+        title_style="bold",
+    )
     table.add_column("Casa")
     table.add_column("Fundos", justify="right")
     table.add_column("Mediana", justify="right")
@@ -652,7 +843,7 @@ def print_performance(resultado: dict) -> None:
         abaixo = (
             f"{massa['fundos']}/{massa['de']} fundos ({(massa['share_fundos'] or 0):.0%})"
             f" carregam {(massa['share_pl'] or 0):.0%} do PL"
-            f" - indice {massa['indice_pl']:.2f}"
+            f" - índice {massa['indice_pl']:.2f}".replace(".", ",")
             if massa.get("indice_pl") is not None else "-"
         )
         table.add_row(
@@ -666,15 +857,15 @@ def print_performance(resultado: dict) -> None:
         )
     console.print(table)
     console.print(
-        "   [dim]Retorno dos fundos que a casa exibe, com o peso que eles tem no "
-        "mercado - nao o retorno dos clientes dela. A CVM publica cota, PL e "
+        "   [dim]Retorno dos fundos que a casa exibe, com o peso que eles têm no "
+        "mercado - não o retorno dos clientes dela. A CVM publica cota, PL e "
         "cotistas por fundo, somando todos os distribuidores.[/]"
     )
     console.print(
-        "   [dim]Indice abaixo de 1 = o dinheiro EVITA os fundos piores da "
+        "   [dim]Índice abaixo de 1 = o dinheiro EVITA os fundos piores da "
         "categoria; acima de 1 = se concentra neles. Cerca de metade de qualquer "
-        "universo fica abaixo da mediana por construcao, entao o share de fundos "
-        "sozinho nao diz nada.[/]"
+        "universo fica abaixo da mediana por construção, então o share de fundos "
+        "sozinho não diz nada.[/]"
     )
     for e in resultado.get("excluded", []):
         console.print(f"   [dim]fora: {e['label']} - {e['reason']}[/]")

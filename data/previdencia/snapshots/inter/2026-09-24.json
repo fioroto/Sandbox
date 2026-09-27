@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "platform": "inter",
+  "collected_at": "2026-09-24T08:56:27.776142",
+  "strategy": "html-scrape",
+  "strategies": [],
+  "source_counts": {},
+  "status": "unavailable",
+  "source_urls": [],
+  "error": "Nenhuma vitrine publica de previdencia encontrada (2026-09-22).",
+  "fund_count": 0,
+  "funds": []
+}

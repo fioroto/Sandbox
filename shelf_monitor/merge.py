@@ -15,7 +15,13 @@ scraping le o que a pagina resolveu exibir.
 """
 from __future__ import annotations
 
-from shelf_monitor.models import AssetClass, CollectorStrategy, FundOffer
+from shelf_monitor.models import (
+    KEY_MINIMO_VITRINE,
+    LISTING_SOURCES,
+    AssetClass,
+    CollectorStrategy,
+    FundOffer,
+)
 
 # Da mais confiavel para a menos, para efeito de resolucao de conflito.
 # A area logada ve a oferta real do cliente, mas o Open Finance e padronizado e
@@ -73,6 +79,12 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
     for source in sorted(groups, key=source_rank):
         for offer in groups[source]:
             offer.sources = [source]
+            # O minimo da vitrine e guardado a parte ANTES da precedencia agir:
+            # no campo, o Open Finance vence e deixa o minimo institucional da
+            # classe (ver `FundOffer.minimo_vitrine`). O `_absorb` leva a chave
+            # para o fundo unido, porque o Open Finance nunca a escreve.
+            if source in LISTING_SOURCES and offer.min_initial is not None:
+                offer.extra.setdefault(KEY_MINIMO_VITRINE, offer.min_initial)
             existing = merged.get(offer.identity)
             if existing is None:
                 merged[offer.identity] = offer
@@ -158,7 +170,7 @@ def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
                 provenance = f"nome aproximado ({slug} ~ {fuzzy_slug})"
         if not target_identity or target_identity == identity:
             offer.extra.setdefault(
-                "reconciliacao", "nao reconciliado (sem CNPJ correspondente)"
+                "reconciliacao", "não reconciliado (sem CNPJ correspondente)"
             )
             continue
 

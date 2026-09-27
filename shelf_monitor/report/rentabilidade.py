@@ -10,10 +10,16 @@ Como a serie e montada
 
 O informe diario da CVM sai num zip por competencia. Ler 24 competencias inteiras
 a cada execucao custa minutos, entao o modulo guarda um **resumo mensal por
-subclasse** em `data/cache/serie/<AAAAMM>.csv`: primeira e ultima cota do mes, PL
-e cotistas do ultimo dia, fluxo somado e quantos pregoes distintos apareceram.
-Competencia ja resumida nao e relida; a corrente e sempre refeita, porque ela
-muda todo dia.
+subclasse** em `data/cache/serie/<AAAAMM>.csv`: primeira e ultima cota do mes, o
+dia de cada uma, PL e cotistas do ultimo dia, fluxo somado e quantos pregoes
+distintos apareceram. Competencia ja resumida nao e relida; a corrente e sempre
+refeita, porque ela muda todo dia.
+
+Os dias entraram no cache em 2026-09-24, para a janela poder dizer "de
+30/09/2025 a 23/09/2026" em vez de "12 competencias". Cache gravado antes fica
+com os dias vazios e continua valendo para o retorno; quando uma janela precisa
+da data do fechamento de uma competencia assim, `garantir_datas` refaz so ela a
+partir do zip local.
 
 O que uma janela significa aqui
 -------------------------------
@@ -63,20 +69,21 @@ from __future__ import annotations
 
 import csv
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import ShelfSnapshot
-from shelf_monitor.normalize import parse_number
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
-from shelf_monitor.report.retail_flow import months_back, read_daily_flows
+from shelf_monitor.report.retail_flow import months_back
 from shelf_monitor.report.shared import (
     MIN_COBERTURA_JANELA,
     ler_competencia,
 )
+from shelf_monitor.report.shared.informe import ler_sem_guardar
 
 # Fracao das competencias da janela em que a subclasse precisa aparecer. Ver o
 # docstring: abaixo disso a media somaria periodos de tamanhos diferentes.
@@ -85,7 +92,7 @@ _MIN_COBERTURA = MIN_COBERTURA_JANELA
 # Janelas publicadas, na ordem em que saem. YTD e resolvido em tempo de execucao
 # porque depende do ano corrente.
 JANELAS: tuple[tuple[str, int | None], ...] = (
-    ("1 mes", 1),
+    ("1 mês", 1),
     ("3 meses", 3),
     ("YTD", None),
     ("12 meses", 12),
@@ -98,9 +105,13 @@ _CABECALHO_CACHE = (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class MesSubclasse:
-    """Resumo de uma subclasse numa competencia."""
+    """Resumo de uma subclasse numa competencia.
+
+    `slots` porque a janela de 12 meses carrega ~340 mil destes a cada `run`:
+    medido em 2026-09-24, 93 MB sem slots contra 82 MB com.
+    """
 
     cota_ini: float = 0.0
     cota_fim: float = 0.0
@@ -109,6 +120,10 @@ class MesSubclasse:
     captacao: float = 0.0
     resgates: float = 0.0
     pregoes: int = 0
+    # Dia da primeira e da ultima cota da subclasse na competencia. None no
+    # cache gravado antes de 2026-09-24, que deixava as colunas vazias.
+    dia_ini: date | None = None
+    dia_fim: date | None = None
 
 
 @dataclass
@@ -133,6 +148,20 @@ class RetornoJanela:
         }
 
 
+def _mes_anterior(yyyymm: str) -> str:
+    """"202601" -> "202512": a competencia de calendario anterior."""
+    ano, mes = int(yyyymm[:4]), int(yyyymm[4:])
+    return f"{ano - 1:04d}12" if mes == 1 else f"{ano:04d}{mes - 1:02d}"
+
+
+def _media_por_pl(retornos: list[tuple[float, float]]) -> float:
+    """Retorno das subclasses ponderado pelo PL; media simples se o PL somar zero."""
+    peso = sum(p for _, p in retornos)
+    if peso > 0:
+        return sum(r * p for r, p in retornos) / peso
+    return statistics.mean(r for r, _ in retornos)
+
+
 class SerieMensal:
     """Resumo mensal por subclasse, com cache em disco por competencia."""
 
@@ -143,6 +172,9 @@ class SerieMensal:
         self._por_cnpj: dict[str, list[tuple[str, str]]] = {}
         for chave in dados:
             self._por_cnpj.setdefault(chave[0], []).append(chave)
+        # competencia -> (primeiro pregao, ultimo pregao, pregoes). Sob demanda:
+        # e uma varredura das ~28 mil subclasses por competencia perguntada.
+        self._calendario: dict[str, tuple[date | None, date | None, int]] = {}
 
     def __len__(self) -> int:
         return len(self._por_cnpj)
@@ -190,6 +222,8 @@ class SerieMensal:
             dias[chave].add(registro.dia)
         for chave, item in resumo.items():
             item.pregoes = len(dias[chave])
+            item.dia_ini = primeiro[chave]
+            item.dia_fim = ultimo[chave]
         return resumo
 
     @classmethod
@@ -202,16 +236,36 @@ class SerieMensal:
             writer = csv.writer(handle, delimiter=";")
             for (cnpj, sub), m in resumo.items():
                 writer.writerow([
-                    cnpj, sub, "", f"{m.cota_ini:.12f}", "", f"{m.cota_fim:.12f}",
+                    cnpj, sub,
+                    m.dia_ini.isoformat() if m.dia_ini else "", f"{m.cota_ini:.12f}",
+                    m.dia_fim.isoformat() if m.dia_fim else "", f"{m.cota_fim:.12f}",
                     f"{m.pl_fim:.2f}", m.cotistas_fim,
                     f"{m.captacao:.2f}", f"{m.resgates:.2f}", m.pregoes,
                 ])
 
     @classmethod
     def _ler_cache(cls, caminho: Path) -> dict[tuple[str, str], MesSubclasse] | None:
+        """Le o resumo gravado por `_gravar_cache`.
+
+        `float` direto em vez de `parse_number`: o arquivo e escrito aqui, sempre
+        com ponto decimal, e o parser generico - que resolve "1.234,56" - levava
+        4,2 s para ler as 12 competencias fechadas que a janela de 12 meses usa,
+        contra 1,5 s assim (medido em 2026-09-24). A janela roda em todo `run`.
+        """
         if not caminho.is_file():
             return None
         resumo: dict[tuple[str, str], MesSubclasse] = {}
+        # Poucas datas distintas por competencia: parseia cada uma uma vez.
+        datas: dict[str, date] = {}
+
+        def dia(texto: str) -> date | None:
+            if not texto:
+                return None
+            valor = datas.get(texto)
+            if valor is None:
+                valor = datas[texto] = date.fromisoformat(texto)
+            return valor
+
         with caminho.open(encoding="utf-8", newline="") as handle:
             primeira = handle.readline().strip()
             if primeira != _CABECALHO_CACHE:
@@ -221,15 +275,21 @@ class SerieMensal:
             for linha in csv.reader(handle, delimiter=";"):
                 if len(linha) < 11:
                     continue
-                resumo[(linha[0], linha[1])] = MesSubclasse(
-                    cota_ini=parse_number(linha[3]) or 0.0,
-                    cota_fim=parse_number(linha[5]) or 0.0,
-                    pl_fim=parse_number(linha[6]) or 0.0,
-                    cotistas_fim=int(parse_number(linha[7]) or 0),
-                    captacao=parse_number(linha[8]) or 0.0,
-                    resgates=parse_number(linha[9]) or 0.0,
-                    pregoes=int(parse_number(linha[10]) or 0),
-                )
+                try:
+                    item = MesSubclasse(
+                        cota_ini=float(linha[3] or 0),
+                        cota_fim=float(linha[5] or 0),
+                        pl_fim=float(linha[6] or 0),
+                        cotistas_fim=int(float(linha[7] or 0)),
+                        captacao=float(linha[8] or 0),
+                        resgates=float(linha[9] or 0),
+                        pregoes=int(float(linha[10] or 0)),
+                        dia_ini=dia(linha[2]),
+                        dia_fim=dia(linha[4]),
+                    )
+                except ValueError:
+                    continue
+                resumo[(linha[0], linha[1])] = item
         return resumo or None
 
     @classmethod
@@ -240,7 +300,13 @@ class SerieMensal:
         force: bool = False,
         progresso=None,
     ) -> SerieMensal:
-        """Monta a serie, reusando o cache por competencia quando existe."""
+        """Monta a serie, reusando o cache por competencia quando existe.
+
+        So a competencia corrente passa pelo leitor compartilhado, que o fluxo e
+        a janela curta ja usaram nesta execucao. As fechadas sem cache sao lidas
+        sem ficar guardadas no processo (`ler_sem_guardar`): ninguem mais as le,
+        e guardar cada uma ate o fim da execucao somaria ~91 MB por competencia.
+        """
 
         competencias = months_back(meses)
         dados: dict[tuple[str, str], dict[str, MesSubclasse]] = {}
@@ -251,7 +317,10 @@ class SerieMensal:
             cache = cls._cache_path(config, yyyymm)
             resumo = None if (force or corrente) else cls._ler_cache(cache)
             if resumo is None:
-                registros = ler_competencia(config, yyyymm, force=corrente)
+                registros = (
+                    ler_competencia(config, yyyymm, force=True) if corrente
+                    else ler_sem_guardar(config, yyyymm)
+                )
                 if not registros:
                     if progresso:
                         progresso(yyyymm, None)
@@ -270,6 +339,30 @@ class SerieMensal:
                 progresso(yyyymm, len(resumo))
         return cls(lidas, dados)
 
+    def garantir_datas(self, config: Config, yyyymm: str) -> bool:
+        """Refaz do zip local o resumo de uma competencia gravada sem os dias.
+
+        Devolve se a competencia tem os dias agora. So a competencia pedida e
+        refeita, e uma vez: o resumo novo volta ao cache ja com eles. E o caso
+        da competencia-base de uma janela lida de cache anterior a 2026-09-24.
+        """
+        if yyyymm not in self._indice:
+            return False
+        if self.calendario(yyyymm)[1] is not None:
+            return True
+        registros = ler_sem_guardar(config, yyyymm)
+        if not registros:
+            return False
+        resumo = self._resumir(registros)
+        self._gravar_cache(self._cache_path(config, yyyymm), resumo)
+        for chave, item in resumo.items():
+            if chave not in self._dados:
+                self._dados[chave] = {}
+                self._por_cnpj.setdefault(chave[0], []).append(chave)
+            self._dados[chave][yyyymm] = item
+        self._calendario.pop(yyyymm, None)
+        return self.calendario(yyyymm)[1] is not None
+
     # --- leitura --------------------------------------------------------------
 
     def janela(self, nome: str, tamanho: int | None) -> list[str]:
@@ -281,53 +374,138 @@ class SerieMensal:
             return [m for m in self.meses if m.startswith(ano)]
         return self.meses[-tamanho:]
 
-    def retorno(self, cnpj: str, competencias: list[str]) -> RetornoJanela | None:
-        """Retorno da classe na janela: subclasses ponderadas pelo PL."""
-        if not competencias:
-            return None
-        inicio = competencias[0]
-        posicao = self._indice.get(inicio)
-        anterior = self.meses[posicao - 1] if posicao else None
-        minimo = max(1, int(len(competencias) * _MIN_COBERTURA))
+    def janela_de_calendario(self, meses: int) -> list[str]:
+        """As `meses` competencias de calendario que terminam na ultima da serie.
 
-        retornos: list[tuple[float, float]] = []
-        pl = 0.0
-        cotistas = 0
-        observados: set[str] = set()
+        `janela` pega as ultimas N que a serie TEM: com uma competencia faltando
+        no meio, ela atravessaria 13 meses de calendario sob o rotulo de 12.
+        Aqui a competencia que falta continua na janela, e a cobertura minima de
+        cada fundo decide se ele entra.
+        """
+        if not self.meses:
+            return []
+        ultima = self.meses[-1]
+        return months_back(meses, referencia=date(int(ultima[:4]), int(ultima[4:]), 1))
+
+    def calendario(self, yyyymm: str) -> tuple[date | None, date | None, int]:
+        """Primeiro e ultimo pregao da competencia no universo, e quantos houve.
+
+        As datas sao os extremos entre as subclasses. Os pregoes sao a contagem
+        mais comum entre as que informaram ate o ultimo dia. Medido em
+        2026-09-24 na janela de 12 meses: 246 assim, exatamente os dias uteis de
+        01/10/2025 a 23/09/2026, contra 252 pelo maximo, que contava fundo que
+        publica cota em dia sem pregao. Sem o filtro do ultimo dia, a
+        competencia corrente saia com um pregao a menos (15 em vez de 16),
+        porque parte dos fundos ainda nao informou o dia mais recente. Dias ausentes
+        (cache antigo) devolvem None - ver `garantir_datas`.
+        """
+        if yyyymm not in self._calendario:
+            primeiro: date | None = None
+            ultimo: date | None = None
+            itens: list[MesSubclasse] = []
+            for serie in self._dados.values():
+                item = serie.get(yyyymm)
+                if item is None:
+                    continue
+                itens.append(item)
+                if item.dia_ini and (primeiro is None or item.dia_ini < primeiro):
+                    primeiro = item.dia_ini
+                if item.dia_fim and (ultimo is None or item.dia_fim > ultimo):
+                    ultimo = item.dia_fim
+            completos = [i.pregoes for i in itens if ultimo is None or i.dia_fim == ultimo]
+            contagens = Counter(completos or [i.pregoes for i in itens])
+            pregoes = contagens.most_common(1)[0][0] if contagens else 0
+            self._calendario[yyyymm] = (primeiro, ultimo, pregoes)
+        return self._calendario[yyyymm]
+
+    def _subclasses(self, cnpj: str, competencias: list[str]):
+        """Cada subclasse elegivel na janela: (serie, presentes, base, mes_base).
+
+        Elegivel e a que aparece em `_MIN_COBERTURA` das competencias e tem cota
+        de base e de fim utilizaveis. A base e a cota do fechamento da
+        competencia de calendario anterior a janela (`mes_base`); sem ela -
+        comeco do historico, fundo que nasceu depois - a primeira cota observada
+        dentro da janela, e `mes_base` vem None.
+        """
+        anterior = _mes_anterior(competencias[0])
+        minimo = max(1, int(len(competencias) * _MIN_COBERTURA))
         for chave in self._por_cnpj.get(cnpj, ()):
             serie = self._dados[chave]
             presentes = [m for m in competencias if m in serie]
             if len(presentes) < minimo:
                 continue
-            base = 0.0
-            if anterior and anterior in serie and serie[anterior].cota_fim > 0:
-                base = serie[anterior].cota_fim
+            mes_base = serie.get(anterior)
+            if mes_base is not None and mes_base.cota_fim > 0:
+                base = mes_base.cota_fim
             elif serie[presentes[0]].cota_ini > 0:
-                base = serie[presentes[0]].cota_ini
-            fim = serie[presentes[-1]].cota_fim
-            if base <= 0 or fim <= 0:
+                base, mes_base = serie[presentes[0]].cota_ini, None
+            else:
                 continue
-            retornos.append(((fim / base - 1.0) * 100.0, max(serie[presentes[-1]].pl_fim, 0.0)))
-            pl += serie[presentes[-1]].pl_fim
-            cotistas += serie[presentes[-1]].cotistas_fim
+            if serie[presentes[-1]].cota_fim <= 0:
+                continue
+            yield serie, presentes, base, mes_base
+
+    def retorno(self, cnpj: str, competencias: list[str]) -> RetornoJanela | None:
+        """Retorno da classe na janela: subclasses ponderadas pelo PL."""
+        if not competencias:
+            return None
+        retornos: list[tuple[float, float]] = []
+        pl = 0.0
+        cotistas = 0
+        observados: set[str] = set()
+        for serie, presentes, base, _ in self._subclasses(cnpj, competencias):
+            ultimo = serie[presentes[-1]]
+            retornos.append(((ultimo.cota_fim / base - 1.0) * 100.0, max(ultimo.pl_fim, 0.0)))
+            pl += ultimo.pl_fim
+            cotistas += ultimo.cotistas_fim
             observados.update(presentes)
 
         if not retornos:
             return None
-        peso = sum(p for _, p in retornos)
-        valor = (
-            sum(r * p for r, p in retornos) / peso
-            if peso > 0
-            else statistics.mean(r for r, _ in retornos)
-        )
         return RetornoJanela(
-            retorno=valor,
+            retorno=_media_por_pl(retornos),
             pl=pl,
             cotistas=cotistas,
             subclasses=len(retornos),
             meses=len(observados),
             completa=len(observados) >= len(competencias),
         )
+
+    def consolidar(
+        self, competencias: list[str]
+    ) -> dict[str, tuple[float, float, int, int, float, int]]:
+        """Por CNPJ do universo inteiro, no formato de `performance._consolidar`.
+
+        (retorno, PL final, cotistas finais, pregoes, captacao liquida, variacao
+        de cotistas) na janela - para a mediana de referencia e as casas sairem
+        do mesmo codigo na janela curta e na de 12 meses. PL final zerado fica de
+        fora, como no diario: sem PL nao ha peso. A variacao de cotistas parte do
+        fechamento da competencia-base; sem ela, do fim da primeira competencia
+        observada, que subconta o primeiro mes de quem nasceu na janela.
+        """
+        saida: dict[str, tuple[float, float, int, int, float, int]] = {}
+        if not competencias:
+            return saida
+        for cnpj in self._por_cnpj:
+            retornos: list[tuple[float, float]] = []
+            pl = 0.0
+            captacao = 0.0
+            cotistas = cotistas_ini = pregoes = 0
+            for serie, presentes, base, mes_base in self._subclasses(cnpj, competencias):
+                ultimo = serie[presentes[-1]]
+                retornos.append(((ultimo.cota_fim / base - 1.0) * 100.0, max(ultimo.pl_fim, 0.0)))
+                pl += ultimo.pl_fim
+                cotistas += ultimo.cotistas_fim
+                cotistas_ini += (mes_base or serie[presentes[0]]).cotistas_fim
+                pregoes = max(pregoes, sum(serie[m].pregoes for m in presentes))
+                captacao += sum(serie[m].captacao - serie[m].resgates for m in presentes)
+            if not retornos or pl <= 0:
+                continue
+            saida[cnpj] = (
+                _media_por_pl(retornos), pl, cotistas, pregoes, captacao,
+                cotistas - cotistas_ini,
+            )
+        return saida
 
 
 @dataclass
@@ -402,14 +580,19 @@ def build_rentabilidade(
     meses: int = 24,
     force_download: bool = False,
     progresso=None,
+    serie: SerieMensal | None = None,
 ) -> dict:
-    """Rentabilidade por fundo e por casa, nas janelas de `JANELAS`."""
+    """Rentabilidade por fundo e por casa, nas janelas de `JANELAS`.
+
+    `serie` e a serie mensal ja montada nesta execucao (a janela de 12 meses
+    da rentabilidade ponderada monta uma); sem ela, e montada aqui.
+    """
     vitrines, fora = vitrine_snapshots(snapshots)
     cruzaveis, sem_identidade = identifiable_vitrines(vitrines)
     sem_cnpj = [
         {**item, "reason": (
-            "sem CNPJ na vitrine nao ha como buscar a serie de cota no informe "
-            f"diario ({item['reason']})"
+            "sem CNPJ na vitrine não há como buscar a série de cota no informe "
+            f"diário ({item['reason']})"
         )}
         for item in sem_identidade
     ]
@@ -417,17 +600,20 @@ def build_rentabilidade(
         return {
             "available": False,
             "reason": (
-                "nenhuma vitrine publica CNPJ o bastante para buscar a serie de cota"
+                "nenhuma vitrine publica CNPJ o bastante para buscar a série de cota"
             ),
             "excluded": fora + sem_cnpj,
         }
 
-    serie = SerieMensal.build(config, meses=meses, force=force_download, progresso=progresso)
+    if serie is None:
+        serie = SerieMensal.build(
+            config, meses=meses, force=force_download, progresso=progresso
+        )
     if not serie.meses:
         return {
             "available": False,
             "reason": (
-                "nenhuma competencia do informe diario disponivel - rode com a "
+                "nenhuma competência do informe diário disponível - rode com a "
                 "rede liberada para dados.cvm.gov.br"
             ),
             "excluded": fora + sem_cnpj,
@@ -480,7 +666,7 @@ def build_rentabilidade(
 
     return {
         "available": bool(fundos),
-        "reason": None if fundos else "nenhum fundo de vitrine com serie utilizavel",
+        "reason": None if fundos else "nenhum fundo de vitrine com série utilizável",
         "periodo": {
             "de": serie.meses[0],
             "ate": serie.meses[-1],
@@ -529,7 +715,7 @@ def print_rentabilidade(resultado: dict) -> None:
         "   [dim]"
         + " · ".join(
             f"{j['rotulo']}: {comp(j['de'])} a {comp(j['ate'])} "
-            f"({j['competencias']} {'mes' if j['competencias'] == 1 else 'meses'})"
+            f"({j['competencias']} {'mês' if j['competencias'] == 1 else 'meses'})"
             for j in resultado["janelas"]
         )
         + "[/]"
@@ -537,7 +723,7 @@ def print_rentabilidade(resultado: dict) -> None:
 
     for casa in resultado["casas"]:
         table = Table(
-            title=f"{casa['label']} - {casa['com_serie']} de {casa['vitrine']} fundos com serie",
+            title=f"{casa['label']} - {casa['com_serie']} de {casa['vitrine']} fundos com série",
             title_style="bold",
         )
         table.add_column("Janela")
@@ -558,8 +744,8 @@ def print_rentabilidade(resultado: dict) -> None:
             )
         console.print(table)
     console.print(
-        "   [dim]Janela mais longa tem menos fundos: quem nao existia no comeco dela "
-        "fica de fora, entao o agregado longo e de sobreviventes.[/]"
+        "   [dim]Janela mais longa tem menos fundos: quem não existia no começo dela "
+        "fica de fora, então o agregado longo é de sobreviventes.[/]"
     )
     for e in resultado.get("excluded", []):
         console.print(f"   [dim]fora: {e['label']} - {e['reason']}[/]")

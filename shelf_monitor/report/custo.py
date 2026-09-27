@@ -81,6 +81,7 @@ from shelf_monitor.report.shared import (
     MIN_AMOSTRA_CATEGORIA,
     MIN_COBERTURA_CUSTO,
 )
+from shelf_monitor.texto import milhar
 
 # Acima disto a entrega e historico, nao condicao vigente. Dois anos cobrem
 # classes que nao reentregam todo ano sem deixar passar a entrega de 2015.
@@ -327,7 +328,7 @@ class IndiceCusto:
                 taxa_adm=None, mediana_categoria=None, idade_meses=None,
                 tem_taxa_entrada=None, tem_taxa_saida=None, taxa_custodia_max=None,
                 dias_cotizacao=None,
-                motivo_fora="fundo nao encontrado na base oficial por CNPJ",
+                motivo_fora="fundo não encontrado na base oficial por CNPJ",
             )
 
         motivo = None
@@ -339,7 +340,7 @@ class IndiceCusto:
                 "ponta da estrutura"
             )
         elif not classe.taxa_percentual:
-            motivo = "taxa em reais ou texto livre - nao comparavel com percentual"
+            motivo = "taxa em reais ou texto livre - não comparável com percentual"
         elif not classe.vigente:
             # Motivo agrupavel: a idade exata vai no campo `idade_meses` do
             # fundo. Colocando-a no texto, cada fundo virava uma chave propria
@@ -354,7 +355,7 @@ class IndiceCusto:
         elif categoria not in self.medianas:
             motivo = (
                 f"categoria com menos de {_MIN_AMOSTRA_CATEGORIA} classes "
-                "comparaveis no mercado - sem referencia para comparar"
+                "comparáveis no mercado - sem referência para comparar"
             )
 
         return CustoFundo(
@@ -468,15 +469,25 @@ class CustoCasa:
         }
 
 
-def build_custo(config, snapshots: list[ShelfSnapshot]) -> dict:
-    """Custo da vitrine de cada casa, relativo a categoria de cada fundo."""
-    indice = IndiceCusto.load(config.market_dir)
+def build_custo(
+    config,
+    snapshots: list[ShelfSnapshot],
+    classe_indice: type[IndiceCusto] = IndiceCusto,
+) -> dict:
+    """Custo da vitrine de cada casa, relativo a categoria de cada fundo.
+
+    `classe_indice` monta o universo de referencia. O modulo de previdencia
+    passa o dele (`previdencia.custo.IndiceCustoPrevidencia`), em que a
+    classe exclusiva de previdencia serve de referencia - todo FIE e
+    exclusivo, e sem isso nenhuma categoria de previdencia tinha mediana.
+    """
+    indice = classe_indice.load(config.market_dir)
     if indice is None:
         return {
             "available": False,
             "reason": (
-                "base de mercado nao importada - o custo comparavel sai do "
-                "extrato da CVM, nao do que a casa publica"
+                "base de mercado não importada - o custo comparável sai do "
+                "extrato da CVM, não do que a casa publica"
             ),
             "excluded": [],
         }
@@ -485,7 +496,7 @@ def build_custo(config, snapshots: list[ShelfSnapshot]) -> dict:
     cruzaveis, sem_identidade = identifiable_vitrines(vitrines)
     sem_cnpj = [
         {**item, "reason": (
-            "sem CNPJ na vitrine nao ha como buscar a taxa da classe no extrato "
+            "sem CNPJ na vitrine não há como buscar a taxa da classe no extrato "
             f"({item['reason']})"
         )}
         for item in sem_identidade
@@ -512,8 +523,8 @@ def build_custo(config, snapshots: list[ShelfSnapshot]) -> dict:
                 "label": casa.label,
                 "reason": (
                     f"apenas {len(casa.comparaveis)} de {casa.vitrine} fundos com "
-                    "taxa comparavel (percentual, entrega recente e categoria com "
-                    "referencia) - o indice descreveria a amostra, nao a vitrine"
+                    "taxa comparável (percentual, entrega recente e categoria com "
+                    "referência) - o índice descreveria a amostra, não a vitrine"
                 ),
             })
             continue
@@ -522,7 +533,7 @@ def build_custo(config, snapshots: list[ShelfSnapshot]) -> dict:
     if not casas:
         return {
             "available": False,
-            "reason": "nenhuma vitrine com cobertura suficiente de taxa comparavel",
+            "reason": "nenhuma vitrine com cobertura suficiente de taxa comparável",
             "excluded": fora + sem_cnpj + sem_amostra,
         }
 
@@ -579,22 +590,22 @@ def print_custo(resultado: dict) -> None:
 
     universo = resultado["universo"]
     console.print(
-        f"   [dim]{universo['classes_na_base']} classes na base, "
+        f"   [dim]{milhar(universo['classes_na_base'])} classes na base, "
         f"{universo['categorias_com_referencia']} categorias com amostra "
-        f">= {universo['amostra_minima']}. Entram so taxas em percentual ao ano "
-        f"com entrega de ate {universo['idade_maxima_meses']} meses.[/]"
+        f">= {universo['amostra_minima']}. Entram só taxas em percentual ao ano "
+        f"com entrega de até {universo['idade_maxima_meses']} meses.[/]"
     )
 
     def pct(valor: float | None) -> str:
         return "-" if valor is None else f"{valor:.0%}"
 
-    table = Table(title="Indice de custo (1,00 = mediana da categoria)", title_style="bold")
+    table = Table(title="Índice de custo (1,00 = mediana da categoria)", title_style="bold")
     table.add_column("Casa")
-    table.add_column("Comparaveis", justify="right")
-    table.add_column("Indice mediano", justify="right")
+    table.add_column("Comparáveis", justify="right")
+    table.add_column("Índice mediano", justify="right")
     table.add_column("Caros", justify="right")
     table.add_column("Baratos", justify="right")
-    table.add_column("Sem entrada/saida", justify="right")
+    table.add_column("Sem entrada/saída", justify="right")
     table.add_column("Resgate <= D+1", justify="right")
     table.add_column("Com porta menor", justify="right")
     for casa in resultado["casas"]:
@@ -611,11 +622,11 @@ def print_custo(resultado: dict) -> None:
         )
     console.print(table)
     console.print(
-        "   [dim]Indice mediano, nao taxa mediana: comparar a taxa bruta entre "
-        "casas mede o MIX da prateleira, nao o preco dos produtos.[/]"
+        "   [dim]Índice mediano, não taxa mediana: comparar a taxa bruta entre "
+        "casas mede o MIX da prateleira, não o preço dos produtos.[/]"
     )
     if resultado.get("motivos_fora"):
-        console.print("   [dim]fundos fora do indice, por motivo:[/]")
+        console.print("   [dim]fundos fora do índice, por motivo:[/]")
         for motivo, quantos in resultado["motivos_fora"].items():
             console.print(f"      [dim]{quantos:5d}  {motivo}[/]")
     for e in resultado.get("excluded", []):

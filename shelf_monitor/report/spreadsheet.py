@@ -24,21 +24,47 @@ from shelf_monitor.enrich import (
     KEY_SITUACAO,
 )
 from shelf_monitor.models import (
+    BLOCO_CNPJ,
+    BLOCO_COTISTAS,
+    BLOCO_PRODUTO_PROPRIO,
     AssetClass,
     CvmSnapshot,
     FundOffer,
+    RunReport,
     ShelfDiff,
     ShelfSnapshot,
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.profile import split_by_profile
-from shelf_monitor.report.shared import rotulo_da_casa
+from shelf_monitor.report.retail_flow import (
+    TREND_LABELS,
+    leitura_da_captacao,
+    nome_da_tendencia,
+)
+from shelf_monitor.distribuivel import ROTULOS_SITUACAO
+from shelf_monitor.report.shared import ordem_canonica, rotulo_da_casa
+from shelf_monitor.report.shared.fontes import (
+    CVM_EXTRATO,
+    CVM_INFORME_DIARIO,
+    Fonte,
+    fontes_do_relatorio,
+)
+from shelf_monitor.report.performance import blocos_de_rentabilidade, janela_do_bloco
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
     build_gap_block,
+    frase_do_funil,
+    notas_da_cobertura,
     ranquear_gaps,
     is_own_product,
+)
+from shelf_monitor.texto import (
+    competencia_br,
+    contagem,
+    data_br,
+    milhar,
+    periodo_br,
 )
 
 FONT = "Arial"
@@ -52,6 +78,8 @@ _HEADER_FONT = Font(name=FONT, size=10, bold=True, color="FFFFFF")
 _TITLE_FONT = Font(name=FONT, size=13, bold=True)
 _BODY_FONT = Font(name=FONT, size=10)
 _NOTE_FONT = Font(name=FONT, size=9, italic=True, color="595959")
+# Titulo de secao dentro de uma aba: negrito sem o fundo do cabecalho de tabela.
+_HEADER_FONT_ESCURO = Font(name=FONT, size=11, bold=True)
 _ALERT_FONT = Font(name=FONT, size=10, bold=True, color="C00000")
 _THIN = Side(style="thin", color="D9D9D9")
 _BORDER = Border(bottom=_THIN)
@@ -70,15 +98,15 @@ _COLUMNS: list[tuple[str, int, object]] = [
     ("Administrador", 30, lambda f: f.admin_name or ""),
     ("Classe", 16, lambda f: ASSET_CLASS_LABELS.get(f.asset_class, "Outros")),
     ("Categoria na origem", 30, lambda f: f.raw_category or ""),
-    ("Aplicacao minima (R$)", 20, lambda f: f.min_initial),
+    ("Aplicação mínima (R$)", 20, lambda f: f.min_initial),
     ("Taxa adm (%)", 14, lambda f: f.admin_fee_pct),
     ("Taxa perf (%)", 14, lambda f: f.performance_fee.amount_pct if f.performance_fee else None),
     ("Benchmark", 14, lambda f: (f.performance_fee.benchmark if f.performance_fee else "") or ""),
-    ("Cotizacao resgate (D+)", 20, lambda f: f.redemption_quotation_days),
-    ("Liquidacao resgate (D+)", 21, lambda f: f.redemption_payment_days),
-    ("Carencia (dias)", 15, lambda f: f.grace_days),
-    ("Tributacao", 16, lambda f: f.taxation or ""),
-    ("Fechado p/ captacao", 19, lambda f: _yes_no(f.closed_for_investment)),
+    ("Cotização resgate (D+)", 20, lambda f: f.redemption_quotation_days),
+    ("Líquidação resgate (D+)", 21, lambda f: f.redemption_payment_days),
+    ("Carência (dias)", 15, lambda f: f.grace_days),
+    ("Tributação", 16, lambda f: f.taxation or ""),
+    ("Fechado p/ captação", 19, lambda f: _yes_no(f.closed_for_investment)),
     ("Fontes", 26, lambda f: ", ".join(SOURCE_LABELS.get(s, s) for s in f.sources)),
     ("Nº de fontes", 12, lambda f: len(f.sources) or None),
     # Uma coluna por fonte: e o que permite filtrar "so no site" ou montar uma
@@ -87,7 +115,7 @@ _COLUMNS: list[tuple[str, int, object]] = [
     ("Prateleira (site)", 17, lambda f: _yes_no(
         f.on_listing
     )),
-    ("Area logada", 13, lambda f: _yes_no(f.in_source("authenticated"))),
+    ("Área logada", 13, lambda f: _yes_no(f.in_source("authenticated"))),
     ("Link", 42, lambda f: f.detail_url or ""),
 ]
 
@@ -96,7 +124,7 @@ SOURCE_LABELS = {
     "html-scrape": "Site (HTML)",
     "playwright": "Site (navegador)",
     "api-json": "API interna",
-    "authenticated": "Area logada",
+    "authenticated": "Área logada",
 }
 
 # Colunas por indice (1-based), para as formulas e formatos.
@@ -115,7 +143,7 @@ _COL_EXCLUSIVE = len(_COLUMNS) + 1
 def _yes_no(value: bool | None) -> str:
     if value is None:
         return ""
-    return "Sim" if value else "Nao"
+    return "Sim" if value else "Não"
 
 
 _platform_label = rotulo_da_casa
@@ -140,7 +168,7 @@ def _write_fund_rows(
     """Escreve o cabecalho e uma linha por fundo. Devolve a ultima linha usada."""
     headers = [name for name, _, _ in _COLUMNS]
     if with_exclusive:
-        headers.append("So nesta casa (por CNPJ)")
+        headers.append("Só nesta casa (por CNPJ)")
 
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -195,7 +223,7 @@ def _write_exclusive_formula(
     sheet.cell(
         row=row,
         column=_COL_EXCLUSIVE,
-        value=f'=IF({cnpj}="","",IF(COUNTIF({data_range},{cnpj})=1,"Sim","Nao"))',
+        value=f'=IF({cnpj}="","",IF(COUNTIF({data_range},{cnpj})=1,"Sim","Não"))',
     )
     sheet.cell(row=row, column=_COL_EXCLUSIVE).font = _BODY_FONT
     sheet.cell(row=row, column=_COL_EXCLUSIVE).border = _BORDER
@@ -241,19 +269,22 @@ def _add_summary(
     last_row: int,
     generated_at: datetime,
     listing_last_row: int = 1,
+    titulo: str = Config.titulo_planilha,
+    com_exclusividade: bool = True,
 ) -> None:
     """Resumo por plataforma x classe, todo em formulas sobre o Consolidado."""
     sheet = workbook.create_sheet("Resumo", 0)
     sheet.column_dimensions["A"].width = 24
-    sheet.cell(row=1, column=1, value="Prateleiras de fundos - resumo").font = _TITLE_FONT
+    sheet.cell(row=1, column=1, value=titulo).font = _TITLE_FONT
     sheet.cell(
         row=2, column=1,
         value=f"Coleta de {generated_at.strftime('%d/%m/%Y %H:%M')}",
     ).font = _NOTE_FONT
 
     classes = [ASSET_CLASS_LABELS[c] for c in AssetClass]
-    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas",
-               "So nesta vitrine"]
+    headers = ["Plataforma", *classes, "Total", "Com CNPJ", "Gestoras distintas"]
+    if com_exclusividade:
+        headers.append("Só nesta vitrine")
     header_row = 4
     for index, name in enumerate(headers, start=1):
         sheet.cell(row=header_row, column=index, value=name)
@@ -305,7 +336,9 @@ def _add_summary(
         # incluia o catalogo Open Finance e inflava o numero - no BTG isso dava
         # 5.767 "exclusivos" contra 284 da XP, todos fundos que ele administra e
         # nenhum cliente ve.
-        if listing_last_row > 1:
+        if not com_exclusividade:
+            pass
+        elif listing_last_row > 1:
             sheet.cell(
                 row=row, column=total_col + 3,
                 value=(
@@ -327,7 +360,7 @@ def _add_summary(
     if unavailable:
         sheet.cell(
             row=note_row, column=1,
-            value="Fontes indisponiveis nesta coleta (nao aparecem acima):",
+            value="Fontes indisponíveis nesta coleta (não aparecem acima):",
         ).font = _ALERT_FONT
         note_row += 1
         for snapshot in unavailable:
@@ -338,15 +371,18 @@ def _add_summary(
             note_row += 1
         note_row += 1
 
+    exclusividade = (
+        '  "Só nesta vitrine" é fórmula sobre a aba Vitrine varejo, e não sobre o Consolidado: exclusividade',
+        "  se mede na vitrine. Contada sobre o catálogo ela somava fundo que a casa administra e ninguém vê.",
+        "  Fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
+    ) if com_exclusividade else ()
     for line in (
         "Como ler esta planilha:",
-        "  As contagens por classe e os totais sao formulas sobre a aba Consolidado (o catalogo);",
-        '  "So nesta vitrine" e formula sobre a aba Vitrine varejo, e nao sobre o Consolidado: exclusividade',
-        "  se mede na vitrine. Contada sobre o catalogo ela somava fundo que a casa administra e ninguem ve.",
-        "  Fundos sem CNPJ ficam fora dessa conta, porque comparar por nome entre casas gera falso exclusivo.",
-        "  \"Gestoras distintas\" e um valor da coleta, nao uma formula: contar valores unicos exigiria",
-        "  funcao de matriz, que nem todo leitor de planilha avalia da mesma forma.",
-        "  Uma plataforma com poucos fundos pode ser fonte parcial, nao prateleira enxuta - confira a aba Coleta.",
+        "  As contagens por classe e os totais são fórmulas sobre a aba Consolidado (o catálogo);",
+        *exclusividade,
+        "  \"Gestoras distintas\" é um valor da coleta, não uma fórmula: contar valores únicos exigiria",
+        "  função de matriz, que nem todo leitor de planilha avalia da mesma forma.",
+        "  Uma plataforma com poucos fundos pode ser fonte parcial, não prateleira enxuta - confira a aba Coleta.",
     ):
         sheet.cell(row=note_row, column=1, value=line).font = _NOTE_FONT
         note_row += 1
@@ -356,8 +392,8 @@ def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
     sheet = workbook.create_sheet("Radar CVM")
     headers = [
         "Casa", "Fundo", "CNPJ", "Gestora", "Administrador", "Tipo",
-        "Situacao", "Pre-operacional", "Data de registro", "Inicio da situacao",
-        "Patrimonio liquido (R$)",
+        "Situação", "Pré-operacional", "Data de registro", "Início da situação",
+        "Patrimônio líquido (R$)",
     ]
     widths = [20, 52, 20, 34, 30, 12, 26, 16, 17, 18, 22]
     for index, (name, width) in enumerate(zip(headers, widths), start=1):
@@ -375,7 +411,7 @@ def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
         values = [
             _platform_label(fund.house), fund.name, format_cnpj(fund.cnpj),
             fund.manager_name or "", fund.admin_name or "", fund.fund_type or "",
-            fund.situation or "", "Sim" if fund.is_pre_operational else "Nao",
+            fund.situation or "", "Sim" if fund.is_pre_operational else "Não",
             fund.registered_at or "", fund.situation_started_at or "", fund.pl,
         ]
         for index, value in enumerate(values, start=1):
@@ -403,8 +439,8 @@ def _add_source_coverage(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> 
     """
     sheet = workbook.create_sheet("Fontes")
     headers = [
-        "Plataforma", "Fonte", "Fundos trazidos", "So nesta fonte",
-        "Total da casa (uniao)", "% do total",
+        "Plataforma", "Fonte", "Fundos trazidos", "Só nesta fonte",
+        "Total da casa (união)", "% do total",
     ]
     widths = [22, 20, 16, 16, 21, 12]
     for index, (name, width) in enumerate(zip(headers, widths), start=1):
@@ -448,9 +484,9 @@ def _add_source_coverage(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> 
 
     note = row + 1
     for line in (
-        '"Fundos trazidos" e quanto aquela fonte devolveu sozinha; a soma pode passar do total',
+        '"Fundos trazidos" é quanto aquela fonte devolveu sozinha; a soma pode passar do total',
         "da casa, porque o mesmo fundo costuma aparecer em mais de uma fonte.",
-        '"So nesta fonte" e o que se perderia desligando aquela coleta - o numero que decide',
+        '"Só nesta fonte" é o que se perderia desligando aquela coleta - o número que decide',
         "se manter o scraping de uma casa compensa o tempo que ele custa.",
     ):
         sheet.cell(row=note, column=1, value=line).font = _NOTE_FONT
@@ -461,7 +497,7 @@ def _add_collection_health(
     workbook: Workbook, snapshots: list[ShelfSnapshot], cvm: CvmSnapshot | None
 ) -> None:
     sheet = workbook.create_sheet("Coleta")
-    headers = ["Fonte", "Status", "Fontes consultadas", "Fundos", "Observacao"]
+    headers = ["Fonte", "Status", "Fontes consultadas", "Fundos", "Observação"]
     widths = [24, 14, 34, 10, 90]
     for index, (name, width) in enumerate(zip(headers, widths), start=1):
         sheet.cell(row=1, column=index, value=name)
@@ -496,10 +532,12 @@ def _add_collection_health(
             sheet.cell(row=row, column=2).font = _ALERT_FONT
 
 
-_OWN_LABELS = {True: "Propria", False: "Terceiros", None: "-"}
+_OWN_LABELS = {True: "Própria", False: "Terceiros", None: "-"}
 
 
-def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> int:
+def _add_listing_sheet(
+    workbook: Workbook, snapshots: list[ShelfSnapshot], com_exclusividade: bool = True
+) -> int:
     """Aba "Vitrine varejo": so o que o cliente ve no canal de cada casa.
 
     E a aba para tabela dinamica: classe ANBIMA oficial (quando a base de
@@ -514,9 +552,11 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> in
         ("Plataforma", 20), ("Fundo", 52), ("CNPJ", 20),
         ("Classe oficial (ANBIMA ou CVM)", 34), ("Categoria na origem", 26),
         ("Gestora", 34), ("Produto", 12), ("Taxa adm (%)", 13),
-        ("Aplicacao minima (R$)", 20), ("Liquidacao resgate (D+)", 21),
-        ("Situacao CVM", 26), ("So nesta vitrine", 16), ("Fontes", 26),
+        ("Aplicação mínima (R$)", 20), ("Líquidação resgate (D+)", 21),
+        ("Situação CVM", 26), ("Só nesta vitrine", 16), ("Fontes", 26),
     ]
+    if not com_exclusividade:
+        headers = [h for h in headers if h[0] != "Só nesta vitrine"]
     for index, (name, width) in enumerate(headers, start=1):
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
@@ -546,6 +586,8 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> in
                 None,  # formula abaixo
                 ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
             ]
+            if not com_exclusividade:
+                del values[11]
             for index, value in enumerate(values, start=1):
                 cell = sheet.cell(row=row, column=index, value=value)
                 cell.font = _BODY_FONT
@@ -560,12 +602,12 @@ def _add_listing_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> in
         # o intervalo e limitado as linhas de dado - COUNTIF de coluna inteira
         # ja provou travar o arquivo.
         cnpj_range = f"$C$2:$C${row}"
-        for r in range(2, row + 1):
+        for r in (range(2, row + 1) if com_exclusividade else ()):
             cell = sheet.cell(
                 row=r,
                 column=12,
                 value=(
-                    f'=IF(C{r}="","",IF(COUNTIF({cnpj_range},C{r})=1,"Sim","Nao"))'
+                    f'=IF(C{r}="","",IF(COUNTIF({cnpj_range},C{r})=1,"Sim","Não"))'
                 ),
             )
             cell.font = _BODY_FONT
@@ -593,20 +635,23 @@ def _add_gaps_sheets(
     listing_last_row: int,
     retail_flow: dict | None = None,
     grade: dict | None = None,
+    familias=None,
+    distribuivel=None,
 ) -> None:
-    """Abas "Gaps XP" e "Gaps por categoria": vitrine concorrente x vitrine XP.
+    """Abas "Gaps XP", "Gaps cobertos", "Gaps por categoria" e "Famílias".
 
     Os numeros vem de build_gap_block - os mesmos do dashboard, digest e deck -
     e a ORDEM vem de `ranquear_gaps`, a mesma das outras tres superficies:
-    esforco de incluir primeiro, captacao dentro de cada faixa. Sem isso a
+    esforco de fechar primeiro, captacao dentro de cada faixa. Sem isso a
     planilha era a unica a abrir por presenca e PL, e o leitor que comparava
     as duas achava que eram listas diferentes.
 
     A coluna de verificacao e formula sobre a aba "Vitrine varejo" (intervalo
     limitado as linhas de dado): reage a correcoes manuais na vitrine sem
-    reexportar.
+    reexportar. Os gaps que a XP cobre por espelho ou equivalente vao para
+    "Gaps cobertos", com a evidencia - saem da contagem, nao da planilha.
     """
-    block = build_gap_block(snapshots)
+    block = build_gap_block(snapshots, familias=familias, distribuivel=distribuivel)
     if block.get("available"):
         block = {**block, "funds": ranquear_gaps(
             block["funds"], retail_flow, grade
@@ -618,95 +663,130 @@ def _add_gaps_sheets(
         sheet.cell(row=1, column=1, value="Gaps de prateleira da XP").font = _TITLE_FONT
         sheet.cell(
             row=3, column=1,
-            value=f"Analise suprimida nesta execucao: {block.get('reason')}.",
+            value=f"Análise suprimida nesta execução: {block.get('reason')}.",
         ).font = _ALERT_FONT
         sheet.cell(
             row=4, column=1,
             value="Sem a vitrine da XP coletada, todo fundo concorrente pareceria "
-            "gap - o bloco prefere se calar a inventar numero.",
+            "gap - o bloco prefere se calar a inventar número.",
         ).font = _NOTE_FONT
         return
 
-    headers = [
-        ("Fundo", 52), ("CNPJ", 20), ("Categoria oficial", 34), ("Gestora", 34),
-        ("Nº casas", 10), ("Casas", 30),
-        ("Captacao no mercado (R$)", 22), ("Cotistas ganhos no mercado", 24),
-        ("Esforco de incluir", 26),
-        ("Menor minimo (R$)", 18),
-        ("Menor taxa adm (%)", 17), ("PL CVM (R$)", 18),
-        ("Gestora na vitrine XP", 20), ("Possivel equivalente XP (heuristica)", 40),
-        ("Verificacao vs. Vitrine varejo", 26),
+    com_lista = (block.get("lentes") or {}).get("distribuivel", {}).get("available")
+    colunas: list[tuple[str, str, int]] = [
+        ("nome", "Fundo", 52), ("cnpj", "CNPJ", 20), ("categoria", "Categoria oficial", 34),
+        ("gestora", "Gestora (veículo)", 34), ("estrategia", "Gestora da estratégia", 34),
+        ("n_casas", "Nº casas", 10), ("casas", "Casas", 30),
+        ("captacao", "Captação no mercado (R$)", 22),
+        ("cotistas", "Cotistas ganhos no mercado", 24),
+        ("esforco", "Esforço de fechar", 26),
+        ("veredito", "Veredito", 26), ("familia", "Família (master)", 44),
+        ("dmais", "Resgate (D+)", 12),
     ]
-    for index, (name, width) in enumerate(headers, start=1):
+    if com_lista:
+        colunas.append(("lista", "Na lista distribuível", 30))
+    colunas += [
+        ("minimo", "Menor mínimo (R$)", 18), ("taxa", "Menor taxa adm (%)", 17),
+        ("pl", "PL CVM (R$)", 18), ("gestora_xp", "Gestora na base XP", 18),
+        ("equivalente", "Possível equivalente XP (baixa confiança)", 44),
+        ("verificacao", "Verificação vs. Vitrine varejo", 26),
+    ]
+    coluna = {chave: indice for indice, (chave, _, _) in enumerate(colunas, start=1)}
+    for index, (_, name, width) in enumerate(colunas, start=1):
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
-    _style_header(sheet, 1, len(headers))
+    _style_header(sheet, 1, len(colunas))
 
     baseline_label = block["baseline_label"].replace('"', "")
     row = 1
     for fund in block["funds"]:
         row += 1
-        values = [
-            fund["name"],
-            fund["cnpj_display"],
-            fund["category"],
-            fund["manager"] or "",
-            fund["houses_count"],
-            fund["houses_label"],
-            fund.get("captacao_liquida"),
-            fund.get("variacao_cotistas"),
-            fund.get("esforco") or "",
-            fund["min_initial"],
-            fund["admin_fee_pct"],
-            fund["pl_cvm"],
-            _yes_no(fund["manager_on_xp"]),
-            fund["possible_xp_equivalent"] or "",
-            None,  # formula abaixo
-        ]
-        for index, value in enumerate(values, start=1):
-            cell = sheet.cell(row=row, column=index, value=value)
+        veredito = fund.get("veredito") or {}
+        na_lista = fund.get("veredito_distribuivel") or {}
+        equivalente = (
+            veredito.get("nome_possivel_equivalente")
+            or fund.get("possible_xp_equivalent") or ""
+        )
+        situacao = ROTULOS_SITUACAO.get(fund.get("situacao_distribuivel"), "-")
+        valores = {
+            "nome": fund["name"],
+            "cnpj": fund["cnpj_display"],
+            "categoria": fund["category"],
+            "gestora": fund["manager"] or "",
+            "estrategia": fund.get("gestora_estrategia") or fund["manager"] or "",
+            "n_casas": fund["houses_count"],
+            "casas": fund["houses_label"],
+            "captacao": fund.get("captacao_liquida"),
+            "cotistas": fund.get("variacao_cotistas"),
+            "esforco": fund.get("esforco") or "",
+            "veredito": veredito.get("rotulo") or "não verificado (sem carteira)",
+            "familia": (fund.get("familia") or {}).get("nome") or "",
+            "dmais": fund.get("dmais"),
+            "lista": (
+                f"{na_lista.get('rotulo')} ({situacao})" if na_lista.get("coberto") else "não"
+            ),
+            "minimo": fund["min_initial"],
+            "taxa": fund["admin_fee_pct"],
+            "pl": fund["pl_cvm"],
+            "gestora_xp": _yes_no(fund["manager_on_xp"]),
+            "equivalente": equivalente,
+            "verificacao": None,  # formula abaixo
+        }
+        for chave, index in coluna.items():
+            cell = sheet.cell(row=row, column=index, value=valores[chave])
             cell.font = _BODY_FONT
             cell.border = _BORDER
-        sheet.cell(row=row, column=5).number_format = _INT
-        sheet.cell(row=row, column=7).number_format = _MONEY
-        sheet.cell(row=row, column=8).number_format = _INT
-        sheet.cell(row=row, column=10).number_format = _MONEY
-        sheet.cell(row=row, column=11).number_format = _PCT
-        sheet.cell(row=row, column=12).number_format = _MONEY
+        for chave, formato in (
+            ("n_casas", _INT), ("captacao", _MONEY), ("cotistas", _INT),
+            ("dmais", _INT), ("minimo", _MONEY), ("taxa", _PCT), ("pl", _MONEY),
+        ):
+            sheet.cell(row=row, column=coluna[chave]).number_format = formato
         if listing_last_row > 1:
             plat_range = f"'Vitrine varejo'!$A$2:$A${listing_last_row}"
             cnpj_range = f"'Vitrine varejo'!$C$2:$C${listing_last_row}"
-            sheet.cell(
-                row=row, column=15,
+            letra = get_column_letter(coluna["cnpj"])
+            celula = sheet.cell(
+                row=row, column=coluna["verificacao"],
                 value=(
-                    f'=IF($B{row}="","",IF(COUNTIFS({plat_range},'
-                    f'"{baseline_label}",{cnpj_range},$B{row})=0,'
+                    f'=IF(${letra}{row}="","",IF(COUNTIFS({plat_range},'
+                    f'"{baseline_label}",{cnpj_range},${letra}{row})=0,'
                     f'"Confirma gap","{baseline_label} vitrina - revisar"))'
                 ),
             )
-            sheet.cell(row=row, column=15).font = _BODY_FONT
-            sheet.cell(row=row, column=15).border = _BORDER
+            celula.font = _BODY_FONT
+            celula.border = _BORDER
 
     if row > 1:
-        sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{row}"
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{row}"
     else:
         sheet.cell(
             row=2, column=1,
-            value="Nenhum gap identificado: toda vitrine concorrente coletada "
-            "esta contida na vitrine da XP.",
+            value="Nenhum gap a fechar: toda vitrine concorrente coletada está "
+            "contida na base da XP ou coberta por espelho ou equivalente.",
         ).font = _NOTE_FONT
     note_row = row + 2
+    funil = frase_do_funil(block)
+    if funil:
+        sheet.cell(row=note_row, column=1, value=funil).font = _BODY_FONT
+        note_row += 1
     sheet.cell(
         row=note_row, column=1,
-        value="Gap = fundo de varejo na vitrine de 1+ concorrente e fora da "
-        "vitrine da XP (por CNPJ). Comparacao vitrine x vitrine: o catalogo "
-        "Open Finance nao conta em nenhum dos lados. As colunas de gestora e "
-        "equivalente sao heuristicas - informam, nunca removem um fundo.",
+        value="Gap aparente = fundo de varejo na vitrine de 1+ concorrente e fora da "
+        "base da XP (por CNPJ). Comparação vitrine x vitrine: o catálogo Open "
+        "Finance não conta em nenhum dos lados. Gap real = gap aparente que nem "
+        "espelho nem equivalente cobre; os cobertos estão na aba 'Gaps cobertos', "
+        "com a evidência. 'Gestora na base XP' e 'Possível equivalente' informam - "
+        "nunca removem um fundo da lista.",
     ).font = _NOTE_FONT
+    for nota in notas_da_cobertura(block):
+        note_row += 1
+        sheet.cell(row=note_row, column=1, value=nota).font = (
+            _ALERT_FONT if nota.startswith("Atenção") else _NOTE_FONT
+        )
     if block["baseline_warning"]:
         note_row += 1
         sheet.cell(
-            row=note_row, column=1, value=f"Atencao: {block['baseline_warning']}."
+            row=note_row, column=1, value=f"Atenção: {block['baseline_warning']}."
         ).font = _ALERT_FONT
     if block["excluded"]:
         note_row += 1
@@ -714,14 +794,26 @@ def _add_gaps_sheets(
         sheet.cell(
             row=note_row, column=1, value=f"Fora do universo: {out}."
         ).font = _NOTE_FONT
+    invalidas = (block.get("distribuivel") or {}).get("invalidas") or []
+    for invalida in invalidas[:50]:
+        note_row += 1
+        sheet.cell(
+            row=note_row, column=1,
+            value=(
+                f"Lista distribuível, linha recusada: {invalida['arquivo']}, linha "
+                f"{invalida['linha']} - {invalida['motivo']}."
+            ),
+        ).font = _NOTE_FONT
     sheet.freeze_panes = "A2"
+
+    _add_gaps_cobertos_sheet(workbook, block)
 
     cat_sheet = workbook.create_sheet("Gaps por categoria")
     competitors = block["competitors"]
     cat_headers = (
         [("Categoria", 34), (f"{block['baseline_label']} (vitrine)", 20)]
         + [(c["label"], 16) for c in competitors]
-        + [("Melhor concorrente", 24), ("Fundos de gap", 14)]
+        + [("Melhor concorrente", 24), ("Gaps reais", 12), ("Cobertos", 12)]
     )
     for index, (name, width) in enumerate(cat_headers, start=1):
         cat_sheet.cell(row=1, column=index, value=name)
@@ -738,6 +830,7 @@ def _add_gaps_sheets(
             + [
                 f"{best['label']} ({best['count']})" if best else "-",
                 entry["gap_count"],
+                entry.get("cobertos", 0),
             ]
         )
         for index, value in enumerate(values, start=1):
@@ -746,15 +839,160 @@ def _add_gaps_sheets(
             cell.border = _BORDER
     if row == 1:
         cat_sheet.cell(
-            row=2, column=1, value="Nenhum gap por categoria nesta execucao."
+            row=2, column=1, value="Nenhum gap por categoria nesta execução."
         ).font = _NOTE_FONT
     cat_sheet.cell(
         row=row + 2, column=1,
         value="Contagens por vitrine (varejo) de cada casa na categoria; "
-        "'Fundos de gap' = quantos gaps da aba 'Gaps XP' caem na categoria. "
-        "Categorias ordenadas por gaps; alem das primeiras, agregadas em 'Outras'.",
+        "'Gaps reais' = quantos gaps da aba 'Gaps XP' caem na categoria; "
+        "'Cobertos' = gaps aparentes da categoria que a XP cobre por espelho ou "
+        "equivalente (aba 'Gaps cobertos'). Categorias ordenadas por gaps reais; "
+        "além das primeiras, agregadas em 'Outras'.",
     ).font = _NOTE_FONT
     cat_sheet.freeze_panes = "A2"
+
+    if familias is not None:
+        _add_familias_sheet(workbook, block, familias, snapshots, distribuivel)
+
+
+def _add_gaps_cobertos_sheet(workbook: Workbook, block: dict) -> None:
+    """Os gaps aparentes que a XP ja cobre, com a prova de cada um."""
+    sheet = workbook.create_sheet("Gaps cobertos")
+    colunas = [
+        ("Fundo concorrente", 50), ("CNPJ", 20), ("Casas", 26), ("Categoria oficial", 30),
+        ("Veredito", 24), ("Confiança", 11), ("Fundo da XP que cobre", 50),
+        ("CNPJ que cobre", 20), ("Ligação", 14), ("Master", 50),
+        ("Resgate do gap (D+)", 12), ("Resgate da XP (D+)", 12),
+        ("Distância de carteira", 12), ("Ativos em comum", 12),
+        ("Carteira (competência)", 14), ("Na lista distribuível", 20),
+    ]
+    for index, (name, width) in enumerate(colunas, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(colunas))
+    row = 1
+    for fund in block.get("cobertos") or []:
+        v = fund.get("veredito") or {}
+        row += 1
+        valores = [
+            fund["name"], fund["cnpj_display"], fund["houses_label"], fund["category"],
+            v.get("rotulo") or "", v.get("confianca") or "",
+            v.get("nome_cobre") or "", format_cnpj(v.get("cobre")) if v.get("cobre") else "",
+            v.get("ligacao") or "", v.get("nome_master") or "",
+            v.get("dmais"), v.get("dmais_cobre"),
+            v.get("distancia"), v.get("sobreposicao"),
+            competencia_br(v.get("competencia")) if v.get("competencia") else "-",
+            ROTULOS_SITUACAO.get(fund.get("situacao_distribuivel"), "-"),
+        ]
+        for index, value in enumerate(valores, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        for index in (11, 12):
+            sheet.cell(row=row, column=index).number_format = _INT
+        for index in (13, 14):
+            sheet.cell(row=row, column=index).number_format = "0%"
+    if row > 1:
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{row}"
+    else:
+        sheet.cell(
+            row=2, column=1,
+            value=(
+                "Nenhum gap aparente coberto por espelho ou equivalente."
+                if (block.get("carteira") or {}).get("available") else
+                "Sem a carteira mensal da CVM nesta execução: espelho e equivalência "
+                "não foram verificados."
+            ),
+        ).font = _NOTE_FONT
+    sheet.cell(
+        row=row + 2, column=1,
+        value="Mesma classe: o concorrente publica outro CNPJ da mesma classe. "
+        "Espelho: o gap e o fundo da XP chegam ao mesmo master pela carteira "
+        "(95% ou mais do PL em cotas de um único fundo). Equivalente: master da "
+        "mesma gestora e categoria, com carteira próxima e ativos em comum. "
+        "Distância = fração da carteira em faixas diferentes; ativos em comum = "
+        "fração da carteira nos mesmos emissores, ações ou fundos.",
+    ).font = _NOTE_FONT
+    sheet.freeze_panes = "A2"
+
+
+def _add_familias_sheet(
+    workbook: Workbook, block: dict, familias, snapshots: list[ShelfSnapshot],
+    distribuivel,
+) -> None:
+    """As familias das gestoras dos gaps aparentes, uma linha por classe.
+
+    So entram familias com alguma classe numa vitrine coletada ou na lista
+    distribuivel: a gestora grande tem milhares de fundos exclusivos que
+    nenhuma prateleira mostra, e listar todos afogaria as que importam.
+    """
+    from shelf_monitor.report.familias import presenca_nas_vitrines
+
+    presenca = presenca_nas_vitrines(familias, snapshots)
+    baseline_id = block.get("baseline_id") or "xp"
+    raizes = {
+        (f.get("veredito") or {}).get("raiz_gestora")
+        for f in (block.get("funds") or []) + (block.get("cobertos") or [])
+    } - {None}
+    vistas: set[str] = set()
+    linhas: list[list] = []
+    for raiz in sorted(raizes):
+        for familia in familias.familias_da_gestora(raiz):
+            if familia.id in vistas:
+                continue
+            visiveis = [
+                c for c in familia.cnpjs
+                if presenca.get(c) or (distribuivel and distribuivel.situacao_de(c))
+            ]
+            if not visiveis:
+                continue
+            vistas.add(familia.id)
+            for numero, versao in enumerate(familia.versoes, start=1):
+                for membro in versao.membros:
+                    casas = ordem_canonica(presenca.get(membro.cnpj, set()))
+                    situacao = distribuivel.situacao_de(membro.cnpj) if distribuivel else None
+                    linhas.append([
+                        familia.gestora or "", familia.nome, familia.anbima or "",
+                        familia.resumo_perfil(), familia.pl or None,
+                        f"v{numero}", membro.papel, membro.nome,
+                        format_cnpj(membro.cnpj), membro.dmais,
+                        membro.faixa_liquidez or "-", membro.pl,
+                        ", ".join(_platform_label(c) for c in casas) or "-",
+                        "Sim" if baseline_id in casas else "Não",
+                        ROTULOS_SITUACAO.get(situacao, "-"),
+                    ])
+    sheet = workbook.create_sheet("Famílias")
+    colunas = [
+        ("Gestora", 34), ("Família (master principal)", 48), ("Categoria ANBIMA", 30),
+        ("Carteira da família", 44), ("PL da família (R$)", 18), ("Versão", 8),
+        ("Papel", 10), ("Fundo", 50), ("CNPJ", 20), ("Resgate (D+)", 11),
+        ("Faixa de liquidez", 16), ("PL (R$)", 16), ("Vitrines", 26),
+        (f"Na vitrine {block.get('baseline_label') or 'XP'}", 12), ("Lista distribuível", 18),
+    ]
+    for index, (name, width) in enumerate(colunas, start=1):
+        sheet.cell(row=1, column=index, value=name)
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    _style_header(sheet, 1, len(colunas))
+    for row, valores in enumerate(linhas, start=2):
+        for index, value in enumerate(valores, start=1):
+            cell = sheet.cell(row=row, column=index, value=value)
+            cell.font = _BODY_FONT
+            cell.border = _BORDER
+        sheet.cell(row=row, column=5).number_format = _MONEY
+        sheet.cell(row=row, column=10).number_format = _INT
+        sheet.cell(row=row, column=12).number_format = _MONEY
+    ultima = len(linhas) + 1
+    if linhas:
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{ultima}"
+    sheet.cell(
+        row=ultima + 2, column=1,
+        value="Famílias de estratégia das gestoras que aparecem nos gaps, com ao "
+        "menos uma classe numa vitrine coletada ou na lista distribuível. Versão = "
+        "um master e os espelhos que investem nele; versões diferentes da mesma "
+        "família são classes paralelas com carteira equivalente. Para a gestora "
+        "inteira: python -m shelf_monitor familias seguido do nome da gestora.",
+    ).font = _NOTE_FONT
+    sheet.freeze_panes = "A2"
 
 
 def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) -> None:
@@ -784,7 +1022,7 @@ def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) ->
                 reason,
                 fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
                 fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
-                "Sim" if fund.on_listing else "Nao",
+                "Sim" if fund.on_listing else "Não",
                 ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
             ]
             for index, value in enumerate(values, start=1):
@@ -817,7 +1055,11 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
             sheet.cell(row=row, column=2, value="baseline").font = _NOTE_FONT
             sheet.cell(
                 row=row, column=6,
-                value="primeira coleta - sem base de comparacao",
+                value=(
+                    f"nova linha de base - {diff.suspect_reason}"
+                    if diff.nova_linha_de_base
+                    else "primeira coleta - sem base de comparação"
+                ),
             ).font = _NOTE_FONT
             continue
         if diff.suspect:
@@ -827,8 +1069,8 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
             sheet.cell(
                 row=row, column=6,
                 value=(
-                    "coleta parcial ou queda brusca - saidas nao listadas para "
-                    "nao virar churn falso"
+                    "coleta parcial ou queda brusca - saídas não listadas para "
+                    "não virar churn falso"
                 ),
             ).font = _ALERT_FONT
 
@@ -842,14 +1084,14 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
             entries.append((
                 "entrada", fund.name,
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
-                "Sim" if fund.on_listing else "Nao", "",
+                "Sim" if fund.on_listing else "Não", "",
             ))
         if not diff.suspect:
             for fund in filter(is_retail, diff.removed):
                 entries.append((
-                    "saida", fund.name,
+                    "saída", fund.name,
                     format_cnpj(fund.cnpj) if fund.cnpj else "",
-                    "Sim" if fund.on_listing else "Nao", "",
+                    "Sim" if fund.on_listing else "Não", "",
                 ))
         for change in diff.changed:
             detail = "; ".join(
@@ -857,7 +1099,7 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
             )
             cnpj = change.identity if change.identity.isdigit() else ""
             entries.append((
-                "alteracao", change.name,
+                "alteração", change.name,
                 format_cnpj(cnpj) if cnpj else "", "", detail,
             ))
 
@@ -878,6 +1120,8 @@ def _periodos_das_abas(
     rentabilidade: dict | None,
     custo: dict | None,
     mandato: dict | None,
+    suprimidos: dict[str, str] | None = None,
+    performance_12m: dict | None = None,
 ) -> list[tuple[str, str, str]]:
     """(aba, fonte, periodo) de cada bloco que tem periodo proprio.
 
@@ -891,37 +1135,50 @@ def _periodos_das_abas(
     if retail_flow and retail_flow.get("available"):
         periodo = retail_flow["periodo"]
         competencias = periodo.get("meses_lidos") or []
-        detalhe = f"{periodo.get('de')} a {periodo.get('ate')}"
+        detalhe = periodo_br(periodo.get("de"), periodo.get("ate"))
         if competencias:
-            detalhe += f" ({len(competencias)} competencias: {', '.join(competencias)})"
+            detalhe += (
+                f" ({contagem(len(competencias), 'competência', 'competências')}: "
+                f"{', '.join(competencia_br(m) for m in competencias)})"
+            )
         ausentes = periodo.get("meses_ausentes") or []
         if ausentes:
-            detalhe += f" - ausentes: {', '.join(ausentes)}"
-        for aba in ("Captacao por fundo", "Tendencia de captacao", "Oportunidades de grade"):
-            linhas.append((aba, "Informe diario da CVM (INF_DIARIO)", detalhe))
+            detalhe += f" - ausentes: {', '.join(competencia_br(m) for m in ausentes)}"
+        abas = [
+            "Captação por casa", "Captação por fundo", "Tendência de captação",
+            "Oportunidades de grade",
+        ]
+        if (suprimidos or {}).get(BLOCO_CNPJ):
+            abas.remove("Oportunidades de grade")
+        for aba in abas:
+            linhas.append((aba, "Informe diário da CVM (INF_DIARIO)", detalhe))
 
-    if performance and performance.get("available"):
-        periodo = performance["periodo"]
-        detalhe = (
-            f"{periodo.get('de')} a {periodo.get('ate')} "
-            f"({periodo.get('pregoes')} pregoes)"
-        )
-        for aba in ("Rentabilidade ponderada", "Onde esta a gente"):
+    blocos_rent = blocos_de_rentabilidade(performance_12m, performance)
+    for posicao, bloco in enumerate(blocos_rent):
+        janela = janela_do_bloco(bloco)
+        detalhe = periodo_br(janela.get("de"), janela.get("ate"))
+        if janela.get("pregoes"):
+            detalhe += f" ({milhar(janela['pregoes'])} pregões)"
+        abas = [f"Rentabilidade {janela['rotulo']}"]
+        # "Onde esta a gente" lista os fundos da janela mais longa.
+        if posicao == 0 and not (suprimidos or {}).get(BLOCO_COTISTAS):
+            abas.append("Onde está a gente")
+        for aba in abas:
             linhas.append((
                 aba,
-                "Cota patrimonial do INF_DIARIO, base no PRIMEIRO PREGAO do periodo",
+                f"Cota patrimonial do INF_DIARIO, base na {janela['base']}",
                 detalhe,
             ))
 
     if rentabilidade and rentabilidade.get("available"):
         janelas = "; ".join(
-            f"{j['rotulo']}: {j['de']} a {j['ate']}"
+            f"{j['rotulo']}: {competencia_br(j['de'])} a {competencia_br(j['ate'])}"
             for j in rentabilidade.get("janelas") or []
         )
         linhas.append((
             "Rentabilidade por fundo",
-            "Cota patrimonial do INF_DIARIO, base no FECHAMENTO DA COMPETENCIA "
-            "ANTERIOR (convencao de lamina)",
+            "Cota patrimonial do INF_DIARIO, base no FECHAMENTO DA COMPETÊNCIA "
+            "ANTERIOR (convenção de lâmina)",
             janelas,
         ))
 
@@ -929,16 +1186,16 @@ def _periodos_das_abas(
         idade = (custo.get("universo") or {}).get("idade_maxima_meses")
         linhas.append((
             "Custo e acesso",
-            "Extrato de informacoes da CVM (EXTRATO)",
-            f"Nao e intervalo: cada classe tem a data-base da propria entrega, "
-            f"e so entram as de ate {idade} meses",
+            "Extrato de informações da CVM (EXTRATO)",
+            f"Não é intervalo: cada classe tem a data-base da própria entrega, "
+            f"e só entram as de até {idade} meses",
         ))
 
     if mandato and mandato.get("available"):
         linhas.append((
             "Mandato declarado",
-            "Extrato de informacoes da CVM (EXTRATO)",
-            "Nao se aplica: condicao vigente do regulamento, nao medida de periodo",
+            "Extrato de informações da CVM (EXTRATO)",
+            "Não se aplica: condição vigente do regulamento, não medida de período",
         ))
 
     return linhas
@@ -950,8 +1207,11 @@ def _add_methodology_sheet(
     enrichment: EnrichmentStats | None,
     generated_at: datetime,
     periodos: list[tuple[str, str, str]] | None = None,
+    suprimidos: dict[str, str] | None = None,
+    fontes: list[Fonte] | None = None,
 ) -> None:
     """Aba "Metodologia": proveniencia e cobertura - o que um comite pergunta."""
+    suprimidos = suprimidos or {}
     sheet = workbook.create_sheet("Metodologia")
     sheet.column_dimensions["A"].width = 34
     sheet.column_dimensions["B"].width = 90
@@ -963,17 +1223,38 @@ def _add_methodology_sheet(
         return row + 1
 
     row = 1
-    sheet.cell(row=row, column=1, value="Metodologia e proveniencia").font = _TITLE_FONT
+    sheet.cell(row=row, column=1, value="Metodologia e proveniência").font = _TITLE_FONT
     row += 2
 
     row = line(row, "Gerado em", generated_at.strftime("%d/%m/%Y %H:%M"))
+    if fontes:
+        row += 1
+        sheet.cell(row=row, column=1, value="Fontes").font = _TITLE_FONT
+        row += 1
+        for col, titulo in enumerate(
+            ("Fonte", "O que entra", "Endereço para consulta", "Arquivos que o monitor lê"),
+            start=1,
+        ):
+            cell = sheet.cell(row=row, column=col, value=titulo)
+            cell.font = _HEADER_FONT
+            cell.fill = _HEADER_FILL
+        row += 1
+        for fonte in fontes:
+            _link(sheet.cell(row=row, column=1), fonte.url, fonte.nome)
+            sheet.cell(row=row, column=2, value=fonte.uso).font = _BODY_FONT
+            _link(sheet.cell(row=row, column=3), fonte.url, fonte.url)
+            if fonte.url_dados:
+                _link(sheet.cell(row=row, column=4), fonte.url_dados, fonte.url_dados)
+            row += 1
+        sheet.column_dimensions["C"].width = 60
+        sheet.column_dimensions["D"].width = 60
     if periodos:
         row += 1
-        sheet.cell(row=row, column=1, value="Periodo de cada aba").font = _TITLE_FONT
+        sheet.cell(row=row, column=1, value="Período de cada aba").font = _TITLE_FONT
         row += 1
         sheet.cell(row=row, column=1, value="Aba").font = _HEADER_FONT
         sheet.cell(row=row, column=1).fill = _HEADER_FILL
-        sheet.cell(row=row, column=2, value="Fonte e periodo").font = _HEADER_FONT
+        sheet.cell(row=row, column=2, value="Fonte e período").font = _HEADER_FONT
         sheet.cell(row=row, column=2).fill = _HEADER_FILL
         row += 1
         for aba, fonte, detalhe in periodos:
@@ -982,31 +1263,61 @@ def _add_methodology_sheet(
             row += 1
         row += 1
     row = line(
-        row, "Vitrine (definicao)",
-        "Fundo presente no canal da propria casa: site publico, API do portal ou "
-        "area logada. Open Finance NAO conta como vitrine - e o catalogo "
-        "regulatorio (tudo que a casa administra), usado aqui para enriquecer "
-        "campos e medir o catalogo.",
+        row, "Vitrine (definição)",
+        "Fundo presente no canal da própria casa: site público, API do portal ou "
+        "área logada. Open Finance NÃO conta como vitrine - é o catálogo "
+        "regulatório (tudo que a casa administra), usado aqui para enriquecer "
+        "campos e medir o catálogo.",
     )
     row = line(
         row, "Perfil de varejo",
-        "Fundos exclusivos/restritos (registro CVM, publico profissional, flag "
-        "da casa ou nome) ficam FORA das abas de analise e moram na aba "
-        "'Restritos (auxiliar)' com o motivo. Qualificado nao e motivo de corte.",
+        "Fundos exclusivos/restritos (registro CVM, público profissional, flag "
+        "da casa ou nome) ficam FORA das abas de análise e moram na aba "
+        "'Restritos (auxiliar)' com o motivo. Qualificado não é motivo de corte.",
     )
+    if suprimidos.get(BLOCO_CNPJ):
+        row = line(
+            row, "Gaps e exclusivos por CNPJ",
+            f"Não se aplica a este monitor: {suprimidos[BLOCO_CNPJ]}. Por isso "
+            "não há abas de gaps nem de oportunidade de grade, e nenhuma coluna "
+            "'Só nesta vitrine' ou 'Exclusivo'.",
+        )
+    else:
+        row = line(
+            row, "Gaps XP",
+            "Gap aparente = fundo de varejo na vitrine de 1+ concorrente e fora da "
+            "vitrine da XP, por CNPJ. Vitrine x vitrine: o catálogo Open Finance "
+            "não conta em nenhum dos lados. Com a carteira mensal da CVM, cada gap "
+            "aparente recebe um veredito: coberto por espelho (chega ao mesmo "
+            "master que um fundo da XP), coberto por equivalente (mesma gestora e "
+            "categoria, carteira próxima e ativos em comum), coberto em outra "
+            "faixa de liquidez, ou gap real (de estratégia, de gestora, ou sem "
+            "carteira que decida). Os cobertos saem da contagem e vão para a aba "
+            "'Gaps cobertos' com a evidência. XP indisponível ou sem vitrine "
+            "suprime a análise (salvo com lista distribuível, que vira a base); XP "
+            "parcial gera aviso; concorrente indisponível ou sem vitrine sai do "
+            "universo com motivo. 'Gestora na base XP' e 'Possível equivalente' "
+            "informam - nunca removem um fundo da lista.",
+        )
+        row = line(
+            row, "Lista distribuível",
+            "CSVs soltos em data/distribuivel/entrada/ (modelo em "
+            "data/distribuivel/modelo.csv): os fundos que a XP distribui ou pode "
+            "distribuir. Um gap da vitrine que a lista cobre vira 'expor na "
+            "vitrine' (ou 'ativar distribuição'), o degrau mais barato da escada "
+            "de esforço. Linha que não se resolve no cadastro da CVM é listada, "
+            "com arquivo e motivo, no fim da aba 'Gaps XP'.",
+        )
+    if suprimidos.get(BLOCO_COTISTAS):
+        row = line(
+            row, "Cotistas",
+            f"Não se aplica a este monitor: {suprimidos[BLOCO_COTISTAS]}. Por isso "
+            "não há aba 'Onde está a gente' nem colunas de cotistas.",
+        )
     row = line(
-        row, "Gaps XP",
-        "Gap = fundo de varejo na vitrine de 1+ concorrente e fora da vitrine "
-        "da XP, por CNPJ. Vitrine x vitrine: o catalogo Open Finance nao conta "
-        "em nenhum dos lados. XP indisponivel ou sem vitrine suprime a analise; "
-        "XP parcial gera aviso; concorrente indisponivel ou sem vitrine sai do "
-        "universo com motivo. 'Gestora na vitrine XP' e 'Possivel equivalente "
-        "XP' sao heuristicas informativas - nunca removem um fundo da lista.",
-    )
-    row = line(
-        row, "Precedencia de fontes",
-        "Open Finance > area logada > API do portal > navegador > HTML. Quando "
-        "duas fontes discordam de um campo, vence a de maior confianca; as "
+        row, "Precedência de fontes",
+        "Open Finance > área logada > API do portal > navegador > HTML. Quando "
+        "duas fontes discordam de um campo, vence a de maior confiança; as "
         "demais preenchem lacunas.",
     )
     if enrichment is not None:
@@ -1015,47 +1326,47 @@ def _add_methodology_sheet(
             f"{100 * enrichment.matched / identifiable:.0f}%" if identifiable else "n/a"
         )
         row = line(
-            row, "Normalizacao ANBIMA",
+            row, "Normalização ANBIMA",
             f"Join com a base oficial CVM pelo CNPJ da classe, pelo CNPJ do fundo "
-            f"e pelo codigo CVM da subclasse ({enrichment.matched} de "
-            f"{identifiable} fundos identificaveis casaram - {pct}; "
-            f"{enrichment.matched_by_cvm_code} deles so pelo codigo). Classe "
-            "ANBIMA, gestor e situacao vem do registro oficial; a classificacao "
+            f"e pelo código CVM da subclasse ({milhar(enrichment.matched)} de "
+            f"{milhar(identifiable)} fundos identificáveis casaram - {pct}; "
+            f"{milhar(enrichment.matched_by_cvm_code)} deles só pelo código). Classe "
+            "ANBIMA, gestor e situação vêm do registro oficial; a classificação "
             "publicada pela casa, quando diverge, fica na coluna "
             "classificacao_anbima_casa.",
         )
         if enrichment.classified_by_name:
             vias = ", ".join(
-                f"{via} {n}"
+                f"{via} {milhar(n)}"
                 for via, n in sorted(
                     enrichment.by_name_via.items(), key=lambda kv: -kv[1]
                 )
             )
             row = line(
-                row, "Classificacao por nome",
-                f"{enrichment.classified_by_name} fundos que o join por "
-                "identidade nao alcancou receberam a categoria oficial pelo "
+                row, "Classificação por nome",
+                f"{milhar(enrichment.classified_by_name)} fundos que o join por "
+                "identidade não alcançou receberam a categoria oficial pelo "
                 "nome, casando contra o cadastro da CVM por prefixo de slug "
-                "mais taxa, aplicacao minima e prazo de resgate. E o que "
-                "coloca na comparacao a casa que nao publica CNPJ - a vitrine "
-                "do Itau traz CNPJ em 6% dos fundos. Nenhuma dessas vias "
-                "preenche CNPJ: elas resolvem a CATEGORIA, nao a identidade, e "
+                "mais taxa, aplicação mínima e prazo de resgate. É o que "
+                "coloca na comparação a casa que não publica CNPJ - a vitrine "
+                "do Itaú traz CNPJ em 6% dos fundos. Nenhuma dessas vias "
+                "preenche CNPJ: elas resolvem a CATEGORIA, não a identidade, e "
                 "a via de cada fundo fica na coluna categoria_via. "
                 f"Vias usadas: {vias}.",
             )
         row = line(
             row, "Gestora",
             f"Vem do registro da CVM sempre que o fundo casa com a base "
-            f"({enrichment.managers_from_cvm} fundos nesta geracao) - e o que "
-            "faz a mesma gestora ter um nome so nas cinco casas. O nome "
+            f"({milhar(enrichment.managers_from_cvm)} fundos nesta geração) - é o que "
+            "faz a mesma gestora ter um nome só nas cinco casas. O nome "
             "publicado pela casa, quando diverge, fica em gestor_casa. Sem "
             f"match, {enrichment.managers_inferred} gestoras foram inferidas "
-            "pelo prefixo do nome do fundo e vao marcadas como inferidas.",
+            "pelo prefixo do nome do fundo e vão marcadas como inferidas.",
         )
     else:
         row = line(
-            row, "Normalizacao ANBIMA",
-            "NAO aplicada nesta geracao: base de mercado ausente. Rode "
+            row, "Normalização ANBIMA",
+            "NÃO aplicada nesta geração: base de mercado ausente. Rode "
             "`python -m shelf_monitor market` para importar a base oficial da "
             "CVM e reexporte.",
             font=_ALERT_FONT,
@@ -1069,10 +1380,10 @@ def _add_methodology_sheet(
         if snapshot.source_counts:
             parts.append(
                 "fontes: "
-                + ", ".join(f"{k}={v}" for k, v in snapshot.source_counts.items())
+                + ", ".join(f"{k}={milhar(v)}" for k, v in snapshot.source_counts.items())
             )
         listing = sum(1 for f in snapshot.funds if f.on_listing)
-        parts.append(f"vitrine={listing} de {len(snapshot.funds)}")
+        parts.append(f"vitrine={milhar(listing)} de {milhar(len(snapshot.funds))}")
         if snapshot.error:
             parts.append(f"obs: {snapshot.error[:180]}")
         row = line(
@@ -1094,20 +1405,39 @@ def render_spreadsheet(
     retail_flow: dict | None = None,
     grade: dict | None = None,
     performance: dict | None = None,
+    performance_12m: dict | None = None,
     custo: dict | None = None,
     mandato: dict | None = None,
     rentabilidade: dict | None = None,
+    suprimidos: dict[str, str] | None = None,
+    familias=None,
+    distribuivel=None,
 ) -> Path:
-    """Gera a planilha das prateleiras. Devolve o caminho do arquivo."""
+    """Gera a planilha das prateleiras. Devolve o caminho do arquivo.
+
+    `suprimidos` e o `RunReport.suprimidos`: as abas e colunas que contam
+    cotistas ou cruzam vitrines por CNPJ saem, e o motivo vai na Metodologia.
+    `familias` e `distribuivel` sao os do RunReport: o mapa de familias e a
+    lista distribuivel, que viram veredito de cobertura nas abas de gaps.
+    """
     generated_at = generated_at or datetime.now()
     usable = [s for s in snapshots if s.funds]
+    suprimidos = suprimidos or {}
+    sem_cnpj = suprimidos.get(BLOCO_CNPJ)
+    sem_cotistas = suprimidos.get(BLOCO_COTISTAS)
 
     workbook = Workbook()
     last_row = _add_consolidated(workbook, usable)
-    listing_last_row = _add_listing_sheet(workbook, usable)
+    listing_last_row = _add_listing_sheet(
+        workbook, usable, com_exclusividade=not sem_cnpj
+    )
     # Gaps recebem os snapshots completos: o proprio bloco decide quem entra
     # no universo e lista os excluidos com motivo.
-    _add_gaps_sheets(workbook, snapshots, listing_last_row, retail_flow, grade)
+    if not sem_cnpj:
+        _add_gaps_sheets(
+            workbook, snapshots, listing_last_row, retail_flow, grade,
+            familias=familias, distribuivel=distribuivel,
+        )
     _add_restricted_sheet(workbook, usable)
     if diffs:
         _add_movements_sheet(workbook, diffs)
@@ -1116,33 +1446,74 @@ def render_spreadsheet(
         _add_cvm(workbook, cvm)
     _add_source_coverage(workbook, usable)
     if retail_flow and retail_flow.get("available"):
-        _add_flow_sheet(workbook, retail_flow)
+        omitir = set()
+        if sem_cnpj:
+            omitir |= _FLOW_POR_CNPJ
+        if sem_cotistas:
+            omitir |= _FLOW_POR_COTISTAS
+        if suprimidos.get(BLOCO_PRODUTO_PROPRIO):
+            omitir |= _FLOW_POR_PRODUTO
+        _add_captacao_casas_sheet(workbook, retail_flow, suprimidos)
+        _add_flow_sheet(workbook, retail_flow, omitir=frozenset(omitir))
         _add_trend_sheet(workbook, retail_flow)
-    if grade and grade.get("available"):
+    # A grade e "fundo que capta fora da vitrine da XP", por CNPJ.
+    if grade and grade.get("available") and not sem_cnpj:
         _add_grade_sheet(workbook, grade)
     if rentabilidade and rentabilidade.get("available"):
         _add_rentabilidade_sheet(workbook, rentabilidade)
-    if performance and performance.get("available"):
-        _add_performance_sheet(workbook, performance)
-        _add_gente_sheet(workbook, performance)
+    # Uma aba por janela, a mais longa primeiro. "Onde esta a gente" lista os
+    # fundos da mais longa, com o retorno da curta ao lado.
+    blocos_rent = blocos_de_rentabilidade(performance_12m, performance)
+    for bloco in blocos_rent:
+        _add_performance_sheet(workbook, bloco, sem_cotistas=sem_cotistas)
+    if blocos_rent and not sem_cotistas:
+        _add_gente_sheet(
+            workbook, blocos_rent[0], blocos_rent[1] if len(blocos_rent) > 1 else None
+        )
     if custo and custo.get("available"):
         _add_custo_sheet(workbook, custo)
     if mandato and mandato.get("available"):
         _add_mandato_sheet(workbook, mandato)
     _add_collection_health(workbook, snapshots, cvm)
+    # As fontes saem da mesma funcao das outras superficies; a planilha recebe
+    # os blocos soltos, entao monta um relatorio so para a pergunta.
+    usadas = fontes_do_relatorio(
+        RunReport(
+            generated_at=generated_at, snapshots=snapshots, cvm_snapshot=cvm,
+            enrichment=enrichment.to_dict() if enrichment else None,
+            retail_flow=retail_flow, performance=performance,
+            performance_12m=performance_12m,
+            rentabilidade=rentabilidade, custo=custo, mandato=mandato,
+        ),
+        config,
+    )
     _add_methodology_sheet(
         workbook, snapshots, enrichment, generated_at,
         periodos=_periodos_das_abas(
-            retail_flow, performance, rentabilidade, custo, mandato
+            retail_flow, performance, rentabilidade, custo, mandato, suprimidos,
+            performance_12m=performance_12m,
         ),
+        suprimidos=suprimidos,
+        fontes=usadas,
     )
-    _add_summary(workbook, usable, snapshots, last_row, generated_at, listing_last_row)
+    _add_summary(
+        workbook, usable, snapshots, last_row, generated_at, listing_last_row,
+        titulo=config.titulo_planilha, com_exclusividade=not sem_cnpj,
+    )
 
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     path = path or (
-        config.reports_dir / f"prateleiras-{generated_at.date().isoformat()}.xlsx"
+        config.reports_dir
+        / f"{config.prefixo_arquivo}-{generated_at.date().isoformat()}.xlsx"
     )
     return _salvar(workbook, path)
+
+
+def _link(cell, url: str, texto: str) -> None:
+    """Celula com hiperlink para a fonte - o texto e o que a pessoa ve."""
+    cell.value = texto
+    cell.hyperlink = url
+    cell.font = Font(name=FONT, size=10, color="1A5FB4", underline="single")
 
 
 def _salvar(workbook: Workbook, path: Path) -> Path:
@@ -1172,20 +1543,35 @@ def _salvar(workbook: Workbook, path: Path) -> Path:
 # --- captacao ----------------------------------------------------------------
 
 _FLOW_HEADERS = [
-    "Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "Exclusivo",
-    "Captacao bruta (R$)", "Resgates (R$)", "Captacao liquida (R$)",
-    "PL inicio (R$)", "PL fim (R$)", "Captacao liquida / PL inicio (%)",
-    "Cotistas inicio", "Cotistas fim", "Variacao cotistas",
+    "Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "Produto próprio de", "Exclusivo",
+    "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
+    "PL início (R$)", "PL fim (R$)", "Captação líquida / PL início (%)",
+    "Cotistas início", "Cotistas fim", "Variação cotistas",
     "Entrada por cotista ganho (R$)",
-    "Rentabilidade no periodo, base no 1o pregao (%)",
-    "Pregoes observados", "Tendencia", "Movimento estrutural",
+    "Rentabilidade no período, base no 1o pregão (%)",
+    "Pregões observados", "Tendência", "Movimento estrutural",
 ]
 
-# Colunas por tipo, para formatar sem numero magico espalhado pelo laco.
-_FLOW_MONEY = (7, 8, 9, 10, 11, 16)
-_FLOW_PCT = (12, 17)
-_FLOW_INT = (13, 14, 15, 18)
-_FLOW_LIQUIDA = 9
+# Formato por cabecalho, e nao por posicao: um modulo pode omitir colunas
+# (previdencia tira as de cotistas e a de exclusividade) sem que o formato
+# de uma escorregue para a vizinha.
+_FLOW_MONEY = {
+    "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
+    "PL início (R$)", "PL fim (R$)", "Entrada por cotista ganho (R$)",
+}
+_FLOW_PCT = {
+    "Captação líquida / PL início (%)",
+    "Rentabilidade no período, base no 1o pregão (%)",
+}
+_FLOW_INT = {"Cotistas início", "Cotistas fim", "Variação cotistas", "Pregões observados"}
+_FLOW_LIQUIDA = "Captação líquida (R$)"
+# O que cada supressao tira desta aba.
+_FLOW_POR_CNPJ = frozenset({"Exclusivo"})
+_FLOW_POR_PRODUTO = frozenset({"Produto próprio de"})
+_FLOW_POR_COTISTAS = frozenset({
+    "Cotistas início", "Cotistas fim", "Variação cotistas",
+    "Entrada por cotista ganho (R$)",
+})
 
 
 def _flow_row(fundo: dict) -> list:
@@ -1195,6 +1581,7 @@ def _flow_row(fundo: dict) -> list:
         fundo["categoria"],
         fundo.get("gestora") or "",
         ", ".join(fundo["vitrines"]),
+        ", ".join(_platform_label(pid) for pid in fundo.get("proprio_de") or []),
         "sim" if fundo["exclusivo"] else "",
         fundo["captacao_bruta"],
         fundo["resgates"],
@@ -1210,34 +1597,45 @@ def _flow_row(fundo: dict) -> list:
         fundo.get("ticket_por_cotista"),
         fundo.get("rentabilidade"),
         fundo.get("dias"),
-        fundo.get("tendencia") or "",
+        nome_da_tendencia(fundo.get("tendencia")),
         "sim" if fundo.get("estrutural") else "",
     ]
 
 
-def _write_flow_rows(ws, fundos: list[dict], header_row: int) -> int:
-    for col_idx, header in enumerate(_FLOW_HEADERS, start=1):
+def _write_flow_rows(
+    ws, fundos: list[dict], header_row: int, omitir: frozenset[str] = frozenset()
+) -> int:
+    """Escreve a tabela de fundos; devolve a linha seguinte a ultima.
+
+    `omitir` sao cabecalhos de `_FLOW_HEADERS` que saem da tabela inteira.
+    """
+    colunas = [
+        (i, header) for i, header in enumerate(_FLOW_HEADERS) if header not in omitir
+    ]
+    for col_idx, (_, header) in enumerate(colunas, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=header)
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(col_idx)].width = (
-            46 if col_idx == 1 else 20 if col_idx in (2, 4) else 16
+            46 if header == "Fundo" else 20 if header in ("CNPJ", "Gestora") else 16
         )
     ws.row_dimensions[header_row].height = 30
 
     row_idx = header_row + 1
     for fundo in fundos:
-        for col_idx, valor in enumerate(_flow_row(fundo), start=1):
+        linha = _flow_row(fundo)
+        for col_idx, (origem, header) in enumerate(colunas, start=1):
+            valor = linha[origem]
             cell = ws.cell(row=row_idx, column=col_idx, value=valor)
             cell.font = _BODY_FONT
-            if col_idx in _FLOW_MONEY:
+            if header in _FLOW_MONEY:
                 cell.number_format = _MONEY
-            elif col_idx in _FLOW_PCT:
+            elif header in _FLOW_PCT:
                 cell.number_format = _PCT
-            elif col_idx in _FLOW_INT:
+            elif header in _FLOW_INT:
                 cell.number_format = _INT
-            if col_idx == _FLOW_LIQUIDA and isinstance(valor, (int, float)) and valor:
+            if header == _FLOW_LIQUIDA and isinstance(valor, (int, float)) and valor:
                 cell.fill = _GREEN_FILL if valor > 0 else _RED_FILL
         row_idx += 1
     return row_idx
@@ -1251,10 +1649,17 @@ _TENDENCIA_FALLBACK = {
     "desacelerando": "ainda captando, mas menos por dia que antes",
     "virou_entrada": "estava perdendo dinheiro e passou a captar",
     "virou_saida": "estava captando e passou a perder dinheiro",
-    "saida_persistente": "perdendo no ultimo mes e na media anterior",
-    "estavel": "sem mudanca material no ritmo",
-    "sem_serie": "competencias de menos para falar em tendencia",
+    "saida_persistente": "perdendo no último mês e na média anterior",
+    "estavel": "sem mudança material no ritmo",
+    "sem_serie": "competências de menos para falar em tendência",
 }
+
+
+def _quando(valor: str | None) -> str:
+    """Dia em data brasileira, competencia (AAAAMM) como "jul/2026"."""
+    if valor and len(valor) == 6 and valor.isdigit():
+        return competencia_br(valor)
+    return data_br(valor)
 
 
 def _periodo_bloco(
@@ -1267,6 +1672,9 @@ def _periodo_bloco(
     ausentes: list[str] | None = None,
     fonte: str = "",
     nota: str = "",
+    url: str | None = None,
+    janela: str | None = None,
+    pregoes: int | None = None,
 ) -> int:
     """Escreve o periodo de um bloco em campos rotulados, nao em prosa.
 
@@ -1283,22 +1691,170 @@ def _periodo_bloco(
         linha += 1
 
     if fonte:
+        if url:
+            _link(sheet.cell(row=linha, column=3), url, url)
         campo("Fonte", fonte)
-    campo("Periodo", f"{de} a {ate}" if de and ate else "nao informado")
+    if janela:
+        campo("Janela", janela)
+    campo("Período", f"de {_quando(de)} a {_quando(ate)}" if de and ate else "não informado")
+    if pregoes:
+        campo("Pregões", milhar(pregoes))
     if competencias:
         campo(
-            "Competencias",
-            f"{len(competencias)} ({competencias[0]} a {competencias[-1]})",
+            "Competências",
+            f"{len(competencias)} ({competencia_br(competencias[0])} a "
+            f"{competencia_br(competencias[-1])})",
         )
     if ausentes:
-        campo("Competencias ausentes", ", ".join(ausentes))
+        campo("Competências ausentes", ", ".join(competencia_br(m) for m in ausentes))
     if nota:
         sheet.cell(row=linha, column=1, value=nota).font = _NOTE_FONT
         linha += 1
     return linha + 1
 
 
-def _add_flow_sheet(workbook: Workbook, flow: dict) -> None:
+def _add_captacao_casas_sheet(
+    workbook: Workbook, flow: dict, suprimidos: dict[str, str] | None = None
+) -> None:
+    """Aba "Captacao por casa": de onde vem o saldo de cada vitrine.
+
+    A leitura das superficies (as frases, a composicao, a familia e a tendencia
+    por casa) com os numeros em celula, para conferir e filtrar. As frases sao
+    as mesmas do digest e do dashboard: `leitura_da_captacao`.
+    """
+    suprimidos = suprimidos or {}
+    sem_cnpj = suprimidos.get(BLOCO_CNPJ)
+    sem_proprio = suprimidos.get(BLOCO_PRODUTO_PROPRIO)
+    ws = workbook.create_sheet("Captação por casa")
+    periodo = flow["periodo"]
+    ws.cell(row=1, column=1, value="Captação dos fundos de vitrine - por casa").font = _TITLE_FONT
+    linha = _periodo_bloco(
+        ws, 2,
+        de=periodo.get("de"), ate=periodo.get("ate"),
+        competencias=periodo.get("meses_lidos") or [],
+        ausentes=periodo.get("meses_ausentes") or [],
+        fonte="Informe diário da CVM (INF_DIARIO)",
+        url=CVM_INFORME_DIARIO.url,
+        nota=(
+            "A CVM publica fluxo por FUNDO, nunca por distribuidor: os números por "
+            "casa são o fluxo dos fundos que ela exibe, no mercado inteiro. "
+            "Movimento estrutural fica fora de todas as somas."
+        ),
+    )
+    for frase in leitura_da_captacao(flow, suprimidos):
+        ws.cell(row=linha, column=1, value=frase).font = _BODY_FONT
+        linha += 1
+    linha += 1
+
+    def tabela(cabecalho: list[str], linhas: list[list], formatos: dict[int, str]) -> None:
+        nonlocal linha
+        for col, titulo in enumerate(cabecalho, start=1):
+            ws.cell(row=linha, column=col, value=titulo)
+        _style_header(ws, linha, len(cabecalho))
+        linha += 1
+        for valores in linhas:
+            for col, valor in enumerate(valores, start=1):
+                cell = ws.cell(row=linha, column=col, value=valor)
+                if col in formatos:
+                    cell.number_format = formatos[col]
+            _style_row(ws, linha, len(cabecalho))
+            linha += 1
+        linha += 1
+
+    # Composicao do saldo.
+    ws.cell(row=linha, column=1, value="De onde vem o saldo").font = _HEADER_FONT_ESCURO
+    linha += 1
+    cabecalho = [
+        "Casa", "Fundos na vitrine", "Fundos com informe", "Captação líquida (R$)",
+        "PL de início (R$)", "Captação / PL de início (%)",
+    ]
+    if not sem_cnpj:
+        cabecalho += ["Compartilhados (R$)", "Só nesta vitrine (R$)"]
+    if not sem_proprio:
+        cabecalho += [
+            "Produto próprio (R$)", "Terceiros (R$)", "Sem gestora conhecida (fundos)",
+        ]
+    linhas = []
+    for casa in flow["casas"]:
+        valores = [
+            casa["label"], casa["vitrine"], casa["com_informe"],
+            casa["captacao_liquida"], casa.get("pl_inicio"), casa.get("sobre_pl"),
+        ]
+        if not sem_cnpj:
+            valores += [casa.get("captacao_compartilhados"), casa["captacao_exclusivos"]]
+        if not sem_proprio:
+            valores += [
+                casa.get("captacao_propria"), casa.get("captacao_terceiros"),
+                casa.get("sem_gestora", 0),
+            ]
+        linhas.append(valores)
+    formatos = {c: _MONEY for c, t in enumerate(cabecalho, start=1) if "(R$)" in t}
+    formatos[6] = _PCT
+    formatos.update({2: _INT, 3: _INT})
+    if not sem_proprio:
+        formatos[len(cabecalho)] = _INT
+    tabela(cabecalho, linhas, formatos)
+    if sem_proprio:
+        ws.cell(
+            row=linha - 1, column=1,
+            value=f"Sem o corte produto próprio x terceiros: {sem_proprio}.",
+        ).font = _NOTE_FONT
+        linha += 1
+
+    # Por familia de ativo.
+    categorias = flow.get("por_categoria") or []
+    if categorias:
+        ws.cell(row=linha, column=1, value="Por família de ativo").font = _HEADER_FONT_ESCURO
+        linha += 1
+        ids = [c["platform_id"] for c in flow["casas"]]
+        cabecalho = (
+            ["Família"] + [f"{c['label']} (R$)" for c in flow["casas"]]
+            + ["Todas as vitrines (R$)", "Fundos no universo"]
+        )
+        linhas = [
+            [l["categoria"]]
+            # Casa sem fundo da familia fica vazia, como o "-" do digest: zero
+            # afirmaria um saldo nulo que ninguem mediu.
+            + [
+                l["casas"][pid]["captacao_liquida"]
+                if l["casas"].get(pid, {}).get("fundos") else None
+                for pid in ids
+            ]
+            + [l["universo"]["captacao_liquida"], l["universo"]["fundos"]]
+            for l in categorias
+        ]
+        formatos = {c: _MONEY for c in range(2, len(ids) + 3)}
+        formatos[len(cabecalho)] = _INT
+        tabela(cabecalho, linhas, formatos)
+
+    # Tendencia por casa, em fundos (a planilha guarda a contagem; a parcela e conta).
+    por_casa = flow.get("tendencia_por_casa") or {}
+    if por_casa:
+        ws.cell(row=linha, column=1, value="Tendência dos fundos, por casa").font = _HEADER_FONT_ESCURO
+        linha += 1
+        estados = list(TREND_LABELS)
+        cabecalho = ["Casa", *[nome_da_tendencia(e) for e in estados], "Total"]
+        linhas = []
+        for casa in flow["casas"]:
+            contagem = por_casa.get(casa["platform_id"]) or {}
+            linhas.append(
+                [casa["label"], *[contagem.get(e, 0) for e in estados],
+                 sum(contagem.values())]
+            )
+        tabela(cabecalho, linhas, {c: _INT for c in range(2, len(cabecalho) + 1)})
+        for estado in estados:
+            ws.cell(row=linha, column=1, value=nome_da_tendencia(estado)).font = _BODY_FONT
+            ws.cell(row=linha, column=2, value=TREND_LABELS[estado]).font = _NOTE_FONT
+            linha += 1
+
+    ws.column_dimensions["A"].width = 26
+    for col in range(2, 13):
+        ws.column_dimensions[get_column_letter(col)].width = 18
+
+
+def _add_flow_sheet(
+    workbook: Workbook, flow: dict, omitir: frozenset[str] = frozenset()
+) -> None:
     """Aba "Captacao por fundo": o fluxo de CADA fundo de vitrine no periodo.
 
     Ate 2026-09-20 esta aba gravava apenas `top_captacao + top_resgate +
@@ -1312,27 +1868,31 @@ def _add_flow_sheet(workbook: Workbook, flow: dict) -> None:
     pelo mesmo motivo: some-lo esconderia justamente o fundo cujo numero
     estranho levou alguem a abrir a planilha.
     """
-    ws = workbook.create_sheet("Captacao por fundo")
+    ws = workbook.create_sheet("Captação por fundo")
     periodo = flow["periodo"]
     competencias = periodo.get("meses_lidos") or []
 
-    ws.cell(row=1, column=1, value="Captacao dos fundos de vitrine").font = _TITLE_FONT
+    ws.cell(row=1, column=1, value="Captação dos fundos de vitrine").font = _TITLE_FONT
     _periodo_bloco(
         ws, 2,
         de=periodo.get("de"), ate=periodo.get("ate"),
         competencias=competencias,
         ausentes=periodo.get("meses_ausentes") or [],
-        fonte="Informe diario da CVM (INF_DIARIO)",
+        fonte="Informe diário da CVM (INF_DIARIO)",
+        url=CVM_INFORME_DIARIO.url,
         nota=(
             "A CVM publica fluxo por FUNDO, nunca por distribuidor: um fundo em "
-            "tres vitrines entra inteiro nas tres somas. A coluna Exclusivo marca "
-            "onde a atribuicao a uma casa e inequivoca. Uma linha do informe e uma "
+            "três vitrines entra inteiro nas três somas. "
+            + ("" if "Exclusivo" in omitir else
+               "A coluna Exclusivo marca onde a atribuição a uma casa é inequívoca. ")
+            + "Uma linha do informe é uma "
             "SUBCLASSE: PL, cotistas e fluxo somam as subclasses da classe, e a "
-            "rentabilidade e a media dos retornos delas ponderada pelo PL. "
-            "Rentabilidade e da cota patrimonial, ex-provento, com base no PRIMEIRO "
-            "PREGAO do periodo - a aba 'Rentabilidade por fundo' usa a cota do fim "
-            "da competencia anterior, que e a convencao de lamina, e por isso o "
-            "mesmo fundo aparece com numero ligeiramente diferente nas duas."
+            "rentabilidade é a média dos retornos delas ponderada pelo PL. "
+            "Rentabilidade é da cota patrimonial, ex-provento, com base no PRIMEIRO "
+            "PREGÃO do período - as abas 'Rentabilidade 12 meses' e "
+            "'Rentabilidade por fundo' usam a cota do fim da competência anterior, "
+            "que é a convenção de lâmina, e por isso o mesmo fundo aparece com "
+            "número ligeiramente diferente nelas."
         ),
     )
 
@@ -1351,17 +1911,20 @@ def _add_flow_sheet(workbook: Workbook, flow: dict) -> None:
                 fundos.append(fundo)
 
     cabecalho = 7
-    ultima = _write_flow_rows(ws, fundos, cabecalho)
+    ultima = _write_flow_rows(ws, fundos, cabecalho, omitir)
     ws.freeze_panes = f"A{cabecalho + 1}"
     if ultima > cabecalho + 1:
-        ws.auto_filter.ref = f"A{cabecalho}:T{ultima - 1}"
+        ultima_coluna = get_column_letter(
+            sum(1 for h in _FLOW_HEADERS if h not in omitir)
+        )
+        ws.auto_filter.ref = f"A{cabecalho}:{ultima_coluna}{ultima - 1}"
 
     linha = ultima + 1
-    ws.cell(row=linha, column=1, value="Legenda da coluna Tendencia").font = _HEADER_FONT
+    ws.cell(row=linha, column=1, value="Legenda da coluna Tendência").font = _HEADER_FONT
     linha += 1
     rotulos = flow.get("tendencia_labels") or _TENDENCIA_FALLBACK
     for chave, texto in rotulos.items():
-        ws.cell(row=linha, column=1, value=chave).font = _BODY_FONT
+        ws.cell(row=linha, column=1, value=nome_da_tendencia(chave)).font = _BODY_FONT
         ws.cell(row=linha, column=2, value=texto).font = _NOTE_FONT
         linha += 1
 
@@ -1373,16 +1936,16 @@ def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
     fecha com menos pregoes que os cheios, e comparar totais marcaria todo fundo
     como desacelerando por um efeito de calendario.
     """
-    ws = workbook.create_sheet("Tendencia de captacao")
+    ws = workbook.create_sheet("Tendência de captação")
     competencias = flow.get("competencias") or []
 
-    ws.cell(row=1, column=1, value="Tendencia de captacao").font = _TITLE_FONT
+    ws.cell(row=1, column=1, value="Tendência de captação").font = _TITLE_FONT
     ws.cell(
         row=2, column=1,
         value=(
-            "Media diaria de captacao liquida por competencia. A media diaria "
-            "existe porque o mes corrente tem menos pregoes que os fechados - "
-            "comparar totais brutos seria comparar calendarios."
+            "Média diária de captação líquida por competência. A média diária "
+            "existe porque o mês corrente tem menos pregões que os fechados - "
+            "comparar totais brutos seria comparar calendários."
         ),
     ).font = _NOTE_FONT
 
@@ -1419,17 +1982,17 @@ def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
     linha += 2
     resumo = flow.get("tendencias") or {}
     rotulos = flow.get("tendencia_labels") or {}
-    ws.cell(row=linha, column=1, value="Fundos por tendencia").font = _HEADER_FONT
+    ws.cell(row=linha, column=1, value="Fundos por tendência").font = _HEADER_FONT
     linha += 1
     for chave, quantidade in resumo.items():
-        ws.cell(row=linha, column=1, value=chave).font = _BODY_FONT
+        ws.cell(row=linha, column=1, value=nome_da_tendencia(chave)).font = _BODY_FONT
         ws.cell(row=linha, column=2, value=quantidade).font = _BODY_FONT
         ws.cell(row=linha, column=3, value=rotulos.get(chave, "")).font = _NOTE_FONT
         linha += 1
 
     for titulo, chave in (
         ("Acelerando - captando mais por dia que antes", "acelerando"),
-        ("Viraram saida - captavam e passaram a perder", "virou_saida"),
+        ("Viraram saída - captavam e passaram a perder", "virou_saida"),
     ):
         fundos = flow.get(chave) or []
         if not fundos:
@@ -1473,19 +2036,19 @@ def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
         row=2, column=1,
         value=(
             f"{grade['total']} fundos captam varejo fora da vitrine da XP; "
-            f"{grade['total_produto_do_concorrente']} sao produto proprio da casa que "
-            f"os exibe e nao se transferem. Restam {grade['total_transferiveis']} "
-            f"({grade['total_operacionais']} de gestora ja distribuida pela XP, "
+            f"{grade['total_produto_do_concorrente']} são produto próprio da casa que "
+            f"os exibe e não se transferem. Restam {grade['total_transferiveis']} "
+            f"({grade['total_operacionais']} de gestora já distribuída pela XP, "
             f"{grade['total_comerciais']} exigem abrir gestora)."
         ),
     ).font = _NOTE_FONT
 
     linha = 4
     for titulo, chave in (
-        ("Inclusao operacional - gestora ja distribuida pela XP", "operacionais"),
+        ("Inclusão operacional - gestora já distribuída pela XP", "operacionais"),
         ("Exige abrir gestora", "comerciais"),
         ("Mais varejo - por cotistas trazidos", "mais_varejo"),
-        ("Produto proprio do concorrente - nao transferivel", "produto_do_concorrente"),
+        ("Produto próprio do concorrente - não transferível", "produto_do_concorrente"),
         ("Na vitrine da XP e perdendo varejo", "na_vitrine_perdendo"),
     ):
         fundos = grade.get(chave) or []
@@ -1504,147 +2067,253 @@ _PERF_HEADERS = [
     "PL (R$)", "Cotistas",
 ]
 
-# "no mercado" no cabecalho e nao so na nota: cotistas e PL sao do FUNDO
-# inteiro, somando todos os distribuidores. A CVM nao publica nada por
-# distribuidor. Sem isso no proprio rotulo, a coluna "Cotistas" ao lado da
-# coluna "Casa" se le como "os clientes dela".
-_GENTE_HEADERS = [
-    "Casa", "Fundo", "CNPJ", "Categoria", "Cotistas no mercado", "PL no mercado (R$)",
-    "Ticket medio (R$)", "Rentabilidade (%)", "Mediana da categoria (%)",
-    "Excesso (pp)", "Captacao liquida no mercado (R$)",
-    "Variacao cotistas no mercado", "Pregoes",
-]
+
+_PERF_LARGURAS = {
+    "Casa": 22, "Categoria": 40, "Fundos": 9, "Mediana dos fundos (%)": 12,
+    "Ponderada por PL (%)": 12, "Ponderada por cotistas (%)": 14,
+    "PL menos cotistas (pp)": 18, "Mediana da categoria no mercado (%)": 26,
+    "PL (R$)": 18, "Cotistas": 12,
+}
+_PERF_POR_COTISTAS = frozenset({
+    "Ponderada por cotistas (%)", "PL menos cotistas (pp)", "% dos cotistas",
+    "Índice cotistas", "Cotistas",
+})
 
 
-def _add_performance_sheet(workbook: Workbook, performance: dict) -> None:
-    """Aba "Rentabilidade ponderada": as tres leituras, por casa e por categoria.
+def _linha_por_cabecalho(ws, linha: int, cabecalhos: list[str], valores: dict) -> None:
+    for col, titulo in enumerate(cabecalhos, start=1):
+        cell = ws.cell(row=linha, column=col, value=valores[titulo])
+        if titulo in _PERF_FORMATOS:
+            cell.number_format = _PERF_FORMATOS[titulo]
 
-    A tabela de cima responde pela vitrine inteira; a de baixo, dentro de cada
-    categoria - e e nela que o gap fica legivel, porque na vitrine inteira a
-    diferenca entre as ponderadas mistura composicao com desempenho.
+
+def _add_performance_sheet(
+    workbook: Workbook, performance: dict, sem_cotistas: str | None = None
+) -> None:
+    """Aba "Rentabilidade <janela>": as tres leituras, por casa e por categoria.
+
+    Uma aba por janela - "Rentabilidade 12 meses" e "Rentabilidade 3 meses" -
+    com o prazo no nome, porque as duas tem a mesma forma e so o prazo as
+    separa. A tabela de cima responde pela vitrine inteira; a de baixo, dentro de
+    cada categoria - e e nela que o gap fica legivel, porque na vitrine inteira
+    a diferenca entre as ponderadas mistura composicao com desempenho.
     """
-    ws = workbook.create_sheet("Rentabilidade ponderada")
+    janela = janela_do_bloco(performance)
+    rotulo = janela["rotulo"]
+    ws = workbook.create_sheet(f"Rentabilidade {rotulo}")
     periodo = performance["periodo"]
     universo = performance["universo"]
 
-    ws.cell(row=1, column=1, value="Rentabilidade da vitrine").font = _TITLE_FONT
+    if janela.get("serie") == "mensal":
+        base = (
+            "Base na cota do FECHAMENTO da competência anterior à janela, a "
+            "convenção de lâmina - a mesma da coluna '12 meses' da aba "
+            "'Rentabilidade por fundo'. A aba 'Rentabilidade 3 meses' parte do "
+            "primeiro pregão do período. Janela longa separa quem ficou para "
+            "trás: em três meses dominados pelo CDI, quase tudo fica a centésimos "
+            "da mediana da categoria. Fundo que não existia no começo da janela "
+            "fica de fora, na vitrine e na mediana de referência."
+        )
+    else:
+        base = (
+            "Base na cota do PRIMEIRO PREGÃO do período - esta aba responde o "
+            "retorno ENTRE DUAS DATAS. As abas 'Rentabilidade 12 meses' e "
+            "'Rentabilidade por fundo' usam o fechamento da competência anterior, "
+            "que é a convenção de lâmina, e por isso o mesmo fundo sai com número "
+            "ligeiramente diferente lá."
+        )
+
+    ws.cell(
+        row=1, column=1, value=f"Rentabilidade da vitrine em {rotulo}"
+    ).font = _TITLE_FONT
     linha = _periodo_bloco(
         ws, 2,
-        de=periodo.get("de"), ate=periodo.get("ate"),
+        de=janela.get("de"), ate=janela.get("ate"),
         competencias=periodo.get("meses_lidos") or [],
         ausentes=periodo.get("meses_ausentes") or [],
-        fonte="Cota patrimonial do informe diario da CVM (INF_DIARIO)",
+        fonte="Cota patrimonial do informe diário da CVM (INF_DIARIO)",
+        url=CVM_INFORME_DIARIO.url,
+        janela=f"{rotulo}, base na {janela['base']}",
+        pregoes=janela.get("pregoes"),
         nota=(
-            f"{periodo.get('pregoes')} pregoes, com a cota do PRIMEIRO PREGAO do "
-            "periodo como base - esta aba responde o retorno ENTRE DUAS DATAS. A "
-            "aba 'Rentabilidade por fundo' usa o fechamento da competencia "
-            "anterior, que e a convencao de lamina, e por isso o mesmo fundo sai "
-            "com numero ligeiramente diferente la. Referencia: mediana da mesma "
-            f"categoria no universo oficial ({universo['fundos_com_serie']} fundos, "
+            f"{base} Referência: mediana da mesma categoria no universo oficial, "
+            f"no mesmo prazo ({milhar(universo['fundos_com_serie'])} fundos, "
             f"{universo['categorias_com_referencia']} categorias com amostra "
-            f">= {universo['amostra_minima']}). E o retorno dos fundos que a casa "
-            "exibe, com o peso que eles tem no MERCADO - nao o retorno dos clientes "
+            f">= {universo['amostra_minima']}). É o retorno dos fundos que a casa "
+            "exibe, com o peso que eles têm no MERCADO - não o retorno dos clientes "
             "dela: a CVM publica cota, PL e cotistas por fundo, somando todos os "
-            "distribuidores. Cota ex-provento. INDICE = share do PL nos fundos "
+            "distribuidores. Cota ex-provento. ÍNDICE = share do PL nos fundos "
             "abaixo da mediana dividido pelo share de fundos abaixo: abaixo de 1, o "
             "dinheiro EVITA os piores da categoria; acima de 1, se concentra neles. "
             "Cerca de metade de qualquer universo fica abaixo da mediana por "
-            "construcao, entao a contagem de fundos sozinha nao e sinal de nada."
+            "construção, então a contagem de fundos sozinha não é sinal de nada."
         ),
     )
+    omitir = _PERF_POR_COTISTAS if sem_cotistas else frozenset()
+    if sem_cotistas:
+        ws.cell(
+            row=linha - 1, column=1,
+            value=f"Sem as leituras por cotistas: {sem_cotistas}.",
+        ).font = _NOTE_FONT
+        linha += 1
     resumo = [
-        "Casa", "Fundos com serie", "Vitrine", "Cobertura",
+        "Casa", "Fundos com série", "Vitrine", "Cobertura",
         "Mediana dos fundos (%)", "Ponderada por PL (%)", "Ponderada por cotistas (%)",
         "PL menos cotistas (pp)",
         "Fundos abaixo da mediana", "% dos fundos", "% do PL", "% dos cotistas",
-        "Indice PL", "Indice cotistas",
+        "Índice PL", "Índice cotistas",
     ]
+    resumo = [t for t in resumo if t not in omitir]
     for col, titulo in enumerate(resumo, start=1):
         ws.cell(row=linha, column=col, value=titulo)
     _style_header(ws, linha, len(resumo))
     linha += 1
     for casa in performance["casas"]:
         massa = casa["alocacao_abaixo_da_mediana"]
-        valores = [
-            casa["label"], casa["com_serie"], casa["vitrine"], casa["cobertura"],
-            casa["mediana"], casa["por_pl"], casa["por_cotista"], casa["gap"],
-            f"{massa['fundos']} de {massa['de']}",
-            massa["share_fundos"], massa["share_pl"], massa["share_cotistas"],
-            massa["indice_pl"], massa["indice_cotistas"],
-        ]
-        for col, valor in enumerate(valores, start=1):
-            ws.cell(row=linha, column=col, value=valor)
-        for col in (5, 6, 7, 8):
-            ws.cell(row=linha, column=col).number_format = _PCT
-        for col in (4, 10, 11, 12):
-            ws.cell(row=linha, column=col).number_format = '0.0%;-;-'
-        for col in (13, 14):
-            ws.cell(row=linha, column=col).number_format = _INDICE_FMT
+        _linha_por_cabecalho(ws, linha, resumo, {
+            "Casa": casa["label"], "Fundos com série": casa["com_serie"],
+            "Vitrine": casa["vitrine"], "Cobertura": casa["cobertura"],
+            "Mediana dos fundos (%)": casa["mediana"],
+            "Ponderada por PL (%)": casa["por_pl"],
+            "Ponderada por cotistas (%)": casa["por_cotista"],
+            "PL menos cotistas (pp)": casa["gap"],
+            "Fundos abaixo da mediana": f"{massa['fundos']} de {massa['de']}",
+            "% dos fundos": massa["share_fundos"], "% do PL": massa["share_pl"],
+            "% dos cotistas": massa["share_cotistas"],
+            "Índice PL": massa["indice_pl"], "Índice cotistas": massa["indice_cotistas"],
+        })
         _style_row(ws, linha, len(resumo))
         linha += 1
 
     linha += 1
-    ws.cell(row=linha, column=1, value="Por categoria").font = _TITLE_FONT
+    ws.cell(row=linha, column=1, value=f"Por categoria, em {rotulo}").font = _TITLE_FONT
     linha += 1
-    for col, titulo in enumerate(_PERF_HEADERS, start=1):
+    por_categoria = [t for t in _PERF_HEADERS if t not in omitir]
+    for col, titulo in enumerate(por_categoria, start=1):
         ws.cell(row=linha, column=col, value=titulo)
-    _style_header(ws, linha, len(_PERF_HEADERS))
+    _style_header(ws, linha, len(por_categoria))
     cabecalho = linha
     linha += 1
     for item in performance["por_categoria"]:
-        valores = [
-            item["label"], item["categoria"], item["fundos"], item["mediana"],
-            item["por_pl"], item["por_cotista"], item["gap"], item["referencia"],
-            item["pl"], item["cotistas"],
-        ]
-        for col, valor in enumerate(valores, start=1):
-            ws.cell(row=linha, column=col, value=valor)
-        for col in (4, 5, 6, 7, 8):
-            ws.cell(row=linha, column=col).number_format = _PCT
-        ws.cell(row=linha, column=9).number_format = _MONEY
-        ws.cell(row=linha, column=10).number_format = _INT
-        _style_row(ws, linha, len(_PERF_HEADERS))
+        _linha_por_cabecalho(ws, linha, por_categoria, {
+            "Casa": item["label"], "Categoria": item["categoria"],
+            "Fundos": item["fundos"], "Mediana dos fundos (%)": item["mediana"],
+            "Ponderada por PL (%)": item["por_pl"],
+            "Ponderada por cotistas (%)": item["por_cotista"],
+            "PL menos cotistas (pp)": item["gap"],
+            "Mediana da categoria no mercado (%)": item["referencia"],
+            "PL (R$)": item["pl"], "Cotistas": item["cotistas"],
+        })
+        _style_row(ws, linha, len(por_categoria))
         linha += 1
 
     ws.freeze_panes = f"A{cabecalho + 1}"
     if linha > cabecalho + 1:
-        ws.auto_filter.ref = f"A{cabecalho}:J{linha - 1}"
-    for col, largura in zip("ABCDEFGHIJK", (22, 40, 9, 12, 12, 14, 18, 26, 18, 12, 18)):
-        ws.column_dimensions[col].width = largura
+        ws.auto_filter.ref = (
+            f"A{cabecalho}:{get_column_letter(len(por_categoria))}{linha - 1}"
+        )
+    larguras = [_PERF_LARGURAS[t] for t in por_categoria] + [18]
+    for col, largura in enumerate(larguras, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = largura
 
 
-def _add_gente_sheet(workbook: Workbook, performance: dict) -> None:
+def _retornos_por_cnpj(bloco: dict | None) -> dict[str, dict]:
+    """CNPJ -> retorno, mediana e excesso do fundo na janela do bloco.
+
+    Os objetos de `_casas` cobrem todos os fundos da vitrine; o JSON (bloco
+    relido de disco) so traz os de `onde_esta_a_gente`.
+    """
+    if not bloco:
+        return {}
+    saida: dict[str, dict] = {}
+    for casa in bloco.get("_casas") or []:
+        for fundo in casa.fundos:
+            saida.setdefault(fundo.cnpj, {
+                "retorno": fundo.retorno,
+                "mediana_categoria": fundo.mediana_categoria,
+                "excesso": fundo.excesso,
+            })
+    for fundos in (bloco.get("onde_esta_a_gente") or {}).values():
+        for fundo in fundos:
+            saida.setdefault(fundo["cnpj"], fundo)
+    return saida
+
+
+def _add_gente_sheet(
+    workbook: Workbook, performance: dict, outro: dict | None = None
+) -> None:
     """Aba "Onde esta a gente": os fundos com mais cotistas, e como rendem.
 
     Ordenada por numero de cotistas, nao por PL nem por retorno: a duvida que
     ela responde nao e sobre o fundo medio da prateleira, e sim sobre aquele em
     que a maior parte das pessoas de fato esta.
+
+    Os fundos e o retorno principal sao os da janela mais longa (12 meses);
+    `outro` e a janela curta, nas colunas seguintes, pelo CNPJ. Cada coluna de
+    retorno diz o prazo no proprio cabecalho.
     """
-    ws = workbook.create_sheet("Onde esta a gente")
+    janela = janela_do_bloco(performance)
+    rotulo = janela["rotulo"]
+    ws = workbook.create_sheet("Onde está a gente")
     periodo = performance.get("periodo") or {}
     ws.cell(
         row=1, column=1,
-        value="Onde esta a gente - fundos da vitrine com mais cotistas",
+        value="Onde está a gente - fundos da vitrine com mais cotistas",
     ).font = _TITLE_FONT
+    curta = janela_do_bloco(outro) if outro else None
     linha = _periodo_bloco(
         ws, 2,
-        de=periodo.get("de"), ate=periodo.get("ate"),
+        de=janela.get("de"), ate=janela.get("ate"),
         competencias=periodo.get("meses_lidos") or [],
         ausentes=periodo.get("meses_ausentes") or [],
-        fonte="Cota patrimonial do informe diario da CVM (INF_DIARIO)",
+        fonte="Cota patrimonial do informe diário da CVM (INF_DIARIO)",
+        url=CVM_INFORME_DIARIO.url,
+        janela=f"{rotulo}, base na {janela['base']}",
+        pregoes=janela.get("pregoes"),
         nota=(
-            "Os fundos de cada vitrine com mais cotistas, com o retorno do periodo "
-            "ao lado da mediana da mesma categoria no mercado. Excesso negativo e "
-            "um fundo de muita gente rendendo abaixo dos pares. Cotistas e PL sao "
-            "do fundo inteiro, somando todos os distribuidores."
+            f"Os fundos de cada vitrine com mais cotistas, com o retorno em {rotulo} "
+            "ao lado da mediana da mesma categoria no mercado, no mesmo prazo"
+            + (
+                f"; nas colunas seguintes, o mesmo em {curta['rotulo']} "
+                f"({periodo_br(curta.get('de'), curta.get('ate'))}, base na "
+                f"{curta['base']})" if curta else ""
+            )
+            + ". Excesso negativo é um fundo de muita gente rendendo abaixo dos "
+            "pares. Cotistas e PL são do fundo inteiro, somando todos os "
+            "distribuidores."
         ),
     )
-    for col, titulo in enumerate(_GENTE_HEADERS, start=1):
+
+    # "no mercado" no cabecalho e nao so na nota: cotistas e PL sao do FUNDO
+    # inteiro, somando todos os distribuidores. A CVM nao publica nada por
+    # distribuidor. Sem isso no proprio rotulo, a coluna "Cotistas" ao lado da
+    # coluna "Casa" se le como "os clientes dela". (titulo, formato, largura)
+    cabecalhos: list[tuple[str, str | None, int]] = [
+        ("Casa", None, 18), ("Fundo", None, 48), ("CNPJ", None, 20),
+        ("Categoria", None, 34), ("Cotistas no mercado", _INT, 12),
+        ("PL no mercado (R$)", _MONEY, 18), ("Ticket médio (R$)", _MONEY, 16),
+        (f"Rentabilidade em {rotulo} (%)", _PCT, 16),
+        (f"Mediana da categoria em {rotulo} (%)", _PCT, 20),
+        (f"Excesso em {rotulo} (pp)", _PCT, 14),
+    ]
+    if curta:
+        cabecalhos += [
+            (f"Rentabilidade em {curta['rotulo']} (%)", _PCT, 16),
+            (f"Mediana da categoria em {curta['rotulo']} (%)", _PCT, 20),
+            (f"Excesso em {curta['rotulo']} (pp)", _PCT, 14),
+        ]
+    cabecalhos += [
+        (f"Captação líquida no mercado em {rotulo} (R$)", _MONEY, 20),
+        (f"Variação cotistas no mercado em {rotulo}", _INT, 16),
+        (f"Pregões em {rotulo}", _INT, 12),
+    ]
+    for col, (titulo, _, _) in enumerate(cabecalhos, start=1):
         ws.cell(row=linha, column=col, value=titulo)
-    _style_header(ws, linha, len(_GENTE_HEADERS))
+    _style_header(ws, linha, len(cabecalhos))
     cabecalho_gente = linha
     linha += 1
 
+    da_curta = _retornos_por_cnpj(outro)
     rotulos = {c["platform_id"]: c["label"] for c in performance["casas"]}
     for platform_id, fundos in performance["onde_esta_a_gente"].items():
         for fundo in fundos:
@@ -1653,41 +2322,62 @@ def _add_gente_sheet(workbook: Workbook, performance: dict) -> None:
                 format_cnpj(fundo["cnpj"]), fundo["categoria"], fundo["cotistas"],
                 fundo["pl"], fundo["ticket_medio"], fundo["retorno"],
                 fundo["mediana_categoria"], fundo["excesso"],
+            ]
+            if curta:
+                par = da_curta.get(fundo["cnpj"]) or {}
+                valores += [
+                    par.get("retorno"), par.get("mediana_categoria"), par.get("excesso"),
+                ]
+            valores += [
                 fundo["captacao_liquida"], fundo["variacao_cotistas"], fundo["dias"],
             ]
-            for col, valor in enumerate(valores, start=1):
-                ws.cell(row=linha, column=col, value=valor)
+            for col, (valor, (_, formato, _)) in enumerate(zip(valores, cabecalhos), start=1):
+                cell = ws.cell(row=linha, column=col, value=valor)
+                if formato:
+                    cell.number_format = formato
             ws.cell(row=linha, column=3).alignment = Alignment(horizontal="left")
-            for col in (5, 12, 13):
-                ws.cell(row=linha, column=col).number_format = _INT
-            for col in (6, 7, 11):
-                ws.cell(row=linha, column=col).number_format = _MONEY
-            for col in (8, 9, 10):
-                ws.cell(row=linha, column=col).number_format = _PCT
-            _style_row(ws, linha, len(_GENTE_HEADERS))
+            _style_row(ws, linha, len(cabecalhos))
             linha += 1
 
+    ultima = get_column_letter(len(cabecalhos))
     ws.freeze_panes = f"A{cabecalho_gente + 1}"
     if linha > cabecalho_gente + 1:
-        ws.auto_filter.ref = f"A{cabecalho_gente}:M{linha - 1}"
-    for col, largura in zip(
-        "ABCDEFGHIJKLM", (18, 48, 20, 34, 12, 18, 16, 14, 18, 12, 18, 14, 10)
-    ):
-        ws.column_dimensions[col].width = largura
+        ws.auto_filter.ref = f"A{cabecalho_gente}:{ultima}{linha - 1}"
+    for col, (_, _, largura) in enumerate(cabecalhos, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = largura
 
 
 # --- custo e mandato ----------------------------------------------------------
 
 _CUSTO_HEADERS = [
     "Casa", "Fundo", "CNPJ", "Categoria", "Taxa adm (%)",
-    "Mediana da categoria (%)", "Indice", "Faixa", "Idade da entrega (meses)",
-    "Cobra entrada", "Cobra saida", "Custodia max (%)", "Dias de cotizacao",
-    "Minimo da classe (R$)", "Menor porta do mesmo fundo (R$)",
-    "Fora do indice porque",
+    "Mediana da categoria (%)", "Índice", "Faixa", "Idade da entrega (meses)",
+    "Cobra entrada", "Cobra saída", "Custódia máx. (%)", "Dias de cotização",
+    "Mínimo da classe (R$)", "Menor porta do mesmo fundo (R$)",
+    "Fora do índice porque",
 ]
 
 _INDICE_FMT = '0.00"x";-;-'
 _SHARE_FMT = '0.0%;-;-'
+
+# Formato de cada coluna das abas de rentabilidade, por cabecalho - e o
+# que deixa a previdencia tirar as colunas de cotistas sem desalinhar formato.
+# Mora aqui, e nao junto da aba, porque depende de _INDICE_FMT.
+_PERF_FORMATOS = {
+    "Cobertura": _SHARE_FMT,
+    "Mediana dos fundos (%)": _PCT,
+    "Ponderada por PL (%)": _PCT,
+    "Ponderada por cotistas (%)": _PCT,
+    "PL menos cotistas (pp)": _PCT,
+    "% dos fundos": _SHARE_FMT,
+    "% do PL": _SHARE_FMT,
+    "% dos cotistas": _SHARE_FMT,
+    "Índice PL": _INDICE_FMT,
+    "Índice cotistas": _INDICE_FMT,
+    "Mediana da categoria no mercado (%)": _PCT,
+    "PL (R$)": _MONEY,
+    "Cotistas": _INT,
+}
 
 
 def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
@@ -1705,36 +2395,37 @@ def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
     ws.cell(row=2, column=1, value="Fonte").font = _HEADER_FONT
     ws.cell(
         row=2, column=2,
-        value="Extrato de informacoes da CVM (EXTRATO) - uma entrega por classe",
+        value="Extrato de informações da CVM (EXTRATO) - uma entrega por classe",
     ).font = _BODY_FONT
-    ws.cell(row=3, column=1, value="Periodo").font = _HEADER_FONT
+    _link(ws.cell(row=2, column=3), CVM_EXTRATO.url, CVM_EXTRATO.url)
+    ws.cell(row=3, column=1, value="Período").font = _HEADER_FONT
     ws.cell(
         row=3, column=2,
         value=(
-            "Nao e um intervalo: cada classe tem a data-base da propria entrega, "
-            f"e so entram as de ate {universo['idade_maxima_meses']} meses. A "
+            "Não é um intervalo: cada classe tem a data-base da própria entrega, "
+            f"e só entram as de até {universo['idade_maxima_meses']} meses. A "
             "coluna 'Idade da entrega' diz a de cada fundo."
         ),
     ).font = _BODY_FONT
     ws.cell(
         row=4, column=1,
         value=(
-            f"Extrato de informacoes da CVM: {universo['classes_na_base']} classes, "
+            f"Extrato de informações da CVM: {milhar(universo['classes_na_base'])} classes, "
             f"{universo['categorias_com_referencia']} categorias com amostra "
-            f">= {universo['amostra_minima']} para servir de referencia. Entram so "
+            f">= {universo['amostra_minima']} para servir de referência. Entram só "
             "taxas em percentual ao ano (o mesmo campo carrega valor em reais e "
-            f"texto livre) com entrega de ate {universo['idade_maxima_meses']} "
-            "meses. Taxa e propriedade da classe, identica em qualquer "
-            "distribuidor - por isso pode vir da base oficial. Aplicacao minima "
-            "NAO: o minimo do registro e o institucional da classe, nao o ticket "
+            f"texto livre) com entrega de até {universo['idade_maxima_meses']} "
+            "meses. Taxa é propriedade da classe, idêntica em qualquer "
+            "distribuidor - por isso pode vir da base oficial. Aplicação mínima "
+            "NÃO: o mínimo do registro é o institucional da classe, não o ticket "
             "que o site cobra."
         ),
     ).font = _NOTE_FONT
 
     linha = 6
     resumo = [
-        "Casa", "Comparaveis", "Vitrine", "Indice mediano", "Caros", "Baratos",
-        "Sem taxa de entrada/saida", "Resgate ate D+1", "Com porta menor",
+        "Casa", "Comparáveis", "Vitrine", "Índice mediano", "Caros", "Baratos",
+        "Sem taxa de entrada/saída", "Resgate até D+1", "Com porta menor",
     ]
     for col, titulo in enumerate(resumo, start=1):
         ws.cell(row=linha, column=col, value=titulo)
@@ -1820,13 +2511,14 @@ def _add_mandato_sheet(workbook: Workbook, mandato: dict) -> None:
     ws.cell(row=2, column=1, value="Fonte").font = _HEADER_FONT
     ws.cell(
         row=2, column=2,
-        value="Extrato de informacoes da CVM (EXTRATO) - politica de investimento",
+        value="Extrato de informações da CVM (EXTRATO) - política de investimento",
     ).font = _BODY_FONT
-    ws.cell(row=3, column=1, value="Periodo").font = _HEADER_FONT
+    _link(ws.cell(row=2, column=3), CVM_EXTRATO.url, CVM_EXTRATO.url)
+    ws.cell(row=3, column=1, value="Período").font = _HEADER_FONT
     ws.cell(
         row=3, column=2,
         value=(
-            "Nao se aplica: mandato e condicao vigente do regulamento, nao medida "
+            "Não se aplica: mandato é condição vigente do regulamento, não medida "
             "de um intervalo."
         ),
     ).font = _BODY_FONT
@@ -1834,8 +2526,8 @@ def _add_mandato_sheet(workbook: Workbook, mandato: dict) -> None:
 
     linha = 6
     cabecalho = [
-        "Casa", "Dimensao", "Share da vitrine", "Share das concorrentes",
-        "Indice", "Aposta", "Teto mediano (%)",
+        "Casa", "Dimensão", "Share da vitrine", "Share das concorrentes",
+        "Índice", "Aposta", "Teto mediano (%)",
     ]
     for col, titulo in enumerate(cabecalho, start=1):
         ws.cell(row=linha, column=col, value=titulo)
@@ -1845,7 +2537,7 @@ def _add_mandato_sheet(workbook: Workbook, mandato: dict) -> None:
     for item in mandato["linhas"]:
         valores = [
             item["label"], item["rotulo"], item["share"], item["share_pares"],
-            "so ela" if item["so_ela"] else item["indice"],
+            "só ela" if item["so_ela"] else item["indice"],
             item["aposta"], item["teto_mediano"],
         ]
         for col, valor in enumerate(valores, start=1):
@@ -1890,20 +2582,22 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
     linha = _periodo_bloco(
         ws, 2,
         de=periodo.get("de"), ate=periodo.get("ate"),
-        fonte="Cota patrimonial do informe diario da CVM (INF_DIARIO)",
+        fonte="Cota patrimonial do informe diário da CVM (INF_DIARIO)",
+        url=CVM_INFORME_DIARIO.url,
         nota=(
-            "Retorno DO PERIODO de cada janela, nao anualizado - 28% em 24 meses "
-            "e menos, ao ano, que 12% em 12. A base de cada janela e a cota do "
-            "fim da competencia ANTERIOR a ela; quando o fundo nao existia la, e "
+            "Retorno DO PERÍODO de cada janela, não anualizado - 28% em 24 meses "
+            "e menos, ao ano, que 12% em 12. A base de cada janela é a cota do "
+            "fim da competência ANTERIOR a ela; quando o fundo não existia lá, e "
             "a primeira cota observada dentro da janela. Cota ex-provento: fundo "
             "que distribui aparece abaixo do que o investidor recebeu. PL e "
-            "cotistas sao do fundo inteiro, somando todos os distribuidores. "
-            "As abas 'Rentabilidade ponderada' e 'Captacao por fundo' usam outra "
-            "base - o primeiro pregao do periodo - porque respondem outra "
-            "pergunta: o retorno ENTRE DUAS DATAS. Esta aqui responde o retorno "
-            "DA COMPETENCIA, que e a convencao de lamina. As duas estao certas "
-            "e o mesmo fundo sai com numero ligeiramente diferente nas duas; a "
-            "base de cada uma esta escrita na aba Metodologia."
+            "cotistas são do fundo inteiro, somando todos os distribuidores. "
+            "As abas 'Rentabilidade 3 meses' e 'Captação por fundo' usam outra "
+            "base - o primeiro pregão do período - porque respondem outra "
+            "pergunta: o retorno ENTRE DUAS DATAS. Esta aqui, como a "
+            "'Rentabilidade 12 meses', responde o retorno DA COMPETÊNCIA, que é "
+            "a convenção de lâmina. As duas estão certas "
+            "e o mesmo fundo sai com número ligeiramente diferente nas duas; a "
+            "base de cada uma está escrita na aba Metodologia."
         ),
     )
 
@@ -1914,15 +2608,15 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
         ws.cell(
             row=linha, column=2,
             value=(
-                f"{j['de']} a {j['ate']} - "
-                f"{j['competencias']} {'competencia' if j['competencias'] == 1 else 'competencias'}"
+                f"{competencia_br(j['de'])} a {competencia_br(j['ate'])} - "
+                f"{contagem(j['competencias'], 'competência', 'competências')}"
             ),
         ).font = _BODY_FONT
         linha += 1
     linha += 1
 
     # Resumo por casa: mediana, ponderada por PL e por cotistas em cada janela.
-    resumo = ["Casa", "Fundos com serie", "Vitrine", "Leitura"] + rotulos
+    resumo = ["Casa", "Fundos com série", "Vitrine", "Leitura"] + rotulos
     for col, titulo in enumerate(resumo, start=1):
         ws.cell(row=linha, column=col, value=titulo)
     _style_header(ws, linha, len(resumo))
@@ -1954,7 +2648,7 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
     cabecalho = (
         ["Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "PL (R$)", "Cotistas"]
         + [f"{r} (%)" for r in rotulos]
-        + ["Subclasses", "Competencias na janela de 24m"]
+        + ["Subclasses", "Competências na janela de 24m"]
     )
     for col, titulo in enumerate(cabecalho, start=1):
         ws.cell(row=linha, column=col, value=titulo)

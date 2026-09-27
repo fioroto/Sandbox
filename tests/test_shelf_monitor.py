@@ -8,6 +8,7 @@ Rode com: python -m unittest discover -s tests -v
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -100,11 +101,11 @@ class TestNormalize(unittest.TestCase):
     def test_asset_class_word_boundaries(self):
         # "DURACAO" nao pode casar com "ACAO"
         self.assertEqual(
-            classify_asset_class("Renda Fixa Duracao Livre"), AssetClass.RENDA_FIXA
+            classify_asset_class("Renda Fixa Duração Livre"), AssetClass.RENDA_FIXA
         )
-        self.assertEqual(classify_asset_class(None, None, "BTG Acoes FIA"), AssetClass.ACOES)
+        self.assertEqual(classify_asset_class(None, None, "BTG Ações FIA"), AssetClass.ACOES)
         self.assertEqual(
-            classify_asset_class("Previdencia Renda Fixa"), AssetClass.PREVIDENCIA
+            classify_asset_class("Previdência Renda Fixa"), AssetClass.PREVIDENCIA
         )
         self.assertEqual(classify_asset_class("Fundo Generico"), AssetClass.OUTROS)
 
@@ -260,10 +261,10 @@ class TestSourceMerge(unittest.TestCase):
     def test_name_variants_are_preserved(self):
         merged = merge_offers({
             "open-finance": [offer("btg", "BTG PACTUAL RF CP FIC FIF", "11111111000191")],
-            "html-scrape": [offer("btg", "BTG Renda Fixa Credito Privado", "11111111000191")],
+            "html-scrape": [offer("btg", "BTG Renda Fixa Crédito Privado", "11111111000191")],
         })
         self.assertEqual(merged[0].name, "BTG PACTUAL RF CP FIC FIF")
-        self.assertIn("BTG Renda Fixa Credito Privado", merged[0].extra["name_variants"])
+        self.assertIn("BTG Renda Fixa Crédito Privado", merged[0].extra["name_variants"])
 
     def test_concrete_class_beats_outros(self):
         merged = merge_offers({
@@ -355,7 +356,7 @@ class TestStrategyCascade(unittest.TestCase):
 
         snapshot = collector.collect()
         self.assertEqual(len(snapshot.funds), 10)
-        self.assertEqual(called, [], "a segunda fonte nao deve ser consultada")
+        self.assertEqual(called, [], "a segunda fonte não deve ser consultada")
 
 
 def offer(platform: str, name: str, cnpj: str | None = None, **kwargs) -> FundOffer:
@@ -421,7 +422,7 @@ class TestShelfDiff(unittest.TestCase):
 
         diff = diff_shelf(current, previous)
         self.assertTrue(diff.suspect)
-        self.assertEqual(diff.removed, [], "saidas devem ser omitidas em coleta suspeita")
+        self.assertEqual(diff.removed, [], "saídas devem ser omitidas em coleta suspeita")
 
     def test_unavailable_snapshot_yields_no_churn(self):
         previous = snapshot_for("nu", [offer("nu", "Fundo A", "11111111000191")], self.yesterday)
@@ -444,7 +445,7 @@ class TestShelfDiff(unittest.TestCase):
         diff = diff_shelf(current, previous)
         self.assertEqual(diff.added, [])
         self.assertEqual(diff.removed, [])
-        self.assertEqual(diff.changed, [], "o slug ja absorve a forma juridica")
+        self.assertEqual(diff.changed, [], "o slug já absorve a forma juridica")
 
     def test_rename_without_cnpj_is_a_change_not_a_swap(self):
         """Nome quase igual sem CNPJ: renomeacao, nao um fundo novo + um extinto."""
@@ -528,11 +529,11 @@ class TestShelfDiff(unittest.TestCase):
         diff = diff_shelf(current, previous)
         self.assertTrue(diff.suspect)
         self.assertIn("playwright", diff.suspect_reason)
-        self.assertEqual(diff.removed, [], "saida de fonte nao vira saida de fundo")
+        self.assertEqual(diff.removed, [], "saída de fonte não vira saída de fundo")
 
     def test_missing_source_downgrades_snapshot_to_partial(self):
         previous, current = self._pair_with_lost_source(200, 198)
-        current.error = "fontes indisponiveis -> playwright: bloqueado"
+        current.error = "fontes indisponíveis -> playwright: bloqueado"
 
         assess_quality(current, previous)
         self.assertEqual(current.status, SnapshotStatus.PARTIAL)
@@ -570,7 +571,7 @@ class TestShelfDiff(unittest.TestCase):
         previous.source_counts["playwright"] = 0
 
         diff = diff_shelf(current, previous)
-        self.assertFalse(diff.suspect, "fonte que nao trouxe nada nao e perda")
+        self.assertFalse(diff.suspect, "fonte que não trouxe nada não e perda")
 
     def test_different_funds_are_not_merged_as_a_rename(self):
         previous = snapshot_for("btg", [offer("btg", "Verde AM Scena")], self.yesterday)
@@ -590,7 +591,7 @@ class TestShelfDiff(unittest.TestCase):
         ], self.today)
 
         diff = diff_shelf(current, previous)
-        self.assertEqual(diff.changed, [], "campo que sumiu da fonte nao e mudanca de oferta")
+        self.assertEqual(diff.changed, [], "campo que sumiu da fonte não e mudança de oferta")
 
 
 class TestCvmDiff(unittest.TestCase):
@@ -741,30 +742,49 @@ class TestMailer(unittest.TestCase):
         )
 
     def test_subject_leads_with_the_news(self):
+        vitrine = CollectorStrategy.API_JSON
         previous = snapshot_for("btg", [
             offer("btg", "Fundo A", "11111111000191", min_initial=1000.0),
             offer("btg", "Fundo B", "22222222000192"),
-        ], self.yesterday)
+        ], self.yesterday, strategy=vitrine)
         current = snapshot_for("btg", [
             offer("btg", "Fundo A", "11111111000191", min_initial=500.0),
             offer("btg", "Fundo C", "33333333000193"),
+        ], self.now, strategy=vitrine)
+
+        subject = build_subject(
+            self._report([diff_shelf(current, previous)], snapshots=[current])
+        )
+        self.assertIn("1 entrada / 1 saída", subject)
+        self.assertIn("1 alteração", subject)
+
+    def test_subject_counts_the_window_not_the_catalog(self):
+        """O assunto conta o que o corpo do digest lista: so a vitrine."""
+        previous = snapshot_for("btg", [
+            offer("btg", "Fundo A", "11111111000191"),
+        ], self.yesterday)
+        current = snapshot_for("btg", [
+            offer("btg", "Fundo A", "11111111000191"),
+            offer("btg", "Fundo C", "33333333000193"),
         ], self.now)
 
-        subject = build_subject(self._report([diff_shelf(current, previous)]))
-        self.assertIn("1 entradas / 1 saidas", subject)
-        self.assertIn("1 alteracoes", subject)
+        # Snapshots do Open Finance: a entrada existe no diff, nao na vitrine.
+        diff = diff_shelf(current, previous)
+        self.assertEqual(len(diff.added), 1)
+        subject = build_subject(self._report([diff], snapshots=[current]))
+        self.assertIn("sem mudanças na vitrine", subject)
 
     def test_subject_says_when_nothing_changed(self):
         snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
         subject = build_subject(self._report([diff_shelf(snapshot, snapshot)]))
-        self.assertIn("sem mudancas", subject)
+        self.assertIn("sem mudanças", subject)
 
     def test_subject_distinguishes_total_source_failure(self):
         broken = snapshot_for("nu", [], self.now, status=SnapshotStatus.UNAVAILABLE)
         subject = build_subject(
             self._report([diff_shelf(broken, None)], snapshots=[broken])
         )
-        self.assertIn("nenhuma fonte acessivel", subject)
+        self.assertIn("nenhuma fonte acessível", subject)
 
     def test_digest_summary_distinguishes_the_three_silences(self):
         """Coleta falha, primeira coleta e prateleira estavel nao sao a mesma coisa."""
@@ -776,7 +796,7 @@ class TestMailer(unittest.TestCase):
         all_broken = render_markdown(
             self._report([diff_shelf(broken, None)], snapshots=[broken])
         )
-        self.assertIn("Nenhuma fonte foi acessivel", all_broken)
+        self.assertIn("Nenhuma fonte foi acessível", all_broken)
 
         first = render_markdown(
             self._report([diff_shelf(stable_curr, None)], snapshots=[stable_curr])
@@ -786,12 +806,12 @@ class TestMailer(unittest.TestCase):
         stable = render_markdown(
             self._report([diff_shelf(stable_curr, stable_prev)], snapshots=[stable_curr])
         )
-        self.assertIn("Nenhuma mudanca", stable)
+        self.assertIn("Nenhuma mudança", stable)
 
     def test_send_is_a_noop_without_smtp_config(self):
         snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
         result = send_digest(self.config, self._report([diff_shelf(snapshot, None)]))
-        self.assertIn("SMTP nao configurado", result)
+        self.assertIn("SMTP não configurado", result)
 
 
 class TestReports(unittest.TestCase):
@@ -817,7 +837,7 @@ class TestReports(unittest.TestCase):
                   manager_name="Verde Asset"),
         ], now)
         self.nu = snapshot_for("nu", [], now, status=SnapshotStatus.UNAVAILABLE)
-        self.nu.error = "Nu nao expoe prateleira deslogada"
+        self.nu.error = "Nu não expoe prateleira deslogada"
 
         self.previous_btg = previous_btg = snapshot_for("btg", [
             offer("btg", "BTG Renda Fixa CP", "12345678000191",
@@ -862,7 +882,7 @@ class TestReports(unittest.TestCase):
         report = self._com_vitrine()
         btg = next(s for s in report.snapshots if s.platform == "btg")
         oculto = offer("btg", "BTG Carteira Administrada FIC FIM", "77777777000177",
-                       manager_name="Gestora Que So Ele Administra", min_initial=50.0)
+                       manager_name="Gestora Que Só Ele Administra", min_initial=50.0)
         oculto.sources = ["open-finance"]
         btg.funds.append(oculto)
 
@@ -870,13 +890,13 @@ class TestReports(unittest.TestCase):
             p for p in build_dashboard_data(report)["platforms"]
             if p["platform_id"] == "btg"
         )
-        self.assertEqual(linha["listing_funds"], 2, "a vitrine nao cresceu")
-        self.assertEqual(linha["catalog_funds"], 3, "o catalogo cresceu, e fica dito")
+        self.assertEqual(linha["listing_funds"], 2, "a vitrine não cresceu")
+        self.assertEqual(linha["catalog_funds"], 3, "o catálogo cresceu, e fica dito")
         self.assertNotIn(
-            "Gestora Que So Ele Administra",
+            "Gestora Que Só Ele Administra",
             [m["name"] for m in linha["top_managers"]],
         )
-        self.assertEqual(linha["exclusive_count"], 1, "o oculto nao vira diferencial")
+        self.assertEqual(linha["exclusive_count"], 1, "o oculto não vira diferencial")
 
     def test_platform_without_a_listing_leaves_the_comparison_with_a_reason(self):
         """Casa so com catalogo sai dos graficos declarando por que."""
@@ -897,7 +917,7 @@ class TestReports(unittest.TestCase):
         impresso no console e morria ali.
         """
         report = self._com_vitrine()
-        motivo = "categoria com menos de 20 classes comparaveis"
+        motivo = "categoria com menos de 20 classes comparáveis"
         report.custo = {"available": False, "reason": motivo}
         report.retail_flow = {"available": False, "reason": motivo}
 
@@ -911,12 +931,43 @@ class TestReports(unittest.TestCase):
         path = render_dashboard(self.config, self.report)
         content = path.read_text(encoding="utf-8")
         self.assertIn('id="dashboard-data"', content)
-        self.assertNotIn("<script src=", content, "dashboard nao deve depender de CDN")
-        self.assertIn("prefers-color-scheme: dark", content)
+        self.assertNotIn("<script src=", content, "dashboard não deve depender de CDN")
+        # Tema claro, sempre: o painel seguia o tema do sistema e abria escuro
+        # em maquina configurada assim. A leitura executiva e em fundo claro.
+        self.assertNotIn("prefers-color-scheme: dark", content)
+        self.assertIn('<meta name="color-scheme" content="light">', content)
         # Os dados embutidos precisam ser JSON valido
         start = content.index('id="dashboard-data">') + len('id="dashboard-data">')
         end = content.index("</script>", start)
         json.loads(content[start:end])
+
+    def test_dashboard_abre_na_visao_executiva_com_os_detalhes_recolhidos(self):
+        """Manchetes, leituras e placar a vista; cada bloco num painel fechado.
+
+        E cada painel mantem os alvos que o JS desenha: mover um bloco para
+        dentro de um <details> nao pode perder um id no caminho - o JS
+        escreveria em null, lancaria, e todo bloco desenhado depois sumiria.
+        """
+        from shelf_monitor.report.dashboard import _SCRIPT
+
+        content = render_dashboard(self.config, self.report).read_text(encoding="utf-8")
+        paineis = re.findall(r'<section class="panel" id="([^"]+)">\s*<details( open)?>', content)
+        self.assertGreaterEqual(len(paineis), 10)
+        self.assertEqual([p for p, aberto in paineis if aberto], [], "painel aberto por padrão")
+        self.assertLess(content.index('id="visao-executiva"'), content.index('class="panel"'))
+
+        alvos = set(re.findall(r'getElementById\("([^"]+)"\)', _SCRIPT))
+        self.assertGreater(len(alvos), 20)
+        self.assertEqual(sorted(a for a in alvos if f'id="{a}"' not in content), [])
+
+    def test_movimento_na_visao_executiva_diz_desde_quando(self):
+        """"N fundos entraram" sem a data da coleta comparada nao diz desde quando."""
+        from shelf_monitor.texto import data_br
+
+        anterior = next(d.prev_date for d in self.report.shelf_diffs if not d.is_first_run)
+        content = render_dashboard(self.config, self.report).read_text(encoding="utf-8")
+        executiva = content[content.index('id="visao-executiva"'):content.index('class="detalhes-head"')]
+        self.assertIn(f"coleta de {data_br(anterior)}", executiva)
 
     def test_dashboard_embute_os_assets_e_nao_os_referencia(self):
         """CSS e JS viraram arquivos, mas continuam EMBUTIDOS no HTML.
@@ -945,10 +996,10 @@ class TestReports(unittest.TestCase):
 
     def test_digest_reports_change_and_unavailable_source(self):
         markdown = render_markdown(self._com_vitrine())
-        self.assertIn("aplicacao minima", markdown)
+        self.assertIn("aplicação mínima", markdown)
         self.assertIn("Fundo Descontinuado", markdown)
-        self.assertIn("Fontes indisponiveis", markdown)
-        self.assertIn("pre-operacional", markdown.lower())
+        self.assertIn("Fontes indisponíveis", markdown)
+        self.assertIn("pré-operacional", markdown.lower())
 
     def test_digest_separates_the_window_from_the_catalog(self):
         """Fundo que entrou so no Open Finance nao vira "entrou na vitrine".
@@ -963,7 +1014,7 @@ class TestReports(unittest.TestCase):
         anterior = snapshot_for("btg", [vitrine], now - timedelta(days=1),
                                 strategy=CollectorStrategy.API_JSON)
 
-        entrou_na_vitrine = offer("btg", "BTG Acoes Novo FIC FIA", "22222222000122")
+        entrou_na_vitrine = offer("btg", "BTG Ações Novo FIC FIA", "22222222000122")
         entrou_na_vitrine.sources = ["api-json"]
         so_no_catalogo = offer("btg", "BTG Carteira Fechada FIC FIM", "33333333000133")
         so_no_catalogo.sources = ["open-finance"]
@@ -981,9 +1032,9 @@ class TestReports(unittest.TestCase):
         )
         markdown = render_markdown(report)
 
-        self.assertIn("BTG Acoes Novo FIC FIA", markdown)
+        self.assertIn("BTG Ações Novo FIC FIA", markdown)
         self.assertNotIn("BTG Carteira Fechada FIC FIM", markdown)
-        self.assertIn("so no catalogo Open Finance", markdown)
+        self.assertIn("só no catálogo Open Finance", markdown)
         # A tabela de sumario conta 1 entrada de vitrine, nao as 2 do diff.
         self.assertIn("| BTG Pactual | 2 | 3 | ok | 1 | 0 | 0 |", markdown)
 
@@ -1037,7 +1088,7 @@ class TestReports(unittest.TestCase):
         self.assertEqual(consolidated.max_row, 1 + len(self.xp.funds) + len(self.btg.funds))
 
         cabecalho_consolidado = [c.value for c in consolidated[1]]
-        self.assertNotIn("So nesta casa (por CNPJ)", cabecalho_consolidado)
+        self.assertNotIn("Só nesta casa (por CNPJ)", cabecalho_consolidado)
 
     def test_exclusividade_se_mede_na_vitrine_e_nao_no_catalogo(self):
         """Uma pasta nao pode ter duas colunas quase homonimas discordando.
@@ -1059,7 +1110,7 @@ class TestReports(unittest.TestCase):
         # A formula tem intervalo limitado aos dados: uma referencia a coluna
         # inteira torna a planilha lenta demais para abrir.
         vitrine = workbook["Vitrine varejo"]
-        coluna = [c.value for c in vitrine[1]].index("So nesta vitrine") + 1
+        coluna = [c.value for c in vitrine[1]].index("Só nesta vitrine") + 1
         formula = vitrine.cell(row=2, column=coluna).value
         self.assertTrue(formula.startswith("=IF("))
         self.assertIn("COUNTIF($C$2:$C$", formula)
@@ -1067,7 +1118,7 @@ class TestReports(unittest.TestCase):
 
         # E o Resumo aponta para la, nao para o Consolidado.
         resumo = workbook["Resumo"]
-        coluna_resumo = [c.value for c in resumo[4]].index("So nesta vitrine") + 1
+        coluna_resumo = [c.value for c in resumo[4]].index("Só nesta vitrine") + 1
         self.assertIn("'Vitrine varejo'!", resumo.cell(row=5, column=coluna_resumo).value)
 
     def test_markdown_e_html_do_digest_nao_divergem(self):
@@ -1104,7 +1155,7 @@ class TestReports(unittest.TestCase):
         for bloco in ("Gaps de prateleira da XP", "Radar CVM"):
             if bloco in markdown:
                 self.assertIn(
-                    bloco, visivel, f"bloco '{bloco}' so existe no markdown"
+                    bloco, visivel, f"bloco '{bloco}' só existe no markdown"
                 )
 
         # 2. Os CNPJs citados no markdown aparecem no HTML.
@@ -1113,14 +1164,14 @@ class TestReports(unittest.TestCase):
         self.assertTrue(cnpjs_md, "a fixture precisa citar ao menos um CNPJ")
         self.assertEqual(
             set(), cnpjs_md - cnpjs_html,
-            "fundos citados so no markdown: " + str(cnpjs_md - cnpjs_html),
+            "fundos citados só no markdown: " + str(cnpjs_md - cnpjs_html),
         )
 
     def test_digest_files_are_written(self):
         md_path, html_path = render_digest(self.config, self.report)
         self.assertTrue(md_path.exists() and html_path.exists())
         html = html_path.read_text(encoding="utf-8")
-        self.assertNotIn("<script", html, "digest de e-mail nao deve conter JS")
+        self.assertNotIn("<script", html, "digest de e-mail não deve conter JS")
 
     def _com_vitrine(self):
         """Os mesmos snapshots do setUp, agora publicados na vitrine da casa.
@@ -1162,12 +1213,12 @@ class TestReports(unittest.TestCase):
         """
         now = datetime.now()
         xp_fund = offer("xp", "XP Macro FIC FIM", "10345678000110",
-                        manager_name="XP Gestao")
+                        manager_name="XP Gestão")
         xp_fund.sources = ["playwright"]
         btg_shared = offer("btg", "XP Macro FIC FIM", "10345678000110")
         btg_shared.sources = ["api-json"]
         btg_gap = offer("btg", "Kapitalo Zeta FIC FIM", "40345678000140",
-                        manager_name="Kapitalo Gestao")
+                        manager_name="Kapitalo Gestão")
         btg_gap.sources = ["api-json"]
         xp = snapshot_for("xp", [xp_fund], now)
         btg = snapshot_for("btg", [btg_shared, btg_gap], now)
@@ -1214,7 +1265,7 @@ class TestReports(unittest.TestCase):
         # Pelo cabecalho e nao por indice fixo: a aba ganhou as colunas de
         # captacao e esforco, e um indice cravado quebra a cada coluna nova
         # sem que nada de fato tenha se perdido.
-        coluna = [c.value for c in gaps[1]].index("Verificacao vs. Vitrine varejo") + 1
+        coluna = [c.value for c in gaps[1]].index("Verificação vs. Vitrine varejo") + 1
         formula = gaps.cell(row=2, column=coluna).value
         self.assertTrue(formula.startswith("=IF("))
         self.assertIn("COUNTIFS('Vitrine varejo'!$A$2:$A$", formula)

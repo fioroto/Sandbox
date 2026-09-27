@@ -14,6 +14,7 @@ from shelf_monitor.report.shared.limiares import (
     CARO,
     BARATO,
     MIN_AMOSTRA_CATEGORIA,
+    MIN_AMOSTRA_TICKET,
     MIN_COBERTURA_VITRINE,
     MIN_COBERTURA_CUSTO,
     MIN_COBERTURA_JANELA,
@@ -21,11 +22,22 @@ from shelf_monitor.report.shared.limiares import (
     SOBRE_INDICE,
     SUB_INDICE,
 )
+from shelf_monitor.report.shared.fontes import (
+    Fonte,
+    fonte_da_vitrine,
+    fontes_do_relatorio,
+)
 from shelf_monitor.report.shared.informe import (
     caminho_da_competencia,
     ler_competencia,
     ler_filtrado,
     limpar as limpar_informe,
+)
+from shelf_monitor.report.shared.movimentos import (
+    Movimentos,
+    movimentos_de_vitrine,
+    movimentos_do_run,
+    na_vitrine,
 )
 from shelf_monitor.report.shared.numeros import (
     mediana,
@@ -33,26 +45,39 @@ from shelf_monitor.report.shared.numeros import (
     quartis,
     arredonda,
 )
-from shelf_monitor.report.shared.plataformas import ordem_canonica, rotulo_da_casa
+from shelf_monitor.report.shared.plataformas import (
+    ordem_canonica,
+    rotulo_da_casa,
+    rotulos_sobrepostos,
+)
 
 __all__ = [
     "CARO",
     "BARATO",
     "MIN_AMOSTRA_CATEGORIA",
+    "MIN_AMOSTRA_TICKET",
     "MIN_COBERTURA_VITRINE",
     "MIN_COBERTURA_CUSTO",
     "MIN_COBERTURA_JANELA",
     "MIN_VITRINE",
     "SOBRE_INDICE",
     "SUB_INDICE",
+    "Fonte",
+    "fonte_da_vitrine",
+    "fontes_do_relatorio",
     "caminho_da_competencia",
     "ler_competencia",
     "ler_filtrado",
     "limpar_informe",
+    "Movimentos",
+    "movimentos_de_vitrine",
+    "movimentos_do_run",
+    "na_vitrine",
     "mediana",
     "ponderada",
     "quartis",
     "arredonda",
     "ordem_canonica",
     "rotulo_da_casa",
+    "rotulos_sobrepostos",
 ]

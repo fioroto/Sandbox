@@ -51,6 +51,10 @@ class EtfDailyRecord:
     vl_patrim_liq: float = 0.0
     captc_dia: float = 0.0
     resg_dia: float = 0.0
+    # Fundos.NET: o que a diferenca de PL corrigiu no dia em que o declarado nao
+    # fechou com a variacao de cotas (ver fundosnet.liquida_do_dia). Zero no
+    # INF_DIARIO.
+    ajuste_dia: float = 0.0
     nr_cotst: int = 0
     # Rótulo bruto da coluna TP_FUNDO_CLASSE (v4 do informe), quando presente.
     # Usado só para desempatar duas linhas do mesmo CNPJ na mesma data.
@@ -62,7 +66,7 @@ class EtfDailyRecord:
 
     @property
     def net_inflow(self) -> float:
-        return self.captc_dia - self.resg_dia
+        return self.captc_dia - self.resg_dia + self.ajuste_dia
 
 
 @dataclass
@@ -94,6 +98,10 @@ class EtfWeeklyFlow:
     # por diferenca: nao e estimativa de fluxo, e o residuo do fluxo declarado.
     variacao_pl: float = 0.0
     valorizacao: float = 0.0
+    # Fundos.NET: o que a diferenca de PL corrigiu nos dias em que o declarado
+    # nao fechou com a variacao de cotas. captacao_liquida = captacao_bruta -
+    # resgates + ajuste_pl.
+    ajuste_pl: float = 0.0
     rentabilidade_semana: float | None = None
     # A valorizacao sai por diferenca (PL menos fluxo declarado), entao a
     # identidade fecha sempre - inclusive quando a serie tem buraco e o residuo
@@ -127,6 +135,7 @@ class CategoryWeeklySummary:
     captacao_liquida: float
     pl_total: float
     qtd_etfs: int
+    ajuste_pl: float = 0.0
 
 
 def get_recent_months(count: int = 3, ref_date: date | None = None) -> list[str]:
@@ -358,7 +367,8 @@ def aggregate_etf_weekly_flows(
             flow_recs = week_recs if prev_week_last else week_recs[1:]
             captacao_bruta = sum(r.captc_dia for r in flow_recs)
             resgates = sum(r.resg_dia for r in flow_recs)
-            captacao_liquida = captacao_bruta - resgates
+            ajuste_pl = sum(r.ajuste_dia for r in flow_recs)
+            captacao_liquida = captacao_bruta - resgates + ajuste_pl
 
             pl_inicio = reference.vl_patrim_liq
             pl_fim = week_recs[-1].vl_patrim_liq
@@ -413,6 +423,7 @@ def aggregate_etf_weekly_flows(
                     captacao_bruta=round(captacao_bruta, 2),
                     resgates=round(resgates, 2),
                     captacao_liquida=round(captacao_liquida, 2),
+                    ajuste_pl=round(ajuste_pl, 2),
                     pl_inicio=round(pl_inicio, 2),
                     pl_fim=round(pl_fim, 2),
                     variacao_pl=round(variacao_pl, 2),
@@ -471,6 +482,7 @@ def aggregate_category_weekly_flows(
                 captacao_liquida=round(cap_liq, 2),
                 pl_total=round(pl_total, 2),
                 qtd_etfs=len(flows),
+                ajuste_pl=round(sum(f.ajuste_pl for f in flows), 2),
             )
         )
 

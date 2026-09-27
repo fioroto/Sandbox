@@ -400,5 +400,120 @@ class TestFlowCoverage(unittest.TestCase):
         self.assertEqual(cov.feeders_com_fluxo, 0)
 
 
+class TestFonteDoFluxo(unittest.TestCase):
+    """O padrão do `etf` não publica fluxo de feeder como captação de ETF.
+
+    O INF_DIARIO não cobre fundo de índice (0 de 249 ETFs em 2026-09-19) e era
+    o padrão do comando, sem aviso; a planilha o chamava de "Captação Líquida
+    de ETFs". Agora o padrão é `auto`: Fundos.NET quando há série em disco.
+    """
+
+    def setUp(self):
+        self.config, self._tmp = temp_config()
+        self.addCleanup(self._tmp.cleanup)
+
+    def _gravar_informes(self, dias: int) -> None:
+        from datetime import timedelta
+
+        self.config.etf_fnet_dir.mkdir(parents=True, exist_ok=True)
+        linhas = ["cnpj;fundo;data;pl;cota;cotas;cotistas;captacao;resgates;vl_total;doc_id"]
+        inicio = date(2026, 9, 1)
+        for i in range(dias):
+            dia = inicio + timedelta(days=i)
+            linhas.append(f"14120533000111;ETF X;{dia.isoformat()};1000;10;;5;0;0;1000;{i}")
+        (self.config.etf_fnet_dir / "2026-09-18.csv").write_text(
+            "\n".join(linhas), encoding="utf-8"
+        )
+
+    def test_sem_serie_o_auto_fica_no_inf_diario_e_diz_por_que(self):
+        from shelf_monitor.main import resolver_fonte_do_fluxo
+
+        fonte, motivo = resolver_fonte_do_fluxo(self.config, "auto")
+        self.assertEqual(fonte, "inf_diario")
+        self.assertIn("0 datas de informe", motivo)
+
+    def test_a_coleta_de_hoje_ainda_nao_e_serie(self):
+        # A única coleta em disco em 23/09 trouxe 7 datas de informe.
+        from shelf_monitor.main import resolver_fonte_do_fluxo
+
+        self._gravar_informes(7)
+        self.assertEqual(resolver_fonte_do_fluxo(self.config, "auto")[0], "inf_diario")
+
+    def test_com_serie_o_auto_passa_ao_fundos_net(self):
+        from shelf_monitor.main import resolver_fonte_do_fluxo
+        from shelf_monitor.market import fundosnet
+
+        self._gravar_informes(fundosnet.MIN_DIAS_SERIE)
+        fonte, motivo = resolver_fonte_do_fluxo(self.config, "auto")
+        self.assertEqual(fonte, "fnet")
+        self.assertIn(str(fundosnet.MIN_DIAS_SERIE), motivo)
+
+    def test_fonte_pedida_explicitamente_e_respeitada(self):
+        from shelf_monitor.main import resolver_fonte_do_fluxo
+
+        self.assertEqual(resolver_fonte_do_fluxo(self.config, "inf_diario"), ("inf_diario", None))
+        self.assertEqual(resolver_fonte_do_fluxo(self.config, "fnet"), ("fnet", None))
+
+    def test_o_aviso_diz_que_nao_e_etf(self):
+        from shelf_monitor import main
+
+        with main.console.capture() as saida:
+            main.avisar_fluxo_de_feeder("o Fundos.NET tem 7 datas")
+        texto = saida.get()
+        self.assertIn("NÃO é de ETF", texto)
+        self.assertIn("feeders", texto)
+        self.assertIn("7 datas", texto)
+
+    def test_o_padrao_do_cli_e_auto(self):
+        import subprocess
+        import sys
+
+        ajuda = subprocess.run(
+            [sys.executable, "-m", "shelf_monitor", "etf", "--help"],
+            capture_output=True, text=True, timeout=120,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        ).stdout
+        self.assertIn("{auto,inf_diario,fnet}", ajuda)
+
+    def test_planilha_diz_a_fonte_no_titulo(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.etf_report import export_etf_excel
+
+        feeder = export_etf_excel([], [], {}, self.config.reports_dir / "a.xlsx")
+        wb = load_workbook(feeder)
+        titulo = wb["Resumo Categorias"]["A1"].value
+        self.assertIn("FEEDERS", titulo)
+        self.assertIn("INF_DIARIO", titulo)
+        self.assertIn("0 de 249", wb["Resumo Categorias"]["A3"].value)
+        self.assertIn("FEEDER", wb["Matriz ETFs"]["A1"].value)
+
+        etf = export_etf_excel([], [], {}, self.config.reports_dir / "b.xlsx", fonte="fnet")
+        wb = load_workbook(etf)
+        titulo = wb["Resumo Categorias"]["A1"].value
+        self.assertNotIn("FEEDER", titulo)
+        self.assertIn("Fundos.NET", titulo)
+
+
+
+class TestFormatoEmMilhoes(unittest.TestCase):
+    """Estoque sem sinal: "R$ +14.090,0M" num PL fazia ler variacao onde ha saldo."""
+
+    def test_estoque_sai_sem_sinal_e_variacao_com(self):
+        from shelf_monitor.report.etf_report import format_money_millions
+
+        self.assertEqual(format_money_millions(14_090e6, sinal=False), "R$ 14.090,0M")
+        self.assertEqual(format_money_millions(832.6e6), "R$ +832,6M")
+        self.assertEqual(format_money_millions(-954.8e6), "R$ -954,8M")
+
+    def test_percentual_com_virgula_decimal(self):
+        from types import SimpleNamespace
+
+        from shelf_monitor.report.etf_report import _format_rentab
+
+        semana = SimpleNamespace(data_suspeita=False, rentabilidade_semana=1.234)
+        self.assertEqual(_format_rentab(semana), "+1,23%")
+
+
 if __name__ == "__main__":
     unittest.main()

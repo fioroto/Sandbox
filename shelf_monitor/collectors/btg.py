@@ -149,7 +149,7 @@ def paginate_btg_api(
         payload = fetch_json(url)
         if not isinstance(payload, dict) or "items" not in payload:
             raise SourceUnavailable(
-                f"funds/list/v2 respondeu fora do formato esperado na pagina {page}"
+                f"funds/list/v2 respondeu fora do formato esperado na página {page}"
             )
         if page == 1:
             urls.append(url)
@@ -175,8 +175,8 @@ def paginate_btg_api(
         # Mesmo tratamento do Open Finance: prateleira cortada nao pode sair
         # como coleta inteira.
         warnings.append(
-            f"paginacao do funds/list/v2 truncada em {_MAX_PAGES} de "
-            f"{total_pages} paginas ({len(offers)} fundos coletados) - "
+            f"paginação do funds/list/v2 truncada em {_MAX_PAGES} de "
+            f"{total_pages} páginas ({len(offers)} fundos coletados) - "
             "prateleira incompleta"
         )
 
@@ -214,7 +214,7 @@ class BtgCollector(PlatformCollector):
         from shelf_monitor.collectors.browser import collect_via_browser
 
         if not self.platform.shelf_url:
-            raise SourceUnavailable("shelf_url nao configurada para o BTG")
+            raise SourceUnavailable("shelf_url não configurada para o BTG")
 
         def paginate_in_page(page) -> list[tuple[str, Any]]:
             collected: list[tuple[str, Any]] = []

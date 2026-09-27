@@ -51,7 +51,7 @@ def describe_error(exc: BaseException) -> str:
     if isinstance(exc, requests.exceptions.SSLError):
         return "falha de TLS"
     if isinstance(exc, requests.exceptions.ConnectionError):
-        return "falha de conexao"
+        return "falha de conexão"
     text = " ".join(str(exc).split())
     return text[:160] + ("..." if len(text) > 160 else "")
 
@@ -108,8 +108,13 @@ class _TrustAdapter(HTTPAdapter):
         return super().proxy_manager_for(*args, **kwargs)
 
 
-def build_session(config: Config) -> requests.Session:
-    session = requests.Session()
+def build_session(config: Config, session: requests.Session | None = None) -> requests.Session:
+    """Sessao com user agent, idioma e o trust store somado.
+
+    `session` deixa quem precisa de uma subclasse (a sessao com pausa entre
+    requisicoes do `etf-bruto`) receber a mesma configuracao de TLS.
+    """
+    session = session if session is not None else requests.Session()
     session.headers.update(
         {
             "User-Agent": config.user_agent,
@@ -148,6 +153,15 @@ def get(
 
     if response.status_code >= 400:
         raise SourceUnavailable(f"HTTP {response.status_code} em {url}")
+    # Sem charset no cabecalho, o requests le text/* como ISO-8859-1 e o UTF-8
+    # da pagina vira mojibake: em 2026-09-24, 132 dos 466 nomes do Inter
+    # sairam como "DÃ³lar". Corpo que decodifica como UTF-8 e UTF-8.
+    if not stream and "charset" not in response.headers.get("content-type", "").lower():
+        try:
+            response.content.decode("utf-8")
+            response.encoding = "utf-8"
+        except UnicodeDecodeError:
+            pass
     return response
 
 
@@ -162,7 +176,7 @@ def get_json(
     try:
         return response.json()
     except ValueError as exc:
-        raise SourceUnavailable(f"resposta nao-JSON em {url}: {exc}") from exc
+        raise SourceUnavailable(f"resposta não-JSON em {url}: {exc}") from exc
 
 
 def check_reachable(config: Config, url: str) -> tuple[bool, str]:

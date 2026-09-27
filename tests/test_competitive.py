@@ -134,14 +134,14 @@ class TestVitrineSnapshots(unittest.TestCase):
     def test_vitrine_curta_demais_nao_sustenta_posicionamento(self):
         usaveis, fora = vitrine_snapshots([snapshot("xp", vitrine("xp", 5))])
         self.assertEqual(usaveis, {})
-        self.assertIn("abaixo do minimo", fora[0]["reason"])
+        self.assertIn("abaixo do mínimo", fora[0]["reason"])
 
     def test_coleta_indisponivel_sai_com_motivo(self):
         usaveis, fora = vitrine_snapshots([
             snapshot("xp", [], status=SnapshotStatus.UNAVAILABLE)
         ])
         self.assertEqual(usaveis, {})
-        self.assertIn("indisponivel", fora[0]["reason"])
+        self.assertIn("indisponível", fora[0]["reason"])
 
 
 class TestCategoryAxes(unittest.TestCase):
@@ -157,7 +157,7 @@ class TestCategoryAxes(unittest.TestCase):
 
     def test_eixo_grosso_e_o_nivel_1_da_categoria_oficial(self):
         self.assertEqual(
-            coarse_category(offer("xp", "F", anbima="Acoes Livre")), "Acoes"
+            coarse_category(offer("xp", "F", anbima="Ações Livre")), "Ações"
         )
         self.assertEqual(
             coarse_category(offer("xp", "F", anbima="Renda Fixa Simples")),
@@ -201,7 +201,7 @@ class TestCategoryAxes(unittest.TestCase):
         por outra porta.
         """
         so_da_casa = FundOffer(platform="btg", name="F", sources=["api-json"])
-        so_da_casa.extra[KEY_ANBIMA] = "Direitos Creditorios"
+        so_da_casa.extra[KEY_ANBIMA] = "Direitos Creditórios"
         self.assertEqual(coarse_category(so_da_casa), _UNCLASSIFIED)
         self.assertEqual(fine_category(so_da_casa), _UNCLASSIFIED)
 
@@ -230,7 +230,7 @@ class TestCategoryAxes(unittest.TestCase):
 
     def test_casa_sem_cobertura_anbima_fica_fora_do_eixo_fino(self):
         xp = vitrine("xp", 40, anbima="Renda Fixa Simples")
-        btg = vitrine("btg", 40, anbima="Renda Fixa Duracao Livre")
+        btg = vitrine("btg", 40, anbima="Renda Fixa Duração Livre")
         itau = vitrine("itau", 40)  # sem ANBIMA nenhuma
         pos = build_positioning([
             snapshot("xp", xp), snapshot("btg", btg), snapshot("itau", itau)
@@ -259,11 +259,11 @@ class TestPositioningIndex(unittest.TestCase):
     def test_indice_compara_contra_as_demais_e_nao_contra_o_total(self):
         """Contra o total, a propria casa entraria no denominador e todo indice
         seria puxado para 1 - quanto maior a casa, mais achatado o sinal."""
-        xp = vitrine("xp", 40, anbima="Acoes Livre")
+        xp = vitrine("xp", 40, anbima="Ações Livre")
         btg = vitrine("btg", 40, anbima="Renda Fixa Simples")
         pos = build_positioning([snapshot("xp", xp), snapshot("btg", btg)])
         por_casa = {p["platform_id"]: p for p in pos["positions"]}
-        acoes = next(b for b in por_casa["xp"]["over_index"] if b["category"] == "Acoes")
+        acoes = next(b for b in por_casa["xp"]["over_index"] if b["category"] == "Ações")
         # 100% na XP contra 0% no par: exclusivo, nao 2x.
         self.assertEqual(acoes["peer_share"], 0.0)
         self.assertEqual(acoes["index"], float("inf"))
@@ -288,8 +288,10 @@ class TestVitrineOnlyValues(unittest.TestCase):
         """Nao se afirma "ticket mais alto" com minimo de fontes diferentes.
 
         A XP entra com minimo vindo do Open Finance (mediana alta) e o par com
-        minimo da propria vitrine (mediana baixa). A decisao correta e que a XP
-        nao exibe o ticket - nao que ela cobra mais.
+        minimo da propria vitrine (mediana baixa). O que falta e o minimo da
+        vitrine da XP NA COLETA - nao que ela cobre mais, e tampouco que ela nao
+        exiba: em 2026-09-19 esta decisao recomendou a XP "exibir o ticket na
+        listagem", e a lista da XP ja exibia; o coletor e que nao lia o campo.
         """
         xp = [
             offer("xp", f"XP {i}", cnpj=f"{i:014d}", minimo=50_000.0,
@@ -305,8 +307,11 @@ class TestVitrineOnlyValues(unittest.TestCase):
         ]
         dec = build_xp_decisions([snapshot("xp", xp), snapshot("btg", btg)])
         titulos = [d["titulo"] for d in dec["decisoes"]]
-        self.assertTrue(any("nao exibe aplicacao minima" in t for t in titulos))
+        self.assertTrue(any("Sem o ticket da vitrine da XP na coleta" in t for t in titulos))
         self.assertFalse(any("Ticket de entrada acima" in t for t in titulos))
+        self.assertFalse(any("não exibe" in t for t in titulos))
+        decisao = next(d for d in dec["decisoes"] if "Sem o ticket" in d["titulo"])
+        self.assertIn("Monitor, não produto", decisao["acao"])
 
 
 class TestIdentityGuard(unittest.TestCase):
@@ -350,8 +355,8 @@ class TestIdentityGuard(unittest.TestCase):
             snapshot("inter", inter), snapshot("itau", itau),
         ])
         consenso = next(d for d in dec["decisoes"] if "consenso" in d["titulo"])
-        self.assertIn("2 das 2 concorrentes cruzaveis", consenso["evidencia"])
-        self.assertIn("Itau", consenso["evidencia"])
+        self.assertIn("2 das 2 concorrentes cruzáveis", consenso["evidencia"])
+        self.assertIn("Itaú", consenso["evidencia"])
         # O fixture nao publica CNPJ nenhum; nos dados reais o Itau esta em 6%.
         self.assertIn("0% da vitrine", consenso["evidencia"])
 
@@ -408,7 +413,7 @@ class TestMomentum(unittest.TestCase):
         mom = build_momentum(self.config, [hoje])
         self.assertEqual(mom["movimentos"], [])
         self.assertEqual(len(mom["sem_base"]), 1)
-        self.assertIn("nao tinha vitrine", mom["sem_base"][0]["reason"])
+        self.assertIn("não tinha vitrine", mom["sem_base"][0]["reason"])
 
     def test_momentum_e_deterministico_entre_processos(self):
         """Duas leituras dos mesmos snapshots tem de dar o mesmo JSON.
@@ -479,7 +484,7 @@ class TestMomentum(unittest.TestCase):
         movimento = mom["movimentos"][0]
         self.assertEqual(movimento["entradas"], 1)
         self.assertEqual(movimento["saidas"], 2)
-        self.assertEqual(movimento["saldo_por_categoria"].get("Acoes"), 1)
+        self.assertEqual(movimento["saldo_por_categoria"].get("Ações"), 1)
 
 
 class TestXpDecisions(unittest.TestCase):
@@ -508,7 +513,7 @@ class TestXpDecisions(unittest.TestCase):
         ])
         consenso = next(d for d in dec["decisoes"] if "consenso" in d["titulo"])
         self.assertIn("2 fundos", consenso["tamanho"])
-        self.assertIn("1 cuja gestora a XP ja distribui", consenso["acao"])
+        self.assertIn("1 cuja gestora a XP já distribui", consenso["acao"])
 
     def test_sem_vitrine_do_baseline_o_bloco_e_suprimido_com_motivo(self):
         """Sem a vitrine da XP tudo pareceria gap."""
@@ -517,7 +522,7 @@ class TestXpDecisions(unittest.TestCase):
             snapshot("btg", vitrine("btg", 40)),
         ])
         self.assertFalse(dec["available"])
-        self.assertIn("indisponivel", dec["reason"])
+        self.assertIn("indisponível", dec["reason"])
 
     def test_exclusivos_do_baseline_saem_como_ativo_a_defender(self):
         xp = vitrine("xp", 40)

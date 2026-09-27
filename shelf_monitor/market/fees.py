@@ -42,6 +42,7 @@ from pathlib import Path
 from shelf_monitor.collectors.cvm import _get
 from shelf_monitor.market.models import ClassFees, FeeUnit
 from shelf_monitor.market.parse import iter_rows, parse_date
+from shelf_monitor.texto import contagem
 from shelf_monitor.normalize import (
     normalize_cnpj,
     normalize_text,
@@ -191,9 +192,10 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
 
     if undated:
         print(
-            f"  aviso: {len(undated)} classe(s) sem data de competencia no "
-            "extrato - a coluna DT_COMPTC pode ter sido renomeada; a taxa "
-            "delas vem da ultima linha do arquivo, nao da entrega mais recente"
+            f"  aviso: {contagem(len(undated), 'classe', 'classes')} sem data de "
+            "competência no extrato - a coluna DT_COMPTC pode ter sido renomeada; a "
+            f"taxa {'dela' if len(undated) == 1 else 'delas'} vem da última linha do "
+            "arquivo, não da entrega mais recente"
         )
 
     return latest

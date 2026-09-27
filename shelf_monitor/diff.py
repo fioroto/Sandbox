@@ -11,6 +11,8 @@ from difflib import SequenceMatcher
 
 from shelf_monitor.config import (
     FUZZY_RENAME_THRESHOLD,
+    SUSPECT_GROWTH_MIN_FUNDS,
+    SUSPECT_GROWTH_RATIO,
     SUSPECT_SHRINK_RATIO,
 )
 from shelf_monitor.models import (
@@ -26,6 +28,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import name_slug
+from shelf_monitor.profile import na_vitrine
 
 # (rotulo, extrator) - o rotulo aparece no digest.
 _TRACKED = (
@@ -72,15 +75,34 @@ def _missing_sources(
 
 
 def assess_quality(
-    current: ShelfSnapshot, previous: ShelfSnapshot | None
+    current: ShelfSnapshot,
+    previous: ShelfSnapshot | None,
+    espera_vitrine: bool = False,
 ) -> ShelfSnapshot:
-    """Rebaixa para PARTIAL uma coleta que encolheu demais ou perdeu uma fonte.
+    """Rebaixa para PARTIAL uma coleta sem vitrine, que encolheu ou perdeu fonte.
 
     A marcacao precisa viver no snapshot, nao so no diff: um snapshot truncado
     salvo como OK vira a baseline confiavel do dia seguinte, e a prateleira
     inteira reaparece como "entradas" quando a coleta volta ao normal.
+
+    `espera_vitrine` diz que a casa declara uma fonte de vitrine. Sem nenhum
+    fundo de vitrine, a coleta e parcial mesmo sem baseline: em 2026-09-13 XP,
+    BTG e Itau foram gravados OK so com o catalogo do Open Finance - para um
+    monitor de vitrine, a coleta que falhou justamente na vitrine.
     """
-    if current.status != SnapshotStatus.OK or previous is None or not previous.funds:
+    if current.status != SnapshotStatus.OK:
+        return current
+
+    if espera_vitrine and current.funds and not any(f.on_listing for f in current.funds):
+        current.status = SnapshotStatus.PARTIAL
+        note = (
+            f"nenhum fundo de vitrine nesta coleta - só o catálogo respondeu "
+            f"({len(current.funds)} fundos); tratada como parcial"
+        )
+        current.error = f"{note} | {current.error}" if current.error else note
+        return current
+
+    if previous is None or not previous.funds:
         return current
 
     ratio = len(current.funds) / len(previous.funds)
@@ -103,7 +125,8 @@ def assess_quality(
             for source in missing
         )
         note = (
-            f"fonte(s) da coleta anterior sem resposta nesta: {detail}; "
+            f"{'fonte' if len(missing) == 1 else 'fontes'} da coleta anterior sem "
+            f"resposta nesta: {detail}; "
             f"{len(current.funds)} contra {len(previous.funds)} fundos - "
             "tratada como parcial"
         )
@@ -217,12 +240,37 @@ def diff_shelf(
 
     if current.status == SnapshotStatus.UNAVAILABLE:
         diff.suspect = True
-        diff.suspect_reason = current.error or "coleta indisponivel"
+        diff.suspect_reason = current.error or "coleta indisponível"
         return diff
 
     if previous is None:
         # Primeira coleta: tudo e "novo", mas isso nao e novidade competitiva.
         diff.added = list(current.funds)
+        return diff
+
+    # O espelho do anti-churn de encolhimento, para a vitrine que aparece ou
+    # cresce de escala: a coleta passou a ver mais, e o que ela ve pela
+    # primeira vez nao entrou na prateleira. Em 2026-09-19 o conserto do
+    # navegador levou tres vitrines de 0 a ~600 fundos e o digest publicou
+    # "828 fundos entraram". Nova linha de base: nada entra, sai ou muda.
+    # A vitrine de varejo, a mesma que o digest publica ao lado deste motivo:
+    # contada com os restritos, a frase dizia "649 fundos na vitrine" e "a
+    # vitrine passou de 0 para 660" na mesma linha (BTG, 19/09).
+    vitrine_antes = sum(1 for f in previous.funds if na_vitrine(f))
+    vitrine_agora = sum(1 for f in current.funds if na_vitrine(f))
+    mudou_de_escala = (
+        vitrine_agora / vitrine_antes >= SUSPECT_GROWTH_RATIO
+        and vitrine_agora - vitrine_antes >= SUSPECT_GROWTH_MIN_FUNDS
+        if vitrine_antes
+        else vitrine_agora > 0
+    )
+    if mudou_de_escala:
+        diff.nova_linha_de_base = True
+        diff.suspect = True
+        diff.suspect_reason = (
+            f"a vitrine passou de {vitrine_antes} para {vitrine_agora} fundos: ganho "
+            "de cobertura da coleta, não movimento de prateleira"
+        )
         return diff
 
     current_index = _index(current.funds)
@@ -266,9 +314,11 @@ def diff_shelf(
         missing = _missing_sources(current, previous)
         if missing and len(current.funds) < len(previous.funds):
             diff.suspect = True
+            uma = len(missing) == 1
             diff.suspect_reason = (
-                f"fonte(s) {', '.join(missing)} da coleta anterior nao responderam "
-                f"nesta ({len(current.funds)} contra {len(previous.funds)} fundos)"
+                f"{'fonte' if uma else 'fontes'} {', '.join(missing)} da coleta anterior "
+                f"{'não respondeu' if uma else 'não responderam'} nesta "
+                f"({len(current.funds)} contra {len(previous.funds)} fundos)"
             )
 
     # Coleta suspeita: as "saidas" provavelmente sao da coleta, nao da prateleira.
@@ -285,7 +335,7 @@ def diff_cvm(current: CvmSnapshot, previous: CvmSnapshot | None) -> CvmDiff:
 
     if current.status == SnapshotStatus.UNAVAILABLE:
         diff.suspect = True
-        diff.suspect_reason = current.error or "extrato indisponivel"
+        diff.suspect_reason = current.error or "extrato indisponível"
         return diff
 
     # Uma coluna renomeada pela CVM faz a watchlist casar com nada e o extrato

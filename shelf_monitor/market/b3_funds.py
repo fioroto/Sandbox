@@ -2,27 +2,28 @@
 
 O portal de fundos listados da B3 (`sistemaswebb3-listados.b3.com.br`) é uma
 SPA alimentada por uma API pública, sem autenticação, cujos parâmetros vão
-codificados em base64 na própria URL:
+codificados em base64 na própria URL. Medido em 2026-09-24 nas requisições que
+a própria página de ETFs listados da B3 faz (`fundsListedPage/ETF-RF`):
 
-    fundsProxy/fundsCall/GetListedFundsSIG/<b64 {"typeFund": N, "pageNumber": 1, "pageSize": 100}>
-    fundsProxy/fundsCall/GetDetailFundSIG/<b64 {"typeFund": N, "identifierFund": "BOVA"}>
+    fundsListedProxy/Search/GetListFunds/<b64 {"language": "pt-br", "typeFund": "ETF-RF", "pageNumber": 1, "pageSize": 20}>
+    fundsListedProxy/Search/GetDetailFund/<b64 {"language": "pt-br", "idFNET": "10553", "idCEM": "BDAP", "typeFund": "ETF-RF"}>
 
-A evidência desses endpoints e do formato da resposta (`results` + `page.totalPages`
-na listagem; `detailFund` + `shareHolder` no detalhe, com `cnpj`, `codes`,
-`quotaCount`, `quotaDateApproved`, `classification`, `segment`, `typeFNET`) vem da
-biblioteca aberta `mercados` (PythonicCafe), que usa exatamente esses caminhos
-para FII (typeFund 7), FIP (21), FI-Infra (27) e FI-Agro (34). Dois cuidados
-que ela documenta e que reproduzimos: a API às vezes devolve o JSON *dentro de
-uma string JSON* (precisa de dois `json.loads`), e uma visita prévia a uma página
-de b3.com.br é necessária para receber os cookies que a API espera.
-
-O que NÃO está confirmado por evidência: o `typeFund` dos ETFs (renda variável
-e renda fixa). Por isso `discover_etf_types` varre candidatos e reconhece o tipo
-certo pelo CNPJ - um tipo cujos fundos batem com o catálogo FIIM da CVM é um
-tipo de ETF. É a sondagem (`etf --probe-sources`) que grava esse resultado.
+A listagem traz `id`, `acronym`, `fundName` e `tradingName`; o detalhe traz o
+código de negociação (`tradingCode`: BDAP11), o `cnpj`, o `segment` e o
+`shareHolder`. O tipo vai por nome: "ETF" (renda variável) e "ETF-RF" (renda
+fixa), "ETF-CRIPTO" e "ETF-FII". O endpoint anterior, documentado pela biblioteca aberta `mercados`
+(`fundsProxy/fundsCall/GetListedFundsSIG`, tipo numérico), responde 200 com
+zero registros para todo tipo - inclusive FII (7), o caso que a biblioteca
+cobre. O leitor do detalhe ainda entende o formato antigo (`detailFund` +
+`shareHolder`). A API às vezes devolve o JSON *dentro de uma string JSON* (dois
+`json.loads`), e uma visita prévia a uma página de b3.com.br entrega os
+cookies que ela espera.
 
 Uso principal aqui: preencher `data/etf/tickers.csv` (CNPJ -> ticker) a partir
-de uma fonte, em vez de uma lista escrita de memória.
+de uma fonte, em vez de uma lista escrita de memória. O cadastro da CVM não traz
+o código de negociação, e o COTAHIST não serve de ponte para ETF de renda fixa:
+nenhum dos 11 códigos procurados (IMAB11, B5P211, LFTS11...) está no arquivo de
+08/2026.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ from shelf_monitor.config import Config
 from shelf_monitor.http import SourceUnavailable, build_session, get
 from shelf_monitor.normalize import normalize_cnpj, parse_number
 
-FUNDS_CALL_URL = "https://sistemaswebb3-listados.b3.com.br/fundsProxy/fundsCall/"
+LISTED_URL = "https://sistemaswebb3-listados.b3.com.br/fundsListedProxy/Search/"
 # Qualquer página de b3.com.br serve para receber os cookies; esta é a lista
 # pública de ETFs, o que torna o aquecimento ele mesmo uma sondagem útil.
 WARMUP_URL = (
@@ -46,10 +47,10 @@ WARMUP_URL = (
     "etf/renda-variavel/etfs-listados/"
 )
 
-# typeFund conhecidos, com evidência (biblioteca `mercados`).
-KNOWN_TYPE_FUND = {"FII": 7, "FIP": 21, "FI-Infra": 27, "FI-Agro": 34}
-# Candidatos varridos pela descoberta do tipo dos ETFs.
-ETF_TYPE_CANDIDATES = tuple(range(1, 41))
+# Os tipos de ETF da API, pelo nome. Medido em 2026-09-24: 130 de renda variavel,
+# 65 de renda fixa, 26 de cripto e 2 de FII - 223, contra os 219 produtos locais
+# que a B3 contou em 08/2026 mais os lancamentos de setembro.
+ETF_TYPES = ("ETF", "ETF-RF", "ETF-CRIPTO", "ETF-FII")
 
 TICKERS_COLUMNS = ("cnpj", "ticker", "nome_b3", "segmento", "fonte", "atualizado_em")
 
@@ -77,6 +78,18 @@ def _clean(value: object) -> str | None:
     return text or None
 
 
+def _inteiro_br(value: object) -> float | None:
+    """"100.000" -> 100000: a API atual escreve a quantidade de cotas com o ponto
+    de milhar brasileiro, que `parse_number` leria como decimal."""
+    text = _clean(value)
+    if not text:
+        return None
+    try:
+        return float(text.replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _parse_br_date(value: object) -> date | None:
     text = _clean(value)
     if not text:
@@ -93,7 +106,7 @@ def _parse_br_date(value: object) -> date | None:
 class FundoListadoB3:
     """Um fundo listado na B3, como o portal o descreve."""
 
-    type_id: int
+    type_id: int | str
     acronym: str
     trading_name: str | None = None
     cnpj: str | None = None
@@ -106,6 +119,7 @@ class FundoListadoB3:
     company_name: str | None = None
     website: str | None = None
     admin_name: str | None = None
+    id_fnet: int | None = None
 
     @property
     def ticker(self) -> str:
@@ -128,14 +142,22 @@ class FundoListadoB3:
             "company_name": self.company_name,
             "website": self.website,
             "admin_name": self.admin_name,
+            # Chave do fundo no Fundos.NET: e o que liga B3 e FNET sem depender do nome.
+            "id_fnet": self.id_fnet,
         }
 
 
-def parse_listed_fund_detail(payload: dict, type_id: int) -> FundoListadoB3 | None:
-    """`GetDetailFundSIG` -> FundoListadoB3. Devolve None se o payload não tem `detailFund`."""
-    detail = payload.get("detailFund") if isinstance(payload, dict) else None
-    if not isinstance(detail, dict):
+def parse_listed_fund_detail(payload: dict, type_id: int | str) -> FundoListadoB3 | None:
+    """Detalhe de um fundo -> FundoListadoB3. None quando o payload nao descreve um.
+
+    Entende os dois formatos: o atual (`GetDetailFund`, tudo no primeiro nivel,
+    com `tradingCode`) e o antigo (`GetDetailFundSIG`, em `detailFund`).
+    """
+    if not isinstance(payload, dict):
         return None
+    detail = payload.get("detailFund")
+    if not isinstance(detail, dict):
+        return _parse_detalhe_atual(payload, type_id)
     shareholder = payload.get("shareHolder") or {}
 
     codes: list[str] = []
@@ -163,6 +185,34 @@ def parse_listed_fund_detail(payload: dict, type_id: int) -> FundoListadoB3 | No
     )
 
 
+def _parse_detalhe_atual(payload: dict, type_id: int | str) -> FundoListadoB3 | None:
+    acronym = _clean(payload.get("acronym"))
+    if not acronym:
+        return None
+    codigo = _clean(payload.get("tradingCode"))
+    shareholder = payload.get("shareHolder") or {}
+    try:
+        id_fnet = int(payload.get("idFNET")) if payload.get("idFNET") not in (None, "") else None
+    except (TypeError, ValueError):
+        id_fnet = None
+    return FundoListadoB3(
+        type_id=_clean(payload.get("typeName")) or type_id,
+        acronym=acronym.upper(),
+        trading_name=_clean(payload.get("tradingName")),
+        cnpj=normalize_cnpj(_clean(payload.get("cnpj"))),
+        codes=[codigo.upper()] if codigo else [],
+        quota_count=_inteiro_br(payload.get("quotaCount")),
+        quota_date=_parse_br_date(payload.get("quotaDateApproved")),
+        classification=_clean(payload.get("classification")),
+        segment=_clean(payload.get("segment")),
+        type_fnet=_clean(payload.get("typeFNET")),
+        company_name=_clean(payload.get("fundName")),
+        website=_clean(payload.get("webSite")),
+        admin_name=_clean(shareholder.get("shareHolderName")) if isinstance(shareholder, dict) else None,
+        id_fnet=id_fnet,
+    )
+
+
 class B3ListedFunds:
     """Cliente mínimo da API de fundos listados."""
 
@@ -180,20 +230,20 @@ class B3ListedFunds:
 
     def _call(self, endpoint: str, params: dict) -> dict | list:
         self.warm_up()
-        url = f"{FUNDS_CALL_URL}{endpoint}/{encode_params(params)}"
+        url = f"{LISTED_URL}{endpoint}/{encode_params(params)}"
         response = get(self.session, url, self.config, accept="application/json")
         try:
             return decode_b3_json(response.text)
         except ValueError as exc:
-            raise SourceUnavailable(f"resposta nao-JSON em {url}: {exc}") from exc
+            raise SourceUnavailable(f"resposta não JSON em {url}: {exc}") from exc
 
-    def list_funds(self, type_id: int, page_size: int = 100, max_pages: int = 50) -> Iterator[dict]:
-        """Linhas de `GetListedFundsSIG` (cada uma traz ao menos `acronym`)."""
+    def list_funds(self, type_name: str, page_size: int = 100, max_pages: int = 50) -> Iterator[dict]:
+        """Linhas de `GetListFunds` (`id`, `acronym`, `fundName`, `tradingName`)."""
         page = 1
         while page <= max_pages:
             data = self._call(
-                "GetListedFundsSIG",
-                {"typeFund": type_id, "pageNumber": page, "pageSize": page_size},
+                "GetListFunds",
+                {"language": "pt-br", "typeFund": type_name, "pageNumber": page, "pageSize": page_size},
             )
             if isinstance(data, list):
                 yield from data
@@ -207,68 +257,35 @@ class B3ListedFunds:
                 return
             page += 1
 
-    def fund_detail(self, type_id: int, acronym: str) -> FundoListadoB3 | None:
-        data = self._call(
-            "GetDetailFundSIG", {"typeFund": type_id, "identifierFund": acronym}
+    def fund_detail_raw(self, type_name: str, id_fnet: object, acronym: str) -> dict | list:
+        """O detalhe como a API devolve - o extrator bruto guarda isto inteiro
+        (`tradingCodeOthers`, `idFNET`), que `parse_listed_fund_detail` resume."""
+        return self._call(
+            "GetDetailFund",
+            {"language": "pt-br", "idFNET": str(id_fnet), "idCEM": acronym, "typeFund": type_name},
         )
-        return parse_listed_fund_detail(data if isinstance(data, dict) else {}, type_id)
 
-    def funds_of_type(self, type_id: int) -> Iterator[FundoListadoB3]:
+    def fund_detail(self, type_name: str, id_fnet: object, acronym: str) -> FundoListadoB3 | None:
+        data = self.fund_detail_raw(type_name, id_fnet, acronym)
+        return parse_listed_fund_detail(data if isinstance(data, dict) else {}, type_name)
+
+    def funds_of_type(self, type_name: str) -> Iterator[FundoListadoB3]:
         """Lista + detalhe de todos os fundos de um tipo (um GET por fundo)."""
-        for row in self.list_funds(type_id):
-            acronym = _clean(row.get("acronym")) if isinstance(row, dict) else None
-            if not acronym:
+        for row in self.list_funds(type_name):
+            if not isinstance(row, dict):
+                continue
+            acronym = _clean(row.get("acronym"))
+            if not acronym or row.get("id") in (None, ""):
                 continue
             try:
-                fund = self.fund_detail(type_id, acronym)
+                fund = self.fund_detail(type_name, row["id"], acronym)
             except SourceUnavailable:
                 continue
-            if fund is not None:
-                yield fund
-
-    def discover_etf_types(
-        self,
-        known_cnpjs: set[str],
-        candidates: Iterable[int] = ETF_TYPE_CANDIDATES,
-        sample: int = 3,
-    ) -> dict[int, dict]:
-        """Descobre quais `typeFund` são ETFs, pelo CNPJ.
-
-        Para cada candidato, pede a primeira página e o detalhe de até `sample`
-        fundos; um tipo cujos CNPJs aparecem no catálogo FIIM da CVM é um tipo
-        de ETF. Devolve, por tipo que respondeu, os acrônimos vistos e quantos
-        CNPJs bateram - o dado bruto que a sondagem grava.
-        """
-        found: dict[int, dict] = {}
-        for type_id in candidates:
-            try:
-                rows = list(self.list_funds(type_id, page_size=sample, max_pages=1))
-            except SourceUnavailable:
+            if fund is None:
                 continue
-            acronyms = [
-                str(r.get("acronym")).strip()
-                for r in rows
-                if isinstance(r, dict) and r.get("acronym")
-            ]
-            if not acronyms:
-                continue
-            hits = 0
-            samples: list[dict] = []
-            for acronym in acronyms[:sample]:
-                try:
-                    fund = self.fund_detail(type_id, acronym)
-                except SourceUnavailable:
-                    continue
-                if fund is None:
-                    continue
-                if fund.cnpj and fund.cnpj in known_cnpjs:
-                    hits += 1
-                samples.append(
-                    {"acronym": fund.acronym, "cnpj": fund.cnpj, "ticker": fund.ticker,
-                     "segment": fund.segment, "type_fnet": fund.type_fnet}
-                )
-            found[type_id] = {"acronyms": acronyms, "cnpj_hits": hits, "sample": samples}
-        return found
+            fund.trading_name = fund.trading_name or _clean(row.get("tradingName"))
+            fund.company_name = fund.company_name or _clean(row.get("fundName"))
+            yield fund
 
 
 # --- tickers.csv -------------------------------------------------------------

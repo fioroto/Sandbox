@@ -7,19 +7,36 @@ from dataclasses import dataclass, field
 
 from shelf_monitor.classify import KEY_CATEGORIA
 from shelf_monitor.config import PLATFORMS, WATCHLIST
+from shelf_monitor.distribuivel import PODE_DISTRIBUIR, BaseDistribuivel
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
+from shelf_monitor.familias import (
+    COBERTO_EQUIVALENTE,
+    COBERTO_ESPELHO,
+    GAP_ESTRATEGIA,
+    GAP_GESTORA,
+    OUTRA_LIQUIDEZ,
+    PRESENTE,
+    ROTULOS_VEREDITO,
+    SEM_DADO,
+    MapaDeFamilias,
+)
 from shelf_monitor.normalize import format_cnpj, name_slug, normalize_text
 from shelf_monitor.profile import split_by_profile
+from shelf_monitor.texto import competencia_br, contagem, data_br, milhar
 from shelf_monitor.report.shared import (
+    MIN_AMOSTRA_TICKET,
     mediana,
+    movimentos_de_vitrine,
     ordem_canonica,
     quartis,
     rotulo_da_casa,
 )
 from shelf_monitor.models import (
+    BLOCO_CNPJ,
     AssetClass,
     FundOffer,
     RunReport,
+    ShelfDiff,
     ShelfSnapshot,
     SnapshotStatus,
 )
@@ -27,16 +44,16 @@ from shelf_monitor.models import (
 ASSET_CLASS_LABELS: dict[AssetClass, str] = {
     AssetClass.RENDA_FIXA: "Renda Fixa",
     AssetClass.MULTIMERCADO: "Multimercado",
-    AssetClass.ACOES: "Acoes",
+    AssetClass.ACOES: "Ações",
     AssetClass.CAMBIAL: "Cambial",
     AssetClass.INTERNACIONAL: "Internacional",
-    AssetClass.PREVIDENCIA: "Previdencia",
+    AssetClass.PREVIDENCIA: "Previdência",
     AssetClass.OUTROS: "Outros",
 }
 
 # Faixas de aplicacao minima - separam varejo de alta renda e private.
 MIN_BANDS: list[tuple[str, float, float]] = [
-    ("Ate R$ 100", 0.0, 100.0),
+    ("Até R$ 100", 0.0, 100.0),
     ("R$ 100 a 1 mil", 100.0, 1_000.0),
     ("R$ 1 mil a 5 mil", 1_000.0, 5_000.0),
     ("R$ 5 mil a 25 mil", 5_000.0, 25_000.0),
@@ -194,7 +211,7 @@ def anbima_category(fund: FundOffer) -> str:
         return rotulo
     if fund.asset_class != AssetClass.OUTROS:
         return ASSET_CLASS_LABELS[fund.asset_class]
-    return "Sem classificacao"
+    return "Sem classificação"
 
 
 def listing_funds(snapshot: ShelfSnapshot) -> list[FundOffer]:
@@ -247,37 +264,54 @@ def leitura_do_ticket(platforms: list[dict], baseline_id: str = "xp") -> dict | 
     """O que a distribuicao de aplicacao minima diz que a XP deve fazer.
 
     O bloco de faixas era um grafico de barras sem veredito: mostrava a forma
-    da prateleira de cada casa e parava ai. Mas a forma diz uma coisa so, e
-    ela e acionavel - medido em 2026-09-21, a vitrine da XP nao tem NENHUM
-    fundo abaixo de R$ 5 mil, contra 230 no BTG e 340 no Itau. Nao e uma
-    diferenca de composicao: e a ausencia de uma porta de entrada.
+    da prateleira de cada casa e parava ai. O veredito e calculado aqui para as
+    quatro superficies dizerem a mesma coisa.
 
-    Devolve None quando nao ha o que concluir - baseline sem vitrine, ou
-    nenhuma concorrente com faixa publicada.
+    Duas regras, e a falta delas publicou uma conclusao falsa. As faixas saem so
+    do minimo que a vitrine mostra (`FundOffer.minimo_vitrine`), e cada casa
+    precisa de `MIN_AMOSTRA_TICKET` fundos com esse minimo para entrar. Em
+    2026-09-21 o relatorio disse que "a vitrine da XP nao tem nenhum fundo
+    abaixo de R$ 5 mil - e a ausencia de uma porta de entrada": as faixas da XP
+    vinham do minimo institucional do Open Finance, porque o coletor nao lia o
+    minimo da lista. Conferido na propria lista em 2026-09-23, 80% da vitrine da
+    XP esta abaixo de R$ 5 mil.
+
+    Devolve None quando nao ha o que concluir - baseline ausente, ou nenhuma
+    concorrente com amostra. Baseline sem amostra devolve `sem_base=True`: o
+    que falta e dado da coleta, e a leitura diz isso em vez de concluir.
     """
     faixas_varejo = [rotulo for rotulo, _, teto in MIN_BANDS if teto <= _TICKET_VAREJO]
 
-    def conta_varejo(p: dict) -> int:
-        bandas = p.get("min_bands") or p.get("bands") or {}
-        return sum(bandas.get(rotulo, 0) for rotulo in faixas_varejo)
+    def bandas(p: dict) -> dict:
+        return p.get("min_bands") or p.get("bands") or {}
 
-    com_faixa = [p for p in platforms if (p.get("min_bands") or p.get("bands"))]
-    baseline = next((p for p in com_faixa if p["platform_id"] == baseline_id), None)
+    def amostra(p: dict) -> int:
+        return sum(bandas(p).values())
+
+    def conta_varejo(p: dict) -> int:
+        return sum(bandas(p).get(rotulo, 0) for rotulo in faixas_varejo)
+
+    baseline = next((p for p in platforms if p["platform_id"] == baseline_id), None)
     if baseline is None:
         return None
-    pares = [p for p in com_faixa if p["platform_id"] != baseline_id]
+    pares = [
+        p for p in platforms
+        if p["platform_id"] != baseline_id and amostra(p) >= MIN_AMOSTRA_TICKET
+    ]
     if not pares:
         return None
 
-    meu = conta_varejo(baseline)
     melhor = max(pares, key=conta_varejo)
-    dele = conta_varejo(melhor)
+    sem_base = amostra(baseline) < MIN_AMOSTRA_TICKET
     return {
         "baseline_id": baseline_id,
         "baseline_label": baseline["label"],
-        "baseline_varejo": meu,
+        "baseline_amostra": amostra(baseline),
+        "baseline_varejo": None if sem_base else conta_varejo(baseline),
+        "sem_base": sem_base,
+        "amostra_minima": MIN_AMOSTRA_TICKET,
         "melhor_label": melhor["label"],
-        "melhor_varejo": dele,
+        "melhor_varejo": conta_varejo(melhor),
         "teto": _TICKET_VAREJO,
         "faixas": faixas_varejo,
     }
@@ -306,11 +340,9 @@ def build_listing_block(report: RunReport) -> dict:
             platforms.append(
                 {
                     "platform_id": snapshot.platform,
-                    "label": PLATFORMS[snapshot.platform].label
-                    if snapshot.platform in PLATFORMS
-                    else snapshot.platform,
+                    "label": _platform_label(snapshot.platform),
                     "total": 0,
-                    "reason": "sem listagem publica alcancavel nesta coleta",
+                    "reason": "sem listagem pública alcançável nesta coleta",
                 }
             )
             continue
@@ -334,9 +366,7 @@ def build_listing_block(report: RunReport) -> dict:
         platforms.append(
             {
                 "platform_id": snapshot.platform,
-                "label": PLATFORMS[snapshot.platform].label
-                if snapshot.platform in PLATFORMS
-                else snapshot.platform,
+                "label": _platform_label(snapshot.platform),
                 "total": len(listing),
                 "catalog_total": len(retail_funds(snapshot)),
                 "by_category": dict(by_category),
@@ -347,8 +377,9 @@ def build_listing_block(report: RunReport) -> dict:
                 "fee_quartiles": _quartiles(
                     [f.admin_fee_pct for f in listing if f.admin_fee_pct is not None]
                 ),
+                # So o minimo que a vitrine mostra - ver FundOffer.minimo_vitrine.
                 "min_quartiles": _quartiles(
-                    [f.min_initial for f in listing if f.min_initial is not None]
+                    [m for f in listing if (m := f.minimo_vitrine) is not None]
                 ),
                 "cnpj_coverage": round(
                     sum(1 for f in listing if f.cnpj) / len(listing), 3
@@ -474,7 +505,7 @@ def _gap_funds(
         manager = next(
             (m for m in (_offer_manager(f) for _, f in offers) if m), None
         )
-        minimums = [f.min_initial for _, f in offers if f.min_initial is not None]
+        minimums = [m for _, f in offers if (m := f.minimo_vitrine) is not None]
         fees = [f.admin_fee_pct for _, f in offers if f.admin_fee_pct is not None]
         pl = next(
             (
@@ -515,6 +546,7 @@ def _gap_categories(
     baseline_listing: list[FundOffer],
     competitor_snaps: list[ShelfSnapshot],
     funds: list[dict],
+    cobertos: Counter | None = None,
 ) -> list[dict]:
     """Cobertura por categoria: vitrine do baseline contra cada concorrente.
 
@@ -522,11 +554,13 @@ def _gap_categories(
     uma categoria pode ter poucos gaps e ainda assim ser a maior lacuna
     relativa.
 
-    A contagem de gaps por categoria e derivada de `funds` em vez de recebida
-    pronta: era uma variavel que as duas etapas partilhavam dentro do corpo de
-    251 linhas, e passa-la adiante manteria o acoplamento que a extracao veio
-    desfazer.
+    A contagem de gaps por categoria e derivada de `funds` (os gaps reais) em
+    vez de recebida pronta: era uma variavel que as duas etapas partilhavam
+    dentro do corpo de 251 linhas, e passa-la adiante manteria o acoplamento
+    que a extracao veio desfazer. `cobertos` conta, por categoria, os gaps
+    aparentes que a base cobre por espelho ou equivalente.
     """
+    cobertos = cobertos or Counter()
     gap_categories: Counter = Counter(f["category"] for f in funds)
     # Cobertura por categoria: vitrine XP vs. vitrine de cada concorrente.
     baseline_by_category: Counter = Counter(
@@ -562,6 +596,7 @@ def _gap_categories(
                     "count": by_platform[best_id],
                 },
                 "gap_count": gap_categories[category],
+                "cobertos": cobertos.get(category, 0),
             }
         )
     other_gaps = sum(
@@ -586,26 +621,290 @@ def _gap_categories(
                 },
                 "best_competitor": None,
                 "gap_count": other_gaps,
+                "cobertos": sum(
+                    n for cat, n in cobertos.items() if cat not in top_categories
+                ),
             }
         )
 
     return categories
 
 
+def bloco_de_gaps(report: RunReport) -> dict:
+    """`build_gap_block` do relatorio, ou o motivo quando o modulo o suprime.
+
+    Previdencia: cada seguradora tem o proprio veiculo, e gap por CNPJ mede a
+    seguradora (ver ConfigPrevidencia.blocos_suprimidos). `nao_se_aplica`
+    separa isto da supressao por falta de dado desta execucao.
+    """
+    motivo = report.suprime(BLOCO_CNPJ)
+    if motivo:
+        return {"available": False, "reason": motivo, "nao_se_aplica": True}
+    return build_gap_block(
+        report.snapshots, familias=report.familias, distribuivel=report.distribuivel
+    )
+
+
+def _lente_da_vitrine(
+    snapshots: list[ShelfSnapshot], baseline_id: str, label: str
+) -> dict:
+    """A vitrine da casa-base como base de cobertura, ou o motivo de nao ser.
+
+    Sem a vitrine da XP, todo fundo concorrente pareceria gap - por isso o
+    motivo, e nunca uma base vazia.
+    """
+    baseline = next((s for s in snapshots if s.platform == baseline_id), None)
+    if baseline is None:
+        return {
+            "available": False, "snapshot": None, "listing": [],
+            "reason": f"snapshot da {label} ausente desta execução",
+        }
+    if baseline.status == SnapshotStatus.UNAVAILABLE or not baseline.funds:
+        detail = f": {baseline.error}" if baseline.error else ""
+        return {
+            "available": False, "snapshot": baseline, "listing": [],
+            "reason": f"coleta da {label} indisponível{detail}",
+        }
+    listing = _listing_funds(baseline)
+    if not listing:
+        return {
+            "available": False, "snapshot": baseline, "listing": [],
+            "reason": (
+                f"{label} sem vitrine coletada nesta execução "
+                f"(estratégia: {baseline.strategy.value}); o catálogo "
+                "Open Finance não conta como vitrine"
+            ),
+        }
+    warning = None
+    if baseline.status == SnapshotStatus.PARTIAL:
+        detail = f" ({baseline.error})" if baseline.error else ""
+        warning = f"coleta da {label} parcial{detail}; gaps podem estar superestimados"
+    return {
+        "available": True, "snapshot": baseline, "listing": listing,
+        "reason": None, "warning": warning,
+    }
+
+
+def _veredito_contra(
+    cnpj: str,
+    base_cnpjs: set[str],
+    familias: MapaDeFamilias | None,
+    base_indexada,
+) -> dict | None:
+    """O veredito de um CNPJ contra uma base; None sem mapa e fora da base.
+
+    O mesmo CNPJ na base e cobertura sem precisar de carteira nenhuma.
+    """
+    if cnpj in base_cnpjs:
+        return {
+            "tipo": PRESENTE, "rotulo": ROTULOS_VEREDITO[PRESENTE], "coberto": True,
+            "gap_real": False, "confianca": "alta", "cobre": cnpj,
+            "ligacao": "mesma classe",
+        }
+    if familias is None:
+        return None
+    return familias.cobertura(cnpj, base_indexada).to_dict()
+
+
+# As etapas do funil, na ordem em que um gap aparente se resolve.
+_ETAPAS_DO_FUNIL: tuple[tuple[str, str], ...] = (
+    ("mesma_classe", PRESENTE),
+    ("espelho", COBERTO_ESPELHO),
+    ("equivalente", COBERTO_EQUIVALENTE),
+    ("outra_liquidez", OUTRA_LIQUIDEZ),
+    ("sem_dado", SEM_DADO),
+    ("estrategia", GAP_ESTRATEGIA),
+    ("gestora", GAP_GESTORA),
+)
+
+
+def _funil(vereditos: list[dict | None]) -> dict:
+    """Gaps aparentes -> cobertos -> gaps reais, de uma lente.
+
+    Sem veredito (mapa de familias ausente) todo gap aparente e real: e a
+    conta de antes, CNPJ contra CNPJ, e `verificado` diz que foi so ela.
+    """
+    tipos = Counter((v or {}).get("tipo") for v in vereditos)
+    funil = {chave: tipos.get(tipo, 0) for chave, tipo in _ETAPAS_DO_FUNIL}
+    funil["aparentes"] = len(vereditos)
+    funil["cobertos"] = funil["mesma_classe"] + funil["espelho"] + funil["equivalente"]
+    funil["reais"] = funil["aparentes"] - funil["cobertos"] - funil["outra_liquidez"]
+    funil["verificado"] = any(v is not None for v in vereditos) or not vereditos
+    return funil
+
+
+def _rotulo_da_base(gap_block: dict) -> str:
+    label = gap_block.get("baseline_label") or "XP"
+    if gap_block.get("base") == "distribuivel":
+        return f"lista distribuível da {label}"
+    return f"vitrine da {label}"
+
+
+def frase_do_funil(gap_block: dict) -> str | None:
+    """Gaps aparentes -> cobertos -> reais, numa frase. None sem o mapa.
+
+    Escrita uma vez, como as frases da captacao: digest, dashboard, deck e
+    planilha publicam esta mesma.
+    """
+    funil = gap_block.get("funil") or {}
+    if not gap_block.get("available") or not (gap_block.get("carteira") or {}).get("available"):
+        return None
+    base = _rotulo_da_base(gap_block)
+    aparentes = funil.get("aparentes", 0)
+    if not aparentes:
+        return f"Nenhum gap aparente: toda vitrine concorrente coletada está na {base}."
+    partes = []
+    if funil.get("mesma_classe"):
+        partes.append(
+            f"{contagem(funil['mesma_classe'], 'é a mesma classe', 'são a mesma classe')} "
+            "publicada com outro CNPJ"
+        )
+    if funil.get("espelho"):
+        partes.append(
+            f"{contagem(funil['espelho'], 'é espelho', 'são espelho')} do mesmo master "
+            f"de um fundo da {base}"
+        )
+    if funil.get("equivalente"):
+        partes.append(
+            f"{contagem(funil['equivalente'], 'tem', 'têm')} equivalente da mesma "
+            "gestora com carteira equivalente"
+        )
+    if funil.get("outra_liquidez"):
+        partes.append(
+            f"{contagem(funil['outra_liquidez'], 'é coberto', 'são cobertos')} só em "
+            "outra faixa de liquidez"
+        )
+    reais = funil.get("reais", 0)
+    detalhe = ", ".join(
+        texto for texto in (
+            contagem(funil.get("estrategia", 0), "de estratégia", "de estratégia")
+            if funil.get("estrategia") else "",
+            contagem(funil.get("gestora", 0), "de gestora", "de gestora")
+            if funil.get("gestora") else "",
+            f"{milhar(funil['sem_dado'])} sem carteira que permita decidir"
+            if funil.get("sem_dado") else "",
+        ) if texto
+    )
+    abertura = (
+        f"Dos {milhar(aparentes)} gaps aparentes (CNPJ em vitrine concorrente e fora "
+        f"da {base})"
+        if aparentes != 1 else
+        f"Do único gap aparente (CNPJ em vitrine concorrente e fora da {base})"
+    )
+    if partes:
+        cobertura = "; ".join(partes)
+        fecho = f"{'sobra' if reais == 1 else 'sobram'} {contagem(reais, 'gap real', 'gaps reais')}"
+    else:
+        cobertura = "nenhum é coberto por espelho ou equivalente"
+        fecho = (
+            "é gap real" if reais == 1
+            else f"são todos gaps reais ({milhar(reais)})"
+        )
+    return f"{abertura}, {cobertura}: {fecho}" + (f" ({detalhe})." if detalhe else ".")
+
+
+def resumo_do_funil(gap_block: dict) -> str | None:
+    """O funil em uma linha, para onde a frase inteira nao cabe (o subtitulo
+    do slide tem uma linha e meia). Os numeros sao os de `frase_do_funil`."""
+    if frase_do_funil(gap_block) is None:
+        return None
+    funil = gap_block["funil"]
+    return (
+        f"{contagem(funil['aparentes'], 'gap aparente', 'gaps aparentes')}: "
+        f"{contagem(funil['cobertos'], 'já coberto', 'já cobertos')} por espelho ou "
+        f"equivalente, {milhar(funil['outra_liquidez'])} só em outra liquidez - "
+        f"{contagem(funil['reais'], 'gap real', 'gaps reais')} "
+        f"(carteira da CVM de {competencia_br((gap_block['carteira'].get('competencias') or [''])[0])})"
+    )
+
+
+def notas_da_cobertura(gap_block: dict) -> list[str]:
+    """Proveniencia do veredito de cobertura - as mesmas frases nas superficies."""
+    notas: list[str] = []
+    carteira = gap_block.get("carteira") or {}
+    if carteira.get("available"):
+        competencias = carteira.get("competencias") or []
+        recuo = (
+            f" (e {', '.join(competencia_br(c) for c in competencias[1:])} para "
+            "classes ausentes dela)" if len(competencias) > 1 else ""
+        )
+        notas.append(
+            "Espelho e equivalência pela carteira mensal da CVM (CDA) de "
+            f"{competencia_br(competencias[0]) if competencias else '-'}{recuo}; "
+            f"{milhar(carteira.get('com_carteira', 0))} dos "
+            f"{milhar(gap_block.get('gaps_aparentes', 0))} gaps aparentes tinham "
+            "carteira publicada. Espelho: 95% ou mais do PL em cotas de um único "
+            "fundo. Equivalente: mesma gestora e categoria ANBIMA, no máximo 15% "
+            "da carteira em faixas diferentes e ao menos 60% dos ativos em comum. "
+            "Sem carteira que decida, o possível equivalente só informa."
+        )
+    elif carteira.get("aviso"):
+        notas.append(f"Atenção: {carteira['aviso']}.")
+    lente = (gap_block.get("lentes") or {}).get("distribuivel") or {}
+    lista = gap_block.get("distribuivel") or {}
+    if lente.get("available"):
+        data = lista.get("data_referencia")
+        arquivos = lista.get("arquivos") or []
+        frase = (
+            f"Lista distribuível: {contagem(lista.get('total', 0), 'classe', 'classes')} "
+            f"de {contagem(len(arquivos), 'arquivo', 'arquivos')}"
+            + (f", referência {data_br(data)}" if data else "")
+        )
+        invalidas = lista.get("invalidas") or []
+        if invalidas:
+            frase += (
+                f"; {contagem(len(invalidas), 'linha recusada', 'linhas recusadas')} "
+                "(arquivo e motivo na planilha)"
+            )
+        funil = lente.get("funil") or {}
+        if gap_block.get("base") == "vitrine" and funil.get("aparentes"):
+            frase += (
+                f". Contra ela, {milhar(funil.get('cobertos', 0))} dos "
+                f"{milhar(funil['aparentes'])} fundos da vitrine concorrente fora da "
+                "lista estão cobertos"
+            )
+        notas.append(frase + ".")
+    elif gap_block.get("distribuivel") is not None and lente.get("reason"):
+        notas.append(f"Lista distribuível: {lente['reason']}.")
+    return notas
+
+
+def cnpjs_cobertos(gap_block: dict) -> set[str]:
+    """CNPJs de gap aparente que a base cobre (mesma classe, espelho ou
+    equivalente). Os outros blocos que dizem "a XP nao tem" - consenso na
+    leitura competitiva, oportunidade de grade na captacao - excluem estes, para
+    nenhum chamar de lacuna o que o bloco de gaps diz estar coberto."""
+    return {f["cnpj"] for f in gap_block.get("cobertos") or [] if f.get("cnpj")}
+
+
 def build_gap_block(
-    snapshots: list[ShelfSnapshot], baseline_id: str | None = None
+    snapshots: list[ShelfSnapshot],
+    baseline_id: str | None = None,
+    familias: MapaDeFamilias | None = None,
+    distribuivel: BaseDistribuivel | None = None,
 ) -> dict:
     """Gaps de prateleira do baseline: o que as vitrines concorrentes ofertam
-    de varejo e a vitrine da XP nao tem.
+    de varejo e a XP nao cobre - por CNPJ e, com o mapa de familias, por
+    estrategia.
 
-    A base e sempre a vitrine, dos dois lados (vitrine x vitrine): o catalogo
-    Open Finance nao entra em nenhum ponto da conta - nem para desqualificar um
-    gap, nem nas contagens por categoria. Um fundo que a XP so tem via Open
-    Finance conta como gap, porque o cliente nao o ve na vitrine.
+    O universo e sempre a vitrine dos concorrentes (o catalogo Open Finance nao
+    entra em nenhum ponto da conta). A base de cobertura tem duas lentes:
+
+    - a vitrine da XP, como sempre: um fundo que a XP so tem via Open Finance
+      conta como gap, porque o cliente nao o ve;
+    - a lista distribuivel (pasta de CSVs), quando existe: o que a XP distribui
+      ou pode distribuir. Um gap da vitrine coberto por ela vira "expor na
+      vitrine" em vez de "incluir".
+
+    Cada gap aparente recebe um veredito por lente (`familias.Veredito`):
+    coberto por espelho ou equivalente sai da contagem de gaps reais e vai para
+    `cobertos`, com a evidencia - nada some. Sem o mapa (carteira da CVM
+    ausente) o bloco e o de antes, CNPJ contra CNPJ, com o aviso.
 
     Protecoes anti-falso-alarme, na mesma linha de _exclusive_cnpjs:
-    - baseline ausente, indisponivel ou sem vitrine -> bloco suprimido com
-      motivo (tudo pareceria gap);
+    - baseline ausente, indisponivel ou sem vitrine, e sem lista distribuivel ->
+      bloco suprimido com motivo (tudo pareceria gap); com a lista, ela vira a
+      base e o aviso diz que a vitrine faltou;
     - baseline PARTIAL com vitrine -> renderiza com aviso (gaps podem estar
       superestimados);
     - concorrente indisponivel ou sem vitrine -> fora do universo, listado em
@@ -620,41 +919,27 @@ def build_gap_block(
         return {"available": False, "reason": "nenhuma casa baseline configurada"}
 
     label = _platform_label(baseline_id)
-    baseline = next((s for s in snapshots if s.platform == baseline_id), None)
-    if baseline is None:
+    vitrine = _lente_da_vitrine(snapshots, baseline_id, label)
+    lista_motivo = (
+        "sem lista distribuível nesta execução" if distribuivel is None
+        else distribuivel.motivo_da_supressao()
+    )
+    lista_ok = lista_motivo is None
+    if not vitrine["available"] and not lista_ok:
         return {
             "available": False,
-            "reason": f"snapshot da {label} ausente desta execucao",
-            "baseline_id": baseline_id,
-            "baseline_label": label,
-        }
-    if baseline.status == SnapshotStatus.UNAVAILABLE or not baseline.funds:
-        detail = f": {baseline.error}" if baseline.error else ""
-        return {
-            "available": False,
-            "reason": f"coleta da {label} indisponivel{detail}",
-            "baseline_id": baseline_id,
-            "baseline_label": label,
-        }
-
-    baseline_listing = _listing_funds(baseline)
-    if not baseline_listing:
-        return {
-            "available": False,
-            "reason": (
-                f"{label} sem vitrine coletada nesta execucao "
-                f"(estrategia: {baseline.strategy.value}); o catalogo "
-                "Open Finance nao conta como vitrine"
-            ),
+            "reason": vitrine["reason"],
             "baseline_id": baseline_id,
             "baseline_label": label,
         }
 
-    baseline_warning = None
-    if baseline.status == SnapshotStatus.PARTIAL:
-        detail = f" ({baseline.error})" if baseline.error else ""
+    baseline = vitrine["snapshot"]
+    baseline_listing = vitrine["listing"]
+    primaria = "vitrine" if vitrine["available"] else "distribuivel"
+    baseline_warning = vitrine.get("warning")
+    if primaria == "distribuivel":
         baseline_warning = (
-            f"coleta da {label} parcial{detail}; gaps podem estar superestimados"
+            f"{vitrine['reason']}; gaps medidos contra a lista distribuível"
         )
 
     competitors: list[dict] = []
@@ -669,7 +954,7 @@ def build_gap_block(
                 {
                     "platform_id": snapshot.platform,
                     "label": comp_label,
-                    "reason": "coleta indisponivel nesta execucao",
+                    "reason": "coleta indisponível nesta execução",
                 }
             )
             continue
@@ -680,8 +965,8 @@ def build_gap_block(
                     "platform_id": snapshot.platform,
                     "label": comp_label,
                     "reason": (
-                        "sem vitrine publica coletada; o catalogo "
-                        "Open Finance nao conta como oferta"
+                        "sem vitrine pública coletada; o catálogo "
+                        "Open Finance não conta como oferta"
                     ),
                 }
             )
@@ -696,7 +981,9 @@ def build_gap_block(
             }
         )
 
-    baseline_cnpjs = {f.cnpj for f in baseline_listing if f.cnpj}
+    vitrine_cnpjs = {f.cnpj for f in baseline_listing if f.cnpj}
+    lista_cnpjs = set(distribuivel.cnpjs()) if lista_ok else set()
+    base_cnpjs = vitrine_cnpjs if primaria == "vitrine" else lista_cnpjs
 
     # Indices da vitrine baseline para as colunas heuristicas (D3). Sao sinais
     # informativos - nunca removem um fundo da lista de gaps.
@@ -712,24 +999,117 @@ def build_gap_block(
             baseline_slugs.setdefault(slug, fund.name)
 
     funds = _gap_funds(
-        competitor_snaps, baseline_cnpjs, baseline_managers, baseline_slugs
+        competitor_snaps, base_cnpjs, baseline_managers, baseline_slugs
     )
-    categories = _gap_categories(baseline_listing, competitor_snaps, funds)
+
+    base_primaria = familias.preparar_base(base_cnpjs) if familias else None
+    base_lista = (
+        familias.preparar_base(lista_cnpjs) if familias and lista_ok else None
+    )
+    for fund in funds:
+        veredito = _veredito_contra(fund["cnpj"], base_cnpjs, familias, base_primaria)
+        fund["veredito"] = veredito
+        fund["veredito_distribuivel"] = None
+        fund["situacao_distribuivel"] = None
+        if primaria == "vitrine" and lista_ok:
+            na_lista = _veredito_contra(fund["cnpj"], lista_cnpjs, familias, base_lista)
+            fund["veredito_distribuivel"] = na_lista
+            if na_lista and na_lista.get("coberto"):
+                fund["situacao_distribuivel"] = distribuivel.situacao_de(
+                    na_lista.get("cobre")
+                )
+        elif primaria == "distribuivel" and veredito and veredito.get("coberto"):
+            fund["situacao_distribuivel"] = distribuivel.situacao_de(veredito.get("cobre"))
+        if not baseline_listing and base_primaria is None:
+            # Sem vitrine e sem mapa nao ha de onde saber que gestoras a XP
+            # distribui: "nao" seria afirmar o que ninguem checou.
+            fund["manager_on_xp"] = None
+        if veredito and veredito.get("tipo") != PRESENTE:
+            # Com o mapa, "gestora" e a da ESTRATEGIA (a do master), e e ela
+            # que decide se a inclusao e operacional: um feeder de marca
+            # propria do concorrente sobre master de terceiro e da gestora do
+            # master.
+            if veredito.get("gestora"):
+                fund["gestora_estrategia"] = veredito["gestora"]
+            if veredito.get("raiz_gestora") and base_primaria is not None:
+                fund["manager_on_xp"] = veredito["raiz_gestora"] in base_primaria.raizes
+            fund["familia"] = (
+                {"id": veredito["familia_id"], "nome": veredito.get("familia_nome")}
+                if veredito.get("familia_id") else None
+            )
+            fund["dmais"] = veredito.get("dmais")
+
+    cobertos = [f for f in funds if (f["veredito"] or {}).get("coberto")]
+    acao = [f for f in funds if not (f["veredito"] or {}).get("coberto")]
+    reais = [f for f in acao if (f["veredito"] or {}).get("tipo") != OUTRA_LIQUIDEZ]
+    categories = _gap_categories(
+        baseline_listing, competitor_snaps, reais,
+        cobertos=Counter(f["category"] for f in cobertos),
+    )
+    funil = _funil([f["veredito"] for f in funds])
+
+    # A outra lente, sobre o mesmo universo: quanto da vitrine concorrente a
+    # lista distribuivel cobre. So o funil - a lista nominal e a da primaria.
+    lentes = {
+        "vitrine": {
+            "available": vitrine["available"], "reason": vitrine["reason"],
+            "base_total": len(baseline_listing),
+            "funil": funil if primaria == "vitrine" else None,
+        },
+        "distribuivel": {
+            "available": lista_ok, "reason": lista_motivo,
+            "base_total": len(lista_cnpjs),
+            "funil": funil if primaria == "distribuivel" else None,
+        },
+    }
+    if primaria == "vitrine" and lista_ok:
+        universo = sorted({
+            f.cnpj for s in competitor_snaps for f in _listing_funds(s) if f.cnpj
+        })
+        lentes["distribuivel"]["funil"] = _funil([
+            _veredito_contra(c, lista_cnpjs, familias, base_lista)
+            for c in universo if c not in lista_cnpjs
+        ])
 
     return {
         "available": True,
         "reason": None,
         "baseline_id": baseline_id,
         "baseline_label": label,
-        "baseline_status": baseline.status.value,
+        "baseline_status": (
+            baseline.status.value if baseline else SnapshotStatus.UNAVAILABLE.value
+        ),
         "baseline_warning": baseline_warning,
         "baseline_listing_total": len(baseline_listing),
+        "base": primaria,
         "competitors": competitors,
         "excluded": excluded,
-        "total_gaps": len(funds),
-        "multi_house_gaps": sum(1 for f in funds if f["houses_count"] >= 2),
-        "funds": funds,
+        # Manchete: gaps REAIS. Sem o mapa de familias sao os aparentes, como
+        # antes; com ele, o funil diz quantos a carteira resolveu.
+        "total_gaps": len(reais),
+        "gaps_aparentes": len(funds),
+        "gaps_liquidez": len(acao) - len(reais),
+        "total_cobertos": len(cobertos),
+        "multi_house_gaps": sum(1 for f in reais if f["houses_count"] >= 2),
+        "funds": acao,
+        "cobertos": cobertos,
         "categories": categories,
+        "funil": funil,
+        "lentes": lentes,
+        "carteira": {
+            "available": familias is not None,
+            "competencias": list(familias.competencias) if familias else [],
+            "com_carteira": (
+                sum(1 for f in funds if familias.tem_carteira(f["cnpj"]))
+                if familias else 0
+            ),
+            "aviso": None if familias else (
+                "sem a carteira mensal da CVM (CDA): espelho e equivalência não "
+                "foram verificados - gap medido CNPJ contra CNPJ"
+            ),
+            "avisos": list(familias.avisos) if familias else [],
+        },
+        "distribuivel": distribuivel.to_dict() if distribuivel is not None else None,
     }
 
 
@@ -743,8 +1123,7 @@ def summarize_platform(
     de uma casa com o catalogo de outra e o que fazia o BTG aparecer com 4x as
     gestoras da XP.
     """
-    platform_cfg = PLATFORMS.get(snapshot.platform)
-    label = platform_cfg.label if platform_cfg else snapshot.platform
+    label = _platform_label(snapshot.platform)
 
     # A analise principal ve so o varejo; os restritos vao ao bloco auxiliar.
     catalog: list[FundOffer] = retail_funds(snapshot)
@@ -753,7 +1132,7 @@ def summarize_platform(
     reason = None
     if not funds:
         reason = (
-            f"sem vitrine publica coletada (estrategia: {snapshot.strategy.value})"
+            f"sem vitrine pública coletada (estratégia: {snapshot.strategy.value})"
             if catalog
             else "sem fundos de varejo nesta coleta"
         )
@@ -770,13 +1149,17 @@ def summarize_platform(
                 managers.get(fund.manager_name.strip(), 0) + 1
             )
 
+    # Faixas e menor minimo so sobre o minimo que a vitrine mostra: o
+    # `min_initial` de um fundo que tambem esta no catalogo e o institucional do
+    # Open Finance (FundOffer.minimo_vitrine). Sem isso as faixas da XP sairam
+    # 100% acima de R$ 5 mil com a lista dela mostrando 80% abaixo.
+    minimums = [m for f in funds if (m := f.minimo_vitrine) is not None]
     bands: dict[str, int] = {}
-    for fund in funds:
-        band = band_for(fund.min_initial)
+    for minimo in minimums:
+        band = band_for(minimo)
         if band:
             bands[band] = bands.get(band, 0) + 1
 
-    minimums = [f.min_initial for f in funds if f.min_initial is not None]
     fees = [f.admin_fee_pct for f in funds if f.admin_fee_pct is not None]
     with_cnpj = sum(1 for f in funds if f.cnpj)
 
@@ -814,9 +1197,7 @@ def build_restricted_block(report: RunReport) -> dict:
         platforms.append(
             {
                 "platform_id": snapshot.platform,
-                "label": PLATFORMS[snapshot.platform].label
-                if snapshot.platform in PLATFORMS
-                else snapshot.platform,
+                "label": _platform_label(snapshot.platform),
                 "total_snapshot": len(snapshot.funds),
                 "restricted": len(restricted),
                 "by_reason": dict(by_reason),
@@ -855,9 +1236,23 @@ def _flow_payload(report: RunReport) -> dict:
         # deixar None, justamente para o motivo sobreviver ate a superficie.
         return {"available": False, "reason": (flow or {}).get("reason")}
 
+    # Import tardio: retail_flow importa deste modulo.
+    from shelf_monitor.report.retail_flow import leitura_da_captacao
+
     grade = report.grade_opportunities or {}
+    baseline_id = flow.get("baseline_id") or "xp"
     return {
         "available": True,
+        # As frases de abertura, as mesmas do digest e do console.
+        "leitura": leitura_da_captacao(flow, report.suprimidos),
+        "baseline_id": baseline_id,
+        "baseline_label": _platform_label(baseline_id),
+        "com_cotistas": flow.get("com_cotistas", True),
+        # Rotulo de cada casa, para as listas nao mostrarem o id ("xp, btg").
+        "rotulos": {pid: _platform_label(pid) for pid in PLATFORMS},
+        "por_categoria": flow.get("por_categoria") or [],
+        "tendencia_por_casa": flow.get("tendencia_por_casa") or {},
+        "baseline_perdendo": (flow.get("baseline_perdendo") or [])[:_FLOW_EMBEDDED],
         "periodo": flow["periodo"],
         "competencias": flow.get("competencias") or [],
         "casas": flow["casas"],
@@ -886,34 +1281,60 @@ def _flow_payload(report: RunReport) -> dict:
     }
 
 
-# Esforco de incluir um fundo de gap na grade, do mais barato ao mais caro.
-# A ordem e a da lista: um gap de gestora que a XP ja distribui e uma inclusao
-# operacional; um de gestora nova exige abrir relacionamento; produto proprio
-# do concorrente nao se transfere.
-ESFORCO_OPERACIONAL = "inclusao operacional"
+# Esforco de fechar um gap, do mais barato ao mais caro. A ordem e a da lista:
+# o que a lista distribuivel ja cobre so precisa aparecer na vitrine (ou ter a
+# distribuicao ativada); gap de gestora que a XP ja distribui e uma inclusao
+# operacional; estrategia que a XP ja tem em outra faixa de liquidez custa o
+# mesmo (a gestora ja e distribuida) mas vale menos - a estrategia ja esta na
+# prateleira -, entao vem logo depois; um de gestora nova exige abrir
+# relacionamento; produto proprio do concorrente nao se transfere. Medido em
+# 26/09/2026 com a versao de liquidez antes da inclusao operacional: o digest
+# abria com dez fundos que nao eram gap real.
+ESFORCO_EXPOR = "expor na vitrine"
+ESFORCO_ATIVAR = "ativar distribuição"
+ESFORCO_LIQUIDEZ = "versão de liquidez"
+ESFORCO_OPERACIONAL = "inclusão operacional"
 ESFORCO_ABRIR_GESTORA = "abrir gestora"
-ESFORCO_NAO_TRANSFERIVEL = "produto proprio do concorrente"
-ESFORCO_INDEFINIDO = "gestora nao identificada"
+ESFORCO_NAO_TRANSFERIVEL = "produto próprio do concorrente"
+ESFORCO_INDEFINIDO = "gestora não identificada"
 
 _ORDEM_ESFORCO = {
-    ESFORCO_OPERACIONAL: 0,
-    ESFORCO_ABRIR_GESTORA: 1,
-    ESFORCO_INDEFINIDO: 2,
-    ESFORCO_NAO_TRANSFERIVEL: 3,
+    ESFORCO_EXPOR: 0,
+    ESFORCO_ATIVAR: 1,
+    ESFORCO_OPERACIONAL: 2,
+    ESFORCO_LIQUIDEZ: 3,
+    ESFORCO_ABRIR_GESTORA: 4,
+    ESFORCO_INDEFINIDO: 5,
+    ESFORCO_NAO_TRANSFERIVEL: 6,
 }
 
 
 def _esforco_do_gap(fundo: dict) -> str:
-    """Quanto custa colocar este gap na grade.
+    """Quanto custa fechar este gap.
+
+    Os dois primeiros degraus vem das lentes: a lista distribuivel cobrindo um
+    gap da vitrine, e a estrategia coberta so em outra liquidez. Dai para
+    baixo decide a gestora - a da ESTRATEGIA (do master) quando o mapa de
+    familias existe, a do veiculo quando nao.
 
     A gestora e testada contra a watchlist das casas que EXIBEM o fundo - a
     mesma definicao de "produto da casa" que o resto do monitor usa. Derivar
     isto do bloco de captacao nao funcionava: um fundo que aparece em
     `top_captacao` (e nao em `grade_opportunities`) nao carrega o campo, e o
     BTGP Tesouro Selic - produto do proprio BTG - saia rotulado "inclusao
-    operacional", que e o oposto do que ele e.
+    operacional", que e o oposto do que ele e. E testar a gestora do veiculo
+    errava no sentido inverso: o BTGP Thunderbolt, feeder de marca propria do
+    BTG, investe no SPX Raptor - a estrategia e da SPX.
     """
-    gestora = fundo.get("manager")
+    na_lista = fundo.get("veredito_distribuivel") or {}
+    if na_lista.get("coberto"):
+        if fundo.get("situacao_distribuivel") == PODE_DISTRIBUIR:
+            return ESFORCO_ATIVAR
+        return ESFORCO_EXPOR
+    if (fundo.get("veredito") or {}).get("tipo") == OUTRA_LIQUIDEZ:
+        return ESFORCO_LIQUIDEZ
+
+    gestora = fundo.get("gestora_estrategia") or fundo.get("manager")
     if not gestora:
         return ESFORCO_INDEFINIDO
 
@@ -996,6 +1417,20 @@ def ranquear_gaps(
     return sorted(enriquecidos, key=chave)
 
 
+def _diff_summary(diff: ShelfDiff, report: RunReport) -> dict:
+    casa = movimentos_de_vitrine(diff, report.snapshot_for(diff.platform))
+    return {
+        "platform": diff.platform,
+        "added": len(casa.entradas),
+        "removed": len(casa.saidas),
+        "changed": len(casa.alteracoes),
+        "so_catalogo": casa.so_catalogo,
+        "suspect": diff.suspect,
+        "is_first_run": diff.is_first_run,
+        "nova_linha_de_base": diff.nova_linha_de_base,
+    }
+
+
 def build_dashboard_data(report: RunReport) -> dict:
     """Estrutura compacta consumida pelo dashboard e pelo digest."""
     exclusive = _exclusive_cnpjs(report.snapshots)
@@ -1020,7 +1455,7 @@ def build_dashboard_data(report: RunReport) -> dict:
             "houses": [
                 {
                     "house": house,
-                    "label": PLATFORMS[house].label if house in PLATFORMS else house,
+                    "label": _platform_label(house),
                     "total": len(funds),
                     "pre_operational": sum(1 for f in funds if f.is_pre_operational),
                 }
@@ -1031,9 +1466,7 @@ def build_dashboard_data(report: RunReport) -> dict:
                     "cnpj": f.cnpj,
                     "name": f.name,
                     "house": f.house,
-                    "house_label": (
-                        PLATFORMS[f.house].label if f.house in PLATFORMS else f.house
-                    ),
+                    "house_label": _platform_label(f.house),
                     "manager": f.manager_name,
                     "registered_at": f.registered_at,
                     "situation": f.situation,
@@ -1062,19 +1495,31 @@ def build_dashboard_data(report: RunReport) -> dict:
 
     # A lista completa de gaps vai a planilha (que chama build_gap_block
     # direto); o HTML embute so o topo para o payload nao inchar.
-    gaps = build_gap_block(report.snapshots)
-    gap_funds = ranquear_gaps(
-        gaps.get("funds") or [], report.retail_flow, report.grade_opportunities
-    )
-
-    return {
-        "generated_at": report.generated_at.isoformat(),
-        "listing": build_listing_block(report),
-        "gaps": {
+    gaps = bloco_de_gaps(report)
+    if not gaps.get("nao_se_aplica"):
+        gap_funds = ranquear_gaps(
+            gaps.get("funds") or [], report.retail_flow, report.grade_opportunities
+        )
+        cobertos = gaps.get("cobertos") or []
+        gaps = {
             **gaps,
             "funds": gap_funds[:_GAP_FUNDS_EMBEDDED],
             "funds_truncated": max(0, len(gap_funds) - _GAP_FUNDS_EMBEDDED),
-        },
+            "cobertos": cobertos[:_GAP_FUNDS_EMBEDDED],
+            "cobertos_truncated": max(0, len(cobertos) - _GAP_FUNDS_EMBEDDED),
+            # As frases saem prontas: o JS desenha, nao redige - e assim o
+            # painel diz exatamente o que o digest e o deck dizem.
+            "frase_funil": frase_do_funil(gaps),
+            "notas_cobertura": notas_da_cobertura(gaps),
+        }
+
+    return {
+        "generated_at": report.generated_at.isoformat(),
+        # Blocos que o modulo declarou sem sentido (chave -> motivo): o
+        # dashboard e o deck trocam cada um pelo motivo.
+        "suprimidos": dict(report.suprimidos),
+        "listing": build_listing_block(report),
+        "gaps": gaps,
         "restricted": build_restricted_block(report),
         # Captacao entra ja calculada pelo build_report: o dashboard nao le o
         # informe diario da CVM por conta propria - o payload e uma foto.
@@ -1083,6 +1528,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         # captacao: o dashboard desenha uma foto, nao le o informe nem o
         # extrato por conta propria.
         "performance": _bloco(report.performance),
+        "performance_12m": _bloco(report.performance_12m),
         "custo": _bloco(report.custo),
         "mandato": _bloco(report.mandato),
         "enrichment": report.enrichment,
@@ -1098,17 +1544,8 @@ def build_dashboard_data(report: RunReport) -> dict:
         "leitura_ticket": leitura_do_ticket([s.to_dict() for s in summaries]),
         # O resumo por plataforma ja carrega o que o dashboard desenha; os
         # diffs completos ficam no digest, para nao embutir a prateleira
-        # inteira duas vezes no HTML.
-        "diff_summary": [
-            {
-                "platform": d.platform,
-                "added": len(d.added),
-                "removed": len(d.removed),
-                "changed": len(d.changed),
-                "suspect": d.suspect,
-                "is_first_run": d.is_first_run,
-            }
-            for d in report.shelf_diffs
-        ],
+        # inteira duas vezes no HTML. As contagens sao de vitrine, a mesma
+        # regra do digest, do assunto e do deck; o resto vai em `so_catalogo`.
+        "diff_summary": [_diff_summary(d, report) for d in report.shelf_diffs],
         "cvm": cvm_payload,
     }

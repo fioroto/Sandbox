@@ -280,7 +280,7 @@ class TestGradeOpportunities(unittest.TestCase):
             [snapshot("btg", vitrine("btg", 40, "G"))], []
         )
         self.assertFalse(resultado["available"])
-        self.assertIn("indisponivel", resultado["reason"])
+        self.assertIn("indisponível", resultado["reason"])
 
 
 class TestGestoraDesconhecida(unittest.TestCase):

@@ -85,7 +85,7 @@ class TestOrdem(unittest.TestCase):
         mas no fim: quem abre o relatorio esta decidindo o que incluir.
         """
         fundos = [
-            gap("Proprio do BTG, capta muito", cnpj="1",
+            gap("Próprio do BTG, capta muito", cnpj="1",
                 gestora="BTG PACTUAL ASSET MANAGEMENT", casas=["btg"], na_xp=True),
             gap("De terceiro, capta pouco", cnpj="2",
                 gestora="SAFRA DTVM", casas=["btg"], na_xp=True),

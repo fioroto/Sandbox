@@ -41,6 +41,12 @@ MIN_AMOSTRA_CATEGORIA = 20
 # Vitrine menor que isto nao e vitrine: e o que sobrou de uma coleta parcial.
 MIN_VITRINE = 30
 
+# Fundos com aplicacao minima lida da propria vitrine para o ticket da casa
+# significar algo. Abaixo disso a casa entra como "sem base na coleta", nunca
+# como "nao tem fundo barato" - era o que a leitura de ticket e o posicionamento
+# competitivo decidiam com duas regras diferentes.
+MIN_AMOSTRA_TICKET = 30
+
 # --- faixas de indice -------------------------------------------------------
 
 # Fora desta faixa a diferenca e aposta declarada, nao arredondamento. Usada

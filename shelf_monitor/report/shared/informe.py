@@ -72,6 +72,22 @@ def ler_competencia(config: Config, yyyymm: str, *, force: bool = False) -> list
     return registros
 
 
+def ler_sem_guardar(config: Config, yyyymm: str) -> list:
+    """Os registros da competencia, sem guardar no cache do processo.
+
+    Para quem le uma competencia fechada uma vez so e a resume na hora - a serie
+    mensal. Guardar os ~91 MB de cada uma ate o fim da execucao somaria 12 x 91
+    MB na primeira montagem da janela de 12 meses, sem nenhum segundo leitor.
+    Se outro modulo ja leu a competencia nesta execucao, reaproveita.
+    """
+    if yyyymm in _REGISTROS:
+        return _REGISTROS[yyyymm]
+    from shelf_monitor.report.retail_flow import read_daily_flows
+
+    caminho = caminho_da_competencia(config, yyyymm)
+    return read_daily_flows(caminho, None) if caminho else []
+
+
 def ler_filtrado(
     config: Config, yyyymm: str, alvo: set[str] | None, *, force: bool = False
 ) -> list:

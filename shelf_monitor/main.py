@@ -12,10 +12,13 @@ Uso:
     python -m shelf_monitor rentabilidade          # retorno por fundo em 1m, 3m, YTD, 12m e 24m
     python -m shelf_monitor custo                  # taxa de cada fundo contra a categoria dele
     python -m shelf_monitor mandato                # o que o regulamento de cada classe autoriza
+    python -m shelf_monitor familias "KINEA"       # familias de estrategia de uma gestora
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
+    python -m shelf_monitor etf                    # captacao mes a mes e competicao de ETFs
+    python -m shelf_monitor etf-bruto              # dados brutos de ETF de cada fonte do mapeamento
 """
 from __future__ import annotations
 
@@ -24,11 +27,13 @@ import json
 import subprocess
 import sys
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 
+from shelf_monitor.classify import ClassificationIndex
 from shelf_monitor.collectors import build_collector
 from shelf_monitor.collectors.cvm import (
     CvmCollector,
@@ -41,23 +46,35 @@ from shelf_monitor.config import (
     Config,
 )
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.distribuivel import carregar as carregar_distribuivel
 from shelf_monitor.enrich import enrich_snapshots
-from shelf_monitor.http import check_reachable
+from shelf_monitor.familias import MapaDeFamilias
+from shelf_monitor.http import SourceUnavailable, check_reachable
 from shelf_monitor.models import (
+    BLOCO_CNPJ,
     CollectorStrategy,
     CvmSnapshot,
     RunReport,
     ShelfSnapshot,
     SnapshotStatus,
 )
-from shelf_monitor.market import etf_sources, fundosnet
+from shelf_monitor.market import anbima_boletim, etf_sources, fundosnet
 from shelf_monitor.market.etf import build_etf_catalog
+from shelf_monitor.market.etf_bruto.extrator import registrar_subcomando as registrar_etf_bruto
+from shelf_monitor.market.etf_competicao import build_etf_competicao
 from shelf_monitor.market.etf_flow import (
     aggregate_category_weekly_flows,
     aggregate_etf_weekly_flows,
     flow_coverage,
     get_recent_months,
     run_etf_flow_pipeline,
+)
+from shelf_monitor.market.etf_captacao_mensal import (
+    FECHAMENTOS,
+    build_captacao_mensal,
+    ler_fechamentos,
+    ler_informes_do_mes,
+    meses_fechados,
 )
 from shelf_monitor.market.fie_balancete import run_etf_pl_pipeline
 from shelf_monitor.market.importer import run_import
@@ -70,23 +87,41 @@ from shelf_monitor.report.retail_flow import (
     build_retail_flow,
     print_retail_flow,
 )
+from shelf_monitor.report.aggregate import bloco_de_gaps, cnpjs_cobertos
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
+from shelf_monitor.report.familias import print_familias, relatorio_de_familias
+from shelf_monitor.report.etf_captacao import write_etf_captacao
+from shelf_monitor.report.etf_digest import write_etf_digest
 from shelf_monitor.report.etf_report import (
     export_etf_csv,
+    export_captacao_csv,
     export_etf_excel,
+    print_captacao_mensal,
+    print_etf_competicao,
     print_etf_pl,
     print_etf_summary,
 )
 from shelf_monitor.report.mailer import build_subject, send_digest
-from shelf_monitor.report.custo import build_custo, print_custo
+from shelf_monitor.report.custo import IndiceCusto, build_custo, print_custo
 from shelf_monitor.report.mandato import build_mandato, print_mandato
-from shelf_monitor.report.performance import build_performance, print_performance
+from shelf_monitor.report.performance import (
+    build_performance,
+    build_performance_mensal,
+    categorias_por_cnpj,
+    print_performance,
+    tem_vitrine_com_cnpj,
+)
 from shelf_monitor.report.rentabilidade import (
+    SerieMensal,
     build_rentabilidade,
     print_rentabilidade,
 )
-from shelf_monitor.report.shared import limpar_informe
+from shelf_monitor.report.shared import (
+    limpar_informe,
+    movimentos_de_vitrine,
+    rotulo_da_casa,
+)
 from shelf_monitor.report.spreadsheet import render_spreadsheet
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
@@ -94,6 +129,7 @@ from shelf_monitor.storage import (
     save_cvm_snapshot,
     save_shelf_snapshot,
 )
+from shelf_monitor.texto import contagem
 
 console = Console()
 
@@ -126,7 +162,7 @@ def market_base_status(config: Config) -> tuple[str, str]:
     classificacao ANBIMA antes de o operador descobrir isso no relatorio.
     """
     if not (config.market_dir / "mercado.csv").is_file():
-        return "ausente", "base de mercado nao importada"
+        return "ausente", "base de mercado não importada"
 
     try:
         manifest = json.loads(
@@ -136,13 +172,13 @@ def market_base_status(config: Config) -> tuple[str, str]:
     except (OSError, ValueError):
         return (
             "sem-manifesto",
-            "base presente, mas _manifest.json ilegivel (idade desconhecida)",
+            "base presente, mas _manifest.json ilegível (idade desconhecida)",
         )
 
     age = (date.today() - imported).days
     if age > _MARKET_STALE_DAYS:
-        return "velha", f"base importada ha {age} dias ({imported.isoformat()})"
-    return "ok", f"base importada ha {age} dias"
+        return "velha", f"base importada há {age} dias ({imported.isoformat()})"
+    return "ok", f"base importada há {age} dias"
 
 
 def warn_market_missing() -> None:
@@ -154,19 +190,28 @@ def warn_market_missing() -> None:
     no nome), e todo numero principal muda de significado sem dizer nada.
     """
     console.print(
-        "[yellow]Base de mercado ausente:[/] analises degradam para sinais fracos "
-        "(sem classificacao ANBIMA nem gestora oficial). "
+        "[yellow]Base de mercado ausente:[/] análises degradam para sinais fracos "
+        "(sem classificação ANBIMA nem gestora oficial). "
         "Rode 'python -m shelf_monitor market' (ou 'market --skip-fees', mais leve)."
     )
 
 
 def collect_platforms(
-    config: Config, platform_ids: list[str], stop_at_first_source: bool = False
+    config: Config,
+    platform_ids: list[str],
+    stop_at_first_source: bool = False,
+    construtor=build_collector,
 ) -> list[ShelfSnapshot]:
+    """Coleta, avalia contra a ultima coleta confiavel e grava cada casa.
+
+    `construtor(config, platform_id, stop_at_first_source)` devolve o coletor;
+    o modulo de previdencia passa o registro dele. O resto - avaliacao de
+    qualidade, gravacao e a linha no console - e o mesmo para os dois.
+    """
     snapshots: list[ShelfSnapshot] = []
     for platform_id in platform_ids:
-        console.print(f"[bold]Coletando prateleira:[/] {PLATFORMS[platform_id].label}")
-        collector = build_collector(config, platform_id, stop_at_first_source)
+        console.print(f"[bold]Coletando prateleira:[/] {rotulo_da_casa(platform_id)}")
+        collector = construtor(config, platform_id, stop_at_first_source)
         snapshot = collector.collect()
 
         # A qualidade e avaliada contra a ultima coleta confiavel antes de
@@ -175,7 +220,10 @@ def collect_platforms(
         baseline = latest_shelf_snapshot(
             config, platform_id, before=snapshot.snapshot_date, trusted_only=True
         )
-        assess_quality(snapshot, baseline)
+        assess_quality(
+            snapshot, baseline,
+            espera_vitrine=config.platform(platform_id).declara_vitrine,
+        )
         stored = save_shelf_snapshot(config, snapshot)
 
         sources = snapshot.source_counts or {}
@@ -184,7 +232,7 @@ def collect_platforms(
             # Uniao de varias fontes: mostrar o que cada uma trouxe explica por
             # que o total nao e a soma.
             parts = ", ".join(f"{name} {count}" for name, count in sources.items())
-            detail += f" (uniao de {parts})"
+            detail += f" (união de {parts})"
         else:
             detail += f" via {snapshot.strategy.value}"
         console.print(f"  {_status_text(snapshot.status)} - {detail}")
@@ -206,7 +254,7 @@ def collect_cvm(config: Config, local_zip: Path | None = None) -> CvmSnapshot:
     pre_op = sum(1 for f in snapshot.funds if f.is_pre_operational)
     console.print(
         f"  {_status_text(snapshot.status)} - {len(snapshot.funds)} fundos na "
-        f"watchlist, {pre_op} em fase pre-operacional"
+        f"watchlist, {pre_op} em fase pré-operacional"
     )
     if snapshot.error:
         console.print(f"  [dim]{snapshot.error}[/]")
@@ -251,17 +299,38 @@ def build_report(
     cvm_snapshot: CvmSnapshot | None,
     *,
     with_rentabilidade: bool = False,
+    com_carteira: bool = True,
+    classificador: type[ClassificationIndex] = ClassificationIndex,
+    pos_enriquecimento=None,
+    indice_custo: type[IndiceCusto] = IndiceCusto,
 ) -> RunReport:
-    report = RunReport(generated_at=datetime.now(), snapshots=snapshots)
+    """Enriquece, compara com a coleta anterior e anexa os blocos analiticos.
+
+    Os tres ganchos existem para o modulo de previdencia e tem como padrao o
+    comportamento de sempre: `classificador` e o resolvedor por nome do
+    enriquecimento; `pos_enriquecimento(snapshots)` roda logo depois dele e
+    antes de qualquer bloco - e onde a previdencia ajusta eixo e particao;
+    `indice_custo` monta o universo de referencia do custo.
+
+    `com_carteira=False` (`--no-carteira`) pula o mapa de familias: o bloco
+    de gaps volta a comparar CNPJ contra CNPJ, com o aviso.
+    """
+    report = RunReport(
+        generated_at=datetime.now(), snapshots=snapshots,
+        suprimidos=dict(config.blocos_suprimidos),
+    )
 
     # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
     # "classe ANBIMA" significar a mesma coisa nas cinco casas.
-    stats = enrich_snapshots(config, snapshots)
+    stats = enrich_snapshots(config, snapshots, classificador=classificador)
     if stats is None:
         warn_market_missing()
     else:
         report.enrichment = stats.to_dict()
         report.enrichment_stats = stats
+    if pos_enriquecimento is not None:
+        pos_enriquecimento(snapshots)
+    attach_familias(config, report, com_carteira=com_carteira)
 
     for snapshot in snapshots:
         previous = latest_shelf_snapshot(
@@ -275,15 +344,19 @@ def build_report(
         report.cvm_diff = diff_cvm(cvm_snapshot, previous_cvm)
 
     attach_retail_flow(config, report)
-    attach_performance(config, report)
-    attach_custo_e_mandato(config, report)
+    # A serie mensal montada para os 12 meses serve a rentabilidade por fundo
+    # quando ela e pedida - por isso ja sai com 24 competencias nesse caso.
+    serie = attach_performance(
+        config, report, meses_da_serie=24 if with_rentabilidade else 13
+    )
+    attach_custo_e_mandato(config, report, indice_custo)
     # Opt-in, como `--with-etf` e pela mesma razao: a primeira montagem le ate
     # 24 competencias do informe (~2,5 min e ~260 MB). Rodando sempre, todo
     # `run`, `collect`, `diff`, `report` e `export` pagava esse custo - contra
     # o que o proprio contrato em `models.RunReport.rentabilidade` promete
     # ("o `run` so a calcula quando pedida").
     if with_rentabilidade:
-        attach_rentabilidade(config, report)
+        attach_rentabilidade(config, report, serie)
 
     # Os tres blocos acima compartilham as competencias ja parseadas do informe
     # diario (~91 MB cada). Passado este ponto ninguem mais le o informe: os
@@ -292,6 +365,73 @@ def build_report(
     limpar_informe()
 
     return report
+
+
+def attach_familias(
+    config: Config, report: RunReport, *, com_carteira: bool = True
+) -> None:
+    """Anexa o mapa de familias e a lista distribuivel - os insumos dos gaps.
+
+    Nunca derruba a execucao: sem carteira, o bloco de gaps volta a comparar
+    CNPJ contra CNPJ e diz que espelho e equivalencia nao foram verificados;
+    sem lista, a lente distribuivel sai suprimida com o motivo. Modulo que
+    suprime o cruzamento por CNPJ (a previdencia) nao monta nenhum dos dois.
+    """
+    if report.suprime(BLOCO_CNPJ):
+        return
+    if com_carteira and (config.market_dir / "mercado.csv").is_file():
+        cache = config.cache_dir / "carteira"
+        if not cache.exists():
+            console.print(
+                "[bold]Montando o mapa de famílias[/] pela primeira vez: cada "
+                "competência da carteira mensal da CVM (CDA, ~22 MB) é baixada e "
+                f"resumida em {cache}. Nas próximas execuções vem do cache."
+            )
+        try:
+            report.familias = MapaDeFamilias.carregar(config)
+        except Exception as exc:  # noqa: BLE001 - fonte externa, insumo opcional
+            console.print(f"[yellow]Mapa de famílias não montado:[/] {_short(str(exc))}")
+        else:
+            if report.familias is None:
+                console.print(
+                    "[yellow]Mapa de famílias não montado:[/] nenhuma competência da "
+                    "carteira mensal da CVM (CDA) disponível - gaps medidos CNPJ "
+                    "contra CNPJ."
+                )
+            else:
+                for aviso in report.familias.avisos:
+                    console.print(f"  [dim]{_short(aviso)}[/]")
+    try:
+        report.distribuivel = carregar_distribuivel(config, report.familias)
+    except Exception as exc:  # noqa: BLE001 - a pasta e opcional
+        console.print(f"[yellow]Lista distribuível não lida:[/] {_short(str(exc))}")
+        return
+    lista = report.distribuivel
+    if lista.arquivos:
+        console.print(
+            f"Lista distribuível: {contagem(len(lista.situacao), 'classe', 'classes')} "
+            f"de {contagem(len(lista.arquivos), 'arquivo', 'arquivos')}"
+            + (
+                f" - [yellow]{contagem(len(lista.invalidas), 'linha recusada', 'linhas recusadas')}[/]"
+                if lista.invalidas else ""
+            )
+        )
+
+
+def _cobertos_na_vitrine(report: RunReport) -> set[str]:
+    """CNPJs que a vitrine da XP cobre por espelho ou equivalente.
+
+    Vazio sem o mapa, ou quando a vitrine da XP faltou (a base do bloco virou a
+    lista distribuivel, e ai "coberto" nao quer dizer "o cliente ve").
+    """
+    if report.familias is None or report.suprime(BLOCO_CNPJ):
+        return set()
+    try:
+        bloco = bloco_de_gaps(report)
+    except Exception as exc:  # noqa: BLE001 - so refina os outros blocos
+        console.print(f"[yellow]Cobertura por família não calculada:[/] {_short(str(exc))}")
+        return set()
+    return cnpjs_cobertos(bloco) if bloco.get("base") == "vitrine" else set()
 
 
 def attach_retail_flow(config: Config, report: RunReport) -> None:
@@ -305,7 +445,7 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
         flow = build_retail_flow(config, report.snapshots)
     except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
         console.print(
-            f"[yellow]Captacao nao calculada:[/] {_short(str(exc))} "
+            f"[yellow]Captação não calculada:[/] {_short(str(exc))} "
             "(os demais blocos seguem normalmente)"
         )
         return
@@ -317,70 +457,122 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
         # mesmo quando a causa real era outra (categoria sem amostra, rede
         # fora). O motivo existia, era impresso aqui, e morria antes da
         # superficie que um comite le.
-        console.print(f"[yellow]Captacao nao calculada:[/] {flow.get('reason')}")
+        console.print(f"[yellow]Captação não calculada:[/] {flow.get('reason')}")
         report.retail_flow = flow
         return
 
     report.retail_flow = flow
     try:
         report.grade_opportunities = build_grade_opportunities(
-            report.snapshots, flow["_fluxos"]
+            report.snapshots, flow["_fluxos"], cobertos=_cobertos_na_vitrine(report)
         )
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[yellow]Oportunidades de grade nao calculadas:[/] {_short(str(exc))}")
+        console.print(f"[yellow]Oportunidades de grade não calculadas:[/] {_short(str(exc))}")
 
 
-def attach_performance(config: Config, report: RunReport) -> None:
-    """Anexa a rentabilidade ponderada ao relatorio.
+def montar_serie_mensal(config: Config, meses: int) -> SerieMensal | None:
+    """A serie mensal do informe, com aviso quando e a primeira montagem.
 
-    Mesma politica do fluxo: nunca derruba a execucao, e quando a fonte falta a
-    superficie omite o bloco. Custa mais que a captacao porque le o informe do
-    universo inteiro - a mediana de referencia por categoria precisa do mercado,
-    nao so da vitrine.
-    """
-    try:
-        performance = build_performance(config, report.snapshots)
-    except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
-        console.print(
-            f"[yellow]Rentabilidade nao calculada:[/] {_short(str(exc))} "
-            "(os demais blocos seguem normalmente)"
-        )
-        return
-
-    if not performance.get("available"):
-        console.print(
-            f"[yellow]Rentabilidade nao calculada:[/] {performance.get('reason')}"
-        )
-    report.performance = performance
-
-
-def attach_rentabilidade(config: Config, report: RunReport) -> None:
-    """Anexa a rentabilidade por janela ao relatorio.
-
-    Custa a leitura de ate 24 competencias do informe na primeira vez; depois o
-    resumo mensal vem do cache e so a competencia corrente e refeita. Como todo
-    bloco opcional, uma falha aqui nao derruba a execucao.
+    Nunca derruba a execucao: sem ela, os blocos que dependem dela saem
+    indisponiveis com o motivo.
     """
     serie_dir = config.cache_dir / "serie"
     if not serie_dir.exists():
         console.print(
-            "[bold]Montando a serie mensal de 24 competencias[/] pela primeira vez "
-            "(~2,5 min e ~260 MB). Nas proximas execucoes so a competencia "
-            f"corrente e refeita - o resto vem de {serie_dir}."
+            f"[bold]Montando a série mensal de {meses} competências[/] pela primeira "
+            "vez: cada competência fechada é lida do zip do informe uma vez e "
+            f"resumida em {serie_dir}. Nas próximas execuções só a competência "
+            "corrente é refeita."
         )
     try:
-        bloco = build_rentabilidade(config, report.snapshots)
+        return SerieMensal.build(config, meses=meses)
+    except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
+        console.print(f"[yellow]Série mensal do informe não montada:[/] {_short(str(exc))}")
+        return None
+
+
+def attach_performance(
+    config: Config, report: RunReport, meses_da_serie: int = 13
+) -> SerieMensal | None:
+    """Anexa a rentabilidade ponderada ao relatorio, em 3 e em 12 meses.
+
+    Mesma politica do fluxo: nunca derruba a execucao, e quando a fonte falta a
+    superficie omite o bloco. A janela curta le o informe diario do universo
+    inteiro - a mediana de referencia por categoria precisa do mercado, nao so
+    da vitrine. A de 12 meses sai da serie mensal: so a competencia corrente e
+    relida, o resto vem do resumo em data/cache/serie.
+
+    Devolve a serie montada, para a rentabilidade por fundo nao montar outra.
+    """
+    categorias = None
+    try:
+        categorias = categorias_por_cnpj(config)
+        performance = build_performance(config, report.snapshots, categorias=categorias)
+    except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
+        console.print(
+            f"[yellow]Rentabilidade em 3 meses não calculada:[/] {_short(str(exc))} "
+            "(os demais blocos seguem normalmente)"
+        )
+    else:
+        if not performance.get("available"):
+            console.print(
+                f"[yellow]Rentabilidade em 3 meses não calculada:[/] {performance.get('reason')}"
+            )
+        report.performance = performance
+
+    # Sem vitrine que publique CNPJ nao ha o que medir, e montar a serie
+    # custaria a leitura de 13 competencias para nada.
+    serie = (
+        montar_serie_mensal(config, meses_da_serie)
+        if tem_vitrine_com_cnpj(report.snapshots) else None
+    )
+    try:
+        doze = build_performance_mensal(
+            config, report.snapshots, serie, meses=12, categorias=categorias
+        )
     except Exception as exc:  # noqa: BLE001 - bloco opcional
-        console.print(f"[yellow]Rentabilidade por fundo nao calculada:[/] {_short(str(exc))}")
+        console.print(f"[yellow]Rentabilidade em 12 meses não calculada:[/] {_short(str(exc))}")
+        return serie
+    if not doze.get("available"):
+        console.print(f"[yellow]Rentabilidade em 12 meses não calculada:[/] {doze.get('reason')}")
+    report.performance_12m = doze
+    return serie
+
+
+def attach_rentabilidade(
+    config: Config, report: RunReport, serie: SerieMensal | None = None
+) -> None:
+    """Anexa a rentabilidade por janela ao relatorio.
+
+    Custa a leitura de ate 24 competencias do informe na primeira vez; depois o
+    resumo mensal vem do cache e so a competencia corrente e refeita. `serie` e
+    a que `attach_performance` ja montou nesta execucao. Como todo bloco
+    opcional, uma falha aqui nao derruba a execucao.
+    """
+    if serie is None and not (config.cache_dir / "serie").exists():
+        console.print(
+            "[bold]Montando a série mensal de 24 competências[/] pela primeira vez: "
+            "cada competência fechada é lida do zip do informe uma vez e resumida "
+            f"em {config.cache_dir / 'serie'}. Nas próximas execuções só a "
+            "competência corrente é refeita."
+        )
+    try:
+        bloco = build_rentabilidade(config, report.snapshots, serie=serie)
+    except Exception as exc:  # noqa: BLE001 - bloco opcional
+        console.print(f"[yellow]Rentabilidade por fundo não calculada:[/] {_short(str(exc))}")
         return
     if not bloco.get("available"):
         console.print(
-            f"[yellow]Rentabilidade por fundo nao calculada:[/] {bloco.get('reason')}"
+            f"[yellow]Rentabilidade por fundo não calculada:[/] {bloco.get('reason')}"
         )
     report.rentabilidade = bloco
 
 
-def attach_custo_e_mandato(config: Config, report: RunReport) -> None:
+def attach_custo_e_mandato(
+    config: Config,
+    report: RunReport,
+    indice_custo: type[IndiceCusto] = IndiceCusto,
+) -> None:
     """Anexa custo relativo e mandato declarado ao relatorio.
 
     Os dois saem do extrato da CVM ja em disco, entao nao dependem de rede - mas
@@ -388,21 +580,25 @@ def attach_custo_e_mandato(config: Config, report: RunReport) -> None:
     os outros.
     """
     for nome, construtor, destino in (
-        ("Custo", build_custo, "custo"),
+        ("Custo", partial(build_custo, classe_indice=indice_custo), "custo"),
         ("Mandato", build_mandato, "mandato"),
     ):
         try:
             bloco = construtor(config, report.snapshots)
         except Exception as exc:  # noqa: BLE001 - bloco opcional
-            console.print(f"[yellow]{nome} nao calculado:[/] {_short(str(exc))}")
+            console.print(f"[yellow]{nome} não calculado:[/] {_short(str(exc))}")
             continue
         if not bloco.get("available"):
-            console.print(f"[yellow]{nome} nao calculado:[/] {bloco.get('reason')}")
+            console.print(f"[yellow]{nome} não calculado:[/] {bloco.get('reason')}")
         setattr(report, destino, bloco)
 
 
 def render_outputs(
-    config: Config, report: RunReport, send_email: bool = False
+    config: Config,
+    report: RunReport,
+    send_email: bool = False,
+    *,
+    renderizar_dashboard=render_dashboard,
 ) -> list[str]:
     """Renderiza as superficies e devolve as falhas das essenciais.
 
@@ -410,6 +606,10 @@ def render_outputs(
     dashboard quebra, o digest, o e-mail e o commit de uma coleta que levou
     dezenas de minutos ainda tem de acontecer. As falhas voltam para virar
     codigo de saida em vez de sumirem no console.
+
+    `renderizar_dashboard(config, report) -> Path` e o gancho do monitor de
+    previdencia, que monta a pagina dele no molde da de fundos; o padrao e o
+    dashboard de fundos.
     """
     failures: list[str] = []
 
@@ -421,7 +621,7 @@ def render_outputs(
         digest_note = f"digest: {_short(str(exc))}"
         failures.append(digest_note)
     try:
-        dashboard_path = render_dashboard(config, report)
+        dashboard_path = renderizar_dashboard(config, report)
     except Exception as exc:  # noqa: BLE001
         dashboard_note = f"dashboard: {_short(str(exc))}"
         failures.append(dashboard_note)
@@ -454,9 +654,13 @@ def render_outputs(
             retail_flow=report.retail_flow,
             grade=report.grade_opportunities,
             performance=report.performance,
+            performance_12m=report.performance_12m,
             rentabilidade=report.rentabilidade,
             custo=report.custo,
             mandato=report.mandato,
+            suprimidos=report.suprimidos,
+            familias=report.familias,
+            distribuivel=report.distribuivel,
         )
     except ImportError:
         spreadsheet_note = "instale openpyxl para gerar a planilha"
@@ -464,7 +668,7 @@ def render_outputs(
         spreadsheet_note = f"falha ao gerar a planilha: {_short(str(exc))}"
 
     console.print()
-    console.print("[bold]Relatorios gerados[/]")
+    console.print("[bold]Relatórios gerados[/]")
     if md_path:
         console.print(f"  digest markdown: {md_path}")
         console.print(f"  digest e-mail:   {html_path}")
@@ -482,7 +686,7 @@ def render_outputs(
         console.print(f"  planilha:        {spreadsheet_path}")
     else:
         console.print(f"  planilha:        [yellow]{spreadsheet_note}[/]")
-    console.print(f"  assunto sugerido: {build_subject(report)}")
+    console.print(f"  assunto sugerido: {build_subject(report, config.rotulo_assunto)}")
 
     if send_email:
         try:
@@ -515,9 +719,9 @@ def run_outcome(
         cvm_note = "CVM falhou"
 
     report_note = (
-        "relatorios ok"
+        "relatórios ok"
         if not report_failures
-        else f"{len(report_failures)} relatorio(s) falharam"
+        else contagem(len(report_failures), "relatório falhou", "relatórios falharam")
     )
 
     line = f"{collected} de {total} casas coletadas, {cvm_note}, {report_note}"
@@ -526,30 +730,39 @@ def run_outcome(
 
 
 def print_summary(report: RunReport) -> None:
-    table = Table(title="Resumo da execucao", title_style="bold")
+    table = Table(title="Resumo da execução", title_style="bold")
     table.add_column("Plataforma")
     table.add_column("Fundos", justify="right")
     table.add_column("Status")
     table.add_column("Entradas", justify="right")
-    table.add_column("Saidas", justify="right")
-    table.add_column("Alteracoes", justify="right")
+    table.add_column("Saídas", justify="right")
+    table.add_column("Alterações", justify="right")
 
+    # Entradas, saidas e alteracoes sao de vitrine, a mesma conta do digest e
+    # do assunto do e-mail - o diff inteiro inclui o catalogo Open Finance.
+    rebases: list[str] = []
     for snapshot in report.snapshots:
         diff = report.diff_for(snapshot.platform)
         counted = diff and not diff.is_first_run
+        casa = movimentos_de_vitrine(diff, snapshot) if counted else None
         table.add_row(
-            PLATFORMS[snapshot.platform].label
-            if snapshot.platform in PLATFORMS
-            else snapshot.platform,
+            rotulo_da_casa(snapshot.platform),
             str(len(snapshot.funds)),
             _status_text(snapshot.status),
-            str(len(diff.added)) if counted else "-",
-            str(len(diff.removed)) if counted else "-",
-            str(len(diff.changed)) if counted else "-",
+            str(len(casa.entradas)) if casa else "-",
+            str(len(casa.saidas)) if casa else "-",
+            str(len(casa.alteracoes)) if casa else "-",
         )
+        if diff and diff.nova_linha_de_base:
+            rebases.append(
+                f"{rotulo_da_casa(snapshot.platform)}: nova linha de base - "
+                f"{diff.suspect_reason}"
+            )
 
     console.print()
     console.print(table)
+    for linha in rebases:
+        console.print(f"[yellow]{linha}[/]")
 
 
 def git_commit(config: Config) -> None:
@@ -570,7 +783,7 @@ def git_commit(config: Config) -> None:
         if not status.stdout.strip():
             console.print("[dim]Nada novo para commitar.[/]")
             return
-        message = f"data: snapshot do monitor de prateleiras ({datetime.now():%Y-%m-%d})"
+        message = f"{config.mensagem_commit} ({datetime.now():%Y-%m-%d})"
         subprocess.run(
             ["git", "commit", "-m", message], check=True, capture_output=True, text=True
         )
@@ -580,6 +793,42 @@ def git_commit(config: Config) -> None:
 
 
 # --- subcomandos -------------------------------------------------------------
+
+
+def resolver_fonte_do_fluxo(config: Config, pedida: str) -> tuple[str, str | None]:
+    """(fonte, motivo): `auto` vira `fnet` quando ha serie do Fundos.NET em disco.
+
+    O INF_DIARIO nao cobre ETF (0 de 249 em 2026-09-19, ver fie_balancete.py):
+    o fluxo que ele da e dos feeders. So fica como padrao enquanto o Fundos.NET
+    nao tem serie para fechar semanas.
+    """
+    if pedida != "auto":
+        return pedida, None
+    dias = fundosnet.dias_de_serie(config)
+    if dias >= fundosnet.MIN_DIAS_SERIE:
+        return "fnet", f"{dias} datas de informe do Fundos.NET em disco"
+    return "inf_diario", (
+        f"o Fundos.NET tem {contagem(dias, 'data', 'datas')} de informe em disco, abaixo das "
+        f"{fundosnet.MIN_DIAS_SERIE} de uma série semanal"
+    )
+
+
+def avisar_fluxo_de_feeder(motivo: str | None) -> None:
+    """O aviso que faltava: sem ele, fluxo de feeder saia como captacao de ETF."""
+    console.print()
+    console.print(
+        "[bold red]ATENÇÃO: o fluxo semanal abaixo NÃO é de ETF.[/] [red]Vem do "
+        "INF_DIARIO da CVM, que não cobre fundo de índice (0 de 249 ETFs em "
+        "19/09): mede os feeders - FIF que replicam um ETF.[/]"
+    )
+    if motivo:
+        console.print(f"[red]Fonte escolhida porque {motivo}.[/]")
+    console.print(
+        "[red]Para o fluxo do ETF: `etf --collect-sources fnet` a cada pregão; com "
+        f"{fundosnet.MIN_DIAS_SERIE} datas de informe o padrão passa a ser o "
+        "Fundos.NET.[/]"
+    )
+    console.print()
 
 
 def run_etf_monitor(config: Config) -> None:
@@ -592,21 +841,164 @@ def run_etf_monitor(config: Config) -> None:
     try:
         console.print()
         console.print("[bold]Catalogando ETFs na CVM e analisando fluxo...[/]")
-        catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(config)
+        catalogo = build_etf_catalog(config)
+        _coletar_fundosnet(config, catalogo)
+        fonte, motivo = resolver_fonte_do_fluxo(config, "auto")
+        catalog, weekly_flows, category_summaries = _fluxo_de_etf(config, fonte, catalog=catalogo)
+        _tickers_de_etf(config, catalog, weekly_flows)
         coverage = flow_coverage(catalog, weekly_flows)
-        print_etf_summary(weekly_flows, category_summaries, catalog, coverage=coverage)
+        if fonte == "inf_diario":
+            avisar_fluxo_de_feeder(motivo)
+        print_etf_summary(
+            weekly_flows, category_summaries, catalog, coverage=coverage,
+            source_label=_ROTULO_DA_FONTE[fonte],
+        )
         pl_series, pl_cov, pl_missing = run_etf_pl_pipeline(
             config, catalog, get_recent_months(4)
         )
         print_etf_pl(pl_series, pl_cov, pl_missing)
+        competicao = _competicao_de_etf(config, catalog, pl_series)
+        captacao = _captacao_mensal_de_etf(config, catalog, coletar=False)
         export_etf_excel(
             weekly_flows, category_summaries, catalog,
-            config.reports_dir / "etf_captacao_semanal.xlsx",
-            pl_series=pl_series,
+            config.reports_dir / ETF_PLANILHA,
+            pl_series=pl_series, fonte=fonte, competicao=competicao, captacao=captacao,
         )
         export_etf_csv(weekly_flows, config.reports_dir / "etf_weekly_flow.csv")
+        if captacao.get("available"):
+            export_captacao_csv(captacao, config.reports_dir / "etf_captacao_mensal.csv")
+            _md, html_path = write_etf_captacao(config, captacao)
+            console.print(f"  [green]Captação de ETF mês a mês:[/] {html_path}")
+        if competicao.get("available"):
+            _md, html_path = write_etf_digest(config, competicao)
+            console.print(f"  [green]Competição em ETFs:[/] {html_path}")
     except Exception as exc:  # noqa: BLE001 - ETF e opcional, nao pode derrubar o run
         console.print(f"[yellow]Falha no monitoramento de ETF:[/] {_short(str(exc))}")
+
+
+def _tickers_de_etf(config: Config, catalog: dict, weekly_flows: list | None = None, coletar: bool = True) -> None:
+    """Ticker de cada ETF, em todas as visoes.
+
+    Refaz `data/etf/tickers.csv` pela lista de ETFs da B3 quando a ultima coleta
+    tem mais de 30 dias (ou nao existe) e poe o ticker no catalogo e nos fluxos
+    ja montados - o catalogo le o arquivo ao ser construido, e esta execucao
+    ja o construiu. Sem rede, fica com o arquivo como esta.
+    """
+    if coletar and etf_sources.tickers_desatualizados(config, date.today()):
+        try:
+            resumo = etf_sources.collect_b3(config, catalog, date.today())
+            console.print(
+                f"  [dim]Tickers da B3: {resumo['tickers']} ETFs "
+                f"({', '.join(f'{k} {v}' for k, v in resumo['por_tipo'].items())})[/]"
+            )
+        except SourceUnavailable as exc:
+            console.print(
+                f"  [yellow]B3 indisponível para os tickers:[/] {_short(str(exc))} - "
+                "fica o data/etf/tickers.csv como está."
+            )
+    tickers = etf_sources.tickers_do_arquivo(config)
+    for cnpj, meta in catalog.items():
+        if cnpj in tickers:
+            meta.ticker = tickers[cnpj]
+    for flow in weekly_flows or []:
+        meta = catalog.get(flow.cnpj)
+        if meta is not None and meta.ticker:
+            flow.ticker = meta.ticker
+
+
+# A planilha de ETF abre pela captacao mes a mes; o nome deixou de ser "semanal"
+# quando o monitoramento de fluxo passou a ser mensal (2026-09-24).
+ETF_PLANILHA = "etf_captacao_mensal.xlsx"
+
+
+def _coletar_fundosnet(config: Config, catalog: dict, meses: list[str] | None = None) -> None:
+    """O que falta em disco do Fundos.NET para a captacao de ETF.
+
+    Os fechamentos mensais (o PL das pontas de cada mes), o informe de cada mes
+    fechado (captacao e resgates de todo dia, uma pagina por ETF) e o do mes em
+    aberto (refeito uma vez por dia: leva o fluxo semanal ao ultimo informe).
+    Sem rede, fica o que esta em disco, e o console diz isso.
+    """
+    meses = meses or meses_fechados(date.today(), FECHAMENTOS)
+
+    def mostrar(titulo: str, resumo: dict, chave: str, unidade: str) -> None:
+        novos = {m: v for m, v in resumo["meses"].items() if not str(v).startswith("em disco")}
+        if novos:
+            console.print(
+                f"  [dim]{titulo}: "
+                f"{', '.join(f'{m[4:]}/{m[:4]} ({v})' for m, v in novos.items())} - "
+                f"{resumo[chave]} {unidade}[/]"
+            )
+        if resumo.get("interrompida"):
+            console.print(f"  [yellow]{resumo['interrompida']}.[/]")
+
+    try:
+        mostrar(
+            "Fechamentos mensais do Fundos.NET baixados",
+            etf_sources.collect_fechamentos_mensais(config, catalog, meses=meses), "documentos", "documentos",
+        )
+        mostrar(
+            "Informe do mês no Fundos.NET (captação e resgates de todo dia)",
+            etf_sources.collect_informes_do_mes(config, catalog, meses=meses[1:]), "paginas", "páginas",
+        )
+        mostrar(
+            "Informe do mês em aberto no Fundos.NET",
+            etf_sources.collect_informes_do_mes_aberto(config, catalog), "paginas", "páginas",
+        )
+    except SourceUnavailable as exc:
+        console.print(
+            f"  [yellow]Fundos.NET indisponível para os fechamentos mensais:[/] "
+            f"{_short(str(exc))} - a captação mensal usa o que está em disco."
+        )
+
+
+def _captacao_mensal_de_etf(
+    config: Config, catalog: dict, coletar: bool = True, anbima: str | None = None
+) -> dict:
+    """Captacao de ETF mes a mes, no ano e em 12 meses.
+
+    Baixa do Fundos.NET so o que falta em disco: os fechamentos mensais (cerca
+    de 220 documentos por mes; os 14 meses da visao, na primeira vez) e o
+    informe do mes de cada ETF - uma pagina por ETF por mes, com captacao e
+    resgate de todo dia. Le o balancete de FIE dos mesmos meses, que decide
+    estreia contra informe faltando. Sem rede, usa o que ja esta em disco e diz
+    isso.
+    """
+    meses = meses_fechados(date.today(), FECHAMENTOS)
+    if coletar:
+        _coletar_fundosnet(config, catalog, meses)
+    pl_series, _cov, _missing = run_etf_pl_pipeline(config, catalog, meses)
+    captacao = build_captacao_mensal(
+        catalog, ler_fechamentos(config, meses), pl_series,
+        informes=ler_informes_do_mes(config, meses[1:]),
+    )
+    # Conferencia com o boletim da ANBIMA, quando ha anexo: o arquivo dado em
+    # --anbima (ou o mais recente da pasta dada), senao o de data/etf/anbima/.
+    anexo_path = anbima_boletim.localizar_anexo(config, anbima)
+    if anexo_path is not None:
+        anexo = anbima_boletim.ler_anexo(anexo_path)
+        if anexo is None:
+            console.print(f"  [yellow]{anexo_path.name} não parece o anexo do boletim da ANBIMA.[/]")
+        else:
+            anbima_boletim.anexar_conferencia(captacao, anexo)
+            console.print(f"  [dim]Conferência com a ANBIMA: {anexo_path.name}[/]")
+    elif anbima:
+        console.print(f"  [yellow]Nenhum anexo do boletim da ANBIMA em {anbima}.[/]")
+    print_captacao_mensal(captacao)
+    return captacao
+
+
+def _competicao_de_etf(config: Config, catalog: dict, pl_series: list) -> dict:
+    """Gestoras e segmentos de ETF, com cotistas e fluxo do Fundos.NET em disco.
+
+    Le so o que ja esta no disco: o catalogo e o PL vem prontos do chamador, e os
+    informes do Fundos.NET sao os das datas mais recentes em disco (a pagina do
+    mes em aberto, ou o que `etf --collect-sources fnet` gravou). Imprime no
+    console; quem chama decide se grava planilha e relatorio.
+    """
+    competicao = build_etf_competicao(catalog, pl_series, fundosnet.informes_recentes(config))
+    print_etf_competicao(competicao)
+    return competicao
 
 
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
@@ -620,7 +1012,9 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
         ensure_market_base(config)
 
     report = build_report(
-        config, snapshots, cvm_snapshot, with_rentabilidade=getattr(args, "with_rentabilidade", False)
+        config, snapshots, cvm_snapshot,
+        with_rentabilidade=getattr(args, "with_rentabilidade", False),
+        com_carteira=not getattr(args, "no_carteira", False),
     )
     print_summary(report)
     failures = render_outputs(config, report, send_email=args.send_email)
@@ -655,7 +1049,7 @@ def cmd_cvm(config: Config, args: argparse.Namespace) -> None:
     table = Table(title="Radar CVM por casa", title_style="bold")
     table.add_column("Casa")
     table.add_column("Registrados", justify="right")
-    table.add_column("Pre-operacionais", justify="right")
+    table.add_column("Pré-operacionais", justify="right")
     for house, funds in sorted(snapshot.by_house().items()):
         label = PLATFORMS[house].label if house in PLATFORMS else house
         table.add_row(
@@ -690,6 +1084,7 @@ def cmd_report(config: Config, args: argparse.Namespace) -> None:
     report = build_report(
         config, snapshots, latest_cvm_snapshot(config),
         with_rentabilidade=getattr(args, "with_rentabilidade", False),
+        com_carteira=not getattr(args, "no_carteira", False),
     )
     print_summary(report)
     render_outputs(config, report, send_email=getattr(args, "send_email", False))
@@ -729,12 +1124,19 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     ]
     # A planilha avulsa recebe os mesmos blocos da do `run`: um `export` que
     # sai sem captacao seria uma segunda versao do mesmo arquivo.
-    avulso = RunReport(generated_at=datetime.now(), snapshots=snapshots)
+    avulso = RunReport(
+        generated_at=datetime.now(), snapshots=snapshots,
+        suprimidos=dict(config.blocos_suprimidos),
+    )
+    attach_familias(config, avulso, com_carteira=not getattr(args, "no_carteira", False))
     attach_retail_flow(config, avulso)
-    attach_performance(config, avulso)
+    com_rentabilidade = getattr(args, "with_rentabilidade", False)
+    serie = attach_performance(
+        config, avulso, meses_da_serie=24 if com_rentabilidade else 13
+    )
     attach_custo_e_mandato(config, avulso)
-    if getattr(args, "with_rentabilidade", False):
-        attach_rentabilidade(config, avulso)
+    if com_rentabilidade:
+        attach_rentabilidade(config, avulso, serie)
     limpar_informe()  # ver build_report: a planilha nao le o informe
 
     path = render_spreadsheet(
@@ -747,15 +1149,20 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         retail_flow=avulso.retail_flow,
         grade=avulso.grade_opportunities,
         performance=avulso.performance,
+        performance_12m=avulso.performance_12m,
         rentabilidade=avulso.rentabilidade,
         custo=avulso.custo,
         mandato=avulso.mandato,
+        suprimidos=dict(config.blocos_suprimidos),
+        familias=avulso.familias,
+        distribuivel=avulso.distribuivel,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()
     console.print(
         f"[green]Planilha gerada:[/] {path}\n"
-        f"  {total} fundos de {len(snapshots)} plataforma(s)"
+        f"  {contagem(total, 'fundo', 'fundos')} de "
+        f"{contagem(len(snapshots), 'plataforma', 'plataformas')}"
         + (f", {len(cvm_snapshot.funds)} registros da CVM" if cvm_snapshot else "")
     )
 
@@ -771,7 +1178,7 @@ def cmd_insights(config: Config, args: argparse.Namespace) -> None:
     if not snapshots:
         console.print(
             "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
-            "competitiva e feita sobre o que ja foi coletado."
+            "competitiva é feita sobre o que já foi coletado."
         )
         return
 
@@ -781,7 +1188,9 @@ def cmd_insights(config: Config, args: argparse.Namespace) -> None:
         + ", ".join(d.isoformat() for d in datas)
     )
 
-    view = build_competitive_view(config, snapshots)
+    view = build_competitive_view(
+        config, snapshots, cobertos=_cobertos_dos_snapshots(config, snapshots)
+    )
     print_competitive_view(view)
 
     # `_positions`, `_reaches` e `_decisoes` carregam os objetos para quem chama
@@ -801,20 +1210,23 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
     snapshots = _snapshots_enriquecidos(config, args)
     if not snapshots:
         console.print(
-            "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a analise de "
-            "captacao parte da vitrine ja coletada."
+            "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a análise de "
+            "captação parte da vitrine já coletada."
         )
         return
 
     console.print(
-        f"[bold]Lendo o informe diario da CVM[/] para os fundos de vitrine "
+        f"[bold]Lendo o informe diário da CVM[/] para os fundos de vitrine "
         f"({args.months} meses)..."
     )
     resultado = build_retail_flow(
         config, snapshots, meses=args.months, force_download=args.force
     )
     oportunidades = (
-        build_grade_opportunities(snapshots, resultado["_fluxos"])
+        build_grade_opportunities(
+            snapshots, resultado["_fluxos"],
+            cobertos=_cobertos_dos_snapshots(config, snapshots),
+        )
         if resultado["available"] else {"available": False, "reason": resultado["reason"]}
     )
     print_retail_flow(resultado, oportunidades)
@@ -836,20 +1248,32 @@ def cmd_performance(config: Config, args: argparse.Namespace) -> None:
     if not snapshots:
         console.print(
             "[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes - a leitura "
-            "de rentabilidade parte da vitrine ja coletada."
+            "de rentabilidade parte da vitrine já coletada."
         )
         return
 
     console.print(
-        f"[bold]Lendo o informe diario da CVM[/] para o universo inteiro "
-        f"({args.months} meses) - a mediana de referencia precisa do mercado, "
-        "nao so da vitrine..."
+        f"[bold]Lendo o informe diário da CVM[/] para o universo inteiro "
+        f"({args.months} meses) - a mediana de referência precisa do mercado, "
+        "não só da vitrine..."
     )
     resultado = build_performance(
         config, snapshots, meses=args.months, force_download=args.force
     )
     print_performance(resultado)
-    _talvez_json(args, resultado)
+    # A mesma leitura em 12 meses, sobre a serie mensal: janela curta comprime
+    # a dispersao, e e nos 12 meses que o fundo atrasado aparece.
+    serie = montar_serie_mensal(config, 13)
+    doze = (
+        build_performance_mensal(config, snapshots, serie, meses=12)
+        if serie is not None else None
+    )
+    if doze is not None:
+        print_performance(doze)
+    _talvez_json(args, resultado, payload={
+        "3_meses": _sem_privados(resultado),
+        "12_meses": _sem_privados(doze) if doze else None,
+    })
 
 
 def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
@@ -860,14 +1284,14 @@ def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
         return
 
     console.print(
-        f"[bold]Montando a serie mensal[/] de ate {args.months} competencias. "
-        "Competencia ja resumida vem do cache em data/cache/serie/; a corrente e "
+        f"[bold]Montando a série mensal[/] de até {args.months} competências. "
+        "Competência já resumida vem do cache em data/cache/serie/; a corrente é "
         "sempre refeita."
     )
 
     def progresso(yyyymm: str, quantos: int | None) -> None:
         if quantos is None:
-            console.print(f"  [yellow]{yyyymm}: indisponivel[/]")
+            console.print(f"  [yellow]{yyyymm}: indisponível[/]")
 
     resultado = build_rentabilidade(
         config, snapshots, meses=args.months,
@@ -875,6 +1299,44 @@ def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
     )
     print_rentabilidade(resultado)
     _talvez_json(args, resultado)
+
+
+def _cobertos_dos_snapshots(config: Config, snapshots: list[ShelfSnapshot]) -> set[str]:
+    """`_cobertos_na_vitrine` para os subcomandos que nao montam o RunReport."""
+    avulso = RunReport(
+        generated_at=datetime.now(), snapshots=snapshots,
+        suprimidos=dict(config.blocos_suprimidos),
+    )
+    attach_familias(config, avulso)
+    return _cobertos_na_vitrine(avulso)
+
+
+def cmd_familias(config: Config, args: argparse.Namespace) -> None:
+    """Familias de estrategia de uma gestora, ou a familia de um fundo.
+
+    Para cada estrategia: as versoes (master e espelhos), a liquidez de cada
+    uma, o perfil da carteira, e onde cada classe esta - nas vitrines
+    coletadas e na lista distribuivel.
+    """
+    config.ensure_dirs()
+    if not (config.market_dir / "mercado.csv").is_file():
+        warn_market_missing()
+        return
+    console.print("[bold]Montando o mapa de famílias[/] (cadastro, extrato e carteira da CVM)...")
+    mapa = MapaDeFamilias.carregar(config)
+    if mapa is None:
+        console.print(
+            "[yellow]Sem carteira mensal da CVM (CDA) em disco nem na origem[/] - "
+            "não há como montar famílias."
+        )
+        return
+    snapshots = carregar_snapshots(config)
+    if snapshots and enrich_snapshots(config, snapshots) is None:
+        warn_market_missing()
+    distribuivel = carregar_distribuivel(config, mapa)
+    relatorio = relatorio_de_familias(mapa, args.consulta, snapshots, distribuivel)
+    print_familias(relatorio)
+    _talvez_json(args, relatorio)
 
 
 def carregar_snapshots(
@@ -949,7 +1411,7 @@ def _talvez_json(
         encoding="utf-8",
     )
     console.print()
-    console.print(f"[green]Analise em JSON:[/] {destino}")
+    console.print(f"[green]Análise em JSON:[/] {destino}")
 
 
 def cmd_market(config: Config, args: argparse.Namespace) -> None:
@@ -960,7 +1422,7 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
     console.print("[bold]Importando a base de mercado (CVM)...[/]")
     if not local_dir and not args.skip_fees:
         console.print(
-            "  [dim]o extrato de informacoes tem ~100 MB; use --skip-fees para pular[/]"
+            "  [dim]o extrato de informações tem ~100 MB; use --skip-fees para pular[/]"
         )
 
     database, paths = run_import(
@@ -971,8 +1433,8 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
         console.print(f"  [dim]{_short(note)}[/]")
 
     if not paths:
-        console.print("[red]Nenhuma fonte respondeu - a base nao foi gerada.[/]")
-        console.print("Rode `python -m shelf_monitor doctor` para ver o que esta bloqueado.")
+        console.print("[red]Nenhuma fonte respondeu - a base não foi gerada.[/]")
+        console.print("Rode `python -m shelf_monitor doctor` para ver o que está bloqueado.")
         return
 
     counts = database.counts()
@@ -982,7 +1444,7 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
     for label, key in (
         ("Fundos", "fundos"),
         ("  adaptados a RCVM 175", "fundos_adaptados"),
-        ("  nao adaptados", "fundos_nao_adaptados"),
+        ("  não adaptados", "fundos_nao_adaptados"),
         ("Classes", "classes"),
         ("Subclasses", "subclasses"),
         ("Classes com taxa", "classes_com_taxa"),
@@ -995,7 +1457,7 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
         # Coluna nova no arquivo da CVM: a importacao seguiu, mas o dado esta
         # sendo descartado ate alguem mapea-lo.
         console.print()
-        console.print("[yellow]Colunas novas na origem, ainda nao mapeadas:[/]")
+        console.print("[yellow]Colunas novas na origem, ainda não mapeadas:[/]")
         for table_name, columns in database.unknown_columns.items():
             console.print(f"  {table_name}: {', '.join(columns)}")
 
@@ -1015,12 +1477,12 @@ def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
     platform_ids = args.platforms or list(PLATFORMS)
     console.print(
         "[bold]Diagnosticando as fontes de prateleira...[/]\n"
-        "  [dim]cada resposta e gravada em data/cache/debug/ para inspecao[/]"
+        "  [dim]cada resposta é gravada em data/cache/debug/ para inspeção[/]"
     )
     if args.browser:
         console.print(
             "  [dim]modo navegador: abre cada lista num Chromium real e grava "
-            "HTML renderizado, requisicoes e screenshot (leva ~1 min por site)[/]"
+            "HTML renderizado, requisições e screenshot (leva ~1 min por site)[/]"
         )
 
     probes = diagnose.run(config, platform_ids, browser=args.browser)
@@ -1032,7 +1494,7 @@ def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
     for probe in probes:
         table.add_row(
             probe.source,
-            "[green]sim[/]" if probe.ok else "[red]nao[/]",
+            "[green]sim[/]" if probe.ok else "[red]não[/]",
             _short(probe.detail, 110),
         )
     console.print()
@@ -1042,15 +1504,15 @@ def cmd_diagnose(config: Config, args: argparse.Namespace) -> None:
     console.print()
     if failing:
         console.print(
-            f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado util.[/]"
+            f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado útil.[/]"
         )
     console.print(
-        f"Evidencias em [bold]{config.cache_dir / 'debug'}[/] - "
-        "o relatorio consolidado esta em diagnostico.json."
+        f"Evidências em [bold]{config.cache_dir / 'debug'}[/] - "
+        "o relatório consolidado está em diagnostico.json."
     )
     console.print(
-        "[dim]Uma pagina que responde 200 mas nao traz CNPJ nem tabela e casca de "
-        "SPA: os dados chegam por JavaScript e so o Playwright os alcanca.[/]"
+        "[dim]Uma página que responde 200 mas não traz CNPJ nem tabela é casca de "
+        "SPA: os dados chegam por JavaScript e só o Playwright os alcança.[/]"
     )
 
 
@@ -1062,7 +1524,7 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     # fonte inacessivel mandava procurar bloqueio de rede onde nao havia.
     sources: list[tuple[str, str, bool]] = [
         ("CVM (cadastro de fundos)", CVM_REGISTRO_ZIP_URL, False),
-        ("Open Finance (diretorio)", config.directory_url, False),
+        ("Open Finance (diretório)", config.directory_url, False),
     ]
     for platform_id, platform in PLATFORMS.items():
         if platform.shelf_url:
@@ -1085,7 +1547,7 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
             result = "[green]ok[/]"
         elif browser_covers:
             via_browser += 1
-            result = "[cyan]so navegador[/]"
+            result = "[cyan]só navegador[/]"
             detail = f"{detail} - esperado; a coleta usa Playwright"
         else:
             blocked += 1
@@ -1097,26 +1559,27 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
     if via_browser:
         console.print()
         console.print(
-            f"[cyan]{via_browser} prateleira(s) so abrem em navegador.[/] Nao e "
+            f"[cyan]{contagem(via_browser, 'prateleira só abre', 'prateleiras só abrem')} "
+            "em navegador.[/] Não é "
             "bloqueio: a CDN da casa barra cliente HTTP, e o Playwright coleta. "
-            "Exige o Chromium completo - o headless shell tambem leva 403."
+            "Exige o Chromium completo - o headless shell também leva 403."
         )
 
     if blocked:
         console.print()
         console.print(
-            f"[yellow]{blocked} de {len(sources)} fontes inacessiveis.[/] Se o detalhe "
-            "indica bloqueio da network policy, libere os dominios no ambiente antes "
+            f"[yellow]{blocked} de {len(sources)} fontes inacessíveis.[/] Se o detalhe "
+            "indica bloqueio da network policy, libere os domínios no ambiente antes "
             "de rodar `run`."
         )
 
     state, detail = market_base_status(config)
     if state == "ok":
-        console.print(f"[green]base de mercado disponivel[/] ({detail})")
+        console.print(f"[green]base de mercado disponível[/] ({detail})")
     else:
         console.print(
-            f"[yellow]base de mercado {state}[/] - {detail}. Sem ela a comparacao "
-            "perde a classificacao ANBIMA oficial e a particao varejo/restrito "
+            f"[yellow]base de mercado {state}[/] - {detail}. Sem ela a comparação "
+            "perde a classificação ANBIMA oficial e a partição varejo/restrito "
             "cai nos sinais fracos. Rode: python -m shelf_monitor market"
         )
 
@@ -1124,12 +1587,12 @@ def cmd_doctor(config: Config, args: argparse.Namespace) -> None:
         import playwright  # noqa: F401
 
         console.print(
-            "[green]playwright disponivel[/] (necessario para XP, BTG e Itau - "
-            "as tres listas so existem depois do JavaScript)"
+            "[green]playwright disponível[/] (necessário para XP, BTG e Itaú - "
+            "as três listas só existem depois do JavaScript)"
         )
     except ImportError:
         console.print(
-            "[yellow]playwright ausente[/] - XP, BTG e Itau so coletam via Open "
+            "[yellow]playwright ausente[/] - XP, BTG e Itaú só coletam via Open "
             "Finance. Instale com: pip install playwright"
         )
 
@@ -1156,7 +1619,7 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
         table.add_row(name, cnpj or "-", (cnpj or "")[:8] or "-", str(count))
     console.print(table)
     console.print(
-        "\n[dim]Adicione as raizes relevantes em WATCHLIST[casa].cnpj_roots "
+        "\n[dim]Adicione as raízes relevantes em WATCHLIST[casa].cnpj_roots "
         "(shelf_monitor/config.py).[/]"
     )
 
@@ -1170,7 +1633,7 @@ def print_probes(probes: list) -> None:
     for probe in probes:
         table.add_row(
             probe.source,
-            "[green]sim[/]" if probe.ok else "[red]nao[/]",
+            "[green]sim[/]" if probe.ok else "[red]não[/]",
             _short(probe.detail, 160),
         )
     console.print()
@@ -1181,10 +1644,41 @@ def print_probes(probes: list) -> None:
     console.print()
 
 
+_ROTULO_DA_FONTE = {"fnet": "Fundos.NET", "inf_diario": "INF_DIARIO"}
+
+
+def _fluxo_de_etf(
+    config: Config, fonte: str, months: int = 3, force: bool = False, catalog: dict | None = None
+):
+    """(catalogo, fluxos semanais, resumo por categoria) pela fonte ja resolvida.
+
+    Pelo Fundos.NET, a janela e a mesma do INF_DIARIO: os ultimos `months`
+    meses, o corrente incluso - o disco tem mais (a pagina do mes guarda 13).
+    """
+    if fonte == "fnet":
+        console.print("[bold]Agregando o fluxo a partir dos informes diários do Fundos.NET...[/]")
+        catalog = catalog if catalog is not None else build_etf_catalog(config)
+        inicio = min(get_recent_months(months))
+        informes = [
+            i for i in fundosnet.read_fnet_csvs(config) if i.data and f"{i.data:%Y%m}" >= inicio
+        ]
+        records = fundosnet.records_from_informes(informes)
+        if not records:
+            console.print(
+                "[yellow]Nenhum informe coletado em data/etf/fnet/. Rode "
+                "`etf --collect-sources fnet` (depois de `etf --probe-sources`).[/]"
+            )
+        weekly_flows = aggregate_etf_weekly_flows(catalog, records)
+        return catalog, weekly_flows, aggregate_category_weekly_flows(weekly_flows)
+    console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {months} meses)...[/]")
+    return run_etf_flow_pipeline(config, months_count=months, force_download=force)
+
+
 def cmd_etf(config: Config, args: argparse.Namespace) -> None:
     """Monitora os ETFs registrados na CVM: catálogo completo (todas as
-    categorias, incluindo Renda Fixa) + a captação semanal que a fonte
-    disponível de fato cobre.
+    categorias, incluindo Renda Fixa), a captação mês a mês (captação e
+    resgates do informe diário do Fundos.NET, conferidos contra a diferença de
+    PL) e o detalhe semanal que a fonte disponível de fato cobre.
     """
     config.ensure_dirs()
 
@@ -1208,30 +1702,26 @@ def cmd_etf(config: Config, args: argparse.Namespace) -> None:
             console.print(f"  [{style}]{name}[/]: {info}")
         console.print()
 
-    if args.flow_source == "fnet":
-        console.print("[bold]Agregando o fluxo a partir dos informes diários do Fundos.NET...[/]")
-        catalog = build_etf_catalog(config)
-        records = fundosnet.records_from_informes(fundosnet.read_fnet_csvs(config))
-        if not records:
-            console.print(
-                "[yellow]Nenhum informe coletado em data/etf/fnet/. Rode "
-                "`etf --collect-sources fnet` (depois de `etf --probe-sources`).[/]"
-            )
-        weekly_flows = aggregate_etf_weekly_flows(catalog, records)
-        category_summaries = aggregate_category_weekly_flows(weekly_flows)
-    else:
-        console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {args.months} meses)...[/]")
-        catalog, weekly_flows, category_summaries = run_etf_flow_pipeline(
-            config, months_count=args.months, force_download=args.force
-        )
+    # O Fundos.NET antes de tudo: o fluxo semanal e a captacao mes a mes saem
+    # dele (a pagina de cada mes, com captacao, resgates e PL de todo dia).
+    catalogo = build_etf_catalog(config)
+    if not args.no_fnet_monthly:
+        _coletar_fundosnet(config, catalogo)
+    fonte, motivo = resolver_fonte_do_fluxo(config, args.flow_source)
+    catalog, weekly_flows, category_summaries = _fluxo_de_etf(
+        config, fonte, months=args.months, force=args.force, catalog=catalogo
+    )
+    _tickers_de_etf(config, catalog, weekly_flows)
     coverage = flow_coverage(catalog, weekly_flows)
+    if fonte == "inf_diario":
+        avisar_fluxo_de_feeder(motivo)
 
     # O catálogo sai sempre - é a resposta a "o monitor enxerga todos os
     # ETFs?" - mesmo quando a captação semanal (fonte à parte, com cobertura
     # própria) não tem nada a mostrar.
     print_etf_summary(
         weekly_flows, category_summaries, catalog, coverage=coverage,
-        source_label="Fundos.NET" if args.flow_source == "fnet" else "INF_DIARIO",
+        source_label=_ROTULO_DA_FONTE[fonte],
     )
 
     # PL mensal do balancete de FIE: a única fonte medida que alcança o ETF em
@@ -1241,20 +1731,40 @@ def cmd_etf(config: Config, args: argparse.Namespace) -> None:
         config, catalog, get_recent_months(args.months + 1), force_download=args.force
     )
     print_etf_pl(pl_series, pl_cov, pl_missing)
+    # Quem lidera cada mercado de ETF e onde a XP compete: o PL do balancete,
+    # segmentado pelo que cada ETF replica, com cotistas e fluxo do Fundos.NET.
+    competicao = _competicao_de_etf(config, catalog, pl_series)
+    # A captação mês a mês: o monitoramento de fluxo de ETF, com as mesmas
+    # visões da competição (gestoras, segmentos, oportunidades e defesa, ETF).
+    captacao = _captacao_mensal_de_etf(config, catalog, coletar=False, anbima=args.anbima)
 
     if args.export or args.output:
-        xlsx_path = Path(args.output) if args.output else (config.reports_dir / "etf_captacao_semanal.xlsx")
+        xlsx_path = Path(args.output) if args.output else (config.reports_dir / ETF_PLANILHA)
         csv_path = config.reports_dir / "etf_weekly_flow.csv"
 
         saved_xlsx = export_etf_excel(
-            weekly_flows, category_summaries, catalog, xlsx_path, pl_series=pl_series
+            weekly_flows, category_summaries, catalog, xlsx_path, pl_series=pl_series,
+            fonte=fonte, competicao=competicao, captacao=captacao,
         )
         saved_csv = export_etf_csv(weekly_flows, csv_path)
+        digest_md = digest_html = captacao_md = captacao_html = captacao_csv = None
+        if captacao.get("available"):
+            captacao_csv = export_captacao_csv(captacao, config.reports_dir / "etf_captacao_mensal.csv")
+            captacao_md, captacao_html = write_etf_captacao(config, captacao)
+        if competicao.get("available"):
+            digest_md, digest_html = write_etf_digest(config, competicao)
 
         console.print()
         console.print("[green]Arquivos exportados com sucesso:[/]")
-        console.print(f"  Planilha Excel (catálogo completo + fluxo): {saved_xlsx}")
-        console.print(f"  Arquivo CSV (fluxo semanal):                {saved_csv}")
+        console.print(f"  Planilha Excel (captação mensal, competição e catálogo): {saved_xlsx}")
+        if captacao_html:
+            console.print(f"  Captação de ETF mês a mês (html e markdown):            {captacao_html}")
+            console.print(f"                                                          {captacao_md}")
+            console.print(f"  Arquivo CSV (captação mensal por ETF):                  {captacao_csv}")
+        console.print(f"  Arquivo CSV (fluxo semanal):                            {saved_csv}")
+        if digest_html:
+            console.print(f"  Competição em ETFs (html e markdown):                   {digest_html}")
+            console.print(f"                                                          {digest_md}")
 
 
 def main() -> None:
@@ -1265,7 +1775,7 @@ def main() -> None:
     common.add_argument(
         "--data-dir",
         default=argparse.SUPPRESS,
-        help="Diretorio de dados (default: ./data)",
+        help="Diretório de dados (default: ./data)",
     )
 
     parser = argparse.ArgumentParser(
@@ -1280,8 +1790,18 @@ def main() -> None:
             "--first-source-only",
             action="store_true",
             help=(
-                "Parar na primeira fonte util de cada casa, em vez de unir todas "
-                "(mais rapido, cobertura menor)"
+                "Parar na primeira fonte útil de cada casa, em vez de unir todas "
+                "(mais rápido, cobertura menor)"
+            ),
+        )
+
+    def add_carteira_arg(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument(
+            "--no-carteira",
+            action="store_true",
+            help=(
+                "Não montar o mapa de famílias (carteira mensal da CVM): os gaps "
+                "voltam a ser medidos CNPJ contra CNPJ, sem espelho nem equivalência"
             ),
         )
 
@@ -1291,20 +1811,20 @@ def main() -> None:
             dest="platforms",
             action="append",
             choices=list(PLATFORMS),
-            help="Plataforma a processar (repetivel; default: todas)",
+            help="Plataforma a processar (repetível; default: todas)",
         )
 
-    run_parser = subparsers.add_parser("run", help="Coleta completa + relatorios", parents=[common])
+    run_parser = subparsers.add_parser("run", help="Coleta completa + relatórios", parents=[common])
     add_platform_arg(run_parser)
     add_collect_args(run_parser)
-    run_parser.add_argument("--skip-cvm", action="store_true", help="Nao coletar a CVM")
+    run_parser.add_argument("--skip-cvm", action="store_true", help="Não coletar a CVM")
     run_parser.add_argument(
         "--no-market",
         action="store_true",
-        help="Nao importar a base de mercado quando ela faltar (sai sem gestora oficial)",
+        help="Não importar a base de mercado quando ela faltar (sai sem gestora oficial)",
     )
     run_parser.add_argument(
-        "--git-commit", action="store_true", help="Commitar snapshots e relatorios"
+        "--git-commit", action="store_true", help="Commitar snapshots e relatórios"
     )
     run_parser.add_argument(
         "--send-email",
@@ -1315,20 +1835,21 @@ def main() -> None:
         "--with-etf",
         action="store_true",
         help=(
-            "Tambem catalogar ETFs (todas as categorias, incl. Renda Fixa) e "
-            "analisar fluxo semanal - opt-in: baixa ate 3 meses de INF_DIARIO "
-            "alem da coleta normal"
+            "Também catalogar ETFs (todas as categorias, incl. Renda Fixa) e "
+            "analisar fluxo semanal - opt-in: baixa até 3 meses de INF_DIARIO "
+            "além da coleta normal"
         ),
     )
     run_parser.add_argument(
         "--with-rentabilidade",
         action="store_true",
         help=(
-            "Tambem calcular o retorno de cada fundo em 1m/3m/YTD/12m/24m - "
-            "opt-in: a primeira montagem le ate 24 competencias do INF_DIARIO "
+            "Também calcular o retorno de cada fundo em 1m/3m/YTD/12m/24m - "
+            "opt-in: a primeira montagem lê até 24 competências do INF_DIARIO "
             "(~2,5 min e ~260 MB); depois vem do cache em data/cache/serie"
         ),
     )
+    add_carteira_arg(run_parser)
     run_parser.set_defaults(func=cmd_run)
 
     collect_parser = subparsers.add_parser("collect", help="Coletar prateleiras", parents=[common])
@@ -1344,7 +1865,7 @@ def main() -> None:
     add_platform_arg(diff_parser)
     diff_parser.set_defaults(func=cmd_diff)
 
-    report_parser = subparsers.add_parser("report", help="Re-renderizar os relatorios", parents=[common])
+    report_parser = subparsers.add_parser("report", help="Re-renderizar os relatórios", parents=[common])
     add_platform_arg(report_parser)
     report_parser.add_argument(
         "--send-email", action="store_true", help="Enviar o digest por SMTP"
@@ -1352,8 +1873,9 @@ def main() -> None:
     report_parser.add_argument(
         "--with-rentabilidade",
         action="store_true",
-        help="Tambem calcular o retorno por fundo em janelas (ver `run --help`)",
+        help="Também calcular o retorno por fundo em janelas (ver `run --help`)",
     )
+    add_carteira_arg(report_parser)
     report_parser.set_defaults(func=cmd_report)
 
     export_parser = subparsers.add_parser(
@@ -1364,44 +1886,62 @@ def main() -> None:
     export_parser.add_argument(
         "--collect",
         action="store_true",
-        help="Coletar agora em vez de usar os ultimos snapshots salvos",
+        help="Coletar agora em vez de usar os últimos snapshots salvos",
     )
-    export_parser.add_argument("--skip-cvm", action="store_true", help="Nao incluir a CVM")
+    export_parser.add_argument("--skip-cvm", action="store_true", help="Não incluir a CVM")
     export_parser.add_argument("-o", "--output", help="Caminho do arquivo .xlsx")
     export_parser.add_argument(
         "--with-rentabilidade",
         action="store_true",
-        help="Tambem incluir a aba de retorno por fundo (ver `run --help`)",
+        help="Também incluir a aba de retorno por fundo (ver `run --help`)",
     )
+    add_carteira_arg(export_parser)
     export_parser.set_defaults(func=cmd_export)
+
+    familias_parser = subparsers.add_parser(
+        "familias",
+        help=(
+            "Famílias de estratégia de uma gestora (master, espelhos, liquidez e "
+            "carteira) e onde cada uma está"
+        ),
+        parents=[common],
+    )
+    familias_parser.add_argument(
+        "consulta",
+        help="Nome (ou parte) da gestora, CNPJ da gestora ou CNPJ de um fundo",
+    )
+    familias_parser.add_argument(
+        "--json", help="Também gravar o resultado neste caminho (.json)"
+    )
+    familias_parser.set_defaults(func=cmd_familias)
 
     insights_parser = subparsers.add_parser(
         "insights",
-        help="Leitura competitiva das vitrines: posicionamento, gestoras, momentum e decisoes",
+        help="Leitura competitiva das vitrines: posicionamento, gestoras, momentum e decisões",
         parents=[common],
     )
     add_platform_arg(insights_parser)
     insights_parser.add_argument(
-        "--json", help="Tambem gravar a visao completa neste caminho (.json)"
+        "--json", help="Também gravar a visão completa neste caminho (.json)"
     )
     insights_parser.set_defaults(func=cmd_insights)
 
     captacao_parser = subparsers.add_parser(
         "captacao",
-        help="Captacao de varejo dos fundos de vitrine e oportunidades de grade",
+        help="Captação de varejo dos fundos de vitrine e oportunidades de grade",
         parents=[common],
     )
     add_platform_arg(captacao_parser)
     captacao_parser.add_argument(
         "--months", type=int, default=3,
-        help="Meses de informe diario a ler (default: 3)",
+        help="Meses de informe diário a ler (default: 3)",
     )
     captacao_parser.add_argument(
         "--force", action="store_true",
-        help="Forcar re-download dos informes mesmo com cache",
+        help="Forçar re-download dos informes mesmo com cache",
     )
     captacao_parser.add_argument(
-        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+        "--json", help="Também gravar a análise completa neste caminho (.json)"
     )
     captacao_parser.set_defaults(func=cmd_captacao)
 
@@ -1413,14 +1953,14 @@ def main() -> None:
     add_platform_arg(performance_parser)
     performance_parser.add_argument(
         "--months", type=int, default=3,
-        help="Meses de informe diario a ler (default: 3)",
+        help="Meses de informe diário a ler (default: 3)",
     )
     performance_parser.add_argument(
         "--force", action="store_true",
-        help="Forcar re-download dos informes mesmo com cache",
+        help="Forçar re-download dos informes mesmo com cache",
     )
     performance_parser.add_argument(
-        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+        "--json", help="Também gravar a análise completa neste caminho (.json)"
     )
     performance_parser.set_defaults(func=cmd_performance)
 
@@ -1432,26 +1972,26 @@ def main() -> None:
     add_platform_arg(rent_parser)
     rent_parser.add_argument(
         "--months", type=int, default=24,
-        help="Competencias do informe a considerar (default: 24)",
+        help="Competências do informe a considerar (default: 24)",
     )
     rent_parser.add_argument(
         "--force", action="store_true",
         help="Refazer o resumo mensal mesmo com cache",
     )
     rent_parser.add_argument(
-        "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+        "--json", help="Também gravar a análise completa neste caminho (.json)"
     )
     rent_parser.set_defaults(func=cmd_rentabilidade)
 
     for nome, ajuda, funcao in (
-        ("custo", "Custo da vitrine relativo a categoria de cada fundo", cmd_custo),
+        ("custo", "Custo da vitrine relativo à categoria de cada fundo", cmd_custo),
         ("mandato", "Mandato declarado das vitrines (o que o regulamento autoriza)",
          cmd_mandato),
     ):
         parser_extra = subparsers.add_parser(nome, help=ajuda, parents=[common])
         add_platform_arg(parser_extra)
         parser_extra.add_argument(
-            "--json", help="Tambem gravar a analise completa neste caminho (.json)"
+            "--json", help="Também gravar a análise completa neste caminho (.json)"
         )
         parser_extra.set_defaults(func=funcao)
 
@@ -1463,19 +2003,19 @@ def main() -> None:
     market_parser.add_argument(
         "--skip-fees",
         action="store_true",
-        help="Nao baixar o extrato de informacoes (~100 MB) - base sem taxas",
+        help="Não baixar o extrato de informações (~100 MB) - base sem taxas",
     )
     market_parser.add_argument(
-        "--force", action="store_true", help="Rebaixar mesmo sem mudanca na origem"
+        "--force", action="store_true", help="Rebaixar mesmo sem mudança na origem"
     )
     market_parser.add_argument(
-        "--local-dir", help="Usar arquivos ja baixados neste diretorio"
+        "--local-dir", help="Usar arquivos já baixados neste diretório"
     )
     market_parser.set_defaults(func=cmd_market)
 
     diagnose_parser = subparsers.add_parser(
         "diagnose",
-        help="Sondar as fontes de prateleira e gravar as respostas para analise",
+        help="Sondar as fontes de prateleira e gravar as respostas para análise",
         parents=[common],
     )
     add_platform_arg(diagnose_parser)
@@ -1484,12 +2024,12 @@ def main() -> None:
         action="store_true",
         help=(
             "Abrir cada lista num Chromium real e gravar HTML renderizado, "
-            "requisicoes XHR e screenshot (lento, mas e o que ve a lista de fato)"
+            "requisições XHR e screenshot (lento, mas é o que vê a lista de fato)"
         ),
     )
     diagnose_parser.set_defaults(func=cmd_diagnose)
 
-    doctor_parser = subparsers.add_parser("doctor", help="Testar acesso as fontes", parents=[common])
+    doctor_parser = subparsers.add_parser("doctor", help="Testar acesso às fontes", parents=[common])
     doctor_parser.set_defaults(func=cmd_doctor)
 
     discover_parser = subparsers.add_parser("watchlist-discover", help="Listar gestores da CVM que casam com um termo", parents=[common])
@@ -1500,7 +2040,7 @@ def main() -> None:
 
     etf_parser = subparsers.add_parser(
         "etf",
-        help="Monitorar a captação semanal de todos os ETFs cadastrados na CVM",
+        help="Monitorar a captação mês a mês (e o detalhe semanal) de todos os ETFs cadastrados na CVM",
         parents=[common],
     )
     etf_parser.add_argument(
@@ -1527,27 +2067,50 @@ def main() -> None:
         action="store_true",
         help=(
             "Sondar as fontes que cobrem ETF de verdade (Fundos.NET, B3 listados, "
-            "COTAHIST) e gravar a evidencia bruta em data/cache/debug/etf-sources/"
+            "COTAHIST) e gravar a evidência bruta em data/cache/debug/etf-sources/"
         ),
     )
     etf_parser.add_argument(
         "--collect-sources",
         metavar="FONTES",
         help=(
-            "Coletar a foto do dia das fontes indicadas, separadas por virgula: "
-            "b3 (tickers/CNPJ), fnet (informe diario), cotahist (cotacao/liquidez)"
+            "Coletar a foto do dia das fontes indicadas, separadas por vírgula: "
+            "b3 (tickers/CNPJ), fnet (informe diário), fnet_mensal (fechamentos "
+            "mensais), fnet_diario (o informe de cada mês fechado: captação e "
+            "resgates de todo dia), fnet_aberto (o do mês em aberto), cotahist "
+            "(cotação/liquidez)"
         ),
     )
     etf_parser.add_argument(
         "--flow-source",
-        choices=["inf_diario", "fnet"],
-        default="inf_diario",
+        choices=["auto", "inf_diario", "fnet"],
+        default="auto",
         help=(
-            "De onde vem o fluxo semanal: inf_diario (CVM; so cobre feeders) ou "
-            "fnet (informes diarios coletados do Fundos.NET, que cobrem FIIM)"
+            "De onde vem o fluxo semanal: fnet (informes diários coletados do "
+            "Fundos.NET, que cobrem FIIM) ou inf_diario (CVM; só cobre feeders). "
+            "auto (padrão): fnet quando há série em disco, senão inf_diario com aviso"
+        ),
+    )
+    etf_parser.add_argument(
+        "--anbima",
+        metavar="CAMINHO",
+        help=(
+            "Anexo do boletim de fundos da ANBIMA (arquivo .xlsx, ou a pasta onde "
+            "ficam os anexos) para conferir a captação mês a mês; sem ele, usa o "
+            "mais recente de data/etf/anbima/, se houver"
+        ),
+    )
+    etf_parser.add_argument(
+        "--no-fnet-monthly",
+        action="store_true",
+        help=(
+            "Não baixar do Fundos.NET os fechamentos mensais nem o informe do mês que "
+            "faltam em disco: a captação mês a mês usa só o que já foi coletado"
         ),
     )
     etf_parser.set_defaults(func=cmd_etf)
+
+    registrar_etf_bruto(subparsers, common)
 
     args = parser.parse_args()
     if not getattr(args, "func", None):
@@ -1557,7 +2120,7 @@ def main() -> None:
     config = Config(data_dir=getattr(args, "data_dir", None))
     errors = config.validate()
     if errors:
-        console.print("[red]Erros de configuracao:[/]")
+        console.print("[red]Erros de configuração:[/]")
         for error in errors:
             console.print(f"  - {error}")
         sys.exit(1)

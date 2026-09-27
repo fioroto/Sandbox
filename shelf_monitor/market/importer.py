@@ -105,7 +105,7 @@ def import_market(
             fund.legacy_fields = extra.get(fund.cnpj, {})
             database.funds.append(fund)
             added += 1
-        database.notes.append(f"cad_fi: {added} fundos nao adaptados adicionados")
+        database.notes.append(f"cad_fi: {added} fundos não adaptados adicionados")
 
     # --- taxas ---------------------------------------------------------------
     if not skip_fees:
@@ -121,7 +121,7 @@ def import_market(
         # seria marcado como nao adaptado - uma foto errada do mercado, pior do
         # que a base da execucao anterior.
         database.notes.append(
-            "cadastro principal indisponivel - a base anterior foi preservada"
+            "cadastro principal indisponível - a base anterior foi preservada"
         )
         database.incomplete = True
 

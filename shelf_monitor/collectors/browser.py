@@ -85,11 +85,21 @@ _CVM_CODE_KEYS = ("codigocvm", "cdcvm", "codcvm", "codigofundocvm", "cvmcode")
 _CATEGORY_KEYS = ("category", "categoria", "classe", "class", "anbimacategory", "tipo")
 _MANAGER_KEYS = ("manager", "gestor", "gestora", "fundmanager", "assetmanager")
 _ADMIN_KEYS = ("admin", "administrador", "administrator")
+# `minimalinitialinvestment` e `administrationrate` sao os nomes do XHR da lista
+# da XP (api.xpi.com.br/investment-funds/yield-portal). Sem eles, medido em
+# 2026-09-23, nenhum dos 623 fundos do XHR tinha minimo nem taxa lidos da
+# vitrine - e o relatorio concluiu, a partir do minimo institucional do Open
+# Finance, que a XP "nao tinha porta de entrada de varejo", quando 78% da lista
+# dela tinha minimo de ate R$ 1.000.
 _MIN_KEYS = (
     "minimuminitialapplication", "minimumamount", "aplicacaominima",
     "valorminimo", "minimoinicial", "initialapplication", "minimumapplication",
+    "minimalinitialinvestment",
 )
-_ADMIN_FEE_KEYS = ("adminfee", "taxaadministracao", "administrationfee", "maxadminfee")
+_ADMIN_FEE_KEYS = (
+    "adminfee", "taxaadministracao", "administrationfee", "maxadminfee",
+    "administrationrate",
+)
 _PERF_FEE_KEYS = ("performancefee", "taxaperformance")
 _QUOTATION_KEYS = ("quotationdays", "diascotizacao", "cotizacaoresgate", "conversiondays")
 _PAYMENT_KEYS = ("paymentdays", "diasliquidacao", "liquidacaoresgate", "settlementdays")
@@ -668,7 +678,7 @@ def render_page(
     if sync_playwright is None:
         detail = f": {_PLAYWRIGHT_ERROR}" if _PLAYWRIGHT_ERROR else ""
         raise SourceUnavailable(
-            f"playwright nao instalado ou com erro: pip install playwright{detail}"
+            f"playwright não instalado ou com erro: pip install playwright{detail}"
         )
 
     responses: list[CapturedResponse] = []
@@ -741,7 +751,7 @@ def render_page(
                 if "Executable doesn't exist" in str(exc):
                     raise SourceUnavailable(
                         "Chromium do Playwright ausente. Rode `playwright install "
-                        "chromium`, ou aponte um binario ja instalado em "
+                        "chromium`, ou aponte um binário já instalado em "
                         "SHELF_CHROMIUM_PATH."
                     ) from exc
                 raise
@@ -822,7 +832,7 @@ def render_page(
     except Exception as exc:  # noqa: BLE001
         # As excecoes do Playwright trazem varias linhas de contexto do browser.
         detail = " ".join(str(exc).split())[:160]
-        raise SourceUnavailable(f"navegacao falhou em {url}: {detail}") from exc
+        raise SourceUnavailable(f"navegação falhou em {url}: {detail}") from exc
 
     return BrowserCapture(
         url=url,
@@ -968,7 +978,7 @@ def collect_via_browser(
             f"{capture.json_responses} respostas JSON, "
             f"{len(capture.payloads)} payloads lidos, "
             f"{capture.content_stats.get('cnpjs', 0)} CNPJs na tela). "
-            "Rode `diagnose --browser` para gravar a evidencia."
+            "Rode `diagnose --browser` para gravar a evidência."
         )
 
     return offers, source_urls or [capture.final_url]

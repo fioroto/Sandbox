@@ -20,6 +20,7 @@ mesma doutrina do `diagnose` das prateleiras.
 from __future__ import annotations
 
 import json
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -28,8 +29,17 @@ from shelf_monitor.diagnose import Probe
 from shelf_monitor.http import SourceUnavailable
 from shelf_monitor.market import b3_funds, cotahist, fundosnet
 from shelf_monitor.market.etf import EtfMetadata
+from shelf_monitor.market.etf_captacao_mensal import (
+    FECHAMENTOS,
+    caminho_do_fechamento,
+    caminho_do_informe_do_mes,
+    caminho_do_informe_parcial,
+    fim_do_mes,
+    meses_fechados,
+)
 from shelf_monitor.market.etf_flow import read_etf_daily_records
-from shelf_monitor.normalize import name_slug
+from shelf_monitor.texto import contagem
+from shelf_monitor.normalize import name_slug, normalize_cnpj
 
 _MAX_SAVE = 4 * 1024 * 1024
 
@@ -93,6 +103,7 @@ def probe_inf_diario_fiim(config: Config, known: set[str]) -> Probe:
 
 
 def probe_b3(config: Config, known: set[str]) -> list[Probe]:
+    """A API de fundos listados responde para os dois tipos de ETF, e os CNPJs batem?"""
     probes: list[Probe] = []
     client = b3_funds.B3ListedFunds(config)
     try:
@@ -102,18 +113,28 @@ def probe_b3(config: Config, known: set[str]) -> list[Probe]:
         return probes
     probes.append(Probe("b3/portal", b3_funds.WARMUP_URL, True, "página de ETFs listados respondeu (cookies recebidos)"))
 
-    found = client.discover_etf_types(known)
-    etf_types = sorted(t for t, info in found.items() if info["cnpj_hits"] > 0)
-    evidence = _save(config, "b3-typefund.json", _json_bytes(found))
-    detail = f"{len(found)} tipos responderam à listagem; tipos com CNPJ no catálogo FIIM: {etf_types or 'nenhum'}"
-    if found and not etf_types:
-        detail += " - a listagem responde, mas nenhum CNPJ bateu: veja b3-typefund.json"
-    probes.append(
-        Probe(
-            "b3/typeFund", f"{b3_funds.FUNDS_CALL_URL}GetListedFundsSIG", bool(etf_types), detail, evidence,
-            {"etf_types": etf_types, "types": {str(k): v for k, v in found.items()}},
+    for type_name in b3_funds.ETF_TYPES:
+        try:
+            linhas = [r for r in client.list_funds(type_name, page_size=5, max_pages=1) if isinstance(r, dict)]
+            amostra = [
+                client.fund_detail(type_name, r["id"], r["acronym"])
+                for r in linhas[:3] if r.get("id") and r.get("acronym")
+            ]
+        except SourceUnavailable as exc:
+            probes.append(Probe(f"b3/{type_name}", f"{b3_funds.LISTED_URL}GetListFunds", False, str(exc)[:200]))
+            continue
+        amostra = [f for f in amostra if f is not None]
+        batem = sum(1 for f in amostra if f.cnpj in known)
+        evidencia = _save(config, f"b3-{type_name.lower()}.json", _json_bytes([f.to_dict() for f in amostra]))
+        probes.append(
+            Probe(
+                f"b3/{type_name}", f"{b3_funds.LISTED_URL}GetListFunds", bool(amostra),
+                f"{len(linhas)} fundos na primeira página; na amostra de {len(amostra)}, "
+                f"{batem} CNPJs no catálogo FIIM e tickers {[f.ticker for f in amostra]}",
+                evidencia,
+                {"amostra": [f.to_dict() for f in amostra]},
+            )
         )
-    )
     return probes
 
 
@@ -276,21 +297,70 @@ def match_informe_to_catalog(informe: fundosnet.InformeDiarioEtf, catalog: dict[
 
 
 def collect_b3(config: Config, catalog: dict[str, EtfMetadata], day: date) -> dict:
-    findings = _load_probe_findings(config).get("b3/typeFund", {})
-    etf_types = [int(t) for t in findings.get("etf_types") or []]
+    """Ticker e CNPJ de cada ETF listado na B3, de renda variavel e de renda fixa.
+
+    Grava `data/etf/tickers.csv` (so os ETFs que casam com o catalogo) e a foto
+    do dia em `data/etf/b3/`. O CNPJ do detalhe da B3 e o do fundo; quando ele
+    nao e o da classe no catalogo da CVM, o nome do fundo decide - a mesma regra
+    do informe do Fundos.NET.
+    """
     client = b3_funds.B3ListedFunds(config)
-    if not etf_types:
-        found = client.discover_etf_types(etf_cnpjs(catalog))
-        etf_types = sorted(t for t, info in found.items() if info["cnpj_hits"] > 0)
     funds: list[b3_funds.FundoListadoB3] = []
-    for type_id in etf_types:
-        funds.extend(client.funds_of_type(type_id))
+    por_tipo: dict[str, int] = {}
+    for type_name in b3_funds.ETF_TYPES:
+        antes = len(funds)
+        funds.extend(client.funds_of_type(type_name))
+        por_tipo[type_name] = len(funds) - antes
+    no_catalogo = []
+    for fund in funds:
+        cnpj = _cnpj_no_catalogo(fund, catalog)
+        if cnpj:
+            fund.cnpj = cnpj
+            no_catalogo.append(fund)
     snapshot = b3_funds.save_b3_snapshot(config, funds, day) if funds else None
-    rows = b3_funds.merge_tickers(b3_funds.read_tickers_csv(config.etf_tickers_path), funds, day)
-    if funds:
+    rows = b3_funds.merge_tickers(b3_funds.read_tickers_csv(config.etf_tickers_path), no_catalogo, day)
+    if no_catalogo:
         b3_funds.write_tickers_csv(config.etf_tickers_path, rows)
-    return {"etf_types": etf_types, "funds": len(funds), "snapshot": str(snapshot) if snapshot else None,
-            "tickers": sum(1 for r in rows if r.get("fonte") == "b3")}
+    return {
+        "por_tipo": por_tipo, "funds": len(funds), "no_catalogo": len(no_catalogo),
+        "snapshot": str(snapshot) if snapshot else None,
+        "tickers": sum(1 for r in rows if r.get("fonte") == "b3"),
+    }
+
+
+def _cnpj_no_catalogo(fund: b3_funds.FundoListadoB3, catalog: dict[str, EtfMetadata]) -> str | None:
+    """O CNPJ do catalogo para um fundo da B3: o dele, ou o do ETF de mesmo nome."""
+    if fund.cnpj and fund.cnpj in catalog:
+        return fund.cnpj
+    informe = fundosnet.InformeDiarioEtf(cnpj=None, fundo=fund.company_name)
+    return match_informe_to_catalog(informe, catalog)
+
+
+# Ticker muda pouco (entra ETF novo todo mes): a lista da B3 e refeita quando a
+# ultima coleta tem mais de 30 dias.
+VALIDADE_DOS_TICKERS = 30
+
+
+def tickers_desatualizados(config: Config, hoje: date) -> bool:
+    """Sem coleta da B3 em `tickers.csv`, ou com a mais recente ha mais de 30 dias."""
+    datas = []
+    for row in b3_funds.read_tickers_csv(config.etf_tickers_path):
+        if (row.get("fonte") or "").strip().lower() != "b3":
+            continue
+        try:
+            datas.append(date.fromisoformat((row.get("atualizado_em") or "")[:10]))
+        except ValueError:
+            continue
+    return not datas or (hoje - max(datas)).days > VALIDADE_DOS_TICKERS
+
+
+def tickers_do_arquivo(config: Config) -> dict[str, str]:
+    """CNPJ -> ticker de `tickers.csv`, na ordem de precedencia do catalogo."""
+    return {
+        normalize_cnpj(row.get("cnpj")): (row.get("ticker") or "").strip().upper()
+        for row in b3_funds.read_tickers_csv(config.etf_tickers_path)
+        if normalize_cnpj(row.get("cnpj")) and (row.get("ticker") or "").strip()
+    }
 
 
 def collect_fundosnet(config: Config, catalog: dict[str, EtfMetadata], day: date, days: int = 3) -> dict:
@@ -341,6 +411,293 @@ def collect_fundosnet(config: Config, catalog: dict[str, EtfMetadata], day: date
             "arquivo": str(path) if path else None, "tags_nao_mapeadas": unknown[:30]}
 
 
+# Data-base aceita ate 7 dias antes do fim do mes (o ultimo pregao pode cair
+# antes do dia 31) e entrega ate 7 dias depois: em 2026-09-24, parte dos ETFs
+# ainda nao tinha entregue o informe de 31/08 no dia 01/09.
+_JANELA_DO_FECHAMENTO = 7
+# Documentos tentados por fundo ate achar um informe utilizavel.
+_TENTATIVAS_POR_FUNDO = 3
+
+
+def collect_fechamentos_mensais(
+    config: Config,
+    catalog: dict[str, EtfMetadata],
+    day: date | None = None,
+    meses: list[str] | None = None,
+    force: bool = False,
+) -> dict:
+    """Fechamento de cada mes no Fundos.NET: o ultimo informe de cada ETF no mes.
+
+    Um documento por ETF por mes - cerca de 220, contra ~4.800 de um mes inteiro
+    de informes diarios. Dele saem o PL das pontas de cada mes, o documento de
+    partida da pagina do mes (`collect_informes_do_mes`) e, sem ela, a captacao
+    pela variacao de cotas entre dois fechamentos (`etf_captacao_mensal`). Mes ja gravado nao e baixado de
+    novo, e mes com a entrega ainda aberta nao e baixado: gravado pela metade,
+    viraria cache de um fechamento incompleto.
+    """
+    meses = meses or meses_fechados(day or date.today(), FECHAMENTOS)
+    resumo: dict = {"meses": {}, "documentos": 0}
+    client: fundosnet.FundosNetClient | None = None
+    for mes in meses:
+        path = caminho_do_fechamento(config, mes)
+        if path.exists() and not force:
+            resumo["meses"][mes] = "em disco"
+            continue
+        client = client or fundosnet.FundosNetClient(config)
+        informes, baixados = _fechamento_do_mes(config, client, catalog, fim_do_mes(mes))
+        resumo["documentos"] += baixados
+        if informes:
+            fundosnet.write_informes_csv(path, informes)
+        resumo["meses"][mes] = contagem(len(informes), "ETF", "ETFs")
+    return resumo
+
+
+def _tipos_de_etf(config: Config, client: fundosnet.FundosNetClient) -> list[tuple[int, int]]:
+    """(tipoFundo, tipo do documento de informe diario) de cada tipo de ETF."""
+    findings = _load_probe_findings(config)
+    try:
+        types = {k: v for k, v in client.fund_types().items() if "ETF" in k.upper()} or dict(fundosnet.ETF_FUND_TYPES)
+    except SourceUnavailable:
+        types = dict(fundosnet.ETF_FUND_TYPES)
+    return [
+        (
+            type_id,
+            int(findings.get(f"fundosnet/tipos-doc/{label}", {}).get("informe_diario_id")
+                or fundosnet.DOC_TYPE_INFORME_DIARIO),
+        )
+        for label, type_id in types.items()
+    ]
+
+
+def _fechamento_do_mes(
+    config: Config, client: fundosnet.FundosNetClient, catalog: dict[str, EtfMetadata], fim: date
+) -> tuple[list[fundosnet.InformeDiarioEtf], int]:
+    """(ultimo informe de cada ETF com data-base ate `fim`, documentos baixados).
+
+    Tenta os documentos de cada fundo do mais recente ao mais antigo - versao
+    ativa antes da inativa - e para no primeiro que da um informe utilizavel:
+    uma reapresentacao que o leitor nao entenda nao pode apagar o fundo do mes.
+    """
+    janela = timedelta(days=_JANELA_DO_FECHAMENTO)
+    por_fundo: dict[tuple[str, str], list[fundosnet.DocumentoFnet]] = {}
+    for type_id, doc_type_id in _tipos_de_etf(config, client):
+        for doc in client.search(type_id, doc_type_id=doc_type_id, start=fim - janela, end=fim + janela):
+            ref = doc.data_referencia
+            if ref is None or ref > fim or ref < fim - janela:
+                continue
+            por_fundo.setdefault((doc.cnpj_fundo or "", doc.fundo), []).append(doc)
+    melhor: dict[str, fundosnet.InformeDiarioEtf] = {}
+    baixados = 0
+    for docs in por_fundo.values():
+        docs.sort(key=lambda d: (d.data_referencia, (d.situacao or "") == "A", d.id), reverse=True)
+        for doc in docs[:_TENTATIVAS_POR_FUNDO]:
+            try:
+                content, _ = client.download(doc.id)
+            except SourceUnavailable:
+                continue
+            baixados += 1
+            achou = False
+            for informe in fundosnet.parse_informe_diario_xml(content, doc_id=doc.id, fundo=doc.fundo):
+                cnpj = match_informe_to_catalog(informe, catalog)
+                if cnpj is None:
+                    continue
+                informe.cnpj = cnpj
+                informe.data = informe.data or doc.data_referencia
+                if not informe.is_usable or not informe.data or informe.data > fim:
+                    continue
+                achou = True
+                atual = melhor.get(cnpj)
+                if atual is None or (informe.data, informe.doc_id or 0) > (atual.data, atual.doc_id or 0):
+                    melhor[cnpj] = informe
+            if achou:
+                break
+    return list(melhor.values()), baixados
+
+
+# Pausa entre paginas do Fundos.NET: a coleta do mes vai uma pagina por ETF, em
+# sequencia (~0,1 s cada, medido em 2026-09-25).
+_PAUSA_ENTRE_PAGINAS = 0.1
+# Paginas seguidas sem o informe que interrompem a coleta: o site saiu do ar ou
+# passou a responder outra coisa, e insistir so gera carga.
+_FALHAS_SEGUIDAS = 15
+
+
+def collect_informes_do_mes(
+    config: Config,
+    catalog: dict[str, EtfMetadata],
+    day: date | None = None,
+    meses: list[str] | None = None,
+    force: bool = False,
+) -> dict:
+    """O mes inteiro do informe diario de cada ETF: captacao, resgate, PL e cota
+    de todo dia, uma pagina do Fundos.NET por ETF (`fundosnet.parse_informe_do_mes_html`).
+
+    O documento de partida e o do fechamento do mes (`collect_fechamentos_mensais`,
+    ja em disco): a pagina dele traz o mes todo. Os meses sao os da visao mensal
+    mais o mes-base - o fechamento que so abre a janela nao precisa. Mes gravado
+    so busca de novo os ETFs que faltaram (pagina que falhou); `force` refaz.
+    """
+    meses = meses or meses_fechados(day or date.today(), FECHAMENTOS)[1:]
+    resumo: dict = {"meses": {}, "paginas": 0, "falhas": 0}
+    client: fundosnet.FundosNetClient | None = None
+    seguidas = 0
+    for mes in meses:
+        fechamento = caminho_do_fechamento(config, mes)
+        if not fechamento.exists():
+            resumo["meses"][mes] = "sem fechamento em disco"
+            continue
+        documentos = {
+            i.cnpj: i.doc_id for i in fundosnet.read_informes_csv(fechamento) if i.cnpj and i.doc_id
+        }
+        path = caminho_do_informe_do_mes(config, mes)
+        existentes = [] if force or not path.exists() else fundosnet.read_informes_csv(path)
+        feitos = {i.cnpj for i in existentes}
+        faltam = [cnpj for cnpj in documentos if cnpj not in feitos]
+        if not faltam:
+            resumo["meses"][mes] = "em disco"
+            continue
+        client = client or fundosnet.FundosNetClient(config)
+        novos: list[fundosnet.InformeDiarioEtf] = []
+        for cnpj in faltam:
+            if seguidas >= _FALHAS_SEGUIDAS:
+                break
+            try:
+                linhas = fundosnet.parse_informe_do_mes_html(
+                    client.exibir(documentos[cnpj]), doc_id=documentos[cnpj]
+                )
+            except SourceUnavailable:
+                linhas = []
+            resumo["paginas"] += 1
+            # A pagina e a do documento do fechamento deste ETF: o CNPJ que vale
+            # e o do catalogo, como no fechamento.
+            linhas = [linha for linha in linhas if linha.data and f"{linha.data:%Y%m}" == mes]
+            for linha in linhas:
+                linha.cnpj = cnpj
+            if linhas:
+                novos.extend(linhas)
+                seguidas = 0
+            else:
+                resumo["falhas"] += 1
+                seguidas += 1
+            time.sleep(_PAUSA_ENTRE_PAGINAS)
+        todos = existentes + novos
+        if novos:
+            fundosnet.write_informes_csv(path, todos)
+        resumo["meses"][mes] = f"{len({i.cnpj for i in todos})} de {contagem(len(documentos), 'ETF', 'ETFs')}"
+        if seguidas >= _FALHAS_SEGUIDAS:
+            resumo["interrompida"] = (
+                f"{_FALHAS_SEGUIDAS} páginas seguidas sem o informe em {mes}: "
+                "a coleta parou para não insistir"
+            )
+            break
+    return resumo
+
+
+# Entregas dos ultimos dias que dao o documento de partida do mes em aberto: o
+# informe sai no dia util seguinte a data-base, e a folga cobre feriado e
+# reapresentacao.
+_JANELA_DO_MES_ABERTO = 10
+
+
+def meses_abertos(hoje: date) -> list[str]:
+    """Os meses depois do ultimo fechado, ate o corrente (AAAAMM)."""
+    ultimo = meses_fechados(hoje, 1)[-1]
+    ano, mes = int(ultimo[:4]), int(ultimo[4:])
+    abertos: list[str] = []
+    while True:
+        ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+        competencia = f"{ano}{mes:02d}"
+        if competencia > f"{hoje:%Y%m}":
+            return abertos
+        abertos.append(competencia)
+
+
+def _gravado_em(path: Path, dia: date) -> bool:
+    return path.exists() and date.fromtimestamp(path.stat().st_mtime) == dia
+
+
+def collect_informes_do_mes_aberto(
+    config: Config,
+    catalog: dict[str, EtfMetadata],
+    day: date | None = None,
+    force: bool = False,
+) -> dict:
+    """O informe do mes que ainda nao fechou, ate o ultimo dia entregue.
+
+    Sem fechamento em disco, o documento de partida de cada ETF e o mais recente
+    que a busca do Fundos.NET devolve nos ultimos dias; a pagina dele traz o mes
+    ate ali, e o CNPJ da pagina liga ao catalogo. Grava a parte
+    (`<mes>-parcial.csv`) e refaz uma vez por dia: e o que leva o fluxo semanal
+    ao ultimo informe. O mes fechado sai de `collect_informes_do_mes`.
+    """
+    hoje = day or date.today()
+    abertos = meses_abertos(hoje)
+    resumo: dict = {"meses": {}, "paginas": 0, "falhas": 0}
+    pendentes = [m for m in abertos if force or not _gravado_em(caminho_do_informe_parcial(config, m), hoje)]
+    for mes in abertos:
+        if mes not in pendentes:
+            resumo["meses"][mes] = "em disco (hoje)"
+    if not pendentes:
+        return resumo
+    client = fundosnet.FundosNetClient(config)
+    inicio = max(
+        min(date(int(m[:4]), int(m[4:]), 1) for m in pendentes),
+        hoje - timedelta(days=_JANELA_DO_MES_ABERTO),
+    )
+    ultimo_doc: dict[tuple[str, str], fundosnet.DocumentoFnet] = {}
+    for type_id, doc_type_id in _tipos_de_etf(config, client):
+        for doc in client.search(type_id, doc_type_id=doc_type_id, start=inicio, end=hoje):
+            ref = doc.data_referencia
+            if ref is None or f"{ref:%Y%m}" not in pendentes:
+                continue
+            chave = (f"{ref:%Y%m}", doc.fundo)
+            atual = ultimo_doc.get(chave)
+            if atual is None or (ref, doc.id) > (atual.data_referencia, atual.id):
+                ultimo_doc[chave] = doc
+    por_mes: dict[str, dict[str, list[fundosnet.InformeDiarioEtf]]] = {m: {} for m in pendentes}
+    seguidas = 0
+    for (mes, _fundo), doc in sorted(ultimo_doc.items(), key=lambda kv: kv[1].id):
+        if seguidas >= _FALHAS_SEGUIDAS:
+            resumo["interrompida"] = (
+                f"{_FALHAS_SEGUIDAS} páginas seguidas sem o informe em {mes}: "
+                "a coleta parou para não insistir"
+            )
+            break
+        try:
+            linhas = fundosnet.parse_informe_do_mes_html(client.exibir(doc.id), doc_id=doc.id)
+        except SourceUnavailable:
+            linhas = []
+        resumo["paginas"] += 1
+        time.sleep(_PAUSA_ENTRE_PAGINAS)
+        linhas = [linha for linha in linhas if linha.data and f"{linha.data:%Y%m}" == mes]
+        if not linhas:
+            resumo["falhas"] += 1
+            seguidas += 1
+            continue
+        seguidas = 0
+        cnpj = match_informe_to_catalog(
+            fundosnet.InformeDiarioEtf(cnpj=linhas[0].cnpj, fundo=linhas[0].fundo or doc.fundo), catalog
+        )
+        if cnpj is None:
+            continue
+        for linha in linhas:
+            linha.cnpj = cnpj
+        # Dois documentos do mesmo ETF: fica a pagina que vai mais longe.
+        atual = por_mes[mes].get(cnpj)
+        if atual is None or linhas[-1].data > atual[-1].data:
+            por_mes[mes][cnpj] = linhas
+    for mes, por_etf in por_mes.items():
+        linhas = [linha for dias in por_etf.values() for linha in dias]
+        if linhas:
+            fundosnet.write_informes_csv(caminho_do_informe_parcial(config, mes), linhas)
+        ultimo = max((linha.data for linha in linhas), default=None)
+        resumo["meses"][mes] = (
+            f"{contagem(len(por_etf), 'ETF', 'ETFs')}"
+            + (f", até {ultimo:%d/%m/%Y}" if ultimo else "")
+        )
+    return resumo
+
+
 def collect_cotahist(config: Config, catalog: dict[str, EtfMetadata], day: date) -> dict:
     tickers = catalog_tickers(config, catalog)
     path = cotahist.fetch_cotahist_day(config, day)
@@ -358,11 +715,17 @@ def collect_sources(
     config.ensure_dirs()
     day = day or last_business_day()
     summary: dict[str, dict] = {}
-    runners = {"b3": collect_b3, "fnet": collect_fundosnet, "cotahist": collect_cotahist}
+    runners = {
+        "b3": collect_b3, "fnet": collect_fundosnet, "fnet_mensal": collect_fechamentos_mensais,
+        "fnet_diario": collect_informes_do_mes, "fnet_aberto": collect_informes_do_mes_aberto,
+        "cotahist": collect_cotahist,
+    }
     for name in sources:
         runner = runners.get(name)
         if runner is None:
-            summary[name] = {"erro": "fonte desconhecida (use b3, fnet, cotahist)"}
+            summary[name] = {
+                "erro": "fonte desconhecida (use b3, fnet, fnet_mensal, fnet_diario, fnet_aberto, cotahist)"
+            }
             continue
         try:
             summary[name] = runner(config, catalog, day)

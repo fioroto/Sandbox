@@ -150,7 +150,7 @@ class ItauCollector(PlatformCollector):
         from shelf_monitor.collectors.browser import collect_via_browser
 
         if not self.platform.shelf_url:
-            raise SourceUnavailable("shelf_url nao configurada para o Itau")
+            raise SourceUnavailable("shelf_url não configurada para o Itaú")
 
         offers, urls = collect_via_browser(
             self.platform_id,
@@ -214,7 +214,7 @@ def _paginate_rentability_table(page) -> list[tuple[str, Any]]:
 
     if not pages:
         return []
-    return [(f"{page.url} (tabela de rentabilidade, {len(pages)} paginas)",
+    return [(f"{page.url} (tabela de rentabilidade, {len(pages)} páginas)",
              {"itau_rentabilidade": pages})]
 
 

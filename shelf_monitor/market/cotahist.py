@@ -61,9 +61,16 @@ LAYOUT = {
     "dismes": (242, 245),
 }
 LINE_LENGTH = 245
-# Mercado à vista, lote padrão: é onde ETF negocia (010 = vista; BDI 02 = lote padrão).
+# Mercado a vista (TPMERC 010), lote padrao: e onde ETF negocia. O codigo BDI
+# do lote padrao nao e um so - acao e 02, FII e 12 e ETF e 14. Medido em
+# 2026-09-24 no COTAHIST_D23092026: as cotas de fundo ("CI") saem com BDI 14
+# (ETFs, e tambem FIAGRO e FINAM/FINOR) e 12 (FII), nenhuma com 02. So o 02
+# fazia `read_cotahist` descartar todo ETF - e a coleta gravava zero linhas.
 MARKET_SPOT = 10
 BDI_LOTE_PADRAO = 2
+BDI_FII = 12
+BDI_ETF = 14
+BDIS_A_VISTA = frozenset({BDI_LOTE_PADRAO, BDI_FII, BDI_ETF})
 
 
 def url_for_day(day: date) -> str:
@@ -121,7 +128,7 @@ class CotacaoDia:
 
     @property
     def is_lote_padrao_vista(self) -> bool:
-        return self.tpmerc == MARKET_SPOT and self.codbdi == BDI_LOTE_PADRAO
+        return self.tpmerc == MARKET_SPOT and self.codbdi in BDIS_A_VISTA
 
     def to_row(self) -> list:
         return [

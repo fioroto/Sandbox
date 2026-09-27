@@ -38,6 +38,7 @@ from shelf_monitor.models import ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj, parse_number
 from shelf_monitor.report.aggregate import _platform_label
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
+from shelf_monitor.texto import contagem
 from shelf_monitor.report.shared import (
     MIN_COBERTURA_VITRINE,
     mediana,
@@ -63,12 +64,12 @@ _MAX_APOSTAS_CONSOLE = 6
 # As dimensoes do mandato, na ordem em que saem no relatorio.
 # (chave, rotulo, coluna do flag S/N, coluna do teto em %)
 DIMENSOES: tuple[tuple[str, str, str, str | None], ...] = (
-    ("credito_privado", "Credito privado autorizado",
+    ("credito_privado", "Crédito privado autorizado",
      "credito_privado_autorizado", "credito_privado_max_pct"),
     ("exterior", "Ativo no exterior autorizado",
      "exterior_autorizado", "exterior_max_pct"),
     ("derivativos", "Derivativos autorizados", "derivativos_autorizado", None),
-    ("alavancagem", "Exposicao acima do patrimonio autorizada",
+    ("alavancagem", "Exposição acima do patrimônio autorizada",
      "alavancagem_autorizada", "alavancagem_fator"),
     ("espelho", "Fundo espelho", "fundo_espelho", None),
 )
@@ -199,7 +200,7 @@ def build_mandato(config, snapshots: list[ShelfSnapshot]) -> dict:
     cruzaveis, sem_identidade = identifiable_vitrines(vitrines)
     sem_cnpj = [
         {**item, "reason": (
-            "sem CNPJ na vitrine nao ha como buscar o mandato da classe no "
+            "sem CNPJ na vitrine não há como buscar o mandato da classe no "
             f"extrato ({item['reason']})"
         )}
         for item in sem_identidade
@@ -208,8 +209,8 @@ def build_mandato(config, snapshots: list[ShelfSnapshot]) -> dict:
         return {
             "available": False,
             "reason": (
-                f"{len(cruzaveis)} vitrine(s) cruzavel(is): o indice de mandato "
-                "precisa de ao menos duas para haver com o que comparar"
+                f"{contagem(len(cruzaveis), 'vitrine cruzável', 'vitrines cruzáveis')}: o "
+                "índice de mandato precisa de ao menos duas para haver com o que comparar"
             ),
             "excluded": fora + sem_cnpj,
         }
@@ -264,14 +265,14 @@ def build_mandato(config, snapshots: list[ShelfSnapshot]) -> dict:
                 "aposta": (
                     "acima" if indice_rel >= _SOBRE_INDICE
                     else "abaixo" if indice_rel <= _SUB_INDICE
-                    else "na media"
+                    else "na média"
                 ),
             })
 
     if not linhas:
         return {
             "available": False,
-            "reason": "nenhuma dimensao de mandato com cobertura suficiente",
+            "reason": "nenhuma dimensão de mandato com cobertura suficiente",
             "excluded": fora + sem_cnpj,
         }
 
@@ -281,7 +282,7 @@ def build_mandato(config, snapshots: list[ShelfSnapshot]) -> dict:
         "excluded": fora + sem_cnpj,
         "universo": {"classes_na_base": len(indice)},
         "nota": (
-            "Mandato AUTORIZADO pelo regulamento, nunca exposicao carregada. "
+            "Mandato AUTORIZADO pelo regulamento, nunca exposição carregada. "
             "Medir o que a carteira de fato tem exigiria a CDA, fora do escopo."
         ),
         "casas": [c.to_dict() for c in casas],
@@ -344,10 +345,10 @@ def print_mandato(resultado: dict) -> None:
             celulas.append(f"{linha['share']:.0%}{marca}")
         table.add_row(casa["label"], *celulas)
     console.print(table)
-    console.print("   [dim]* acima das concorrentes, v abaixo (indice 1,35 / 0,70)[/]")
+    console.print("   [dim]* acima das concorrentes, v abaixo (índice 1,35 / 0,70)[/]")
 
     for linha in resultado["apostas"][:_MAX_APOSTAS_CONSOLE]:
-        indice = "so ela" if linha["so_ela"] else f"{linha['indice']:.2f}x"
+        indice = "só ela" if linha["so_ela"] else f"{linha['indice']:.2f}x"
         teto = (
             f", teto mediano {linha['teto_mediano']:.0f}%"
             if linha["teto_mediano"] is not None else ""

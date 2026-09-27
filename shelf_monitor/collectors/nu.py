@@ -15,6 +15,6 @@ from shelf_monitor.models import FundOffer
 class NuCollector(PlatformCollector):
     def _collect_web(self) -> list[FundOffer]:
         raise SourceUnavailable(
-            "Nu nao expoe prateleira deslogada (app NuInvest encerrado); "
+            "Nu não expõe prateleira deslogada (app NuInvest encerrado); "
             "requer coletor autenticado"
         )

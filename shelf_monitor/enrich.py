@@ -431,9 +431,16 @@ def infer_manager(fund: FundOffer, brand_index: dict[str, str]) -> bool:
 
 
 def enrich_snapshots(
-    config: Config, snapshots: list[ShelfSnapshot]
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    classificador: type[ClassificationIndex] = ClassificationIndex,
 ) -> EnrichmentStats | None:
-    """Enriquece todos os fundos in-place. None quando nao ha base importada."""
+    """Enriquece todos os fundos in-place. None quando nao ha base importada.
+
+    `classificador` e a classe do resolvedor por nome da segunda passada. O
+    modulo de previdencia passa o dele (`previdencia.eixo.IndicePrevidencia`),
+    que so aceita classe previdenciaria; o padrao e o de sempre.
+    """
     lookup = MarketLookup.load(config)
     if lookup is None:
         return None
@@ -472,7 +479,7 @@ def enrich_snapshots(
     # identidade nao alcancou. E o que impede uma casa que nao publica CNPJ de
     # entrar na leitura competitiva com um terco da prateleira classificada -
     # ver o docstring de shelf_monitor.classify para a cascata e a cobertura.
-    index = ClassificationIndex.load(config.market_dir)
+    index = classificador.load(config.market_dir)
     if index is not None:
         for snapshot in snapshots:
             per_platform = stats.by_platform.setdefault(

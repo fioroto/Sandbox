@@ -28,7 +28,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from shelf_monitor.config import Config
-from shelf_monitor.models import FundOffer, ShelfSnapshot
+from shelf_monitor.models import (
+    BLOCO_CNPJ,
+    BLOCO_COTISTAS,
+    BLOCO_PRODUTO_PROPRIO,
+    FundOffer,
+    ShelfSnapshot,
+)
 from shelf_monitor.normalize import normalize_cnpj
 from shelf_monitor.report.aggregate import (
     _offer_manager,
@@ -42,6 +48,7 @@ from shelf_monitor.report.competitive import (
 )
 from shelf_monitor.report.shared.informe import ler_filtrado
 from shelf_monitor.report.shared.limiares import MIN_COBERTURA_VITRINE
+from shelf_monitor.texto import periodo_br
 
 
 # Abaixo disto a casa nao entra nos rankings: com um punhado de fundos casados, a
@@ -303,6 +310,9 @@ class FundFlow:
     # Serie mensal do proprio fundo, preenchida por consolidate quando ha
     # competencias suficientes - e dela que sai a tendencia.
     meses: list = field(default_factory=list)
+    # Casas em cuja vitrine o fundo e produto da gestora da propria casa
+    # (`aggregate.is_own_product`), preenchido por build_retail_flow.
+    proprio_de: list[str] = field(default_factory=list)
 
     @property
     def captacao_liquida(self) -> float:
@@ -379,6 +389,23 @@ class FundFlow:
             and self.variacao_cotistas < 0
         )
 
+    def entrou(self, com_cotistas: bool = True) -> bool:
+        """Captou - com cotistas novos quando cotista mede gente (`varejo_entrada`).
+
+        Em previdencia o cotista do FIE e a seguradora: exigir cotista novo
+        esvaziava a lista (em 24/09, 1 fundo em "maiores captadores" e nenhum
+        em "maiores perdas"). La o criterio e so o dinheiro.
+        """
+        if com_cotistas:
+            return self.varejo_entrada
+        return not self.estrutural and self.captacao_liquida > 0
+
+    def saiu(self, com_cotistas: bool = True) -> bool:
+        """Perdeu - com saida de cotistas quando cotista mede gente (`varejo_saida`)."""
+        if com_cotistas:
+            return self.varejo_saida
+        return not self.estrutural and self.captacao_liquida < 0
+
     def to_dict(self) -> dict:
         return {
             "cnpj": self.cnpj,
@@ -405,6 +432,7 @@ class FundFlow:
             "tendencia": self.tendencia,
             "meses": [m.to_dict() for m in self.meses],
             "estrutural": self.estrutural,
+            "proprio_de": self.proprio_de,
             "varejo_entrada": self.varejo_entrada,
             "varejo_saida": self.varejo_saida,
             "ticket_por_cotista": (
@@ -466,6 +494,21 @@ class PlatformFlow:
     # Fora das somas acima, mostrados a parte (ver _STRUCTURAL_FLOW_TO_PL).
     estruturais: int = 0
     captacao_estrutural: float = 0.0
+    # A composicao do saldo. Sem ela o numero da casa nao dizia de onde vinha:
+    # medido em 24/09 (07 a 09/2026), a vitrine da XP perdia R$ 1,3 bi somando
+    # +R$ 1,5 bi nos fundos que divide com outra casa e -R$ 2,8 bi nos que so
+    # ela exibe; e o saldo de +R$ 3,0 bi do BTG vinha do produto proprio (+R$
+    # 3,3 bi), com os fundos de terceiros da vitrine dele perdendo dinheiro.
+    pl_inicio: float = 0.0
+    compartilhados: int = 0
+    captacao_compartilhados: float = 0.0
+    proprios: int = 0
+    captacao_propria: float = 0.0
+    terceiros: int = 0
+    captacao_terceiros: float = 0.0
+    # Fundo sem gestor conhecido nao e proprio nem de terceiros: fica fora das
+    # duas colunas, contado aqui (ver `is_own_product`, tri-estado).
+    sem_gestora: int = 0
 
     @property
     def captacao_liquida(self) -> float:
@@ -474,6 +517,17 @@ class PlatformFlow:
     @property
     def cobertura(self) -> float:
         return self.com_informe / self.vitrine if self.vitrine else 0.0
+
+    @property
+    def sobre_pl(self) -> float | None:
+        """Captacao liquida em % do PL de inicio - o saldo sem o efeito de escala.
+
+        R$ 1 bi numa vitrine de R$ 380 bi e outra coisa que numa de R$ 160 bi;
+        em reais, a maior vitrine ganha ou perde sempre mais.
+        """
+        if not self.pl_inicio:
+            return None
+        return self.captacao_liquida / self.pl_inicio * 100.0
 
     def to_dict(self) -> dict:
         return {
@@ -490,6 +544,15 @@ class PlatformFlow:
             "captacao_exclusivos": round(self.captacao_exclusivos, 2),
             "estruturais": self.estruturais,
             "captacao_estrutural": round(self.captacao_estrutural, 2),
+            "pl_inicio": round(self.pl_inicio, 2),
+            "sobre_pl": None if self.sobre_pl is None else round(self.sobre_pl, 3),
+            "compartilhados": self.compartilhados,
+            "captacao_compartilhados": round(self.captacao_compartilhados, 2),
+            "proprios": self.proprios,
+            "captacao_propria": round(self.captacao_propria, 2),
+            "terceiros": self.terceiros,
+            "captacao_terceiros": round(self.captacao_terceiros, 2),
+            "sem_gestora": self.sem_gestora,
         }
 
 
@@ -515,6 +578,9 @@ def build_retail_flow(
 ) -> dict:
     """Captacao dos fundos de vitrine, por casa e por fundo."""
 
+    # Onde o modulo suprime cotistas (previdencia), as listas ranqueiam so por
+    # dinheiro - ver FundFlow.entrou.
+    com_cotistas = not dict(config.blocos_suprimidos).get(BLOCO_COTISTAS)
     vitrines, fora = vitrine_snapshots(snapshots)
     cruzaveis, sem_cnpj = identifiable_vitrines(vitrines)
     if not cruzaveis:
@@ -522,7 +588,7 @@ def build_retail_flow(
             "available": False,
             "reason": (
                 "nenhuma vitrine publica CNPJ o bastante para buscar o informe "
-                "diario - sem CNPJ nao ha como ligar o fundo ao fluxo"
+                "diário - sem CNPJ não há como ligar o fundo ao fluxo"
             ),
             "excluded": fora + sem_cnpj,
         }
@@ -563,7 +629,7 @@ def build_retail_flow(
         return {
             "available": False,
             "reason": (
-                "nenhum informe diario disponivel para o periodo - rode com a "
+                "nenhum informe diário disponível para o período - rode com a "
                 "rede liberada para dados.cvm.gov.br"
             ),
             "excluded": fora + sem_cnpj,
@@ -571,6 +637,18 @@ def build_retail_flow(
 
     fluxos = consolidate(registros, catalogo, presenca)
     por_cnpj = {f.cnpj: f for f in fluxos}
+
+    # Produto proprio e relativo a casa: o fundo da XP Asset e proprio na
+    # vitrine da XP e de terceiros na do BTG. Tri-estado, como `is_own_product`.
+    proprio: dict[tuple[str, str], bool | None] = {}
+    for platform_id, funds in cruzaveis.items():
+        for fund in funds:
+            if fund.cnpj:
+                proprio[(platform_id, fund.cnpj)] = is_own_product(platform_id, fund)
+    for fluxo in fluxos:
+        fluxo.proprio_de = [
+            pid for pid in fluxo.vitrines if proprio.get((pid, fluxo.cnpj)) is True
+        ]
 
     casas: list[PlatformFlow] = []
     sem_amostra: list[dict] = []
@@ -595,6 +673,26 @@ def build_retail_flow(
             ),
             estruturais=len(casados) - len(organicos),
             captacao_estrutural=sum(f.captacao_liquida for f in casados if f.estrutural),
+            pl_inicio=sum(f.pl_inicio for f in organicos),
+            compartilhados=sum(1 for f in organicos if not f.exclusivo),
+            captacao_compartilhados=sum(
+                f.captacao_liquida for f in organicos if not f.exclusivo
+            ),
+            proprios=sum(1 for f in organicos if proprio.get((platform_id, f.cnpj)) is True),
+            captacao_propria=sum(
+                f.captacao_liquida for f in organicos
+                if proprio.get((platform_id, f.cnpj)) is True
+            ),
+            terceiros=sum(
+                1 for f in organicos if proprio.get((platform_id, f.cnpj)) is False
+            ),
+            captacao_terceiros=sum(
+                f.captacao_liquida for f in organicos
+                if proprio.get((platform_id, f.cnpj)) is False
+            ),
+            sem_gestora=sum(
+                1 for f in organicos if proprio.get((platform_id, f.cnpj)) is None
+            ),
         )
         if casa.cobertura < _MIN_MATCH_RATIO:
             sem_amostra.append({
@@ -602,8 +700,8 @@ def build_retail_flow(
                 "label": casa.label,
                 "reason": (
                     f"apenas {casa.com_informe} de {casa.vitrine} fundos da vitrine "
-                    f"tem informe diario ({casa.cobertura:.0%}) - a soma descreveria "
-                    "a amostra que casou, nao a vitrine"
+                    f"têm informe diário ({casa.cobertura:.0%}) - a soma descreveria "
+                    "a amostra que casou, não a vitrine"
                 ),
             })
             continue
@@ -617,10 +715,12 @@ def build_retail_flow(
         key=lambda f: -abs(f.captacao_liquida),
     )
     captadores = sorted(
-        [f for f in ranqueaveis if f.varejo_entrada], key=lambda f: -f.captacao_liquida
+        [f for f in ranqueaveis if f.entrou(com_cotistas)],
+        key=lambda f: -f.captacao_liquida,
     )
     perdedores = sorted(
-        [f for f in ranqueaveis if f.varejo_saida], key=lambda f: f.captacao_liquida
+        [f for f in ranqueaveis if f.saiu(com_cotistas)],
+        key=lambda f: f.captacao_liquida,
     )
 
     estruturais_cnpj = {f.cnpj for f in fluxos if f.estrutural}
@@ -634,6 +734,8 @@ def build_retail_flow(
     resumo_tendencia: dict[str, int] = {}
     for fluxo in varejo:
         resumo_tendencia[fluxo.tendencia] = resumo_tendencia.get(fluxo.tendencia, 0) + 1
+    ids_casas = [c.platform_id for c in casas]
+    base_cnpjs = {f.cnpj for f in cruzaveis.get(baseline_id, []) if f.cnpj}
 
     return {
         "available": True,
@@ -645,6 +747,21 @@ def build_retail_flow(
             sorted(resumo_tendencia.items(), key=lambda kv: -kv[1])
         ),
         "tendencia_labels": TREND_LABELS,
+        # A contagem global descreve o mercado (em 24/09, 696 de ~1.000 fundos
+        # perdiam dinheiro nos dois periodos); por casa ela compara vitrines.
+        "tendencia_por_casa": tendencia_por_casa(varejo, ids_casas),
+        "por_categoria": fluxo_por_categoria(
+            [f for f in fluxos if not f.estrutural], ids_casas
+        ),
+        # O que a vitrine da baseline exibe e esta perdendo dinheiro e cotistas:
+        # a lista de venda ao lado da de compra (a grade). Mora aqui, e nao so
+        # na grade, porque vale mesmo onde a grade por CNPJ nao se aplica.
+        "baseline_perdendo": [
+            f.to_dict()
+            for f in perdendo_na_vitrine(fluxos, base_cnpjs, com_cotistas)[:12]
+        ],
+        # O criterio das listas: com cotistas (fundos) ou so dinheiro (previdencia).
+        "com_cotistas": com_cotistas,
         "acelerando": [
             f.to_dict() for f in sorted(
                 [f for f in varejo if f.tendencia == "acelerando"],
@@ -713,7 +830,10 @@ class GradeOpportunity:
 
 
 def build_grade_opportunities(
-    snapshots: list[ShelfSnapshot], fluxos: list[FundFlow], baseline_id: str = "xp"
+    snapshots: list[ShelfSnapshot],
+    fluxos: list[FundFlow],
+    baseline_id: str = "xp",
+    cobertos: set[str] | None = None,
 ) -> dict:
     """Fundos que captam nas concorrentes e estao fora da vitrine da XP.
 
@@ -721,13 +841,18 @@ def build_grade_opportunities(
     vitrines que esta perdendo dinheiro nao e oportunidade de grade, e sim um
     produto que o mercado esta deixando - e a analise de consenso por presenca,
     sozinha, nao distinguia os dois.
+
+    `cobertos` sao os CNPJs que a vitrine da XP cobre por espelho ou
+    equivalente (`aggregate.cnpjs_cobertos`): a XP ja oferta a estrategia, entao
+    nao sao oportunidade - a mesma regra do bloco de gaps. Saem contados em
+    `total_cobertos`.
     """
     vitrines, _ = vitrine_snapshots(snapshots)
     cruzaveis, _ = identifiable_vitrines(vitrines)
     if baseline_id not in cruzaveis:
         return {
             "available": False,
-            "reason": f"vitrine da {_platform_label(baseline_id)} indisponivel ou sem CNPJ",
+            "reason": f"vitrine da {_platform_label(baseline_id)} indisponível ou sem CNPJ",
         }
 
     base = cruzaveis[baseline_id]
@@ -737,12 +862,15 @@ def build_grade_opportunities(
     # `varejo_entrada` e o filtro: exige que o dinheiro tenha vindo acompanhado
     # de cotistas novos. Sem ele, o topo da lista era uma reestruturacao de
     # veiculo - copiar aquilo para a grade da XP nao traria fluxo nenhum.
-    candidatos = [
+    cobertos = cobertos or set()
+    fora_da_vitrine = [
         f for f in fluxos
         if f.cnpj not in base_cnpjs
         and f.varejo_entrada
         and f.pl_inicio >= _MIN_PL_RANKING
     ]
+    candidatos = [f for f in fora_da_vitrine if f.cnpj not in cobertos]
+    total_cobertos = len(fora_da_vitrine) - len(candidatos)
     candidatos.sort(key=lambda f: -f.captacao_liquida)
 
     catalogo_ofertas: dict[str, FundOffer] = {}
@@ -792,23 +920,18 @@ def build_grade_opportunities(
 
     # A contrapartida: o que a XP exibe e esta perdendo dinheiro. Sem isso a
     # leitura vira uma lista de compras sem nenhuma de venda.
-    na_vitrine_perdendo = sorted(
-        [
-            f for f in fluxos
-            if f.cnpj in base_cnpjs
-            and f.varejo_saida
-            and f.pl_inicio >= _MIN_PL_RANKING
-        ],
-        key=lambda f: f.captacao_liquida,
-    )
+    na_vitrine_perdendo = perdendo_na_vitrine(fluxos, base_cnpjs)
 
     return {
         "available": bool(transferiveis),
         "reason": (
             None if transferiveis
-            else "nenhum fundo transferivel fora da vitrine da XP com captacao de varejo no periodo"
+            else "nenhum fundo transferível fora da vitrine da XP com captação de varejo no período"
         ),
         "total": len(oportunidades),
+        # Captando fora da vitrine, mas a XP ja cobre a estrategia por espelho
+        # ou equivalente: fora da lista, contados aqui.
+        "total_cobertos": total_cobertos,
         "total_transferiveis": len(transferiveis),
         "total_produto_do_concorrente": len(oportunidades) - len(transferiveis),
         # Dentro dos transferiveis: quantos nao puderam ser verificados porque a
@@ -833,6 +956,180 @@ def build_grade_opportunities(
         "_oportunidades": oportunidades,
         "_transferiveis": transferiveis,
     }
+
+
+def perdendo_na_vitrine(
+    fluxos: list[FundFlow], cnpjs: set[str], com_cotistas: bool = True
+) -> list[FundFlow]:
+    """Fundos da vitrine perdendo dinheiro (e cotistas, quando eles medem gente)."""
+    return sorted(
+        [
+            f for f in fluxos
+            if f.cnpj in cnpjs and f.saiu(com_cotistas) and f.pl_inicio >= _MIN_PL_RANKING
+        ],
+        key=lambda f: f.captacao_liquida,
+    )
+
+
+def fluxo_por_categoria(organicos: list[FundFlow], casas: list[str]) -> list[dict]:
+    """Captacao por familia de ativo, em cada vitrine e no universo das vitrines.
+
+    E o corte que diz de onde vem a diferenca entre as casas. A categoria fina
+    (36 categorias ANBIMA em 24/09) e dominada por fundos isolados; a familia
+    (Renda Fixa, Multimercados, Acoes...) e estavel. O universo conta cada fundo
+    uma vez, mesmo exibido por varias casas.
+    """
+    linhas: dict[str, dict] = {}
+    for fluxo in organicos:
+        linha = linhas.setdefault(fluxo.categoria, {
+            "categoria": fluxo.categoria,
+            "universo": {"fundos": 0, "captacao_liquida": 0.0},
+            "casas": {pid: {"fundos": 0, "captacao_liquida": 0.0} for pid in casas},
+        })
+        linha["universo"]["fundos"] += 1
+        linha["universo"]["captacao_liquida"] += fluxo.captacao_liquida
+        for pid in fluxo.vitrines:
+            if pid in linha["casas"]:
+                linha["casas"][pid]["fundos"] += 1
+                linha["casas"][pid]["captacao_liquida"] += fluxo.captacao_liquida
+    for linha in linhas.values():
+        linha["universo"]["captacao_liquida"] = round(linha["universo"]["captacao_liquida"], 2)
+        for valores in linha["casas"].values():
+            valores["captacao_liquida"] = round(valores["captacao_liquida"], 2)
+    return sorted(linhas.values(), key=lambda l: -l["universo"]["captacao_liquida"])
+
+
+def tendencia_por_casa(varejo: list[FundFlow], casas: list[str]) -> dict[str, dict[str, int]]:
+    """Quantos fundos de cada vitrine estao em cada tendencia."""
+    saida: dict[str, dict[str, int]] = {pid: {} for pid in casas}
+    for fluxo in varejo:
+        for pid in fluxo.vitrines:
+            if pid in saida:
+                saida[pid][fluxo.tendencia] = saida[pid].get(fluxo.tendencia, 0) + 1
+    return saida
+
+
+# --- leitura -------------------------------------------------------------------
+
+# Participacao minima de uma familia na diferenca entre duas casas para entrar
+# na frase: abaixo disto ela e ruido ao lado das que explicam o numero.
+_PARCELA_RELEVANTE = 0.10
+
+
+def _reais(valor: float) -> str:
+    """"+R$ 1,3 bi", "-R$ 690 mi" - com sinal, na unidade em que o fluxo se le."""
+    sinal = "+" if valor > 0 else "-" if valor < 0 else ""
+    absoluto = abs(valor)
+    if absoluto >= 1e9:
+        texto = f"{absoluto / 1e9:,.1f} bi"
+    elif absoluto >= 1e7:
+        texto = f"{absoluto / 1e6:,.0f} mi"
+    else:
+        texto = f"{absoluto / 1e6:,.1f} mi"
+    return f"{sinal}R$ " + texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _pct(valor: float | None) -> str:
+    if valor is None:
+        return "sem PL de início"
+    return f"{valor:+.2f}%".replace(".", ",")
+
+
+def leitura_da_captacao(flow: dict, suprimidos: dict | None = None) -> list[str]:
+    """As frases que abrem o bloco - calculadas aqui para toda superficie dizer igual.
+
+    Compara a baseline com a vitrine que mais captou (ou, se a baseline lidera,
+    com a segunda): o saldo em reais e em % do PL, a composicao compartilhado x
+    so na casa, de que familia vem a diferenca e o peso do produto proprio.
+    Com BLOCO_CNPJ em `suprimidos` (previdencia), sai a frase de composicao, que
+    separa os fundos por CNPJ; com BLOCO_PRODUTO_PROPRIO, a de produto proprio.
+    """
+    if not (flow and flow.get("available")):
+        return []
+    casas = {c["platform_id"]: c for c in flow.get("casas") or []}
+    base = casas.get(flow.get("baseline_id"))
+    if base is None:
+        return []
+    outras = sorted(
+        (c for pid, c in casas.items() if pid != base["platform_id"]),
+        key=lambda c: -c["captacao_liquida"],
+    )
+    # O prazo na propria frase: ela abre o bloco em todas as superficies, e
+    # "no periodo" obrigava o leitor a procurar qual periodo era.
+    periodo = flow.get("periodo") or {}
+    prazo = (
+        periodo_br(periodo["de"], periodo["ate"])
+        if periodo.get("de") and periodo.get("ate") else "no período"
+    )
+    if not outras:
+        return [
+            f"Captação líquida dos fundos da vitrine {prazo}: {base['label']} "
+            f"{_reais(base['captacao_liquida'])} ({_pct(base.get('sobre_pl'))} do PL de "
+            "início)."
+        ]
+    ref = outras[0]
+    lider = base if base["captacao_liquida"] >= ref["captacao_liquida"] else ref
+    frases = [
+        f"Captação líquida dos fundos da vitrine {prazo}: {base['label']} "
+        f"{_reais(base['captacao_liquida'])} ({_pct(base.get('sobre_pl'))} do PL de "
+        f"início), {ref['label']} {_reais(ref['captacao_liquida'])} "
+        f"({_pct(ref.get('sobre_pl'))}). Maior captação entre as casas: "
+        f"{lider['label']}."
+    ]
+
+    if not (suprimidos or {}).get(BLOCO_CNPJ):
+        frases.append(
+            "Fundos que outra casa também exibe: "
+            f"{base['label']} {_reais(base.get('captacao_compartilhados', 0.0))}, "
+            f"{ref['label']} {_reais(ref.get('captacao_compartilhados', 0.0))}. "
+            "Fundos que só a própria casa exibe: "
+            f"{base['label']} {_reais(base.get('captacao_exclusivos', 0.0))}, "
+            f"{ref['label']} {_reais(ref.get('captacao_exclusivos', 0.0))}."
+        )
+
+    diferencas = []
+    for linha in flow.get("por_categoria") or []:
+        valores = linha["casas"]
+        if base["platform_id"] in valores and ref["platform_id"] in valores:
+            diferencas.append((
+                linha["categoria"],
+                valores[base["platform_id"]]["captacao_liquida"]
+                - valores[ref["platform_id"]]["captacao_liquida"],
+            ))
+    total = base["captacao_liquida"] - ref["captacao_liquida"]
+    if diferencas and abs(total) >= 1e7:
+        mesmo_lado = sorted(
+            (d for d in diferencas
+             if d[1] * total > 0 and abs(d[1]) >= _PARCELA_RELEVANTE * abs(total)),
+            key=lambda d: -abs(d[1]),
+        )[:2]
+        contra = sorted(
+            (d for d in diferencas
+             if d[1] * total < 0 and abs(d[1]) >= _PARCELA_RELEVANTE * abs(total)),
+            key=lambda d: -abs(d[1]),
+        )[:1]
+        if mesmo_lado:
+            frase = (
+                f"Por família de ativo, a diferença entre {base['label']} e "
+                f"{ref['label']} ({_reais(total)}) vem de "
+                + " e ".join(f"{cat} ({_reais(v)})" for cat, v in mesmo_lado)
+            )
+            if contra:
+                cat, v = contra[0]
+                frase += f"; {cat} vai no sentido contrário ({_reais(v)})"
+            frases.append(frase + ".")
+
+    sem_proprio = (suprimidos or {}).get(BLOCO_PRODUTO_PROPRIO)
+    if not sem_proprio and (base.get("proprios") or ref.get("proprios")):
+        frases.append(
+            "Fundos da gestora da própria casa: "
+            f"{base['label']} {_reais(base.get('captacao_propria', 0.0))}, "
+            f"{ref['label']} {_reais(ref.get('captacao_propria', 0.0))}. "
+            "De terceiros: "
+            f"{base['label']} {_reais(base.get('captacao_terceiros', 0.0))}, "
+            f"{ref['label']} {_reais(ref.get('captacao_terceiros', 0.0))}."
+        )
+    return frases
 
 
 # --- tendencia ----------------------------------------------------------------
@@ -885,10 +1182,29 @@ TREND_LABELS = {
     "desacelerando": "ainda captando, mas menos por dia que antes",
     "virou_entrada": "estava perdendo dinheiro e passou a captar",
     "virou_saida": "estava captando e passou a perder dinheiro",
-    "saida_persistente": "perdendo dinheiro no ultimo mes e na media anterior",
-    "estavel": "sem mudanca material no ritmo",
-    "sem_serie": "competencias de menos para falar em tendencia",
+    "saida_persistente": "perdendo dinheiro no último mês e na média anterior",
+    "estavel": "sem mudança material no ritmo",
+    "sem_serie": "competências de menos para falar em tendência",
 }
+
+
+# Nome de cada tendencia para exibicao. A chave e dado (vai ao JSON e ao
+# dashboard como identificador); o leitor ve o nome, com a grafia correta.
+TREND_NOMES = {
+    "acelerando": "acelerando",
+    "desacelerando": "desacelerando",
+    "virou_entrada": "virou entrada",
+    "virou_saida": "virou saída",
+    "saida_persistente": "saída persistente",
+    "estavel": "estável",
+    "sem_serie": "sem série",
+}
+
+
+def nome_da_tendencia(chave: str | None) -> str:
+    if not chave:
+        return ""
+    return TREND_NOMES.get(chave, chave.replace("_", " "))
 
 
 def classify_trend(meses: list[MonthlyFlow]) -> str:
@@ -991,8 +1307,14 @@ def monthly_by_platform(
 
 
 def _mm(valor: float) -> str:
-    """Reais em milhoes, com sinal - a unidade em que fluxo de fundo se le."""
-    return f"{valor / 1_000_000:+,.1f} MM".replace(",", ".")
+    """Reais em milhoes, com sinal - a unidade em que fluxo de fundo se le.
+
+    Milhar com ponto e decimal com virgula, como no digest. O `.replace(",",
+    ".")` que havia aqui trocava so o milhar e deixava o ponto decimal: saia
+    "+2.962.3 MM" no console para R$ 2.962,3 milhoes.
+    """
+    texto = f"{valor / 1_000_000:+,.1f} MM"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _cot(valor: int) -> str:
@@ -1020,34 +1342,58 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
     periodo = resultado["periodo"]
     console.print()
     console.print(
-        f"[bold]Captacao dos fundos de vitrine[/] - {periodo['de']} a {periodo['ate']} "
+        f"[bold]Captação dos fundos de vitrine[/] - {periodo_br(periodo['de'], periodo['ate'])} "
         f"({len(periodo['meses_lidos'])} meses, {resultado['fundos_analisados']} fundos)"
     )
     console.print(
-        "[dim]A CVM publica fluxo por FUNDO, nunca por distribuidor: os numeros por "
-        "casa sao o fluxo dos fundos que ela exibe, no mercado inteiro - nao o que "
-        "entrou por ela. A coluna de exclusivos e onde a atribuicao e inequivoca.[/]"
+        "[dim]A CVM publica fluxo por FUNDO, nunca por distribuidor: os números por "
+        "casa são o fluxo dos fundos que ela exibe, no mercado inteiro - não o que "
+        "entrou por ela. A coluna Só nesta vitrine é onde a atribuição é inequívoca.[/]"
     )
 
-    tabela = Table(title="Fluxo de varejo por vitrine", title_style="bold")
-    tabela.add_column("Casa")
-    tabela.add_column("Vitrine", justify="right")
-    tabela.add_column("Com informe", justify="right")
-    tabela.add_column("Captacao no mercado", justify="right")
-    tabela.add_column("So nesta vitrine", justify="right")
-    tabela.add_column("Estrutural (fora)", justify="right")
+    for frase in leitura_da_captacao(resultado):
+        console.print(f"  - {frase}")
+
+    def _cor(valor: float) -> str:
+        return f"[{'green' if valor > 0 else 'red'}]{_mm(valor)}[/]"
+
+    tabela = Table(title="De onde vem o saldo de cada vitrine", title_style="bold")
+    for titulo in ("Casa", "Com informe", "Captação líquida", "% do PL", "Compartilhados",
+                   "Só nesta vitrine", "Produto próprio", "Terceiros", "Estrutural (fora)"):
+        tabela.add_column(titulo, justify="left" if titulo == "Casa" else "right")
     for casa in resultado["casas"]:
-        liquida = casa["captacao_liquida"]
-        cor = "green" if liquida > 0 else "red"
         tabela.add_row(
             casa["label"],
-            str(casa["vitrine"]),
-            f"{casa['com_informe']} ({casa['cobertura']:.0%})",
-            f"[{cor}]{_mm(liquida)}[/]",
-            f"{casa['exclusivos']} &middot; {_mm(casa['captacao_exclusivos'])}".replace("&middot;", "/"),
+            f"{casa['com_informe']} de {casa['vitrine']} ({casa['cobertura']:.0%})",
+            _cor(casa["captacao_liquida"]),
+            _pct(casa.get("sobre_pl")),
+            _cor(casa.get("captacao_compartilhados", 0.0)),
+            _cor(casa["captacao_exclusivos"]),
+            _cor(casa.get("captacao_propria", 0.0)),
+            _cor(casa.get("captacao_terceiros", 0.0)),
             f"{casa['estruturais']} / {_mm(casa['captacao_estrutural'])}",
         )
     console.print(tabela)
+
+    categorias = resultado.get("por_categoria") or []
+    if categorias:
+        familias = Table(title="Por família de ativo", title_style="bold")
+        familias.add_column("Família")
+        for casa in resultado["casas"]:
+            familias.add_column(casa["label"], justify="right")
+        familias.add_column("Todas as vitrines", justify="right")
+        for linha in categorias:
+            familias.add_row(
+                linha["categoria"],
+                *[
+                    _cor(linha["casas"][c["platform_id"]]["captacao_liquida"])
+                    if linha["casas"].get(c["platform_id"], {}).get("fundos") else "-"
+                    for c in resultado["casas"]
+                ],
+                f"{_cor(linha['universo']['captacao_liquida'])} "
+                f"({linha['universo']['fundos']})",
+            )
+        console.print(familias)
 
     for excluida in resultado.get("excluded", []):
         console.print(f"   [dim]fora: {excluida['label']} - {excluida['reason']}[/]")
@@ -1055,8 +1401,8 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
     if resultado.get("estruturais"):
         console.print(
             f"   [yellow]{resultado['total_estruturais']} fundos com movimento "
-            "estrutural[/] (fluxo maior que o proprio PL, ou fundo esvaziado) ficam "
-            "fora das somas: e dinheiro trocando de veiculo, nao demanda. Maiores: "
+            "estrutural[/] (fluxo maior que o próprio PL, ou fundo esvaziado) ficam "
+            "fora das somas: é dinheiro trocando de veículo, não demanda. Maiores: "
             + "; ".join(
                 f"{f['nome'][:32]} ({_mm(f['captacao_liquida'])})"
                 for f in resultado["estruturais"][:3]
@@ -1069,9 +1415,9 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
         tabela = Table(title=titulo, title_style=f"bold {estilo}")
         tabela.add_column("Fundo")
         tabela.add_column("Classe")
-        tabela.add_column("Captacao liquida", justify="right")
+        tabela.add_column("Captação líquida", justify="right")
         tabela.add_column("Cotistas", justify="right")
-        tabela.add_column("Por cotista", justify="right")
+        tabela.add_column("Por cotista novo", justify="right")
         tabela.add_column("Vitrines")
         for f in linhas[:10]:
             tabela.add_row(
@@ -1080,12 +1426,18 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
                 f"[{estilo}]{_mm(f['captacao_liquida'])}[/]",
                 _cot(f["variacao_cotistas"]),
                 _ticket(f),
-                "+".join(f["vitrines"]),
+                ", ".join(_platform_label(p) for p in f["vitrines"]),
             )
         console.print(tabela)
 
-    _ranking("Maiores captadores de varejo", resultado["top_captacao"], "green")
-    _ranking("Maiores perdas de varejo", resultado["top_resgate"], "red")
+    criterio = "dinheiro e cotistas" if resultado.get("com_cotistas", True) else "dinheiro"
+    _ranking(f"Maiores captações - fundos ganhando {criterio}", resultado["top_captacao"], "green")
+    _ranking(f"Maiores resgates - fundos perdendo {criterio}", resultado["top_resgate"], "red")
+    _ranking(
+        f"Na vitrine da {_platform_label(resultado.get('baseline_id') or 'xp')}, "
+        f"perdendo {criterio}",
+        resultado.get("baseline_perdendo") or [], "red",
+    )
 
     # --- oportunidades ---
     console.print()
@@ -1097,30 +1449,26 @@ def print_retail_flow(resultado: dict, oportunidades: dict) -> None:
     console.print(
         f"   {oportunidades['total']} fundos captam varejo fora da vitrine da XP "
         f"({_mm(oportunidades['captacao_somada'])}), mas "
-        f"[bold]{oportunidades['total_produto_do_concorrente']}[/] deles sao produto "
-        "da propria casa que os exibe e nao se transferem."
+        f"[bold]{oportunidades['total_produto_do_concorrente']}[/] deles são produto "
+        "da própria casa que os exibe e não se transferem."
     )
     console.print(
-        f"   [bold]Transferiveis: {oportunidades['total_transferiveis']} fundos, "
+        f"   [bold]Transferíveis: {oportunidades['total_transferiveis']} fundos, "
         f"{_mm(oportunidades['captacao_transferivel'])} e "
         f"{_cot(oportunidades['cotistas_transferivel'])} cotistas[/] - "
-        f"{oportunidades['total_operacionais']} de gestora que a XP ja distribui, "
+        f"{oportunidades['total_operacionais']} de gestora que a XP já distribui, "
         f"{oportunidades['total_comerciais']} exigem abrir gestora."
     )
 
     _ranking(
-        "Mais varejo: quem trouxe mais COTISTAS (transferiveis)",
+        "Mais varejo: quem trouxe mais COTISTAS (transferíveis)",
         oportunidades["mais_varejo"], "green",
     )
     _ranking(
-        "Inclusao operacional: gestora ja distribuida pela XP",
+        "Inclusão operacional: gestora já distribuída pela XP",
         oportunidades["operacionais"], "green",
     )
     _ranking(
         "Exige abrir gestora",
         oportunidades["comerciais"], "yellow",
-    )
-    _ranking(
-        "Na vitrine da XP e perdendo varejo",
-        oportunidades["na_vitrine_perdendo"], "red",
     )

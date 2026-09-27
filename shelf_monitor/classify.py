@@ -116,7 +116,7 @@ _TOKENS_PREVIDENCIA = frozenset({"prev", "previdencia", "fie", "fife", "vgbl", "
 # todos eles, para todas as casas. Nao sao lacuna de join: e produto de outra
 # natureza, e a prateleira do Itau tem alguns. Balde proprio, declarado.
 _TIPOS_ESTRUTURADOS = ("FIDC", "FII", "FIP", "FIAGRO", "FUNCINE", "FICART")
-CATEGORIA_ESTRUTURADO = "Estruturado (sem classificacao ANBIMA)"
+CATEGORIA_ESTRUTURADO = "Estruturado (sem classificação ANBIMA)"
 
 # Prefixo do rotulo ANBIMA -> nivel 1, na ordem em que sao testados.
 #
@@ -145,9 +145,9 @@ _PREFIXOS_NIVEL = (
 _NIVEL_LABEL = {
     "RENDA FIXA": "Renda Fixa",
     "MULTIMERCADO": "Multimercados",
-    "ACOES": "Acoes",
+    "ACOES": "Ações",
     "CAMBIAL": "Cambial",
-    "PREVIDENCIA": "Previdencia",
+    "PREVIDENCIA": "Previdência",
     "EXTERIOR": "Exterior",
 }
 

@@ -132,7 +132,7 @@ class AuthenticatedBrowserCollector(BaseCollector):
         state = self.storage_state_path
         if state is None:
             raise SourceUnavailable(
-                f"sessao autenticada ausente para {self.platform_id}: exporte o "
+                f"sessão autenticada ausente para {self.platform_id}: exporte o "
                 f"storage_state do Playwright para "
                 f"{self.config.storage_state_dir / f'{self.platform_id}.json'}"
             )
@@ -140,5 +140,5 @@ class AuthenticatedBrowserCollector(BaseCollector):
 
     def _collect_authenticated(self, storage_state: Path) -> list[FundOffer]:
         raise NotImplementedError(
-            "coletor autenticado ainda nao implementado para esta plataforma"
+            "coletor autenticado ainda não implementado para esta plataforma"
         )

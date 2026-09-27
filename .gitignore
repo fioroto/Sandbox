@@ -20,3 +20,15 @@ data/market/
 # relatorios que o `run --git-commit` faz.
 ~$*.xlsx
 data/reports/*-[0-9].xlsx
+
+# shelf_monitor: captura bruta do `etf-bruto` (reproduzivel na origem, centenas
+# de MB) e a pasta onde a pessoa solta exportacoes da Comdinheiro e carteiras
+# de gestora (dado licenciado). O que gente preenche (data/etf/manual/) e o
+# universo/cobertura seguem versionados.
+data/etf/bruto/
+data/etf/entrada/
+
+# shelf_monitor: lista distribuivel (fundos que a XP distribui ou pode
+# distribuir) - dado comercial interno. O modelo com o cabecalho
+# (data/distribuivel/modelo.csv) segue versionado.
+data/distribuivel/entrada/

@@ -96,7 +96,7 @@ class TestElegibilidade(unittest.TestCase):
         idx = indice_com(*universo("Nicho", 1.0, quantos=_MIN_AMOSTRA_CATEGORIA - 1))
         avaliado = idx.avaliar(oferta(f"Nic{0:011d}"))
         self.assertIsNone(avaliado.indice)
-        self.assertIn("sem referencia", avaliado.motivo_fora)
+        self.assertIn("sem referência", avaliado.motivo_fora)
         # O motivo e agrupavel: sem a contagem no texto, cada fundo viraria uma
         # chave propria e o resumo "por motivo" deixaria de resumir.
         self.assertNotIn("9", avaliado.motivo_fora)
@@ -104,7 +104,7 @@ class TestElegibilidade(unittest.TestCase):
     def test_fundo_fora_da_base_diz_que_nao_casou(self):
         idx = indice_com(*universo("Renda Fixa Simples", 1.0))
         avaliado = idx.avaliar(oferta("99999999999999"))
-        self.assertIn("nao encontrado na base", avaliado.motivo_fora)
+        self.assertIn("não encontrado na base", avaliado.motivo_fora)
 
 
 class TestIndiceRemoveComposicao(unittest.TestCase):
@@ -115,10 +115,10 @@ class TestIndiceRemoveComposicao(unittest.TestCase):
         # a mediana de cada categoria. So o MIX difere.
         idx = indice_com(
             *universo("Renda Fixa Simples", 1.0),
-            *universo("Acoes Livre", 2.0),
+            *universo("Ações Livre", 2.0),
             *[classe(f"{platform_id}rf{i:09d}", taxa=1.0) for i in range(rf)],
             *[
-                classe(f"{platform_id}ac{i:09d}", taxa=2.0, categoria="Acoes Livre")
+                classe(f"{platform_id}ac{i:09d}", taxa=2.0, categoria="Ações Livre")
                 for i in range(acoes)
             ],
         )

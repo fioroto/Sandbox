@@ -408,7 +408,7 @@ class TestExport(unittest.TestCase):
             faltando = conjuntos[origens[0]] ^ conjuntos[outra]
             self.assertEqual(
                 set(), faltando,
-                f"colunas so em uma das pernas ({origens[0]} vs {outra}): {faltando}",
+                f"colunas só em uma das pernas ({origens[0]} vs {outra}): {faltando}",
             )
 
     def test_toda_linha_da_hierarquia_declara_seu_nivel(self):
@@ -423,7 +423,7 @@ class TestExport(unittest.TestCase):
         self.assertTrue(linhas)
         niveis = {linha["nivel"] for linha in linhas}
         self.assertTrue(niveis <= {"subclasse", "classe", "fundo_legado"}, niveis)
-        self.assertNotIn("", niveis, "linha sem nivel declarado")
+        self.assertNotIn("", niveis, "linha sem nível declarado")
 
     def test_rerun_is_idempotent(self):
         before = self.paths["mercado"].read_bytes()
@@ -458,7 +458,7 @@ class TestStreaming(unittest.TestCase):
                         f"{index:012d}{index % 90:02d}",
                         f"202{delivery % 5 + 1}-08-25",
                         "1.50",
-                        "Politica de investimento com um texto razoavelmente longo",
+                        "Política de investimento com um texto razoavelmente longo",
                     ])
         return path.stat().st_size / (1024 * 1024)
 

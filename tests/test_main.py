@@ -126,7 +126,16 @@ class TestRunOutcome(unittest.TestCase):
             report_failures=["planilha"],
         )
         self.assertEqual(codigo, 1)
-        self.assertIn("1 relatorio(s) falharam", linha)
+        self.assertIn("1 relatório falhou", linha)
+
+    def test_relatorios_que_falharam_concordam_no_plural(self):
+        """Antes saia "1 relatório(s) falharam" - a forma que servia a qualquer numero."""
+        linha, _ = run_outcome(
+            relatorio(SnapshotStatus.OK, cvm=SnapshotStatus.OK),
+            cvm_requested=True,
+            report_failures=["planilha", "deck"],
+        )
+        self.assertIn("2 relatórios falharam", linha)
 
     def test_execucao_sem_nenhuma_casa_pedida_nao_e_falha(self):
         """`collect --platform` de uma casa que nao existe nao e erro do job."""
@@ -198,7 +207,7 @@ class TestSuperficieDoCli(unittest.TestCase):
             return r.stdout
 
         lista = re.search(r"\{([a-z,\-]+)\}", ajuda())
-        self.assertIsNotNone(lista, "nao consegui ler a lista de subcomandos")
+        self.assertIsNotNone(lista, "não consegui ler a lista de subcomandos")
         comandos = set(lista.group(1).split(","))
         self.assertEqual(
             set(esperado), comandos,

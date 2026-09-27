@@ -85,6 +85,78 @@ class TestB3Detail(unittest.TestCase):
     def test_payload_without_detail_is_none(self):
         self.assertIsNone(b3_funds.parse_listed_fund_detail({"foo": 1}, 1))
 
+    def test_detalhe_da_api_atual(self):
+        """`GetDetailFund` do BB ETF DAP5, como a B3 respondeu em 2026-09-24:
+        tudo no primeiro nivel, o ticker em `tradingCode` e a quantidade de cotas
+        com ponto de milhar."""
+        payload = {
+            "idFNET": 10553, "typeFNET": "ETF", "type": 3, "typeName": "ETF-RF",
+            "acronym": "BDAP", "tradingName": "BB ETF DAP5", "tradingCode": "BDAP11",
+            "tradingCodeOthers": "BDAPETF11", "cnpj": "51921067000108",
+            "fundName": "BB ETF ÍNDICE DAP5 B3 FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA",
+            "quotaCount": "100.000", "quotaDateApproved": "25/09/2023", "segment": "Bolsa",
+            "shareHolder": {"shareHolderName": "BRASIL"},
+        }
+        fund = b3_funds.parse_listed_fund_detail(payload, "ETF-RF")
+        self.assertEqual((fund.ticker, fund.cnpj, fund.type_id), ("BDAP11", "51921067000108", "ETF-RF"))
+        self.assertEqual(fund.quota_count, 100_000.0)
+        self.assertEqual(fund.id_fnet, 10553)
+        self.assertEqual(fund.company_name, "BB ETF ÍNDICE DAP5 B3 FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA")
+
+
+class TestColetaDeTickers(unittest.TestCase):
+    def setUp(self):
+        from fixtures_comuns import temp_config
+        from shelf_monitor.market.etf import EtfMetadata
+
+        self.config, self.tmp = temp_config()
+        self.catalogo = {
+            "51921067000108": EtfMetadata(cnpj="51921067000108", name="BB ETF ÍNDICE DAP5 B3 FUNDO DE ÍNDICE", kind="etf"),
+            "22222222000122": EtfMetadata(cnpj="22222222000122", name="TREND ETF LBMA OURO CLASSE DE ÍNDICE", kind="etf"),
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_casa_pelo_cnpj_ou_pelo_nome_e_grava_so_o_catalogo(self):
+        from unittest import mock
+
+        from shelf_monitor.market import etf_sources
+
+        por_tipo = {
+            "ETF": [
+                # CNPJ do fundo diferente do da classe: casa pelo nome.
+                b3_funds.FundoListadoB3(type_id="ETF", acronym="GOLD", cnpj="99999999000199",
+                                        codes=["GOLD11"], company_name="TREND ETF LBMA OURO CLASSE DE ÍNDICE"),
+                b3_funds.FundoListadoB3(type_id="ETF", acronym="XXXX", cnpj="88888888000188",
+                                        codes=["XXXX11"], company_name="FUNDO QUE NAO ESTA NO CATALOGO"),
+            ],
+            "ETF-RF": [
+                b3_funds.FundoListadoB3(type_id="ETF-RF", acronym="BDAP", cnpj="51921067000108",
+                                        codes=["BDAP11"], trading_name="BB ETF DAP5"),
+            ],
+        }
+        cliente = mock.Mock()
+        cliente.funds_of_type.side_effect = lambda tipo: iter(por_tipo.get(tipo, []))
+        with mock.patch.object(etf_sources.b3_funds, "B3ListedFunds", return_value=cliente):
+            resumo = etf_sources.collect_b3(self.config, self.catalogo, date(2026, 9, 24))
+        self.assertEqual(resumo["por_tipo"], {"ETF": 2, "ETF-RF": 1, "ETF-CRIPTO": 0, "ETF-FII": 0})
+        self.assertEqual(resumo["no_catalogo"], 2)
+        self.assertEqual(etf_sources.tickers_do_arquivo(self.config),
+                         {"51921067000108": "BDAP11", "22222222000122": "GOLD11"})
+
+    def test_tickers_valem_30_dias(self):
+        from shelf_monitor.market import etf_sources
+
+        self.assertTrue(etf_sources.tickers_desatualizados(self.config, date(2026, 9, 24)))
+        linhas = [
+            {"cnpj": "1", "ticker": "AAAA11", "fonte": "manual", "atualizado_em": "2026-09-20"},
+            {"cnpj": "2", "ticker": "BBBB11", "fonte": "b3", "atualizado_em": "2026-09-01"},
+        ]
+        b3_funds.write_tickers_csv(self.config.etf_tickers_path, linhas)
+        self.assertFalse(etf_sources.tickers_desatualizados(self.config, date(2026, 9, 24)))
+        self.assertTrue(etf_sources.tickers_desatualizados(self.config, date(2026, 10, 2)))
+
 
 class TestTickersCsv(unittest.TestCase):
     def test_manual_rows_survive_and_b3_rows_are_replaced(self):
@@ -234,6 +306,32 @@ class TestInformeDiarioXml(unittest.TestCase):
         self.assertEqual(informes[0].cotas, 10.0)
         self.assertEqual(informes[0].unknown_tags, [])
 
+    def test_cnpj_no_cabecalho_e_valores_no_bloco(self):
+        """A versao reapresentada pelo formulario do Fundos.NET (IT NOW IBOVESPA,
+        31/08/2026, documento 1309428): sem ler o CNPJ do cabecalho, o informe
+        saia sem PL e sem cota."""
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?><DOC_ARQ '
+            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n<CAB_INFORM>'
+            "<COD_DOC>1</COD_DOC><DT_COMPT>31/08/2026</DT_COMPT><DT_GERAC_ARQ/><VERSAO/>"
+            "<CNPJADM>60701190000104</CNPJADM><RAZAOSOCIALADM>ITAU UNIBANCO S.A."
+            "</RAZAOSOCIALADM><CNPJ_FDO>21407758000119</CNPJ_FDO><NOME_FDO>IT NOW "
+            "IBOVESPA FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA</NOME_FDO></CAB_INFORM>"
+            "<LISTA_INFORM><INFORM><DIA_COMPT>31</DIA_COMPT><VL_QUOTA>183,188989000000"
+            "</VL_QUOTA><CAPTC_DIA>0,00</CAPTC_DIA><RESG_DIA>0,00</RESG_DIA><PATRIM_LIQ>"
+            "7758102046,04</PATRIM_LIQ><VL_TOTAL>7652565670,31</VL_TOTAL><NR_COTST>10729"
+            "</NR_COTST></INFORM></LISTA_INFORM></DOC_ARQ>"
+        ).encode("utf-8")
+        informes = fundosnet.parse_informe_diario_xml(xml, doc_id=1309428)
+        self.assertEqual(len(informes), 1)
+        informe = informes[0]
+        self.assertEqual(informe.cnpj, "21407758000119")
+        self.assertEqual(informe.data, date(2026, 8, 31))
+        self.assertAlmostEqual(informe.pl, 7758102046.04, places=2)
+        self.assertAlmostEqual(informe.cota, 183.188989)
+        self.assertEqual(informe.cotistas, 10729)
+        self.assertTrue(informe.is_usable)
+
     def test_broken_xml_is_empty_not_an_exception(self):
         self.assertEqual(fundosnet.parse_informe_diario_xml(b"<a><b></a>"), [])
 
@@ -296,7 +394,7 @@ class TestMatchInformeToCatalog(unittest.TestCase):
 
 def cotahist_line(codneg: str, day: str = "20260911", especi: str = "CI", preult: int = 18424,
                   totneg: int = 5000, quatot: int = 1200000, voltot: int = 22108800000,
-                  tpmerc: str = "010", codbdi: str = "02") -> str:
+                  tpmerc: str = "010", codbdi: str = "14") -> str:
     """Monta uma linha de 245 colunas no layout do COTAHIST (preços em centavos)."""
     fields = [
         ("01", 2), (day, 8), (codbdi, 2), (codneg.ljust(12), 12), (tpmerc, 3),
@@ -343,8 +441,8 @@ class TestCotahist(unittest.TestCase):
     def test_read_filters_by_ticker_or_by_fund_quota_heuristic(self):
         payload = self._zip([
             cotahist_line("BOVA11"),
-            cotahist_line("PETR4", especi="ON"),
-            cotahist_line("HGLG11"),
+            cotahist_line("PETR4", especi="ON", codbdi="02"),
+            cotahist_line("HGLG11", codbdi="12"),
             cotahist_line("BOVA11", tpmerc="070"),  # termo, fora do lote padrão à vista
         ])
         by_ticker = cotahist.read_cotahist(payload, tickers={"bova11"})
@@ -352,6 +450,16 @@ class TestCotahist(unittest.TestCase):
         heuristic = cotahist.read_cotahist(payload, tickers=None)
         self.assertEqual([r.codneg for r in heuristic], ["BOVA11", "HGLG11"])
         self.assertEqual(cotahist.read_cotahist(b"nao e zip"), [])
+
+    def test_etf_negocia_com_bdi_14_e_nao_e_descartado(self):
+        """Regressao de 2026-09-24: o filtro aceitava so o BDI 02 (acao), e o
+        COTAHIST real traz ETF com BDI 14 - a coleta gravava zero linhas."""
+        payload = self._zip([
+            cotahist_line("BOVA11", codbdi="14"),
+            cotahist_line("BOVA11F", codbdi="96"),  # fracionário: fora do lote padrão
+        ])
+        rows = cotahist.read_cotahist(payload, tickers={"BOVA11", "BOVA11F"})
+        self.assertEqual([(r.codneg, r.codbdi) for r in rows], [("BOVA11", 14)])
 
     def test_weekly_liquidity(self):
         rows = [

@@ -9,3 +9,6 @@ openpyxl>=3.1
 # (XP e BTG). Sem ele, essas casas coletam somente via Open Finance.
 playwright>=1.44
 python-pptx>=1.0
+# Opcional: so o `etf-bruto` usa, para tirar o texto dos regulamentos em PDF e
+# sugerir taxa, indice e publico-alvo. Sem ele os PDFs continuam sendo baixados.
+pypdf>=4.0

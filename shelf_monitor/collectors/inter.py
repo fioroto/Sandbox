@@ -60,12 +60,12 @@ class InterCollector(PlatformCollector):
     def _collect_web(self) -> list[FundOffer]:
         urls = self._discover_fund_urls()
         if not urls:
-            raise SourceUnavailable("nenhuma pagina de fundo encontrada no sitemap")
+            raise SourceUnavailable("nenhuma página de fundo encontrada no sitemap")
 
         if len(urls) > _MAX_FUNDS:
             self.warnings.append(
-                f"sitemap com {len(urls)} fundos, coletados so {_MAX_FUNDS} "
-                "(teto de seguranca) - prateleira incompleta"
+                f"sitemap com {len(urls)} fundos, coletados só {_MAX_FUNDS} "
+                "(teto de segurança) - prateleira incompleta"
             )
 
         # Zerados aqui, e nao no __init__, para que uma segunda estrategia da
@@ -87,7 +87,7 @@ class InterCollector(PlatformCollector):
             # Pagina que nao abriu e fundo perdido: sem isto a prateleira encolhe
             # em silencio e o diff do dia seguinte le a perda como saida.
             self.warnings.append(
-                f"{self._fetch_failures} de {total} paginas de fundo falharam na "
+                f"{self._fetch_failures} de {total} páginas de fundo falharam na "
                 "coleta - prateleira incompleta"
             )
         if total and self._page_data_failures >= total // 2:
@@ -96,7 +96,7 @@ class InterCollector(PlatformCollector):
             # bloquearia baseline confiavel por tempo indeterminado.
             note = (
                 f"page-data.json falhou em {self._page_data_failures} de {total} "
-                "paginas - fatos (taxa, minimo, gestor) incompletos"
+                "páginas - fatos (taxa, mínimo, gestor) incompletos"
             )
             self.partial_reason = (
                 f"{self.partial_reason} | {note}" if self.partial_reason else note
@@ -131,7 +131,7 @@ class InterCollector(PlatformCollector):
                 break
 
         if not found and last_error:
-            raise SourceUnavailable(f"sitemap do Inter inacessivel: {last_error}")
+            raise SourceUnavailable(f"sitemap do Inter inacessível: {last_error}")
 
         # O hub e a pagina de listagem, nao um fundo: fica de fora.
         hub = _HUB_URL.rstrip("/")

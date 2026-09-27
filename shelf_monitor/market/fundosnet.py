@@ -45,7 +45,7 @@ from typing import Iterator
 from shelf_monitor.config import Config
 from shelf_monitor.http import SourceUnavailable, build_session, get
 from shelf_monitor.market.etf_flow import EtfDailyRecord
-from shelf_monitor.normalize import normalize_cnpj, parse_number
+from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
 
 BASE_URL = "https://fnet.bmfbovespa.com.br/fnet/publico/"
 
@@ -226,7 +226,7 @@ class FundosNetClient:
         try:
             return response.json()
         except ValueError as exc:
-            raise SourceUnavailable(f"resposta nao-JSON em {url}: {exc}") from exc
+            raise SourceUnavailable(f"resposta não JSON em {url}: {exc}") from exc
 
     def document_types(self, fund_type_id: int, category_id: int = CATEGORY_INFORMES_PERIODICOS) -> list[dict]:
         """Tipos de documento válidos para (tipo de fundo, categoria) - confirma o 64."""
@@ -298,6 +298,26 @@ class FundosNetClient:
         """Conteúdo bruto do documento e seu content-type."""
         response = get(self.session, f"{BASE_URL}downloadDocumento", self.config, params={"id": doc_id})
         return response.content, response.headers.get("Content-Type")
+
+    def download_with_headers(self, doc_id: int) -> tuple[bytes, dict[str, str]]:
+        """Conteudo e cabecalhos da resposta.
+
+        O CNPJ do fundo vem nulo na busca, mas o nome do arquivo no
+        Content-Disposition comeca por ele (medido em 2026-09-24:
+        "69131602000184-REG17092026V01-001322547.pdf") - e o que liga um
+        regulamento ao ETF sem depender do nome do fundo.
+        """
+        response = get(self.session, f"{BASE_URL}downloadDocumento", self.config, params={"id": doc_id})
+        return response.content, dict(response.headers)
+
+    def exibir(self, doc_id: int) -> str:
+        """A pagina que o site mostra para um documento (`exibirDocumento`).
+
+        Para o informe diario de ETF, e o mes inteiro do fundo - ver
+        `parse_informe_do_mes_html`.
+        """
+        response = get(self.session, f"{BASE_URL}exibirDocumento", self.config, params={"id": doc_id})
+        return response.text
 
 
 # --- XML do informe diário ----------------------------------------------------
@@ -380,6 +400,14 @@ def _has_direct_cnpj(node: ET.Element) -> bool:
     return any(_FIELD_OF.get(_norm_tag(child.tag)) == "cnpj" for child in node)
 
 
+def _has_direct_values(node: ET.Element) -> bool:
+    return any(_FIELD_OF.get(_norm_tag(child.tag)) in ("pl", "cota") for child in node)
+
+
+def _has_values(node: ET.Element) -> bool:
+    return any(_FIELD_OF.get(tag) in ("pl", "cota") for tag, _ in _leaves(node))
+
+
 def parse_informe_diario_xml(
     xml: bytes | str, doc_id: int | None = None, fundo: str | None = None
 ) -> list[InformeDiarioEtf]:
@@ -397,6 +425,21 @@ def parse_informe_diario_xml(
     nodes = [el for el in root.iter() if _has_direct_cnpj(el)]
     if not nodes:
         nodes = [root]
+
+    # Layout do formulario do Fundos.NET (a versao reapresentada, medido em
+    # 2026-09-24): o CNPJ_FDO fica no CAB_INFORM e o PL e a cota num INFORM sem
+    # CNPJ. Lido so pelos blocos com CNPJ, o informe saia sem PL e sem cota - e
+    # 18 ETFs do Itau e o da Caixa sumiam do fechamento de 08/2026. O CNPJ do
+    # cabecalho passa para os blocos de valores.
+    header_cnpj: str | None = None
+    if len(nodes) == 1 and nodes[0] is not root and not _has_values(nodes[0]):
+        values = [el for el in root.iter() if _has_direct_values(el) and not _has_direct_cnpj(el)]
+        if values:
+            header_cnpj = next(
+                (normalize_cnpj(text) for tag, text in _leaves(nodes[0]) if _FIELD_OF.get(tag) == "cnpj"),
+                None,
+            )
+            nodes = values
 
     # A data do informe de ETF mora no cabecalho (CAB_INFORM/DT_COMPT), fora do
     # bloco de cada fundo - entao ler so o bloco deixava `data` vazia e
@@ -427,6 +470,7 @@ def parse_informe_diario_xml(
                 if number is not None and getattr(informe, fld) is None:
                     setattr(informe, fld, number)
         informe.data = informe.data or header_date
+        informe.cnpj = informe.cnpj or header_cnpj
         informe.unknown_tags = sorted(set(unknown))
         informes.append(informe)
     return informes
@@ -446,25 +490,114 @@ def _header_date(root, nodes: list) -> date | None:
     return None
 
 
+# --- a liquida do dia ---------------------------------------------------------
+
+# O declarado do dia (captacao - resgate) vale contra a variacao de cotas do dia
+# - a diferenca de PL sem a valorizacao, (PL / cota de hoje - PL / cota de
+# ontem) x cota de hoje - com folga de 5% ou R$ 1 mil, o que for maior. Medido
+# em 2026-09-25 nos informes de 10 a 18/09/2026: fechou em 74 de 84 dias com
+# movimento, com diferenca abaixo de 1% em quase todos (4% no IT NOW Bitcoin:
+# R$ 438 mil declarados, R$ 421 mil pelas cotas). Nos outros 10, o Itau Asset e
+# a Grao declararam zero com as cotas mudando e a Buena Vista declarou resgate
+# com as cotas paradas.
+FOLGA_DO_DIA = 0.05
+FOLGA_DO_DIA_MINIMA = 1_000.0
+# Cota que dobra ou cai a menos da metade de um dia para o outro: desdobramento
+# ou grupamento. A quantidade de cotas muda sem ninguem entrar ou sair, entao o
+# dia fica com o declarado.
+EVENTO_NA_COTA = 2.0
+
+
+def declarado_fecha(declarado: float, pelo_pl: float) -> bool:
+    """O declarado bate com a variacao de cotas, dentro da folga."""
+    folga = max(FOLGA_DO_DIA_MINIMA, FOLGA_DO_DIA * max(abs(declarado), abs(pelo_pl)))
+    return abs(declarado - pelo_pl) <= folga
+
+
+def _tem_pl(informe: InformeDiarioEtf | None) -> bool:
+    return informe is not None and informe.pl is not None and bool(informe.cota)
+
+
+def variacao_de_cotas(dia: InformeDiarioEtf, anterior: InformeDiarioEtf) -> float | None:
+    """(cotas do dia - cotas de `anterior`) x cota do dia, com cotas = PL / cota.
+
+    None sem PL e cota nas duas pontas, ou quando a cota dobra ou cai a menos da
+    metade (desdobramento ou grupamento: as cotas mudam sem fluxo).
+    """
+    if not _tem_pl(dia) or not _tem_pl(anterior):
+        return None
+    razao = dia.cota / anterior.cota
+    if not 1 / EVENTO_NA_COTA < razao < EVENTO_NA_COTA:
+        return None
+    return (dia.pl / dia.cota - anterior.pl / anterior.cota) * dia.cota
+
+
+def ajustes_do_informe(
+    dias: list[InformeDiarioEtf], anterior: InformeDiarioEtf | None = None, estreia: bool = False
+) -> list[tuple[float, bool]]:
+    """Por dia, na ordem de `dias`: (ajuste pela diferenca de PL, se o ajuste valeu).
+
+    O declarado (captacao - resgate) de cada trecho entre dois dias com PL e
+    cota confere contra a variacao de cotas do trecho: dia sem PL no meio entra
+    na conta do dia seguinte, que e onde o dinheiro dele aparece nas cotas.
+    Quando nao fecha, o dia com PL leva o ajuste que faz o trecho dar a
+    variacao de cotas. `anterior`: o ultimo informe antes de `dias` (o
+    fechamento do mes anterior). Sem ele, o primeiro dia de um ETF que estreia
+    confere contra o proprio PL (toda cota e nova); o de um ETF que ja existia
+    fica com o declarado.
+    """
+    saida: list[tuple[float, bool]] = []
+    base = anterior if _tem_pl(anterior) else None
+    pendente = 0.0
+    for dia in dias:
+        declarado = (dia.captacao or 0.0) - (dia.resgates or 0.0)
+        if not _tem_pl(dia):
+            pendente += declarado
+            saida.append((0.0, False))
+            continue
+        trecho = pendente + declarado
+        if base is not None:
+            pelo_pl = variacao_de_cotas(dia, base)
+        else:
+            pelo_pl = dia.pl if estreia else None
+        if pelo_pl is not None and not declarado_fecha(trecho, pelo_pl):
+            saida.append((pelo_pl - trecho, True))
+        else:
+            saida.append((0.0, False))
+        base, pendente = dia, 0.0
+    return saida
+
+
 def records_from_informes(informes: list[InformeDiarioEtf]) -> list[EtfDailyRecord]:
     """Informes -> registros diários no formato do pipeline de fluxo.
 
-    Quando o informe traz captação e resgate do dia, eles entram direto. Quando
-    traz só cotas emitidas e cota, a captação líquida é derivada:
-    (cotas_hoje - cotas_ontem) x cota_hoje - o que na prática é a criação ou
-    resgate de cotas do ETF pelo agente autorizado. O primeiro dia da série não
-    tem "ontem" e fica sem fluxo (0, não inventado). `flow_source` diz qual das
-    duas vias produziu o número.
+    Quando o informe traz captação e resgate do dia, eles entram como vieram, e
+    o dia confere contra a variação de cotas (`ajustes_do_informe`): se o declarado
+    não fecha - o Itaú Asset que declara zero, o resgate declarado com as cotas
+    paradas -, a diferença entra em `ajuste_dia`, e a líquida do dia é a da
+    diferença de PL. Quando o informe traz só cotas emitidas e cota, a captação
+    líquida é derivada: (cotas_hoje - cotas_ontem) x cota_hoje. O primeiro dia
+    da série não tem "ontem" e fica com o declarado (ou sem fluxo: 0, não
+    inventado). `flow_source` diz qual via produziu o número.
     """
     usable = sorted(
         (i for i in informes if i.is_usable),
         key=lambda i: (i.cnpj or "", i.data or date.min),
     )
+    # O ajuste de cada dia, conferido na serie de cada ETF.
+    ajustes: dict[int, tuple[float, bool]] = {}
+    por_cnpj: dict[str, list[InformeDiarioEtf]] = {}
+    for informe in usable:
+        por_cnpj.setdefault(informe.cnpj or "", []).append(informe)
+    for serie in por_cnpj.values():
+        for informe, ajuste in zip(serie, ajustes_do_informe(serie)):
+            ajustes[id(informe)] = ajuste
     records: list[EtfDailyRecord] = []
     previous: dict[str, InformeDiarioEtf] = {}
     for informe in usable:
         captacao = informe.captacao
         resgates = informe.resgates
+        ajuste = 0.0
         flow_source: str | None = "informe" if (captacao is not None or resgates is not None) else None
         if flow_source is None:
             prev = previous.get(informe.cnpj or "")
@@ -477,6 +610,10 @@ def records_from_informes(informes: list[InformeDiarioEtf]) -> list[EtfDailyReco
                 net = (informe.cotas - prev.cotas) * informe.cota
                 captacao, resgates = (net, 0.0) if net >= 0 else (0.0, -net)
                 flow_source = "delta_cotas"
+        else:
+            ajuste, pelo_pl = ajustes[id(informe)]
+            if pelo_pl:
+                flow_source = "diferenca_pl"
         pl = informe.pl if informe.pl is not None else (
             (informe.cotas or 0.0) * (informe.cota or 0.0) or 0.0
         )
@@ -489,6 +626,7 @@ def records_from_informes(informes: list[InformeDiarioEtf]) -> list[EtfDailyReco
                 vl_patrim_liq=pl,
                 captc_dia=captacao or 0.0,
                 resg_dia=resgates or 0.0,
+                ajuste_dia=ajuste,
                 nr_cotst=informe.cotistas or 0,
                 tp_fundo_classe="FIIM",
                 flow_source=flow_source,
@@ -496,6 +634,93 @@ def records_from_informes(informes: list[InformeDiarioEtf]) -> list[EtfDailyReco
         )
         previous[informe.cnpj or ""] = informe
     return records
+
+
+# --- informe do mes (a pagina do Fundos.NET) -----------------------------------
+
+# A pagina de um informe diario de ETF (`exibirDocumento?id=`) traz o MES
+# inteiro do fundo, um dia por linha: cota, captacao no dia, resgate no dia, PL,
+# total da carteira, cotistas e data do proximo PL. Medido em 2026-09-25: a do
+# documento 1324334 (informe de 18/09/2026) tinha os dias 01 a 24/09. Uma pagina
+# por ETF por mes da o que o XML so da com um documento por dia - cerca de 220
+# paginas por mes contra ~4.800 XMLs.
+_CNPJ_RE = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
+_COMPETENCIA_RE = re.compile(r"Compet[eê]ncia:\s*(\d{2})/(\d{2})/(\d{4})", re.I)
+_DIA_RE = re.compile(r"^(\d{1,2})(?:\s*(C))?$")
+
+
+def _coluna_do_mes(rotulo: str) -> str | None:
+    """Cabecalho da tabela do mes -> campo do informe."""
+    texto = normalize_text(rotulo)
+    if texto == "DIA":
+        return "dia"
+    for pedaco, campo in (
+        ("CAPTA", "captacao"), ("RESGATE", "resgates"), ("PATRIM", "pl"),
+        ("CARTEIRA", "vl_total"), ("COTISTAS", "cotistas"), ("PROXIMA", "proximo_pl"),
+        ("QUOTA", "cota"), ("COTA", "cota"),
+    ):
+        if pedaco in texto:
+            return campo
+    return None
+
+
+def parse_informe_do_mes_html(html: str, doc_id: int | None = None) -> list[InformeDiarioEtf]:
+    """A pagina do informe -> um registro por dia do mes, com captacao e resgate.
+
+    Linha marcada como cancelada ("C = Cancelado", na legenda da pagina) fica de
+    fora; dia repetido fica com a ultima linha. Pagina que nao e a do informe
+    (outro documento, fora do ar, bloqueio) da lista vazia.
+    """
+    from bs4 import BeautifulSoup
+
+    sopa = BeautifulSoup(html or "", "html.parser")
+    texto = re.sub(r"\s+", " ", sopa.get_text(" ", strip=True))
+    competencia = _COMPETENCIA_RE.search(texto)
+    if not competencia:
+        return []
+    mes, ano = int(competencia.group(2)), int(competencia.group(3))
+    cnpj_achado = _CNPJ_RE.search(texto[competencia.end():])
+    cnpj = normalize_cnpj(cnpj_achado.group(0)) if cnpj_achado else None
+    fundo = None
+    nome = re.search(r"Nome do Fundo/Classe:\s*(.+?)\s+CNPJ:", texto)
+    if nome:
+        fundo = nome.group(1).strip()
+
+    colunas: list[str | None] | None = None
+    por_dia: dict[int, InformeDiarioEtf] = {}
+    for linha in sopa.find_all("tr"):
+        celulas = [c.get_text(" ", strip=True) for c in linha.find_all(["td", "th"])]
+        if not celulas:
+            continue
+        if colunas is None:
+            campos = [_coluna_do_mes(c) for c in celulas]
+            if "dia" in campos and "captacao" in campos and "pl" in campos:
+                colunas = campos
+            continue
+        if len(celulas) != len(colunas):
+            continue
+        valores = dict(zip(colunas, celulas))
+        dia = _DIA_RE.match(valores.get("dia") or "")
+        if not dia or dia.group(2) or any(c.strip().upper() == "C" for c in celulas[1:]):
+            continue
+        try:
+            data = date(ano, mes, int(dia.group(1)))
+        except ValueError:
+            continue
+        cotistas = parse_number(valores.get("cotistas"))
+        por_dia[data.day] = InformeDiarioEtf(
+            cnpj=cnpj,
+            data=data,
+            pl=parse_number(valores.get("pl")),
+            cota=parse_number(valores.get("cota")),
+            cotistas=int(cotistas) if cotistas is not None else None,
+            captacao=parse_number(valores.get("captacao")),
+            resgates=parse_number(valores.get("resgates")),
+            vl_total=parse_number(valores.get("vl_total")),
+            fundo=fundo,
+            doc_id=doc_id,
+        )
+    return [por_dia[d] for d in sorted(por_dia)]
 
 
 # --- persistência -------------------------------------------------------------
@@ -508,8 +733,12 @@ _CSV_COLUMNS = (
 
 def write_fnet_day_csv(config: Config, informes: list[InformeDiarioEtf], day: date) -> Path:
     """Um CSV por dia de coleta (`data/etf/fnet/<data>.csv`), versionado."""
-    config.etf_fnet_dir.mkdir(parents=True, exist_ok=True)
-    path = config.etf_fnet_dir / f"{day.isoformat()}.csv"
+    return write_informes_csv(config.etf_fnet_dir / f"{day.isoformat()}.csv", informes)
+
+
+def write_informes_csv(path: Path, informes: list[InformeDiarioEtf]) -> Path:
+    """Informes num CSV `;` - o formato dos dias e dos fechamentos mensais."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle, delimiter=";")
         writer.writerow(_CSV_COLUMNS)
@@ -525,28 +754,79 @@ def write_fnet_day_csv(config: Config, informes: list[InformeDiarioEtf], day: da
     return path
 
 
+# Série mínima para o fluxo semanal sair do Fundos.NET por padrão: duas
+# semanas de pregão com informe. Medido em 23/09: a única coleta em disco
+# (2026-09-18.csv) trouxe 853 informes de 7 datas, de 10 a 18/09 - uma semana
+# inteira e uma pela metade, que o "semana a semana" leria como queda.
+MIN_DIAS_SERIE = 10
+
+
+# Datas de informe que a competicao le como retrato recente (cotistas e fluxo da
+# janela): pouco mais de uma semana de pregao, a janela que a coleta diaria dava
+# antes de o mes inteiro estar em disco.
+DATAS_RECENTES = 7
+
+
+def dias_de_serie(config: Config) -> int:
+    """Datas distintas com informe do Fundos.NET em disco."""
+    return len({i.data for i in read_fnet_csvs(config) if i.data})
+
+
 def read_fnet_csvs(config: Config) -> list[InformeDiarioEtf]:
-    """Todos os informes já coletados, de todos os dias."""
+    """Todos os informes diarios em disco, um por (CNPJ, data).
+
+    Tres origens, da que menos vale para a que mais vale: os XML coletados dia
+    a dia (`data/etf/fnet/`), a pagina do mes que ainda nao fechou
+    (`data/etf/fnet_diario/<mes>-parcial.csv`) e a do mes fechado
+    (`data/etf/fnet_diario/<mes>.csv`) - a pagina traz a ultima versao de cada
+    dia. Dentro de cada origem, o arquivo mais novo vence.
+    """
+    caminhos: list[Path] = []
+    if config.etf_fnet_dir.exists():
+        caminhos += sorted(config.etf_fnet_dir.glob("*.csv"))
+    diario = config.etf_fnet_diario_dir
+    if diario.exists():
+        caminhos += sorted(diario.glob("*-parcial.csv"))
+        caminhos += sorted(p for p in diario.glob("*.csv") if not p.stem.endswith("-parcial"))
+    melhor: dict[tuple[str, date], InformeDiarioEtf] = {}
+    sem_chave: list[InformeDiarioEtf] = []
+    for path in caminhos:
+        for informe in read_informes_csv(path):
+            if informe.cnpj and informe.data:
+                melhor[(informe.cnpj, informe.data)] = informe
+            else:
+                sem_chave.append(informe)
+    return list(melhor.values()) + sem_chave
+
+
+def informes_recentes(config: Config, datas: int = DATAS_RECENTES) -> list[InformeDiarioEtf]:
+    """Os informes das `datas` datas mais recentes em disco."""
+    informes = read_fnet_csvs(config)
+    ultimas = sorted({i.data for i in informes if i.data})[-datas:]
+    if not ultimas:
+        return []
+    return [i for i in informes if i.data and i.data >= ultimas[0]]
+
+
+def read_informes_csv(path: Path) -> list[InformeDiarioEtf]:
+    """Um CSV gravado por `write_informes_csv`."""
     informes: list[InformeDiarioEtf] = []
-    if not config.etf_fnet_dir.exists():
-        return informes
-    for path in sorted(config.etf_fnet_dir.glob("*.csv")):
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            for row in csv.DictReader(handle, delimiter=";"):
-                informe = InformeDiarioEtf(
-                    cnpj=normalize_cnpj(row.get("cnpj")),
-                    fundo=row.get("fundo") or None,
-                    data=_parse_any_date(row.get("data")),
-                    pl=parse_number(row.get("pl")),
-                    cota=parse_number(row.get("cota")),
-                    cotas=parse_number(row.get("cotas")),
-                    captacao=parse_number(row.get("captacao")),
-                    resgates=parse_number(row.get("resgates")),
-                    vl_total=parse_number(row.get("vl_total")),
-                )
-                cotistas = parse_number(row.get("cotistas"))
-                informe.cotistas = int(cotistas) if cotistas is not None else None
-                doc_id = parse_number(row.get("doc_id"))
-                informe.doc_id = int(doc_id) if doc_id is not None else None
-                informes.append(informe)
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter=";"):
+            informe = InformeDiarioEtf(
+                cnpj=normalize_cnpj(row.get("cnpj")),
+                fundo=row.get("fundo") or None,
+                data=_parse_any_date(row.get("data")),
+                pl=parse_number(row.get("pl")),
+                cota=parse_number(row.get("cota")),
+                cotas=parse_number(row.get("cotas")),
+                captacao=parse_number(row.get("captacao")),
+                resgates=parse_number(row.get("resgates")),
+                vl_total=parse_number(row.get("vl_total")),
+            )
+            cotistas = parse_number(row.get("cotistas"))
+            informe.cotistas = int(cotistas) if cotistas is not None else None
+            doc_id = parse_number(row.get("doc_id"))
+            informe.doc_id = int(doc_id) if doc_id is not None else None
+            informes.append(informe)
     return informes

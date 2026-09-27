@@ -150,11 +150,11 @@ class TestCategoriaDaLinha(unittest.TestCase):
 
     def test_anbima_vence_a_cvm(self):
         linha = {
-            "classificacao_anbima": "Renda Fixa Duracao Baixa Soberano",
+            "classificacao_anbima": "Renda Fixa Duração Baixa Soberano",
             "classificacao_cvm": "Renda Fixa",
         }
         self.assertEqual(
-            categoria_da_linha(linha), "Renda Fixa Duracao Baixa Soberano"
+            categoria_da_linha(linha), "Renda Fixa Duração Baixa Soberano"
         )
 
     def test_cai_para_a_cvm_quando_nao_ha_anbima(self):
@@ -166,8 +166,8 @@ class TestCategoriaDaLinha(unittest.TestCase):
     def test_espaco_em_branco_nao_conta_como_categoria(self):
         """Celula com espacos e celula vazia - a CVM entrega as duas formas."""
         self.assertEqual(
-            categoria_da_linha({"classificacao_anbima": "   ", "classificacao_cvm": "Acoes"}),
-            "Acoes",
+            categoria_da_linha({"classificacao_anbima": "   ", "classificacao_cvm": "Ações"}),
+            "Ações",
         )
 
     def test_sem_nenhuma_devolve_vazio_e_nao_none(self):

@@ -6,6 +6,8 @@ from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from shelf_monitor.texto import consertar_mojibake
+
 if TYPE_CHECKING:  # enrich importa models - a volta so vale para o type checker
     from shelf_monitor.enrich import EnrichmentStats
 
@@ -64,6 +66,11 @@ class PerformanceFee:
         )
 
 
+# Aplicacao minima como a VITRINE a publicou, gravada pelo merge antes que a
+# precedencia do Open Finance a substitua pelo minimo institucional da classe
+# (ver `FundOffer.minimo_vitrine`).
+KEY_MINIMO_VITRINE = "minimo_vitrine"
+
 # Fontes que representam a vitrine comercial da casa (o que o varejo ve),
 # em oposicao ao catalogo regulatorio do Open Finance.
 LISTING_SOURCES = frozenset(
@@ -121,6 +128,30 @@ class FundOffer:
         return any(source in LISTING_SOURCES for source in self.sources)
 
     @property
+    def minimo_vitrine(self) -> float | None:
+        """A aplicacao minima que o cliente ve na vitrine - nunca a do catalogo.
+
+        O merge da precedencia ao Open Finance, que informa o minimo
+        institucional da classe, nao o ticket que o site cobra. Medido em
+        2026-09-23: os 514 fundos da vitrine da XP que tambem estao no catalogo
+        tinham `min_initial` do Open Finance, todos acima de R$ 5 mil, enquanto
+        a propria lista da XP mostrava 80% da vitrine abaixo disso. Ler
+        `min_initial` direto foi o que fez o relatorio concluir que a XP "nao
+        tem porta de entrada de varejo".
+
+        Duas vias, nesta ordem: o valor que o merge guardou da fonte de vitrine;
+        ou, num fundo que nao passou pelo Open Finance, o proprio `min_initial`,
+        que so pode ter vindo da vitrine. Sem nenhuma das duas, None - o monitor
+        nao sabe o que a vitrine mostra.
+        """
+        valor = self.extra.get(KEY_MINIMO_VITRINE)
+        if valor is not None:
+            return valor
+        if CollectorStrategy.OPEN_FINANCE.value not in self.sources:
+            return self.min_initial
+        return None
+
+    @property
     def identity(self) -> str:
         """Chave de comparacao entre snapshots: CNPJ quando existe, senao slug do nome."""
         from shelf_monitor.normalize import name_slug
@@ -158,19 +189,22 @@ class FundOffer:
 
     @classmethod
     def from_dict(cls, data: dict) -> FundOffer:
+        # Texto gravado com o charset errado e reparado na leitura (ver
+        # shelf_monitor.texto): o relatorio nao publica "DÃ³lar", e a
+        # comparacao com a coleta seguinte nao conta o conserto como mudanca.
         return cls(
             platform=data["platform"],
-            name=data["name"],
+            name=consertar_mojibake(data["name"]),
             cnpj=data.get("cnpj"),
             isin=data.get("isin"),
             # Snapshot anterior ao lookup por codigo nao tem a chave: le como
             # None e o historico continua comparavel.
             cvm_code=data.get("cvm_code"),
-            manager_name=data.get("manager_name"),
+            manager_name=consertar_mojibake(data.get("manager_name")),
             manager_cnpj=data.get("manager_cnpj"),
-            admin_name=data.get("admin_name"),
+            admin_name=consertar_mojibake(data.get("admin_name")),
             asset_class=AssetClass(data.get("asset_class", "outros")),
-            raw_category=data.get("raw_category"),
+            raw_category=consertar_mojibake(data.get("raw_category")),
             min_initial=data.get("min_initial"),
             admin_fee_pct=data.get("admin_fee_pct"),
             performance_fee=PerformanceFee.from_dict(data.get("performance_fee")),
@@ -394,10 +428,19 @@ class ShelfDiff:
     changed: list[FundChange] = field(default_factory=list)
     suspect: bool = False
     suspect_reason: str | None = None
+    # A vitrine apareceu ou cresceu alem de SUSPECT_GROWTH_RATIO: a coleta passou
+    # a ver mais, e o que ela ve pela primeira vez nao e movimento de mercado.
+    nova_linha_de_base: bool = False
 
     @property
     def is_first_run(self) -> bool:
-        return self.prev_date is None
+        """Sem comparacao possivel: primeira coleta, ou vitrine que mudou de escala.
+
+        A nova linha de base entra aqui para que toda superficie que ja trata a
+        primeira coleta como base - digest, deck, resumo, assunto do e-mail -
+        trate igual o ganho de cobertura, sem regra propria em cada uma.
+        """
+        return self.prev_date is None or self.nova_linha_de_base
 
     def to_dict(self) -> dict:
         return {
@@ -406,6 +449,7 @@ class ShelfDiff:
             "curr_date": self.curr_date.isoformat(),
             "suspect": self.suspect,
             "suspect_reason": self.suspect_reason,
+            "nova_linha_de_base": self.nova_linha_de_base,
             "added": [f.to_dict() for f in self.added],
             "removed": [f.to_dict() for f in self.removed],
             "changed": [c.to_dict() for c in self.changed],
@@ -466,6 +510,15 @@ class CvmDiff:
         }
 
 
+# Blocos que um modulo pode suprimir (ver RunReport.suprimidos).
+# Tudo que conta cotistas: ponderacao, "onde esta a gente", "+N cotistas".
+BLOCO_COTISTAS = "cotistas"
+# Tudo que cruza vitrines por CNPJ: gaps, exclusivos, consenso entre casas.
+BLOCO_CNPJ = "cnpj"
+# O corte produto da gestora da propria casa x terceiros, pelo gestor registrado.
+BLOCO_PRODUTO_PROPRIO = "produto_proprio"
+
+
 @dataclass
 class RunReport:
     """Tudo que uma execucao produziu - entrada dos renderers."""
@@ -492,6 +545,11 @@ class RunReport:
     # (report.performance.build_performance). None quando o informe diario nao
     # estava disponivel - as superficies omitem o bloco em vez de inventar.
     performance: dict | None = None
+    # A mesma leitura em 12 meses (report.performance.build_performance_mensal),
+    # sobre a serie mensal do informe - base no fechamento da competencia
+    # anterior, a convencao de lamina. Cada bloco traz em `janela` o rotulo, as
+    # datas, os pregoes e a base, que toda superficie escreve junto do numero.
+    performance_12m: dict | None = None
     # Custo relativo a categoria (report.custo) e mandato declarado
     # (report.mandato). Ambos saem do extrato da CVM, entao dependem da base de
     # mercado importada - None quando ela falta.
@@ -503,6 +561,22 @@ class RunReport:
     # `--with-rentabilidade` em `run`, `report` e `export` - como `--with-etf`.
     # O docstring dizia isso desde sempre; o codigo so passou a cumprir agora.
     rentabilidade: dict | None = None
+    # Blocos que o modulo declarou sem sentido no dominio dele
+    # (`Config.blocos_suprimidos`): chave -> motivo. Cada superficie troca o
+    # bloco pelo motivo, em vez de publicar numero que nao mede nada. Vazio no
+    # monitor de fundos; a previdencia suprime BLOCO_COTISTAS e BLOCO_CNPJ.
+    suprimidos: dict[str, str] = field(default_factory=dict)
+    # Insumos do bloco de gaps: o mapa de familias de estrategia
+    # (familias.MapaDeFamilias, montado da carteira mensal da CVM) e a lista
+    # distribuivel (distribuivel.BaseDistribuivel, a pasta de CSVs). Objetos e
+    # nao dicts porque o bloco consulta o mapa gap a gap. None quando a fonte
+    # falta - o bloco volta a comparar CNPJ contra CNPJ e diz por que.
+    familias: object | None = None
+    distribuivel: object | None = None
+
+    def suprime(self, bloco: str) -> str | None:
+        """O motivo, quando o bloco esta suprimido; None quando ele vale."""
+        return self.suprimidos.get(bloco)
 
     def snapshot_for(self, platform: str) -> ShelfSnapshot | None:
         for snap in self.snapshots:

@@ -62,7 +62,7 @@ def ponderada(
     Em ambos, item sem valor e ignorado, e peso negativo conta como zero.
     """
     if sem_peso not in ("media", "none"):
-        raise ValueError(f"sem_peso deve ser 'media' ou 'none', nao {sem_peso!r}")
+        raise ValueError(f"sem_peso deve ser 'media' ou 'none', não {sem_peso!r}")
     pares = [
         (v, max(peso(item) or 0.0, 0.0))
         for item in itens

@@ -40,6 +40,7 @@
   "--help"
  ],
  "etf": [
+  "--anbima",
   "--collect-sources",
   "--data-dir",
   "--export",
@@ -47,18 +48,37 @@
   "--force",
   "--help",
   "--months",
+  "--no-fnet-monthly",
   "--output",
   "--probe-sources"
+ ],
+ "etf-bruto": [
+  "--cobertura",
+  "--comparar-comdinheiro",
+  "--consolidar",
+  "--data-dir",
+  "--desde",
+  "--dia",
+  "--fontes",
+  "--forcar",
+  "--help",
+  "--listar-fontes"
  ],
  "export": [
   "--collect",
   "--data-dir",
   "--first-source-only",
   "--help",
+  "--no-carteira",
   "--output",
   "--platform",
   "--skip-cvm",
   "--with-rentabilidade"
+ ],
+ "familias": [
+  "--data-dir",
+  "--help",
+  "--json"
  ],
  "insights": [
   "--data-dir",
@@ -98,6 +118,7 @@
  "report": [
   "--data-dir",
   "--help",
+  "--no-carteira",
   "--platform",
   "--send-email",
   "--with-rentabilidade"
@@ -107,6 +128,7 @@
   "--first-source-only",
   "--git-commit",
   "--help",
+  "--no-carteira",
   "--no-market",
   "--platform",
   "--send-email",
