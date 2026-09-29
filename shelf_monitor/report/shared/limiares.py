@@ -101,3 +101,14 @@ MAX_DIVERGENCIA_PERFIL_CARTEIRA = 0.25
 # e menos que MAX_ACOES_MM_CREDITO em acoes, e credito com outro nome.
 MIN_CREDITO_MM_LIVRE = 0.60
 MAX_ACOES_MM_CREDITO = 0.10
+
+# Retorno de cota acima disto num mes nao e desempenho, e evento na cota:
+# grupamento, desdobramento ou erro de dado. Medido no painel de 10/2025 a
+# 08/2026: 293 linhas passavam de 50% no mes (uma chegava a x1.000.000) e
+# somavam R$ 2,4 tri de "rendimento". Nesses meses o fluxo implicito dos fundos
+# cai no rateio e o rendimento vai para o residuo, publicado.
+MAX_RETORNO_MENSAL_PLAUSIVEL = 0.50
+# O mesmo para a janela de rentabilidade (12 ou 3 meses): fora desta faixa o
+# retorno sai da mediana do peer group e do quartil.
+MAX_RETORNO_JANELA_PLAUSIVEL = 5.0
+MIN_RETORNO_JANELA_PLAUSIVEL = -0.95

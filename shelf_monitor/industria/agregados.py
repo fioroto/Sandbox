@@ -33,6 +33,14 @@ class Dimensoes:
 
 
 def dimensoes(base: BaseIndustria, linha: LinhaMes) -> Dimensoes:
+    """As dimensoes do produto da linha, memorizadas por (classe, subclasse)."""
+    chave_memo = ("dimensoes", linha.classe, linha.subclasse)
+    if chave_memo not in base._memo:
+        base._memo[chave_memo] = _dimensoes(base, linha)
+    return base._memo[chave_memo]
+
+
+def _dimensoes(base: BaseIndustria, linha: LinhaMes) -> Dimensoes:
     estrutura = base.estrutura.de(linha.classe)
     estrategia = base.taxonomia.de(linha.classe)
     produto = base.cadastro.produto(linha.classe, linha.subclasse)

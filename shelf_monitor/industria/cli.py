@@ -20,6 +20,7 @@ from shelf_monitor.industria.ciclo import (
     normalizar_competencia,
 )
 from shelf_monitor.industria.console import imprimir_bloco
+from shelf_monitor.report.industria_planilha import gravar_planilha
 
 console = Console()
 
@@ -76,6 +77,40 @@ def _progresso(etapa: str, detalhe: str) -> None:
     console.print(f"  [dim]{etapa}: {detalhe}[/]")
 
 
+def publicar(config: Config, bloco: dict) -> dict[str, Path]:
+    """Grava as saidas do ciclo mensal e a trilha de auditoria do bloco.
+
+    Cada saida e isolada: uma que falhe nao impede as outras, e a falha sai no
+    console com o motivo.
+    """
+    gravados: dict[str, Path] = {}
+    for nome, gravar in (
+        ("historico", lambda: gravar_historico(config, bloco)),
+        ("planilha", lambda: gravar_planilha(config, bloco)),
+    ):
+        try:
+            gravados[nome] = gravar()
+        except Exception as exc:  # noqa: BLE001 - uma saida nao derruba as outras
+            console.print(f"  [yellow]{nome} não gravado: {exc}[/]")
+    console.print()
+    for nome, caminho in gravados.items():
+        console.print(f"  [green]{nome}:[/] {caminho}")
+    return gravados
+
+
+def gravar_historico(config: Config, bloco: dict) -> Path:
+    """O bloco publicado da competencia, sem as chaves privadas: a trilha de
+    auditoria em data/historico/industria/AAAAMM.json (versionada)."""
+    destino = config.historico_dir / "industria" / f"{bloco['competencia']}.json"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    limpo = {k: v for k, v in bloco.items() if not k.startswith("_")}
+    destino.write_text(
+        json.dumps(limpo, indent=1, ensure_ascii=False, default=str, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return destino
+
+
 def cmd_industria(config: Config, args: argparse.Namespace) -> int | None:
     config.ensure_dirs()
     baixar = not args.offline
@@ -105,8 +140,10 @@ def cmd_industria(config: Config, args: argparse.Namespace) -> int | None:
     if base is None:
         console.print("[red]Sem cadastro para montar o universo.[/]")
         return 1
-    bloco = montar_bloco(base)
+    bloco = montar_bloco(base, config)
     imprimir_bloco(bloco, console)
+    if bloco.get("available"):
+        publicar(config, bloco)
 
     if args.json:
         destino = Path(args.json)

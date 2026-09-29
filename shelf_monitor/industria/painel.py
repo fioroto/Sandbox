@@ -35,6 +35,7 @@ from shelf_monitor.industria.universo import (
     motivo,
 )
 from shelf_monitor.report.rentabilidade import MesSubclasse
+from shelf_monitor.report.shared.limiares import MAX_RETORNO_MENSAL_PLAUSIVEL
 
 
 @dataclass(slots=True)
@@ -53,6 +54,7 @@ class LinhaMes:
     fatia_fundos: float
     fatia_fundos_anterior: float | None
     fonte_fatia: str
+    evento_na_cota: bool = False
 
     @property
     def captacao_liquida(self) -> float:
@@ -78,11 +80,21 @@ class LinhaMes:
 
 
 def _retorno_do_mes(atual: MesSubclasse, anterior: MesSubclasse | None) -> float | None:
-    """Retorno da subclasse no mes, com base no fechamento anterior (lamina)."""
+    """Retorno da subclasse no mes, com base no fechamento anterior (lamina).
+
+    None quando nao ha cota, e quando o salto passa de
+    MAX_RETORNO_MENSAL_PLAUSIVEL: e evento na cota, nao desempenho.
+    """
     base = anterior.cota_fim if anterior is not None and anterior.cota_fim > 0 else atual.cota_ini
     if base <= 0 or atual.cota_fim <= 0:
         return None
-    return atual.cota_fim / base - 1.0
+    retorno = atual.cota_fim / base - 1.0
+    return None if abs(retorno) > MAX_RETORNO_MENSAL_PLAUSIVEL else retorno
+
+
+def _evento_na_cota(atual: MesSubclasse, anterior: MesSubclasse | None) -> bool:
+    base = anterior.cota_fim if anterior is not None and anterior.cota_fim > 0 else atual.cota_ini
+    return base > 0 and atual.cota_fim > 0 and abs(atual.cota_fim / base - 1.0) > MAX_RETORNO_MENSAL_PLAUSIVEL
 
 
 def _fatia(perfil: PerfilClasse | None) -> float:
@@ -104,7 +116,20 @@ def motivo_na_base(
 
 
 def linhas_do_mes(base: BaseIndustria, competencia: str) -> list[LinhaMes]:
-    """As linhas do painel numa competencia, universo inteiro (todo motivo)."""
+    """As linhas do painel numa competencia, universo inteiro (todo motivo).
+
+    Memorizadas na base: as janelas de 1, 3 e 12 meses leem as mesmas
+    competencias.
+    """
+    chave_memo = ("linhas", competencia)
+    if chave_memo in base._memo:
+        return base._memo[chave_memo]
+    linhas = _linhas_do_mes(base, competencia)
+    base._memo[chave_memo] = linhas
+    return linhas
+
+
+def _linhas_do_mes(base: BaseIndustria, competencia: str) -> list[LinhaMes]:
     anterior = competencia_anterior(competencia)
     linhas: list[LinhaMes] = []
     for (cnpj, sub), serie in base.serie.por_subclasse():
@@ -134,6 +159,7 @@ def linhas_do_mes(base: BaseIndustria, competencia: str) -> list[LinhaMes]:
                 _fatia(perfil_anterior) if perfil_anterior is not None else None
             ),
             fonte_fatia=fonte,
+            evento_na_cota=_evento_na_cota(atual, mes_anterior),
         ))
     return linhas
 

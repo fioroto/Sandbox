@@ -65,6 +65,9 @@ class BaseIndustria:
     _perfil_fixo: dict[str, PerfilClasse] | None = field(default=None, repr=False)
     _estrutura: MapaDeEstrutura | None = field(default=None, repr=False)
     _taxonomia: Taxonomia | None = field(default=None, repr=False)
+    # Linhas do painel por competencia e dimensoes por classe: calculadas uma
+    # vez por execucao (`painel.linhas_do_mes`, `agregados.dimensoes`).
+    _memo: dict = field(default_factory=dict, repr=False)
 
     def perfil_do_mes(self, cnpj: str, competencia: str) -> PerfilClasse | None:
         """O perfil da classe no mes; sem ele, o mais recente anterior."""

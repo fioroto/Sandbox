@@ -6,7 +6,7 @@ from rich.table import Table
 
 from shelf_monitor.industria.curadoria import TIPOS_DE_GESTORA
 from shelf_monitor.industria.universo import UNIVERSO
-from shelf_monitor.report.shared.numeros import pct, reais
+from shelf_monitor.report.shared.numeros import pct, reais, reais_com_sinal
 from shelf_monitor.texto import data_br, milhar
 
 
@@ -81,11 +81,46 @@ def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
         f"{reais(camadas['pl_bruto'])} brutos; sem perfil no mês: {reais(camadas['sem_perfil'])}."
     )
 
+    for prazo in bloco.get("prazos") or ():
+        console.print(f"  [dim]Prazo — {prazo}[/]")
+
+    def fluxo(item: dict, janela: str) -> tuple[str, str]:
+        dados = (item.get("janelas") or {}).get(janela) or {}
+        if not dados:
+            return "-", "-"
+        return reais_com_sinal(dados.get("fluxo_investidor")), pct(dados.get("sobre_pl"))
+
     _tabela_simples(
         console, "Estratégias do universo (camada do investidor)",
-        ("Macroclasse", "Classes", "PL (R$ bi)", "Fatia"),
-        [(i["n1"], milhar(i["classes"]), _bi(i["pl_investidor"]), pct(i.get("fatia")))
+        ("Macroclasse", "Classes", "PL (R$ bi)", "Fatia", "Captação 12m", "% PL"),
+        [(i["n1"], milhar(i["classes"]), _bi(i["pl_investidor"]), pct(i.get("fatia")), *fluxo(i, "12m"))
          for i in bloco.get("estrategias", {}).get("n1", [])],
+    )
+    n2 = sorted(
+        (i for i in bloco.get("estrategias", {}).get("n2", []) if (i.get("janelas") or {}).get("12m")),
+        key=lambda i: -i["janelas"]["12m"]["fluxo_investidor"],
+    )
+    _tabela_simples(
+        console, "Peer groups que mais captam e mais perdem em 12 meses",
+        ("Peer group", "Macroclasse", "PL (R$ bi)", "Captação 12m", "% PL", "Mediana 12m"),
+        [(i["n2"], i["n1"], _bi(i["pl_investidor"]), *fluxo(i, "12m"),
+          pct((i.get("rentabilidade") or {}).get("12m", {}).get("mediana")))
+         for i in n2[:8] + n2[-5:]],
+    )
+    familias = bloco.get("familias") or {}
+    _tabela_simples(
+        console, "Estratégias (famílias) que mais captam em 12 meses",
+        ("Estratégia", "Gestora", "Peer group", "Veículos", "Captação 12m"),
+        [(i["nome"][:48], i["gestora"][:22], i["n2"][:28], milhar(i["veiculos"]),
+          reais_com_sinal(i["fluxo_investidor"]))
+         for i in (familias.get("que_mais_captam") or [])[:10]],
+    )
+    _tabela_simples(
+        console, "Estratégias (famílias) que mais perdem em 12 meses",
+        ("Estratégia", "Gestora", "Peer group", "Veículos", "Captação 12m"),
+        [(i["nome"][:48], i["gestora"][:22], i["n2"][:28], milhar(i["veiculos"]),
+          reais_com_sinal(i["fluxo_investidor"]))
+         for i in (familias.get("que_mais_perdem") or [])[:10]],
     )
     _tabela_simples(
         console, "Papel na estrutura",
@@ -113,13 +148,23 @@ def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
         )
 
     adjacentes = bloco.get("adjacentes") or {}
-    if adjacentes:
-        partes = [
-            f"{item['rotulo']}: {milhar(item['produtos'])} produtos, {reais(item['pl'])}"
-            + (" (PL do cadastro)" if item.get("fonte_do_pl") == "cadastro" else "")
-            for item in adjacentes.values()
-        ]
-        console.print("  Camadas ao lado (fora da soma): " + "; ".join(partes) + ".")
+    for item in adjacentes.values():
+        if item.get("available") is False:
+            console.print(f"  [dim]{item['rotulo']} (camada ao lado): {item.get('reason')}[/]")
+            continue
+        doze = (item.get("janelas") or {}).get("12m") or {}
+        console.print(
+            f"  {item['rotulo']} (camada ao lado, fora da soma): "
+            f"{reais(item.get('pl_investidor', item.get('pl')))}; captação 12m "
+            f"{reais_com_sinal(doze.get('fluxo_investidor'))}."
+        )
+    lancamentos = (bloco.get("lancamentos") or {}).get("12m") or {}
+    if lancamentos:
+        console.print(
+            f"  Em 12 meses entraram {milhar(lancamentos['entrou']['produtos'])} produtos no universo "
+            f"({reais(lancamentos['entrou']['pl_investidor'])} hoje) e saíram "
+            f"{milhar(lancamentos['saiu']['produtos'])}."
+        )
 
     qualidade = bloco.get("qualidade") or {}
     cobertura = qualidade.get("cobertura_perfil")

@@ -10,7 +10,7 @@
 |---|---|
 | 1A. Fundação e início do histórico | implementada em 28/09/2026 |
 | 1B. Estrutura e taxonomia | implementada em 28/09/2026 |
-| 1C. Bloco e planilha | a fazer |
+| 1C. Bloco e planilha | implementada em 28/09/2026 |
 | 1D. Painel interativo | a fazer |
 | 1E. E-mail e cadência | a fazer |
 
@@ -54,8 +54,29 @@ Os números de verificação desta spec são os do monitor.
 
 - **Casas dedicadas:** Banco do Brasil R$ 26,8 bi (68 veículos), Itaú R$ 26,4 bi (224), XP R$ 22,4 bi (89, pela marca "Advisory"), Bradesco R$ 5,3 bi, BTG R$ 4,9 bi.
 - **Macroclasses:** pós-fixado e caixa 63,3%, crédito privado 14,3%, multimercado 8,7%, ações 5,7%, internacional 5,1%, juros e inflação 2,7%.
-- **Confiança da estratégia:** alta em 81,8% do PL e média em 18,1%.
+- **Confiança da estratégia:** alta em 71,4% do PL, média em 28,5% e baixa em 0,05%. Os rótulos largos de duração média e livre, que agora dependem da carteira, entram como média.
 - **Grupo curado:** cobre 96,0% do PL, com 778 grupos no universo.
+
+**Bloco e planilha medidos pelo monitor em 28/09/2026** (camada do investidor; 12 meses de 01/09/2025 a 31/08/2026, base no fechamento de 29/08/2025):
+
+| Grandeza | Número |
+|---|---|
+| PL do universo | R$ 3,31 tri → R$ 3,80 tri |
+| Captação do investidor em 12 meses | +R$ 49,8 bi (1,5% do PL de abertura) |
+| Rendimento em 12 meses | +R$ 435,7 bi |
+| Resíduo em 12 meses | +R$ 0,6 bi (a soma dos resíduos mensais é 12,4% da soma das variações) |
+| Peer group que mais captou / que mais perdeu | Crédito baixa duração (+R$ 20,9 bi) / DI Grau de investimento (−R$ 24,4 bi) |
+| Conta e ordem | 11,9% do PL (+1,9 p.p. em 12 meses) |
+| PF varejo | 18,6% do PL (+1,3 p.p.) |
+| PJ private | 17,6% do PL (−1,3 p.p.) |
+| Gestoras bancárias / independentes | 76,7% (−0,8 p.p.) / 10,8% (−0,5 p.p.) |
+| Captação positiva que ficou com os 10 maiores grupos | 59,8% |
+| Produtos que entraram / saíram do universo em 12 meses | 704 (R$ 37,6 bi hoje) / 199 (R$ 15,0 bi) |
+| Previdência (camada ao lado) | +R$ 48,4 bi em 12 meses (2,5% do PL) |
+
+- **Sazonalidade:** dezembro de 2025 perdeu R$ 61 bi e janeiro de 2026 captou R$ 35 bi.
+- **Evento na cota:** retorno mensal acima de 50% (grupamento, desdobramento ou erro de dado) sai do rendimento e do retorno. Sem essa guarda, 293 linhas com saltos de até ×1.000.000 somavam R$ 2,4 tri de "rendimento".
+- **Saídas:** `data/reports/industria-AAAA-MM.xlsx`, com 15 abas e o explorador de 8,2 mil produtos, e o bloco publicado em `data/historico/industria/AAAAMM.json`.
 
 **Mudança em relação ao plano.** Os rótulos "Grau de investimento" e "Soberano" de duração média e livre (R$ 685 bi) iam para juros e inflação. A carteira da raiz mostrou que são pós na maioria: 77 a 78% em LFT e compromissada no soberano. Por isso ficam em pós-fixado e caixa, e só viram "Juros ativo (pré e inflação)" quando pré e inflação passam de metade da carteira. Juros e inflação ficou com 2,7% do PL, que é o tamanho real do risco de juros fora da previdência.
 
