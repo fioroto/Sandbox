@@ -11,9 +11,19 @@ import unittest
 
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.report.shared import (
+    MAX_ACOES_MM_CREDITO,
+    MAX_COTISTAS_RESTRITO,
+    MAX_DIVERGENCIA_PERFIL_CARTEIRA,
     MIN_COBERTURA_CUSTO,
     MIN_COBERTURA_JANELA,
     MIN_COBERTURA_VITRINE,
+    MIN_CREDITO_MM_LIVRE,
+    MIN_FATIA_ALVO_UNICO,
+    MIN_FATIA_DOMINANTE,
+    MIN_FATIA_FOF,
+    MIN_FATIA_FUNDOS_MASTER,
+    MIN_FATIA_HIBRIDO,
+    MIN_FATIA_MAIOR_COTISTA_RESTRITO,
     arredonda,
     mediana,
     ordem_canonica,
@@ -21,6 +31,7 @@ from shelf_monitor.report.shared import (
     quartis,
     rotulo_da_casa,
 )
+from shelf_monitor.report.shared.numeros import pct, pp, reais, reais_com_sinal
 
 
 class TestMediana(unittest.TestCase):
@@ -137,6 +148,40 @@ class TestLimiares(unittest.TestCase):
         """
         self.assertNotEqual(MIN_COBERTURA_VITRINE, MIN_COBERTURA_JANELA)
         self.assertLess(MIN_COBERTURA_CUSTO, MIN_COBERTURA_VITRINE)
+
+    def test_limiares_da_industria_ficam_na_ordem_que_a_cascata_supoe(self):
+        """O universo decide master antes de composicao dominante, e a estrutura
+        decide alvo unico antes de FoF: os cortes precisam respeitar a ordem.
+
+        - master (estrutura declarada) usa corte mais baixo que a composicao
+          dominante (previdencia, institucional), que oscila de mes a mes;
+        - hibrido < FoF < alvo unico, e hibrido < master: senao uma classe
+          seria hibrida e master ao mesmo tempo;
+        - restrito exige maioria de um cotista e poucos cotistas.
+        """
+        self.assertLess(MIN_FATIA_FUNDOS_MASTER, MIN_FATIA_DOMINANTE)
+        self.assertLess(MIN_FATIA_HIBRIDO, MIN_FATIA_FOF)
+        self.assertLess(MIN_FATIA_FOF, MIN_FATIA_ALVO_UNICO)
+        self.assertLess(MIN_FATIA_HIBRIDO, MIN_FATIA_FUNDOS_MASTER)
+        self.assertGreaterEqual(MIN_FATIA_MAIOR_COTISTA_RESTRITO, 0.5)
+        self.assertGreater(MAX_COTISTAS_RESTRITO, 0)
+        self.assertLess(MAX_ACOES_MM_CREDITO, MIN_CREDITO_MM_LIVRE)
+        self.assertLess(MAX_DIVERGENCIA_PERFIL_CARTEIRA, 0.5)
+
+
+class TestFormatadores(unittest.TestCase):
+    def test_reais_nas_tres_escalas(self):
+        self.assertEqual(reais(3.95e12), "R$ 3,95 tri")
+        self.assertEqual(reais(8.6e9), "R$ 8,6 bi")
+        self.assertEqual(reais(115e6), "R$ 115 mi")
+        self.assertEqual(reais(None), "-")
+
+    def test_sinal_pct_e_pontos(self):
+        self.assertEqual(reais_com_sinal(-83e6), "-R$ 83 mi")
+        self.assertEqual(reais_com_sinal(1.2e9), "+R$ 1,2 bi")
+        self.assertEqual(pct(0.066), "6,6%")
+        self.assertEqual(pp(0.4), "+0,4 pp")
+        self.assertEqual(pp(0.01), "0,0 pp")
 
 
 

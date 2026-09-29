@@ -80,6 +80,15 @@
   "--help",
   "--json"
  ],
+ "industria": [
+  "--competencia",
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--meses",
+  "--offline"
+ ],
  "insights": [
   "--data-dir",
   "--help",

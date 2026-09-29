@@ -59,3 +59,45 @@ SUB_INDICE = 0.7
 # amostra que um share de categoria, entao o corte pode ser mais sensivel.
 CARO = 1.3
 BARATO = 0.7
+
+# --- universo e estrutura da industria de fundos ----------------------------
+# Fracoes do PL de uma classe, lidas do perfil mensal da CVM (quem e o dono do
+# dinheiro) ou da carteira (em que a classe investe). Medido em 28/09/2026 no
+# perfil de 08/2026 e na carteira de 08/2026; ver `shelf_monitor/industria`.
+
+# Classe com ao menos esta fracao do PL em maos de outros fundos e master:
+# veiculo interno da estrutura, que empresta a estrategia aos feeders mas nao
+# e vendido a ninguem. 3.893 classes e R$ 2,9 tri em 08/2026.
+MIN_FATIA_FUNDOS_MASTER = 0.90
+
+# A partir daqui o dinheiro de um tipo de cotista domina a classe a ponto de
+# ela nao ser produto de PF/PJ: previdencia (seguradora e EAPC), institucional
+# (fundo de pensao, RPPS, banco...) e nao residente. Mais alto que o do master
+# de proposito: o master e estrutura declarada pela carteira, estes sao
+# composicao de cotistas, que oscila de mes a mes.
+MIN_FATIA_DOMINANTE = 0.95
+
+# Restrito de fato: o maior cotista tem ao menos esta fracao do PL e a classe
+# tem ate MAX_COTISTAS_RESTRITO cotistas - clube de familia com nome de fundo.
+MIN_FATIA_MAIOR_COTISTA_RESTRITO = 0.50
+MAX_COTISTAS_RESTRITO = 10
+
+# Carteira: classe com ao menos esta fracao em cotas de UMA classe e feeder ou
+# espelho dela - o mesmo corte de `familias.LIMIAR_ESPELHO`.
+MIN_FATIA_ALVO_UNICO = 0.95
+# Com ao menos esta fracao em cotas de fundos, sem alvo unico, e FoF.
+MIN_FATIA_FOF = 0.67
+# Entre esta fracao e MIN_FATIA_FUNDOS_MASTER detida por fundos, a classe e
+# hibrida: tem investidor final e fundo ao mesmo tempo.
+MIN_FATIA_HIBRIDO = 0.10
+
+# Perfil e carteira medem a fatia detida por fundos por caminhos diferentes;
+# acima desta diferenca, em pontos, a classe vai para o alerta de qualidade.
+# 9,3% do PL passava de 25 p.p. em 08/2026 (clubes, sigilo e fundos de
+# previdencia, que a carteira nao ve).
+MAX_DIVERGENCIA_PERFIL_CARTEIRA = 0.25
+
+# Multimercados Livre com ao menos esta fracao em credito na carteira da raiz,
+# e menos que MAX_ACOES_MM_CREDITO em acoes, e credito com outro nome.
+MIN_CREDITO_MM_LIVRE = 0.60
+MAX_ACOES_MM_CREDITO = 0.10

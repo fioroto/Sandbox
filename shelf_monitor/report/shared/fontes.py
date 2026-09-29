@@ -135,6 +135,44 @@ FONTES_ETF_BRUTO = (
 )
 
 
+# Fontes do monitor da industria (`industria`). Paginas conferidas em
+# 28/09/2026: todas respondem 200.
+CVM_CADASTRO_INDUSTRIA = replace(
+    CVM_CADASTRO,
+    uso="tipo, situação, público-alvo, exclusividade, gestora e classificação ANBIMA de cada classe e subclasse",
+)
+CVM_INFORME_DIARIO_INDUSTRIA = replace(
+    CVM_INFORME_DIARIO,
+    uso="patrimônio, captação, resgates, cotistas e cota de cada classe e subclasse",
+)
+CVM_PERFIL_MENSAL = Fonte(
+    nome="Perfil mensal de fundos da CVM",
+    url="https://dados.cvm.gov.br/dataset/fi-doc-perfil_mensal",
+    uso=(
+        "de quem é o dinheiro de cada classe: PF e PJ de varejo e private, conta e ordem, "
+        "fundos, previdência e institucionais"
+    ),
+    url_dados="https://dados.cvm.gov.br/dados/FI/DOC/PERFIL_MENSAL/DADOS/",
+)
+CVM_CDA_INDUSTRIA = replace(
+    CVM_CDA,
+    uso="master, feeder, espelho e FoF: em que fundos cada classe investe",
+)
+CVM_EXTRATO_INDUSTRIA = replace(
+    CVM_EXTRATO,
+    uso="prazo de resgate e o flag de fundo espelho declarado",
+)
+FONTES_INDUSTRIA = (
+    CVM_CADASTRO_INDUSTRIA, CVM_INFORME_DIARIO_INDUSTRIA, CVM_PERFIL_MENSAL,
+    CVM_CDA_INDUSTRIA, CVM_EXTRATO_INDUSTRIA,
+)
+
+
+def fontes_da_industria(com_carteira: bool = True) -> list[Fonte]:
+    """As fontes do monitor da industria; sem a carteira quando ela nao entrou."""
+    return [f for f in FONTES_INDUSTRIA if com_carteira or f is not CVM_CDA_INDUSTRIA]
+
+
 def fonte_da_vitrine(config: Config, platform_id: str, rotulo: str) -> Fonte | None:
     """A vitrine da casa como fonte - None quando ela nao tem pagina publica."""
     url = config.platform(platform_id).shelf_url

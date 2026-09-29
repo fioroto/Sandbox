@@ -1,9 +1,10 @@
 """Catalogo dos datasets da CVM usados pela base de mercado.
 
-Escopo atual: cadastro (hierarquia fundo/classe/subclasse), taxas e a carteira
-mensal (CDA) das ultimas competencias, que alimenta o mapa de familias. O
-informe diario e lido pelos blocos de captacao e rentabilidade; lamina e perfil
-mensal estao mapeados no fim do arquivo mas nao sao baixados.
+Escopo atual: cadastro (hierarquia fundo/classe/subclasse), taxas, a carteira
+mensal (CDA) das ultimas competencias, que alimenta o mapa de familias, e o
+perfil mensal, que diz de quem e o dinheiro de cada classe (monitor da
+industria). O informe diario e lido pelos blocos de captacao e rentabilidade;
+a lamina esta mapeada no fim do arquivo mas nao e baixada.
 """
 from __future__ import annotations
 
@@ -108,6 +109,30 @@ def dataset_cda(competencia: str) -> Dataset:
     )
 
 
+# --- perfil mensal ------------------------------------------------------------
+# Um CSV por competencia (~13 MB), com a fatia do PL e o numero de cotistas de
+# cada classe por tipo de investidor: PF varejo e private, PJ, clientes de
+# distribuidor por conta e ordem, fundos, previdencia, institucionais. E a unica
+# fonte publica que separa o dinheiro de PF/PJ do dinheiro de outros fundos.
+# Sai com a carteira: 08/2026 estava no ar em 28/09/2026, e 09/2026 dava 404.
+#
+# A CVM regenera arquivos antigos (o de 09/2025 tinha Last-Modified de
+# 26/09/2026): revalidar o historico inteiro a cada execucao rebaixaria ~13 MB
+# por mes sem mudar nada que importe. Por isso so as competencias mais recentes
+# sao revalidadas; as antigas ficam no que ja esta em disco.
+COMPETENCIAS_PERFIL_REVALIDADAS = 3
+
+
+def dataset_perfil_mensal(competencia: str) -> Dataset:
+    return Dataset(
+        key=f"perfil_mensal_fi_{competencia}",
+        url=f"{CVM_BASE}/FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{competencia}.csv",
+        filename=f"perfil_mensal_fi_{competencia}.csv",
+        description=f"Perfil mensal {competencia}: cotistas e PL por tipo de investidor",
+        approx_mb=13,
+    )
+
+
 # --- colunas conhecidas -------------------------------------------------------
 # Lidas por NOME, nunca por posicao: a CVM adiciona e renomeia colunas em
 # producao (cinco novas em 2025). Colunas do arquivo que nao estao aqui sao
@@ -144,9 +169,10 @@ REGISTRO_SUBCLASSE_COLUMNS = (
 
 
 # --- fora do escopo atual -----------------------------------------------------
-# Mapeados na pesquisa e prontos para quando a base precisar de series:
-#   informe diario  /FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{YYYYMM}.zip  (~11 MB/mes)
+# O informe diario e baixado por `market/etf_flow.fetch_inf_diario_month`, fora
+# deste catalogo. Mapeados e ainda nao baixados:
 #   lamina          /FI/DOC/LAMINA/DADOS/lamina_fi_{YYYYMM}.zip          (~10 MB/mes)
-#   perfil mensal   /FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{YYYYMM}.csv
+#   historico       /FI/CAD/DADOS/cad_fi_hist.zip (gestor, classe, publico e
+#                   situacao com datas, so para fundos nao adaptados; ~18 MB)
 # Estruturados tem datasets proprios com esquema diferente (FII, FIDC, FIP,
 # FIAGRO) - e nao ha cadastro separado: o cadastro deles vem do registro acima.

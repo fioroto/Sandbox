@@ -60,6 +60,7 @@ from shelf_monitor.models import (
 )
 from shelf_monitor.market import anbima_boletim, etf_sources, fundosnet
 from shelf_monitor.market.etf import build_etf_catalog
+from shelf_monitor.industria.cli import registrar_subcomando as registrar_industria
 from shelf_monitor.market.etf_bruto.extrator import registrar_subcomando as registrar_etf_bruto
 from shelf_monitor.market.etf_competicao import build_etf_competicao
 from shelf_monitor.market.etf_flow import (
@@ -1465,6 +1466,7 @@ def cmd_market(config: Config, args: argparse.Namespace) -> None:
     console.print("[bold]Tabelas geradas[/]")
     for key in (
         "mercado", "hierarquia", "fundos", "classes", "subclasses", "taxas", "manifest",
+        "historico",
     ):
         if key in paths:
             console.print(f"  {key:10} {paths[key]}")
@@ -2111,6 +2113,7 @@ def main() -> None:
     etf_parser.set_defaults(func=cmd_etf)
 
     registrar_etf_bruto(subparsers, common)
+    registrar_industria(subparsers, common)
 
     args = parser.parse_args()
     if not getattr(args, "func", None):

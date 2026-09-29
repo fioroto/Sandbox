@@ -81,3 +81,46 @@ def ponderada(
 def arredonda(valor: float | None, casas: int = 4) -> float | None:
     """Arredonda preservando None - o padrao dos `to_dict` dos blocos."""
     return None if valor is None else round(valor, casas)
+
+
+# --- formatacao brasileira de dinheiro e percentual ------------------------------
+# Havia uma copia destes em cada bloco (`etf_competicao`, `retail_flow._reais`,
+# `digest._mm`, `dashboard._pct`), com escalas e sinais diferentes. Os daqui sao
+# os do monitor de ETFs, mais o degrau de trilhao que a industria inteira pede.
+
+
+def _decimal_br(valor: float, casas: int) -> str:
+    """1234.5 -> "1.234,5"."""
+    return f"{valor:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def reais(valor: float | None) -> str:
+    """"R$ 3,95 tri", "R$ 8,6 bi", "R$ 115 mi" - sem sinal, milhar e decimal brasileiros."""
+    if valor is None:
+        return "-"
+    if abs(valor) >= 1e12:
+        return f"R$ {_decimal_br(valor / 1e12, 2)} tri"
+    if abs(valor) >= 1e9:
+        return f"R$ {_decimal_br(valor / 1e9, 1)} bi"
+    return f"R$ {valor / 1e6:,.0f} mi".replace(",", ".")
+
+
+def reais_com_sinal(valor: float | None) -> str:
+    """"+R$ 1,2 bi" / "-R$ 83 mi" - para fluxo, que tem direcao."""
+    if valor is None:
+        return "-"
+    return ("-" if valor < 0 else "+") + reais(abs(valor))
+
+
+def pct(valor: float | None, casas: int = 1) -> str:
+    """Fracao como "6,6%"."""
+    return "-" if valor is None else f"{valor * 100:.{casas}f}%".replace(".", ",")
+
+
+def pp(valor: float | None) -> str:
+    """Pontos percentuais com sinal: "+0,4 pp". Zero arredondado sai sem sinal."""
+    if valor is None:
+        return "-"
+    if abs(valor) < 0.05:
+        return "0,0 pp"
+    return f"{valor:+.1f} pp".replace(".", ",")

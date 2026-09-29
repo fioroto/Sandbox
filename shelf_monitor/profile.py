@@ -34,6 +34,15 @@ _NAME_RE = re.compile(
 )
 
 
+def nome_indica_restricao(nome: str | None) -> bool:
+    """O nome denuncia veiculo fora de distribuicao (exclusivo, reservado...).
+
+    Publico porque o monitor da industria aplica a mesma regra ao cadastro
+    inteiro da CVM - uma regra, um lugar.
+    """
+    return bool(_NAME_RE.search(normalize_text(nome)))
+
+
 def restriction_reason(fund: FundOffer) -> str | None:
     """Por que este fundo NAO pertence a analise de varejo; None = pertence.
 
@@ -55,7 +64,7 @@ def restriction_reason(fund: FundOffer) -> str | None:
     if "PROFISSIONAL" in house_audience:
         return "público-alvo profissional (segundo a casa)"
 
-    if _NAME_RE.search(normalize_text(fund.name)):
+    if nome_indica_restricao(fund.name):
         return "nome indica exclusivo/reservado/restrito"
 
     return None

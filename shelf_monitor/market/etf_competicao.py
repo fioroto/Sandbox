@@ -41,6 +41,7 @@ from shelf_monitor.config import WATCHLIST
 from shelf_monitor.market.etf import EtfMetadata
 from shelf_monitor.market.fundosnet import ajustes_do_informe
 from shelf_monitor.normalize import normalize_text
+from shelf_monitor.report.shared.numeros import pct, pp, reais  # noqa: F401 - reexportados
 from shelf_monitor.texto import contagem
 
 # --- segmento ---------------------------------------------------------------
@@ -651,28 +652,8 @@ def _competencia(yyyymm: str | None) -> str:
     return f"{_MESES[int(yyyymm[4:]) - 1]}/{yyyymm[:4]}"
 
 
-def reais(valor: float | None) -> str:
-    """"R$ 8,6 bi", "R$ 115 mi" - sem sinal, milhar e decimal brasileiros."""
-    if valor is None:
-        return "-"
-    if abs(valor) >= 1e9:
-        texto = f"{valor / 1e9:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        return f"R$ {texto} bi"
-    return f"R$ {valor / 1e6:,.0f} mi".replace(",", ".")
-
-
-def pct(valor: float | None, casas: int = 1) -> str:
-    """Fracao como "6,6%"."""
-    return "-" if valor is None else f"{valor * 100:.{casas}f}%".replace(".", ",")
-
-
-def pp(valor: float | None) -> str:
-    """Pontos percentuais com sinal: "+0,4 pp". Zero arredondado sai sem sinal."""
-    if valor is None:
-        return "-"
-    if abs(valor) < 0.05:
-        return "0,0 pp"
-    return f"{valor:+.1f} pp".replace(".", ",")
+# `reais`, `pct` e `pp` moram em report/shared/numeros.py desde que a
+# industria passou a usa-los; o import acima os mantem acessiveis por aqui.
 
 
 def _lista(itens: list[str], separador: str = ", ") -> str:
