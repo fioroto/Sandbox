@@ -388,6 +388,25 @@ class Config:
         """O CSV so com o cabecalho da lista distribuivel - versionado."""
         return self.data_dir / "distribuivel" / "modelo.csv"
 
+    @property
+    def historico_dir(self) -> Path:
+        """Dado primario que a CVM nao guarda - o retrato mensal do cadastro e
+        os blocos publicados do monitor da industria. Versionado: nao se refaz
+        depois."""
+        return self.data_dir / "historico"
+
+    @property
+    def industria_dir(self) -> Path:
+        """Curadoria do monitor da industria (taxonomia, grupos de gestora,
+        marcas de distribuidor, overrides) - versionada, editada a mao."""
+        return self.data_dir / "industria"
+
+    @property
+    def industria_cache_dir(self) -> Path:
+        """Perfis mensais compactos e o retrato do universo do ultimo ciclo -
+        gitignored (fica em data/cache)."""
+        return self.cache_dir / "industria"
+
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
 

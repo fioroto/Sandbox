@@ -14,6 +14,7 @@ from shelf_monitor.market.datasets import CAD_FI, EXTRATO, REGISTRO, Dataset
 from shelf_monitor.market.export import write_database
 from shelf_monitor.market.fees import parse_fees
 from shelf_monitor.market.fetch import CacheReason, fetch, read_member
+from shelf_monitor.market.historico import gravar_retrato
 from shelf_monitor.market.parse import (
     legacy_class_fields,
     parse_classes,
@@ -134,8 +135,18 @@ def run_import(
     force: bool = False,
     skip_fees: bool = False,
 ) -> tuple[MarketDatabase, dict[str, Path]]:
-    """Importa e grava. Devolve (base, caminhos escritos)."""
+    """Importa e grava. Devolve (base, caminhos escritos).
+
+    Toda importacao completa tambem grava o retrato do cadastro no historico
+    (`market/historico.py`): a CVM nao guarda historico de classe, e o mes sem
+    retrato nao se recupera. Falha ao gravar o retrato nao derruba a base.
+    """
     database = import_market(config, local_dir, force, skip_fees)
     if database.incomplete:
         return database, {}
-    return database, write_database(config, database)
+    written = write_database(config, database)
+    try:
+        written["historico"] = gravar_retrato(config, database)
+    except OSError as exc:
+        database.notes.append(f"histórico do cadastro não gravado: {exc}")
+    return database, written
