@@ -73,7 +73,11 @@ from shelf_monitor.texto import contagem, data_br, milhar, meses_br, periodo_br
 # propriedade ja e coberta por teste.
 _ASSETS = Path(__file__).parent / "assets"
 _STYLE = (_ASSETS / "dashboard.css").read_text(encoding="utf-8")
-_SCRIPT = (_ASSETS / "dashboard.js").read_text(encoding="utf-8")
+# Os primitivos de grafico moram em `graficos.js`, comuns ao painel da
+# industria; a pagina embute os dois arquivos na mesma tag de script, e segue
+# com exatamente dois (o JSON e o codigo).
+_GRAFICOS = (_ASSETS / "graficos.js").read_text(encoding="utf-8")
+_SCRIPT = _GRAFICOS + "\n" + (_ASSETS / "dashboard.js").read_text(encoding="utf-8")
 # A marca da XP na barra preta do topo, na versao para fundo escuro - a mesma
 # do material executivo da XP de onde veio o padrao visual.
 _LOGO = (_ASSETS / "logo-xp.svg").read_text(encoding="utf-8").strip()
