@@ -7,6 +7,13 @@ JSON. Nao ha chave `foco`: o monitor e neutro, nenhuma casa em destaque.
 """
 from __future__ import annotations
 
+from shelf_monitor.industria.agregados import (
+    dimensoes,
+    secoes_da_estrategia,
+    secoes_da_estrutura,
+    secoes_de_gestoras,
+    secoes_de_publico,
+)
 from shelf_monitor.industria.base import BaseIndustria
 from shelf_monitor.industria.cotistas import PF_PJ, SEGMENTOS
 from shelf_monitor.industria.painel import (
@@ -110,6 +117,7 @@ def montar_bloco(base: BaseIndustria) -> dict:
                 "fonte_do_pl": "cadastro",
             }
 
+    itens = [(l, dimensoes(base, l)) for l in linhas if l.motivo == UNIVERSO]
     bloco = {
         "available": True,
         "competencia": competencia,
@@ -124,11 +132,16 @@ def montar_bloco(base: BaseIndustria) -> dict:
         "dinheiro_pf_pj": round(pf_pj, 2),
         "segmentos": _segmentos(camadas),
         "adjacentes": ao_lado,
+        "publico": secoes_de_publico(itens),
+        "estrutura": secoes_da_estrutura(base, itens),
+        "estrategias": secoes_da_estrategia(itens),
+        "gestoras": secoes_de_gestoras(itens),
         "qualidade": _qualidade(base, linhas),
         "avisos": list(base.avisos),
-        "fontes": [f.nome for f in fontes_da_industria()],
+        "fontes": [f.nome for f in fontes_da_industria(com_carteira=base.mapa is not None)],
         "_base": base,
         "_linhas": linhas,
+        "_itens": itens,
     }
     bloco["leitura"] = leitura(bloco)
     return bloco

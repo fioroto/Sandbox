@@ -89,10 +89,23 @@ def _fatia(perfil: PerfilClasse | None) -> float:
     return perfil.fundos if perfil is not None and perfil.informado else 0.0
 
 
+def motivo_na_base(
+    base: BaseIndustria, produto: Produto | None, cnpj: str, competencia: str
+) -> str:
+    """O motivo do universo com o que a base sabe: perfil fixo e, para a classe
+    sem perfil, a fatia detida por fundos lida da carteira."""
+    perfil = base.perfil_fixo.get(cnpj)
+    detida = None
+    if base.mapa is not None and (perfil is None or not perfil.informado):
+        estrutura = base.estrutura.de(cnpj)
+        if estrutura.fonte_detida == "carteira":
+            detida = estrutura.fatia_detida
+    return motivo(produto, perfil, competencia, detida_pela_carteira=detida)
+
+
 def linhas_do_mes(base: BaseIndustria, competencia: str) -> list[LinhaMes]:
     """As linhas do painel numa competencia, universo inteiro (todo motivo)."""
     anterior = competencia_anterior(competencia)
-    perfil_fixo = base.perfil_fixo
     linhas: list[LinhaMes] = []
     for (cnpj, sub), serie in base.serie.por_subclasse():
         atual = serie.get(competencia)
@@ -109,7 +122,7 @@ def linhas_do_mes(base: BaseIndustria, competencia: str) -> list[LinhaMes]:
         linhas.append(LinhaMes(
             classe=cnpj,
             subclasse=sub,
-            motivo=motivo(produto, perfil_fixo.get(cnpj), competencia),
+            motivo=motivo_na_base(base, produto, cnpj, competencia),
             pl=atual.pl_fim,
             pl_anterior=mes_anterior.pl_fim if mes_anterior is not None else None,
             captacao=atual.captacao,
@@ -134,7 +147,6 @@ def funil_do_mes(base: BaseIndustria, competencia: str) -> list[Degrau]:
     classe pelo numero de subclasses. Produto do universo sem informe no mes
     conta como produto, com PL zero.
     """
-    perfil_fixo = base.perfil_fixo
     pl_do_informe: dict[tuple[str, str], float] = {}
     for chave, serie in base.serie.por_subclasse():
         atual = serie.get(competencia)
@@ -146,7 +158,7 @@ def funil_do_mes(base: BaseIndustria, competencia: str) -> list[Degrau]:
     classes_com_pl: set[str] = set()
     for chave in sorted(base.cadastro.produtos):
         produto = base.cadastro.produtos[chave]
-        chave_motivo = motivo(produto, perfil_fixo.get(produto.classe), competencia)
+        chave_motivo = motivo_na_base(base, produto, produto.classe, competencia)
         if chave in pl_do_informe:
             pl = pl_do_informe[chave]
         elif chave_motivo in ("fora_do_escopo", "etf") and produto.classe not in classes_com_pl:
@@ -161,7 +173,7 @@ def funil_do_mes(base: BaseIndustria, competencia: str) -> list[Degrau]:
             continue
         produto = base.cadastro.produto(*chave)
         cnpj = chave[0]
-        itens.append((motivo(produto, perfil_fixo.get(cnpj), competencia), cnpj, pl))
+        itens.append((motivo_na_base(base, produto, cnpj, competencia), cnpj, pl))
     return montar_funil(itens)
 
 

@@ -20,8 +20,12 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from shelf_monitor.config import Config
+from shelf_monitor.familias import MapaDeFamilias
 from shelf_monitor.industria.cadastro import Cadastro, carregar_cadastro
 from shelf_monitor.industria.cotistas import PerfilClasse, carregar_perfil
+from shelf_monitor.industria.curadoria import Curadoria, carregar_curadoria
+from shelf_monitor.industria.estrutura import MapaDeEstrutura
+from shelf_monitor.industria.taxonomia import Taxonomia
 from shelf_monitor.market.datasets import COMPETENCIAS_PERFIL_REVALIDADAS
 from shelf_monitor.report.rentabilidade import SerieMensal
 from shelf_monitor.report.retail_flow import months_back
@@ -53,7 +57,14 @@ class BaseIndustria:
     serie: SerieMensal
     perfis: dict[str, dict[str, PerfilClasse]]
     avisos: list[str] = field(default_factory=list)
+    # A carteira (CDA) das ultimas competencias, pelo mapa de familias. None
+    # quando nao ha carteira em disco nem na CVM: a estrutura cai para o que o
+    # perfil diz (master) e o resto fica "sem carteira".
+    mapa: MapaDeFamilias | None = None
+    curadoria: Curadoria | None = None
     _perfil_fixo: dict[str, PerfilClasse] | None = field(default=None, repr=False)
+    _estrutura: MapaDeEstrutura | None = field(default=None, repr=False)
+    _taxonomia: Taxonomia | None = field(default=None, repr=False)
 
     def perfil_do_mes(self, cnpj: str, competencia: str) -> PerfilClasse | None:
         """O perfil da classe no mes; sem ele, o mais recente anterior."""
@@ -82,6 +93,24 @@ class BaseIndustria:
     def meses_com_perfil(self) -> list[str]:
         return [m for m in self.meses if self.perfis.get(m)]
 
+    @property
+    def estrutura(self) -> MapaDeEstrutura:
+        if self._estrutura is None:
+            self._estrutura = MapaDeEstrutura(
+                self.cadastro, self.perfil_fixo, self.mapa,
+                self.curadoria or Curadoria({}, [], [], [], {}),
+            )
+        return self._estrutura
+
+    @property
+    def taxonomia(self) -> Taxonomia:
+        if self._taxonomia is None:
+            self._taxonomia = Taxonomia(
+                self.cadastro, self.estrutura, self.mapa,
+                self.curadoria or Curadoria({}, [], [], [], {}),
+            )
+        return self._taxonomia
+
 
 def carregar_base(
     config: Config,
@@ -91,6 +120,7 @@ def carregar_base(
     baixar: bool = True,
     force: bool = False,
     progresso=None,
+    carteira: bool = True,
 ) -> BaseIndustria | None:
     """Carrega tudo o que a competencia pede; None sem cadastro nenhum.
 
@@ -126,6 +156,22 @@ def carregar_base(
         avisos.append(
             "informe diário ausente em " + ", ".join(competencia_br(m) for m in faltando)
         )
+
+    mapa = None
+    if carteira:
+        try:
+            mapa = MapaDeFamilias.carregar(config, baixar=baixar)
+        except Exception as exc:  # noqa: BLE001 - sem carteira o universo ainda sai
+            avisos.append(f"carteira da CVM indisponível: {exc}")
+        if mapa is None:
+            avisos.append(
+                "sem a carteira mensal da CVM: master, feeder e espelho saem só do "
+                "perfil mensal, e o resto fica sem carteira"
+            )
+        else:
+            avisos.extend(mapa.avisos)
+        if progresso:
+            progresso("carteira", ", ".join(competencia_br(c) for c in mapa.competencias) if mapa else "ausente")
     return BaseIndustria(
         competencia=competencia,
         meses=janela,
@@ -133,4 +179,6 @@ def carregar_base(
         serie=serie,
         perfis=perfis,
         avisos=avisos,
+        mapa=mapa,
+        curadoria=carregar_curadoria(config),
     )

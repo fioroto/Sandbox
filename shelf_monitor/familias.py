@@ -391,6 +391,9 @@ class MapaDeFamilias:
         self._ativos: dict[str, dict[str, float] | None] = {}
         self._familias: dict[str, Familia] = {}
         self._familia_do_master: dict[str, str] = {}
+        # Indice invertido do bloco de cotas (investido -> investidores), montado
+        # sob demanda por `investidores_de`.
+        self._investidores: dict[str, dict[str, float]] | None = None
         self._construir_familias()
 
     # --- montagem -------------------------------------------------------------
@@ -556,6 +559,28 @@ class MapaDeFamilias:
     def _dmais(self, cnpj: str) -> int | None:
         classe = self._classes.get(cnpj)
         return classe.dmais if classe else None
+
+    def carteira(self, cnpj: str | None) -> CarteiraClasse | None:
+        """A carteira mais recente da classe; a competencia fica nela."""
+        return self._carteiras.get(self._canonico(cnpj)) if cnpj else None
+
+    def investidores_de(self, cnpj: str | None) -> dict[str, float]:
+        """Quem tem cotas da classe, e quanto: CNPJ investidor -> R$.
+
+        E a leitura da carteira pelo lado de quem e investido - a que diz se a
+        classe e master. O monitor da industria usa o perfil mensal como fonte
+        principal (a carteira nao ve clubes, sigilo nem os fundos de
+        previdencia) e isto como conferencia.
+        """
+        if not cnpj:
+            return {}
+        if self._investidores is None:
+            indice: dict[str, dict[str, float]] = {}
+            for investidor, carteira in self._carteiras.items():
+                for alvo, valor in carteira.cotas.items():
+                    indice.setdefault(self._canonico(alvo), {})[investidor] = valor
+            self._investidores = indice
+        return self._investidores.get(self._canonico(cnpj), {})
 
     # --- espelho e master -----------------------------------------------------
 

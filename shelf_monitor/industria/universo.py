@@ -119,8 +119,15 @@ def motivo(
     produto: Produto | None,
     perfil: PerfilClasse | None,
     competencia: str,
+    *,
+    detida_pela_carteira: float | None = None,
 ) -> str:
-    """O motivo de exclusao do produto na competencia, ou UNIVERSO."""
+    """O motivo de exclusao do produto na competencia, ou UNIVERSO.
+
+    `detida_pela_carteira` e a fatia do PL em maos de fundos lida da carteira,
+    para a classe que nao entregou o perfil: sem ela, o master sem perfil
+    ficava no universo (10 classes e R$ 4 bi em 08/2026).
+    """
     if produto is None:
         return "sem_cadastro"
     if not _operacional_no_mes(produto, competencia):
@@ -136,6 +143,8 @@ def motivo(
     if produto.exclusivo_inr or (informado and perfil.fatia("nao_residente") >= MIN_FATIA_DOMINANTE):
         return "nao_residente"
     if informado and perfil.fundos >= MIN_FATIA_FUNDOS_MASTER:
+        return "veiculo_de_fundos"
+    if not informado and (detida_pela_carteira or 0.0) >= MIN_FATIA_FUNDOS_MASTER:
         return "veiculo_de_fundos"
     if informado and perfil.fatia("institucional") >= MIN_FATIA_DOMINANTE:
         return "institucional"

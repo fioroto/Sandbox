@@ -4,6 +4,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
+from shelf_monitor.industria.curadoria import TIPOS_DE_GESTORA
 from shelf_monitor.industria.universo import UNIVERSO
 from shelf_monitor.report.shared.numeros import pct, reais
 from shelf_monitor.texto import data_br, milhar
@@ -11,6 +12,18 @@ from shelf_monitor.texto import data_br, milhar
 
 def _bi(valor: float) -> str:
     return f"{valor / 1e9:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _tabela_simples(console: Console, titulo: str, colunas: tuple[str, ...], linhas: list) -> None:
+    if not linhas:
+        return
+    tabela = Table(title=titulo, title_style="bold")
+    for i, coluna in enumerate(colunas):
+        tabela.add_column(coluna, justify="left" if i == 0 else "right")
+    for linha in linhas:
+        tabela.add_row(*linha)
+    console.print()
+    console.print(tabela)
 
 
 def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
@@ -67,6 +80,37 @@ def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
         f"  Camada do investidor: [bold]{reais(camadas['pl_investidor'])}[/] de "
         f"{reais(camadas['pl_bruto'])} brutos; sem perfil no mês: {reais(camadas['sem_perfil'])}."
     )
+
+    _tabela_simples(
+        console, "Estratégias do universo (camada do investidor)",
+        ("Macroclasse", "Classes", "PL (R$ bi)", "Fatia"),
+        [(i["n1"], milhar(i["classes"]), _bi(i["pl_investidor"]), pct(i.get("fatia")))
+         for i in bloco.get("estrategias", {}).get("n1", [])],
+    )
+    _tabela_simples(
+        console, "Papel na estrutura",
+        ("Papel", "Produtos", "PL (R$ bi)", "Fatia"),
+        [(i["rotulo"], milhar(i["produtos"]), _bi(i["pl_investidor"]), pct(i.get("fatia")))
+         for i in bloco.get("estrutura", {}).get("papeis", [])],
+    )
+    _tabela_simples(
+        console, "Casas dedicadas (espelhos e feeders feitos para um distribuidor)",
+        ("Casa", "Veículos", "PL (R$ bi)"),
+        [(i["casa"], milhar(i["produtos"]), _bi(i["pl_investidor"]))
+         for i in bloco.get("estrutura", {}).get("casas_dedicadas", [])[:10]],
+    )
+    gestoras = bloco.get("gestoras", {})
+    _tabela_simples(
+        console, "Maiores grupos gestores (gestora da estratégia)",
+        ("Grupo", "Tipo", "PL (R$ bi)", "Fatia"),
+        [(i["grupo"], TIPOS_DE_GESTORA.get(i["tipo"], i["tipo"]), _bi(i["pl_investidor"]), pct(i.get("fatia")))
+         for i in gestoras.get("grupos", [])[:15]],
+    )
+    if gestoras.get("cobertura_curada") is not None:
+        console.print(
+            f"  [dim]{milhar(gestoras['grupos_no_universo'])} grupos no universo; grupo "
+            f"curado cobre {pct(gestoras['cobertura_curada'])} do PL.[/]"
+        )
 
     adjacentes = bloco.get("adjacentes") or {}
     if adjacentes:

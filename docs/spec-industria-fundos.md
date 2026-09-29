@@ -9,7 +9,7 @@
 | Entrega | Estado |
 |---|---|
 | 1A. Fundação e início do histórico | implementada em 28/09/2026 |
-| 1B. Estrutura e taxonomia | a fazer |
+| 1B. Estrutura e taxonomia | implementada em 28/09/2026 |
 | 1C. Bloco e planilha | a fazer |
 | 1D. Painel interativo | a fazer |
 | 1E. E-mail e cadência | a fazer |
@@ -39,6 +39,25 @@ O universo saiu com R$ 3,80 tri na camada do investidor, contra R$ 3,95 tri da m
 - a concentração num cotista (restritos, R$ 8 bi).
 
 Os números de verificação desta spec são os do monitor.
+
+**Estrutura e taxonomia medidas pelo monitor em 28/09/2026** (camada do investidor, universo de 08/2026, carteira de 06 a 08/2026):
+
+| Papel | Produtos | PL | Fatia |
+|---|---|---|---|
+| Feeder | 2.152 | R$ 1,71 tri | 45,0% |
+| Direto | 2.506 | R$ 1,00 tri | 26,4% |
+| FoF da casa | 833 | R$ 529 bi | 13,9% |
+| Híbrido | 1.207 | R$ 384 bi | 10,1% |
+| FoF multigestor | 633 | R$ 84 bi | 2,2% |
+| Espelho | 784 | R$ 78 bi | 2,1% |
+| Feeder de fundo no exterior | 83 | R$ 10 bi | 0,3% |
+
+- **Casas dedicadas:** Banco do Brasil R$ 26,8 bi (68 veículos), Itaú R$ 26,4 bi (224), XP R$ 22,4 bi (89, pela marca "Advisory"), Bradesco R$ 5,3 bi, BTG R$ 4,9 bi.
+- **Macroclasses:** pós-fixado e caixa 63,3%, crédito privado 14,3%, multimercado 8,7%, ações 5,7%, internacional 5,1%, juros e inflação 2,7%.
+- **Confiança da estratégia:** alta em 81,8% do PL e média em 18,1%.
+- **Grupo curado:** cobre 96,0% do PL, com 778 grupos no universo.
+
+**Mudança em relação ao plano.** Os rótulos "Grau de investimento" e "Soberano" de duração média e livre (R$ 685 bi) iam para juros e inflação. A carteira da raiz mostrou que são pós na maioria: 77 a 78% em LFT e compromissada no soberano. Por isso ficam em pós-fixado e caixa, e só viram "Juros ativo (pré e inflação)" quando pré e inflação passam de metade da carteira. Juros e inflação ficou com 2,7% do PL, que é o tamanho real do risco de juros fora da previdência.
 
 ## Contexto
 
@@ -166,9 +185,9 @@ Três camadas: macroclasse (N1), peer group (N2) e facetas. O N1 segue a forma c
 
 | N1 | N2 (peer groups) | Origem principal |
 |---|---|---|
-| Pós-fixado e caixa | RF Simples · DI Soberano · DI Grau de investimento · Indexado DI/Selic | ANBIMA RF Simples, Duração Baixa Soberano/GI, Indexados + indicador DI |
-| Crédito privado | Crédito baixa duração · Crédito média/alta/livre · Crédito incentivado (isento) · Crédito via multimercado | ANBIMA Crédito Livre; nome INCENTIVAD/INFRA/12.431; regra de carteira para MM Livre |
-| Juros e inflação | Indexado inflação (IMA-B) · Indexado pré (IRF-M) · Soberano ativo · Grau de investimento ativo | ANBIMA Indexados + indicador; Duração Média/Alta/Livre Soberano ou GI |
+| Pós-fixado e caixa | RF Simples · DI Soberano · DI Grau de investimento · Grau de investimento, duração média e livre · Soberano, duração média e livre · Indexado DI/Selic | ANBIMA RF Simples, Duração Baixa, Duração Média e Livre (Soberano e GI), Indexados + indicador DI |
+| Crédito privado | Crédito baixa duração · Crédito média, alta e livre duração · Crédito incentivado (isento) · Crédito via multimercado | ANBIMA Crédito Livre; nome INCENTIVAD/INFRA/12.431; regra de carteira para MM Livre |
+| Juros e inflação | Indexado inflação (IMA-B) · Indexado pré (IRF-M) · Soberano, duração alta · Grau de investimento, duração alta · Juros ativo (pré e inflação) | ANBIMA Indexados + indicador; Duração Alta; Duração Média e Livre com a carteira da raiz em pré e inflação |
 | Multimercado | Macro · Trading · Long & Short neutro · Long & Short direcional · Juros e moedas · Livre · Estratégia específica · Capital protegido · Balanceados · Dinâmico · Multigestor (FoF) | ANBIMA Multimercados; papel FoF |
 | Ações | Indexado (passivo) · Índice ativo · Valor/crescimento · Dividendos · Small caps · Setoriais · Sustentabilidade · Livre · Específicos (fechados, mono ação, FMP-FGTS) | ANBIMA Ações |
 | Internacional | RF global · Multimercado global · Ações global | ANBIMA "Invest. no Exterior", Dívida Externa; papel feeder exterior |

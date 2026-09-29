@@ -1,0 +1,47 @@
+prefixo_anbima;n1;n2;confianca;observacao
+RENDA FIXA SIMPLES;Pós-fixado e caixa;RF Simples;alta;
+RENDA FIXA DURACAO BAIXA SOBERANO;Pós-fixado e caixa;DI Soberano;alta;
+RENDA FIXA DURACAO BAIXA GRAU DE INVEST;Pós-fixado e caixa;DI Grau de investimento;alta;
+RENDA FIXA DURACAO BAIXA CREDITO LIVRE;Crédito privado;Crédito baixa duração;alta;
+RENDA FIXA DURACAO MEDIA CREDITO LIVRE;Crédito privado;Crédito média, alta e livre duração;alta;
+RENDA FIXA DURACAO ALTA CREDITO LIVRE;Crédito privado;Crédito média, alta e livre duração;alta;
+RENDA FIXA DURACAO LIVRE CREDITO LIVRE;Crédito privado;Crédito média, alta e livre duração;alta;
+RENDA FIXA DURACAO MEDIA SOBERANO;Pós-fixado e caixa;Soberano, duração média e livre;media;a carteira é pós na maioria (78% em LFT e compromissada em 08/2026); vira juros quando pré e inflação passam de metade
+RENDA FIXA DURACAO ALTA SOBERANO;Juros e inflação;Soberano, duração alta;alta;
+RENDA FIXA DURACAO LIVRE SOBERANO;Pós-fixado e caixa;Soberano, duração média e livre;media;a carteira é pós na maioria (77% em 08/2026); vira juros quando pré e inflação passam de metade
+RENDA FIXA DURACAO MEDIA GRAU DE INVEST;Pós-fixado e caixa;Grau de investimento, duração média e livre;media;rótulo largo; a carteira é pós e crédito bancário na maioria (08/2026)
+RENDA FIXA DURACAO ALTA GRAU DE INVEST;Juros e inflação;Grau de investimento, duração alta;alta;
+RENDA FIXA DURACAO LIVRE GRAU DE INVEST;Pós-fixado e caixa;Grau de investimento, duração média e livre;media;rótulo largo: vai de soberano a crédito high grade; a carteira é pós na maioria (08/2026)
+RENDA FIXA INDEXADOS;Juros e inflação;Indexado;alta;o indicador de desempenho decide inflação, pré ou DI
+RENDA FIXA INVEST NO EXTERIOR;Internacional;RF global;alta;
+RENDA FIXA DIVIDA EXTERNA;Internacional;RF global;alta;
+MULTIMERCADOS MACRO;Multimercado;Macro;alta;
+MULTIMERCADOS TRADING;Multimercado;Trading;alta;
+MULTIMERCADOS L S NEUTRO;Multimercado;Long & short neutro;alta;
+MULTIMERCADOS L S DIRECIONAL;Multimercado;Long & short direcional;alta;
+MULTIMERCADOS JUROS E MOEDAS;Multimercado;Juros e moedas;alta;
+MULTIMERCADOS LIVRE;Multimercado;Livre;media;rótulo largo: a carteira da raiz pode levar para crédito
+MULTIMERCADOS ESTRAT ESPECIFICA;Multimercado;Estratégia específica;media;
+MULTIMERCADOS CAPITAL PROTEGIDO;Multimercado;Capital protegido;alta;
+MULTIMERCADOS BALANCEADOS;Multimercado;Balanceados;alta;
+MULTIMERCADOS DINAMICO;Multimercado;Dinâmico;media;
+MULTIMERCADOS INVEST NO EXTERIOR;Internacional;Multimercado global;alta;
+ACOES INDEXADOS;Ações;Indexado (passivo);alta;
+ACOES INDICE ATIVO;Ações;Índice ativo;alta;
+ACOES VALOR CRESCIMENTO;Ações;Valor e crescimento;alta;
+ACOES DIVIDENDOS;Ações;Dividendos;alta;
+ACOES SMALL CAPS;Ações;Small caps;alta;
+ACOES SETORIAIS;Ações;Setoriais;alta;
+ACOES SUSTENTABILIDADE GOVERNANCA;Ações;Sustentabilidade;alta;
+ACOES LIVRE;Ações;Livre;media;rótulo largo
+ACOES INVEST NO EXTERIOR;Internacional;Ações global;alta;
+ACOES FMP FGTS;Ações;Específicos (fechados, mono ação, FMP-FGTS);alta;
+FECHADOS DE ACOES;Ações;Específicos (fechados, mono ação, FMP-FGTS);alta;
+FUNDOS DE MONO ACAO;Ações;Específicos (fechados, mono ação, FMP-FGTS);alta;
+CAMBIAL;Cambial;Cambial;alta;
+PREVIDENCIA RF;Previdência;Previdência renda fixa;alta;camada ao lado
+PREVIDENCIA MULTIMERCADO;Previdência;Previdência multimercado;alta;camada ao lado
+PREVIDENCIA ACOES;Previdência;Previdência ações;alta;camada ao lado
+PREVIDENCIA BALANCEADOS;Previdência;Previdência balanceados;alta;camada ao lado
+FIDC;Estruturados;FIDC;alta;fora do escopo da Fase 1
+FII;Estruturados;FII;alta;fora do escopo da Fase 1
