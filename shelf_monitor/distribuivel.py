@@ -226,11 +226,13 @@ def _resolver_linha(
             [], DISTRIBUI,
         )
     bruto_cnpj = (linha.get("cnpj") or "").strip()
-    digitos = "".join(c for c in bruto_cnpj if c.isdigit())
+    # Letras contam: o CNPJ alfanumerico (desde 07/2026) tem 14 caracteres e
+    # poucos digitos, e seria recusado como lixo se so os digitos contassem.
+    caracteres = "".join(c for c in bruto_cnpj if c.isalnum())
     cnpj = normalize_cnpj(bruto_cnpj) if bruto_cnpj else None
-    # Menos de 8 digitos nao e CNPJ sem zeros a esquerda (o Excel os come), e
+    # Menos de 8 caracteres nao e CNPJ sem zeros a esquerda (o Excel os come), e
     # lixo; mais de 14 tambem.
-    if bruto_cnpj and (not cnpj or not 8 <= len(digitos) <= 14):
+    if bruto_cnpj and (not cnpj or not 8 <= len(caracteres) <= 14):
         return f"CNPJ inválido '{bruto_cnpj}'", [], situacao
     codigo = normalize_cvm_code(linha.get("codigo_cvm"))
     if not cnpj and not codigo:

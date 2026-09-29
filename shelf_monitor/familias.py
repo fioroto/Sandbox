@@ -53,6 +53,7 @@ from shelf_monitor.normalize import (
     normalize_cnpj,
     normalize_cvm_code,
     normalize_text,
+    parece_cnpj,
     parse_number,
 )
 
@@ -811,9 +812,11 @@ class MapaDeFamilias:
         """(raiz, nome) das gestoras que casam com o nome ou o CNPJ consultado."""
         digitos = "".join(ch for ch in consulta if ch.isdigit())
         so_digitos = not normalize_text(consulta).replace(" ", "").replace(digitos, "")
+        cnpj = normalize_cnpj(consulta) if parece_cnpj(consulta) else None
+        alfanumerico = cnpj if cnpj and not cnpj.isdigit() else None
         encontradas: dict[str, str] = {}
-        if so_digitos and len(digitos) in (8, 14):
-            raiz = digitos[:8]
+        if (so_digitos and len(digitos) in (8, 14)) or alfanumerico:
+            raiz = alfanumerico[:8] if alfanumerico else digitos[:8]
             for classe in self._classes.values():
                 if classe.raiz_gestor == raiz:
                     encontradas.setdefault(raiz, classe.gestor or raiz)

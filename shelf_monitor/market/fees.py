@@ -179,7 +179,11 @@ def parse_fees(source: Path | bytes) -> dict[str, ClassFees]:
             redemption_payment_days=_parse_days(_get(row, "QT_DIA_PAGTO_RESGATE")),
             target_audience=_get(row, "PUBLICO_ALVO"),
             investment_policy=_get(row, "POLIT_INVEST"),
-            long_term_taxation=_get(row, "TRIB_LPRAZO"),
+            # O extrato nao tem coluna de tributacao: `TRIB_LPRAZO` e do
+            # `cad_fi` e era lido aqui por engano, entao a coluna saia vazia em
+            # 38.668 de 38.668 classes. A tributacao vem do cadastro
+            # (`Tributacao_Longo_Prazo`, e `TRIB_LPRAZO` no legado).
+            long_term_taxation=None,
             credit_private=_flag(_get(row, "ATIVO_CRED_PRIV")),
             credit_private_max=parse_number(_get(row, "APLIC_MAX_ATIVO_CRED_PRIV")),
             foreign=_flag(_get(row, "INVEST_EXTERIOR")),

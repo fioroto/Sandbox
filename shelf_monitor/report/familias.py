@@ -10,7 +10,7 @@ from __future__ import annotations
 from shelf_monitor.distribuivel import ROTULOS_SITUACAO, BaseDistribuivel
 from shelf_monitor.familias import Familia, MapaDeFamilias, faixa_de_liquidez
 from shelf_monitor.models import ShelfSnapshot
-from shelf_monitor.normalize import format_cnpj, normalize_cnpj
+from shelf_monitor.normalize import format_cnpj, normalize_cnpj, parece_cnpj
 from shelf_monitor.report.aggregate import listing_funds
 from shelf_monitor.report.shared import ordem_canonica, rotulo_da_casa
 from shelf_monitor.texto import competencia_br, contagem, milhar
@@ -58,7 +58,7 @@ def relatorio_de_familias(
     """As familias da gestora consultada - ou a familia do fundo, se a consulta
     for o CNPJ de um fundo."""
     presenca = presenca_nas_vitrines(mapa, snapshots)
-    cnpj = normalize_cnpj(consulta) if sum(c.isdigit() for c in consulta) == 14 else None
+    cnpj = normalize_cnpj(consulta) if parece_cnpj(consulta) else None
     fundo = cnpj if cnpj and mapa.classes_de(cnpj) else None
     if fundo:
         familia = mapa.familia_de(fundo)

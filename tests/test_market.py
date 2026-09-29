@@ -175,7 +175,10 @@ class TestFeesFromExtrato(unittest.TestCase):
             "has_exit_fee", "exit_fee_pct", "exit_fee_amount",
             "custody_fee_max", "min_initial",
             "redemption_quotation_days", "redemption_payment_days",
-            "target_audience", "investment_policy", "long_term_taxation",
+            # Sem "long_term_taxation": o extrato real nao tem coluna de
+            # tributacao (conferido no metadado e no arquivo em 28/09/2026); o
+            # `TRIB_LPRAZO` da fixture e do cad_fi, e era lido aqui por engano.
+            "target_audience", "investment_policy",
             "credit_private", "credit_private_max", "foreign", "foreign_max",
             "derivatives", "leverage", "leverage_factor", "mirror_fund",
         ]

@@ -308,6 +308,11 @@ def legacy_class_fields(raw: bytes) -> dict[str, dict[str, str | None]]:
             "performance_fee": _get(row, "TAXA_PERFM"),
             "custodian_name": _get(row, "CUSTODIANTE"),
             "auditor_name": _get(row, "AUDITOR"),
+            # Publico-alvo, indicador e tributacao tambem estao no cad_fi, e o
+            # consolidado deixava as tres colunas vazias no legado.
+            "target_audience": _get(row, "PUBLICO_ALVO"),
+            "benchmark": _get(row, "RENTAB_FUNDO"),
+            "long_term_taxation": _get(row, "TRIB_LPRAZO"),
         }
 
     return index

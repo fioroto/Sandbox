@@ -99,10 +99,17 @@ JANELAS: tuple[tuple[str, int | None], ...] = (
     ("24 meses", 24),
 )
 
+# O cabecalho e tambem a versao do cache. A coluna final `retificacao` marca o
+# resumo que deduplica as linhas que a CVM retifica (ver `_resumir`); o gravado
+# antes de 28/09/2026 somava as duas versoes do mesmo dia na captacao e nos
+# resgates. Esse cache antigo continua legivel - a cota e o PL dele estao
+# certos, e sem o zip nao haveria como refaze-lo -, mas `build` o refaz sempre
+# que o zip da competencia estiver ao alcance.
 _CABECALHO_CACHE = (
     "cnpj;subclasse;dia_ini;cota_ini;dia_fim;cota_fim;pl_fim;cotistas_fim;"
-    "captacao;resgates;pregoes"
+    "captacao;resgates;pregoes;retificacao"
 )
+_CABECALHO_SEM_DEDUPLICACAO = _CABECALHO_CACHE.rsplit(";", 1)[0]
 
 
 @dataclass(slots=True)
@@ -196,12 +203,23 @@ class SerieMensal:
         Recebe os registros em vez do caminho porque `retail_flow` e
         `performance` ja leram a mesma competencia nesta execucao: o leitor
         compartilhado devolve a lista parseada e isto nao toca o disco.
+
+        **A CVM retifica o informe**: o mesmo (CNPJ, subclasse, dia) pode vir
+        duas vezes no arquivo do mes, e vale a ultima ocorrencia - o criterio de
+        `retail_flow.agrupar_por_classe`. Somar as duas contava a captacao e os
+        resgates daquele dia em dobro. Medido: 1,03% dos pares em 20/09/2026;
+        nenhum em 28/09/2026 nos arquivos de 08 e 09/2026. A cota, o PL e os
+        cotistas ja saiam certos, porque o ultimo registro do dia vencia.
         """
+        unicos: dict[tuple[str, str, date], object] = {}
+        for registro in registros:
+            unicos[(registro.cnpj, registro.subclasse, registro.dia)] = registro
+
         resumo: dict[tuple[str, str], MesSubclasse] = {}
         primeiro: dict[tuple[str, str], date] = {}
         ultimo: dict[tuple[str, str], date] = {}
         dias: dict[tuple[str, str], set[date]] = {}
-        for registro in registros:
+        for registro in unicos.values():
             chave = (registro.cnpj, registro.subclasse)
             item = resumo.get(chave)
             if item is None:
@@ -240,7 +258,7 @@ class SerieMensal:
                     m.dia_ini.isoformat() if m.dia_ini else "", f"{m.cota_ini:.12f}",
                     m.dia_fim.isoformat() if m.dia_fim else "", f"{m.cota_fim:.12f}",
                     f"{m.pl_fim:.2f}", m.cotistas_fim,
-                    f"{m.captacao:.2f}", f"{m.resgates:.2f}", m.pregoes,
+                    f"{m.captacao:.2f}", f"{m.resgates:.2f}", m.pregoes, "ultima",
                 ])
 
     @classmethod
@@ -268,7 +286,7 @@ class SerieMensal:
 
         with caminho.open(encoding="utf-8", newline="") as handle:
             primeira = handle.readline().strip()
-            if primeira != _CABECALHO_CACHE:
+            if primeira not in (_CABECALHO_CACHE, _CABECALHO_SEM_DEDUPLICACAO):
                 # Cache de uma versao anterior do resumo: refazer e mais barato
                 # que adivinhar o que mudou.
                 return None
@@ -292,6 +310,15 @@ class SerieMensal:
                 resumo[(linha[0], linha[1])] = item
         return resumo or None
 
+    @staticmethod
+    def _cache_deduplicado(caminho: Path) -> bool:
+        """O cache foi gravado ja deduplicando a retificacao da CVM?"""
+        try:
+            with caminho.open(encoding="utf-8") as handle:
+                return handle.readline().strip() == _CABECALHO_CACHE
+        except OSError:
+            return False
+
     @classmethod
     def build(
         cls,
@@ -299,6 +326,7 @@ class SerieMensal:
         meses: int = 24,
         force: bool = False,
         progresso=None,
+        ate: str | None = None,
     ) -> SerieMensal:
         """Monta a serie, reusando o cache por competencia quando existe.
 
@@ -306,16 +334,33 @@ class SerieMensal:
         a janela curta ja usaram nesta execucao. As fechadas sem cache sao lidas
         sem ficar guardadas no processo (`ler_sem_guardar`): ninguem mais as le,
         e guardar cada uma ate o fim da execucao somaria ~91 MB por competencia.
+
+        `ate` (AAAAMM) termina a serie numa competencia fechada. E o que o ciclo
+        mensal do monitor da industria usa: sem ele, a ultima competencia era
+        sempre tratada como corrente - rebaixada e relida a cada execucao, e
+        fora do cache. Com `ate`, so o mes de hoje continua sendo corrente.
         """
 
-        competencias = months_back(meses)
+        if ate:
+            referencia = date(int(ate[:4]), int(ate[4:6]), 1)
+            competencias = months_back(meses, referencia=referencia)
+            mes_de_hoje = date.today().strftime("%Y%m")
+        else:
+            competencias = months_back(meses)
+            mes_de_hoje = competencias[-1] if competencias else ""
         dados: dict[tuple[str, str], dict[str, MesSubclasse]] = {}
         lidas: list[str] = []
-        for i, yyyymm in enumerate(competencias):
+        for yyyymm in competencias:
             # A competencia corrente muda todo dia: o cache dela nao vale.
-            corrente = i == len(competencias) - 1
+            corrente = yyyymm == mes_de_hoje
             cache = cls._cache_path(config, yyyymm)
             resumo = None if (force or corrente) else cls._ler_cache(cache)
+            if resumo is not None and not cls._cache_deduplicado(cache):
+                # Cache de antes da deduplicacao: refeito do zip quando da.
+                registros = ler_sem_guardar(config, yyyymm)
+                if registros:
+                    resumo = cls._resumir(registros)
+                    cls._gravar_cache(cache, resumo)
             if resumo is None:
                 registros = (
                     ler_competencia(config, yyyymm, force=True) if corrente
@@ -364,6 +409,14 @@ class SerieMensal:
         return self.calendario(yyyymm)[1] is not None
 
     # --- leitura --------------------------------------------------------------
+
+    def por_subclasse(self):
+        """(CNPJ, subclasse) -> {AAAAMM: MesSubclasse}, o universo inteiro.
+
+        Leitura publica do que a serie guarda, para quem monta o proprio painel
+        (o monitor da industria) em vez de pedir retornos por janela.
+        """
+        return self._dados.items()
 
     def janela(self, nome: str, tamanho: int | None) -> list[str]:
         """Competencias de uma janela nomeada, dentro do que a serie tem."""
