@@ -42,7 +42,7 @@ python -m playwright install chromium
 echo.
 
 REM --- Doctor: verifica acesso as fontes ---------------------------------
-echo [1/3] Verificando acesso as fontes (doctor)...
+echo [1/4] Verificando acesso as fontes (doctor)...
 echo.
 python -m shelf_monitor doctor
 if errorlevel 1 (
@@ -54,7 +54,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
-echo [2/3] Executando coleta completa de fundos...
+echo [2/4] Executando coleta completa de fundos...
 echo ============================================================
 echo.
 
@@ -67,7 +67,7 @@ set FUNDOS_RC=%errorlevel%
 
 echo.
 echo ============================================================
-echo [3/3] Monitor de previdencia...
+echo [3/4] Monitor de previdencia...
 echo ============================================================
 echo.
 
@@ -79,6 +79,26 @@ set PREV_RC=%errorlevel%
 
 echo.
 echo ============================================================
+echo [4/4] Monitor da industria de fundos...
+echo ============================================================
+echo.
+
+REM --- Industria: visao de mercado, sem casa em foco (data\reports\industria*)
+REM --ciclo auto decide sozinho: o ciclo mensal quando o perfil e a carteira
+REM da competencia ja sairam na CVM e ela ainda nao foi publicada (por volta
+REM do dia 16); senao o flash semanal da captacao, se o ultimo tem 7 dias ou
+REM mais; senao nada. Codigo de saida proprio: uma falha aqui nao mexe no que
+REM fundos e previdencia ja gravaram.
+python -m shelf_monitor industria
+set INDUSTRIA_RC=%errorlevel%
+
+echo.
+echo ============================================================
+if not "%INDUSTRIA_RC%"=="0" (
+    echo [!] O monitor da industria terminou com erros. Verifique a saida acima.
+) else (
+    echo [OK] Industria: painel, e-mail e flash em data\reports\industria*
+)
 if not "%PREV_RC%"=="0" (
     echo [!] O monitor de previdencia terminou com erros. Verifique a saida acima.
 ) else (

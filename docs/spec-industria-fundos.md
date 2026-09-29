@@ -12,7 +12,7 @@
 | 1B. Estrutura e taxonomia | implementada em 28/09/2026 |
 | 1C. Bloco e planilha | implementada em 28/09/2026 |
 | 1D. Painel interativo | implementada em 28/09/2026 |
-| 1E. E-mail e cadência | a fazer |
+| 1E. E-mail e cadência | implementada em 29/09/2026 |
 
 **Medido pelo monitor em 28/09/2026** (`industria --competencia 2026-08`: cadastro de 09/2026, perfil e informe de 08/2026):
 
@@ -91,6 +91,23 @@ Os números de verificação desta spec são os do monitor.
 - **Conferência.** Chromium headless em 1.280 px e 390 px: nenhum erro de JS, nenhuma rolagem horizontal da página, e os destaques voltam aos do universo quando os filtros são limpos.
 - **Nomes.** Cerca de 1,3 mil nomes do cadastro trazem o sufixo jurídico com espaço duplo, abreviado ("RESP LIM"), com erro de digitação ou cortado no limite de 100 caracteres. O painel mostra a forma curta ("FIC FIF", "MM", "CP", "IE"); a planilha mantém o nome da CVM.
 - **Neutralidade.** A barra do topo não traz marca de casa. O amarelo marca só o que o leitor selecionou, e verde e vermelho só aparecem ao lado de um sinal.
+
+**E-mail e cadência medidos em 29/09/2026:**
+
+| Saída | Tamanho | Tempo |
+|---|---|---|
+| E-mail do mês (`industria-2026-09-29.html` / `.md`) | 50,6 KB / 10,8 KB, sem figura cortada (orçamento de 100 KB) | dentro do ciclo mensal, 50 s com cache |
+| Flash semanal (`industria-flash-2026-09-29.html` / `.md`) | 18,3 KB / 3,8 KB | 13 s, com os zips do informe diário em disco |
+
+- **O primeiro flash:** semana de 21/09/2026 a 24/09/2026 (4 dias úteis), captação do investidor de −R$ 3,3 bi. Por dia útil foram −R$ 829 mi, contra +R$ 6 mi nas 12 semanas anteriores (de 29/06/2026 a 18/09/2026). Crédito privado captou +R$ 235 mi; pós-fixado e caixa perdeu R$ 1,9 bi.
+- **Dia incompleto.** Em 28/09/2026, a sexta 25/09 tinha 540 linhas no informe, contra ~25 mil num dia típico (2% dos produtos do universo). Ficou fora do flash, e o e-mail diz qual dia e com quanto.
+- **`--ciclo auto`.** No `run_monitor.bat` (passo [4/4], código de saída próprio), roda o mensal quando o perfil e a carteira da competência já saíram e ela não foi publicada; senão o flash, a cada 7 dias ou mais; senão nada. Em 29/09/2026 decidiu "nada": 08/2026 já publicada e flash do dia.
+
+**Mudanças em relação ao plano na 1E.**
+- **Semana do flash.** O plano pedia a semana fechada. Com a sexta chegando dias depois, o flash de segunda-feira mostraria a semana retrasada. A semana passou a ser a do último dia completo, mesmo parcial, desde que tenha ao menos 3 dias; a comparação é por dia útil.
+- **Camada do investidor no flash.** O fluxo de cada produto perde a fatia de fundos do perfil do último ciclo, gravada no retrato do universo (`data/cache/industria/universo.json`). É o mesmo rateio que o painel mensal usa quando falta o perfil do mês anterior.
+- **Tags do e-mail.** O plano proibia `<div>`, mas a casca compartilhada (`email_xp.casca`) usa um para a prévia escondida e outro para a tabela que rola no celular. Os testes proíbem `<svg>`, `<style>`, `<script>` e `<img>`, como os do digest.
+- **Envio.** O e-mail é gravado, não enviado. O envio fica na Fase 2.
 
 **Mudança em relação ao plano.** Os rótulos "Grau de investimento" e "Soberano" de duração média e livre (R$ 685 bi) iam para juros e inflação. A carteira da raiz mostrou que são pós na maioria: 77 a 78% em LFT e compromissada no soberano. Por isso ficam em pós-fixado e caixa, e só viram "Juros ativo (pré e inflação)" quando pré e inflação passam de metade da carteira. Juros e inflação ficou com 2,7% do PL, que é o tamanho real do risco de juros fora da previdência.
 

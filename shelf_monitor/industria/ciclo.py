@@ -7,6 +7,7 @@ corrente tem o seu. Sem rede, o retrato e refeito dos arquivos que ja estao em
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
 from shelf_monitor.config import Config
@@ -64,6 +65,58 @@ def escolher_competencia(
         f"perfil mensal de {candidata[4:]}/{candidata[:4]} ainda não publicado: "
         f"usada a competência {anterior[4:]}/{anterior[:4]}"
     )
+
+
+def publicada(config: Config, competencia: str) -> bool:
+    """A competencia ja tem o bloco publicado (a trilha em data/historico/industria)."""
+    return (config.historico_dir / "industria" / f"{competencia}.json").is_file()
+
+
+def carteira_publicada(config: Config, competencia: str, *, baixar: bool = True) -> bool:
+    """A CVM ja publicou a carteira (CDA) da competencia? Baixa e resume se sim:
+    o ciclo mensal que vem em seguida le o mesmo resumo do cache."""
+    from shelf_monitor.market.carteira import carregar_competencia
+
+    resumo, _ = carregar_competencia(config, competencia, baixar=baixar)
+    return resumo is not None
+
+
+def decidir_ciclo(
+    config: Config,
+    *,
+    baixar: bool = True,
+    hoje: date | None = None,
+    competencia: str | None = None,
+    carteira: Callable[[str], bool] | None = None,
+) -> tuple[str, str]:
+    """("mensal" | "flash" | "nada", o porque), para o `--ciclo auto`.
+
+    Mensal quando a ultima competencia com perfil publicado ainda nao saiu do
+    monitor e a carteira dela ja esta na CVM; senao o flash, se o ultimo tem 7
+    dias ou mais; senao nada. `competencia` e `carteira` substituem as
+    consultas a CVM (testes).
+    """
+    from shelf_monitor.industria.flash import INTERVALO_DO_FLASH_DIAS, ultimo_flash
+
+    hoje = hoje or date.today()
+    if competencia is None:
+        competencia, _ = escolher_competencia(config, None, baixar=baixar, hoje=hoje)
+    carteira = carteira or (lambda c: carteira_publicada(config, c, baixar=baixar))
+    rotulo = f"{competencia[4:]}/{competencia[:4]}"
+    if not publicada(config, competencia):
+        if carteira(competencia):
+            return "mensal", f"{rotulo} ainda não publicada, com perfil e carteira na CVM"
+        situacao = f"carteira de {rotulo} ainda não publicada pela CVM"
+    else:
+        situacao = f"{rotulo} já publicada"
+    ultimo = ultimo_flash(config)
+    if ultimo is None:
+        return "flash", f"{situacao}; nenhum flash anterior"
+    dias = (hoje - ultimo).days
+    quando = f"último flash em {ultimo:%d/%m/%Y}"
+    if dias >= INTERVALO_DO_FLASH_DIAS:
+        return "flash", f"{situacao}; {quando}"
+    return "nada", f"{situacao}; {quando}, há menos de {INTERVALO_DO_FLASH_DIAS} dias"
 
 
 def normalizar_competencia(texto: str | None) -> str | None:

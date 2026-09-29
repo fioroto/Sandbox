@@ -1017,6 +1017,49 @@ e o DOM que o JS desenha, identico).
   seguradora dos planos no lugar), mas o slide do deck e a coluna "Casa propria"
   do `insights` ainda o publicam pelo gestor registrado.
 
+## Monitor da industria de fundos (`industria`)
+
+A visao de mercado para a distribuicao, sem casa em foco: o que um cliente PF
+ou PJ pode comprar, para onde vai o dinheiro, quem ganha e por qual canal. A
+spec, com as medicoes, esta em `docs/spec-industria-fundos.md`.
+
+```
+python -m shelf_monitor industria                         # --ciclo auto: o que estiver na hora
+python -m shelf_monitor industria --ciclo mensal          # universo, painel, planilha e e-mail
+python -m shelf_monitor industria --ciclo flash           # captacao da semana por macroclasse
+python -m shelf_monitor industria --competencia 2026-08   # refaz um mes
+```
+
+`--ciclo auto` e o que o `run_monitor.bat` chama, no passo [4/4], com codigo
+de saida proprio. Ele roda o mensal quando o perfil mensal e a carteira da
+competencia ja sairam na CVM (por volta do dia 16) e ela ainda nao foi
+publicada; senao o flash, se o ultimo tem 7 dias ou mais; senao nada.
+
+| Saida | Ciclo | O que e |
+|---|---|---|
+| `data/reports/industria_dashboard.html` | mensal | painel interativo: filtros por publico, macroclasse, papel e tipo de gestora, e o explorador dos ~8,2 mil produtos |
+| `data/reports/industria-AAAA-MM.xlsx` | mensal | planilha explorador, 15 abas |
+| `data/reports/industria-AAAA-MM-DD.md/.html` | mensal | e-mail do mes (640 px, ate 100 KB) |
+| `data/reports/industria-flash-AAAA-MM-DD.md/.html` | flash | captacao da semana por macroclasse contra as 12 semanas anteriores |
+| `data/historico/industria/AAAAMM.json` | mensal | o bloco publicado, trilha de auditoria (versionado) |
+| `data/historico/cadastro/AAAAMM.csv.gz` | toda importacao da base | retrato mensal do cadastro (versionado) |
+| `data/cache/industria/` | mensal | perfis compactos e o retrato do universo que o flash usa |
+
+Tres regras mudam o numero, e toda superficie diz qual vale:
+
+- **Universo disponivel.** Saem previdencia, exclusivos, masters,
+  institucionais, nao residentes e restritos; o funil mostra cada degrau.
+  Publico geral, qualificado e profissional ficam, como filtro.
+- **Camada do investidor.** PL e captacao sem o dinheiro que um fundo aplica
+  em outro, pelo perfil mensal da CVM: o FoF e o espelho nao contam duas
+  vezes. Em 08/2026, R$ 3,80 tri contra R$ 4,28 tri brutos do mesmo universo.
+- **Estrutura.** Master, feeder, espelho e FoF pela carteira (CDA); a
+  estrategia, a gestora e o retorno vem da raiz da cadeia.
+
+O flash usa o universo do ultimo ciclo mensal e recusa um retrato com mais de
+45 dias. Dia do informe com menos de 90% dos produtos de um dia tipico fica de
+fora e e dito no e-mail: em 28/09/2026, a sexta 25/09 tinha 2% dos produtos.
+
 ## Area logada
 
 A v1 usa apenas fontes publicas. A arquitetura preve coletores autenticados sem

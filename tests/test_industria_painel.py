@@ -310,7 +310,7 @@ class TestPublicar(unittest.TestCase):
         bloco = montar_bloco(_base(), config)
         with mock.patch("shelf_monitor.industria.cli.console"):
             gravados = publicar(config, bloco)
-        self.assertEqual(set(gravados), {"historico", "planilha", "painel"})
+        self.assertEqual(set(gravados), {"historico", "planilha", "painel", "e-mail", "universo do flash"})
         self.assertEqual(gravados["painel"], Path(config.reports_dir) / ARQUIVO)
         self.assertTrue(gravados["painel"].is_file())
 
