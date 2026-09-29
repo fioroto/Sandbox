@@ -389,7 +389,9 @@ def montar_bloco(base: BaseIndustria, config: Config | None = None) -> dict:
         "_janelas": jan,
         "_explorador": linhas_do_explorador(base, jan, rentabilidade),
     }
-    bloco["leitura"] = leitura(bloco)
+    pares = leitura_com_topicos(bloco)
+    bloco["leitura"] = [frase for _, frase in pares]
+    bloco["leitura_topicos"] = [topico for topico, _ in pares]
     return bloco
 
 
@@ -400,12 +402,23 @@ def _maior(itens: list[dict], chave: str, reverso: bool = True) -> dict | None:
     return sorted(validos, key=lambda i: i["janelas"]["12m"][chave], reverse=reverso)[0]
 
 
+# O assunto de cada frase da leitura: o painel e o e-mail apontam cada uma
+# para o bloco que a detalha, sem depender da posicao (as frases sao
+# condicionais - sem plataformizacao, a de canal nao sai).
+TOPICOS_DA_LEITURA = ("tamanho", "captacao", "estrategias", "canal", "gestoras")
+
+
 def leitura(bloco: dict) -> list[str]:
     """As frases que abrem o bloco, iguais em toda superficie.
 
     Cada uma com numero, janela e base; o prazo com datas sai uma vez, na
     linha de prazos (`bloco["prazos"]`).
     """
+    return [frase for _, frase in leitura_com_topicos(bloco)]
+
+
+def leitura_com_topicos(bloco: dict) -> list[tuple[str, str]]:
+    """(topico, frase) de cada frase da leitura; topico em TOPICOS_DA_LEITURA."""
     if not bloco.get("available"):
         return []
     camadas = bloco["camadas"]
@@ -413,40 +426,40 @@ def leitura(bloco: dict) -> list[str]:
     base_total = sum(d["pl"] for d in bloco["funil"])
     fim = data_br(bloco["informe"]["ate"])
     frases = [
-        (
+        ("tamanho", (
             f"Em {bloco['rotulo_competencia']}, **{reais(camadas['pl_investidor'])}** estavam "
             f"em fundos disponíveis para PF e PJ, na camada do investidor (sem o dinheiro que "
             f"um fundo aplica em outro), no fechamento de {fim}: {milhar(universo['classes'])} "
             f"classes, de um cadastro que soma {reais(base_total)} com dupla contagem."
-        ),
+        )),
     ]
     doze = (bloco.get("mercado") or {}).get("janelas", {}).get("12m")
     if doze and doze.get("sobre_pl") is not None:
-        frases.append(
+        frases.append(("captacao",
             f"Em 12 meses, o investidor pôs **{reais_com_sinal(doze['fluxo_investidor'])}** "
             f"líquidos nesses fundos ({pct(doze['sobre_pl'])} do PL de abertura); o rendimento "
             f"somou {reais_com_sinal(doze['rendimento_investidor'])}."
-        )
+        ))
     n2 = (bloco.get("estrategias") or {}).get("n2", [])
     ganha, perde = _maior(n2, "fluxo_investidor"), _maior(n2, "fluxo_investidor", reverso=False)
     if ganha and perde and ganha is not perde:
-        frases.append(
+        frases.append(("estrategias",
             f"O peer group que mais captou em 12 meses foi **{ganha['n2']}** "
             f"({reais_com_sinal(ganha['janelas']['12m']['fluxo_investidor'])}); o que mais perdeu, "
             f"**{perde['n2']}** ({reais_com_sinal(perde['janelas']['12m']['fluxo_investidor'])})."
-        )
+        ))
     plataforma = (bloco.get("plataformizacao") or {}).get("total") or {}
     if plataforma.get("conta_e_ordem") is not None and plataforma.get("variacao_pp") is not None:
-        frases.append(
+        frases.append(("canal",
             f"A fatia do PL que chega por conta e ordem de plataformas foi de "
             f"**{pct(plataforma['conta_e_ordem'])}** ({pp(plataforma['variacao_pp'])} em 12 meses)."
-        )
+        ))
     tipos = (bloco.get("gestoras") or {}).get("tipos", [])
     independentes = next((t for t in tipos if t["tipo"] == "independente"), None)
     bancos = next((t for t in tipos if t["tipo"] == "banco"), None)
     if independentes and bancos and independentes.get("share") is not None and bancos.get("share") is not None:
-        frases.append(
+        frases.append(("gestoras",
             f"Gestoras bancárias têm {pct(bancos['share'])} do PL ({pp(bancos.get('variacao_pp'))} em "
             f"12 meses); independentes, {pct(independentes['share'])} ({pp(independentes.get('variacao_pp'))})."
-        )
+        ))
     return frases

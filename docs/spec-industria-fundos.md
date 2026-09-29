@@ -11,7 +11,7 @@
 | 1A. Fundação e início do histórico | implementada em 28/09/2026 |
 | 1B. Estrutura e taxonomia | implementada em 28/09/2026 |
 | 1C. Bloco e planilha | implementada em 28/09/2026 |
-| 1D. Painel interativo | a fazer |
+| 1D. Painel interativo | implementada em 28/09/2026 |
 | 1E. E-mail e cadência | a fazer |
 
 **Medido pelo monitor em 28/09/2026** (`industria --competencia 2026-08`: cadastro de 09/2026, perfil e informe de 08/2026):
@@ -77,6 +77,20 @@ Os números de verificação desta spec são os do monitor.
 - **Sazonalidade:** dezembro de 2025 perdeu R$ 61 bi e janeiro de 2026 captou R$ 35 bi.
 - **Evento na cota:** retorno mensal acima de 50% (grupamento, desdobramento ou erro de dado) sai do rendimento e do retorno. Sem essa guarda, 293 linhas com saltos de até ×1.000.000 somavam R$ 2,4 tri de "rendimento".
 - **Saídas:** `data/reports/industria-AAAA-MM.xlsx`, com 15 abas e o explorador de 8,2 mil produtos, e o bloco publicado em `data/historico/industria/AAAAMM.json`.
+
+**Painel interativo medido em 28/09/2026** (`data/reports/industria_dashboard.html`, competência 08/2026):
+
+| Grandeza | Número |
+|---|---|
+| Tamanho da página | 1,73 MB, autocontida, com duas tags de script e nenhuma com `src` |
+| Explorador | 8.206 produtos, 1,32 MB do JSON |
+| Cubo dos filtros | 1.099 células (peer group × público × papel × tipo de gestora), 138 KB |
+| Ciclo mensal com cache, painel incluído | 49 s |
+
+- **Filtros.** Público, macroclasse, papel e tipo de gestora recalculam no navegador os destaques, as macroclasses, os peer groups, a captação por janela, o canal, o papel e o explorador. Somado, o cubo devolve os números do bloco (travado em teste). O funil, o dono do dinheiro, o mês a mês, o mapa de calor, as famílias, as gestoras, o retorno e os lançamentos vêm prontos do bloco, e o subtítulo de cada um diz qual filtro vale ali.
+- **Conferência.** Chromium headless em 1.280 px e 390 px: nenhum erro de JS, nenhuma rolagem horizontal da página, e os destaques voltam aos do universo quando os filtros são limpos.
+- **Nomes.** Cerca de 1,3 mil nomes do cadastro trazem o sufixo jurídico com espaço duplo, abreviado ("RESP LIM"), com erro de digitação ou cortado no limite de 100 caracteres. O painel mostra a forma curta ("FIC FIF", "MM", "CP", "IE"); a planilha mantém o nome da CVM.
+- **Neutralidade.** A barra do topo não traz marca de casa. O amarelo marca só o que o leitor selecionou, e verde e vermelho só aparecem ao lado de um sinal.
 
 **Mudança em relação ao plano.** Os rótulos "Grau de investimento" e "Soberano" de duração média e livre (R$ 685 bi) iam para juros e inflação. A carteira da raiz mostrou que são pós na maioria: 77 a 78% em LFT e compromissada no soberano. Por isso ficam em pós-fixado e caixa, e só viram "Juros ativo (pré e inflação)" quando pré e inflação passam de metade da carteira. Juros e inflação ficou com 2,7% do PL, que é o tamanho real do risco de juros fora da previdência.
 

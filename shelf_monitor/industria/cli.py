@@ -20,6 +20,7 @@ from shelf_monitor.industria.ciclo import (
     normalizar_competencia,
 )
 from shelf_monitor.industria.console import imprimir_bloco
+from shelf_monitor.report.industria_painel import render_painel_industria
 from shelf_monitor.report.industria_planilha import gravar_planilha
 
 console = Console()
@@ -87,6 +88,7 @@ def publicar(config: Config, bloco: dict) -> dict[str, Path]:
     for nome, gravar in (
         ("historico", lambda: gravar_historico(config, bloco)),
         ("planilha", lambda: gravar_planilha(config, bloco)),
+        ("painel", lambda: render_painel_industria(config, bloco)),
     ):
         try:
             gravados[nome] = gravar()
