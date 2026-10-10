@@ -211,6 +211,15 @@ class TestBloco(unittest.TestCase):
 
 
 class TestCamadaEtf(unittest.TestCase):
+    def setUp(self):
+        # O .env da maquina pode apontar o CSV do etf-monitor; o teste usa o da pasta temporaria.
+        import os
+        from unittest import mock
+
+        patcher = mock.patch.dict(os.environ, {"SHELF_ETF_CAPTACAO_CSV": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_sem_arquivo_diz_como_gerar(self):
         config, tmp = temp_config()
         self.addCleanup(tmp.cleanup)

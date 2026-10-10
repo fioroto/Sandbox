@@ -1,6 +1,6 @@
 """O bloco da industria: o dicionario que todas as superficies desenham.
 
-Segue o contrato dos blocos de mercado (`market/etf_captacao_mensal.py`):
+Segue o contrato dos blocos de mercado (o da captacao de ETF, hoje no etf-monitor):
 `available`/`reason`, a competencia e as janelas com datas, o que foi medido,
 a cobertura e a leitura. Chaves com `_` carregam objetos Python e saem antes do
 JSON. Nao ha chave `foco`: o monitor e neutro, nenhuma casa em destaque.

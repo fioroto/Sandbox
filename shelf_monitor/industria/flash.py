@@ -121,7 +121,7 @@ def _ler_mes(config: Config, mes: str, alvo: set[str], *, baixar: bool, corrente
     O mes corrente e baixado de novo (muda todo dia); os fechados vem do disco,
     onde os outros monitores ja os deixaram, e so sao baixados se faltarem.
     """
-    from shelf_monitor.market.etf_flow import fetch_inf_diario_month
+    from shelf_monitor.market.informe_diario import fetch_inf_diario_month
     from shelf_monitor.report.retail_flow import read_daily_flows
 
     local = config.market_raw_dir / f"inf_diario_fi_{mes}.zip"

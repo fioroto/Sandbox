@@ -301,81 +301,15 @@ class Config:
         return self.data_dir / "reports"
 
     @property
-    def etf_dir(self) -> Path:
-        """Dado de ETF pequeno e versionado (ao contrario de market/, que e so
-        tabela derivada): `tickers.csv` (CNPJ -> codigo de negociacao, que o
-        cadastro da CVM nao traz), as fotos das coletas do `etf` (b3/, fnet/,
-        fnet_mensal/), o universo e a cobertura do `etf-bruto` e as planilhas
-        de manual/. A captura bruta (bruto/) e a pasta de entrada ficam fora do
-        git.
+    def etf_captacao_csv(self) -> Path:
+        """A captacao mensal de ETF que a camada ao lado do monitor da industria le.
+
+        Gravada pelo etf-monitor (repositorio a parte desde 07/10/2026) em
+        `data/reports/etf_captacao_mensal.csv` dele: `SHELF_ETF_CAPTACAO_CSV`
+        aponta o arquivo; sem a variavel, vale o de `data/reports/` daqui.
         """
-        return self.data_dir / "etf"
-
-    @property
-    def etf_tickers_path(self) -> Path:
-        return self.etf_dir / "tickers.csv"
-
-    @property
-    def etf_fnet_dir(self) -> Path:
-        """Informes diarios de ETF extraidos do Fundos.NET - um CSV por dia, versionado."""
-        return self.etf_dir / "fnet"
-
-    @property
-    def etf_fnet_mensal_dir(self) -> Path:
-        """Fechamento de cada mes no Fundos.NET - o ultimo informe diario de cada
-        ETF com data-base no mes, um CSV por competencia (AAAAMM), versionado."""
-        return self.etf_dir / "fnet_mensal"
-
-    @property
-    def etf_fnet_diario_dir(self) -> Path:
-        """O mes inteiro do informe diario de cada ETF no Fundos.NET - captacao,
-        resgate, PL e cota de todo dia -, um CSV por competencia (AAAAMM), versionado."""
-        return self.etf_dir / "fnet_diario"
-
-    @property
-    def etf_b3_dir(self) -> Path:
-        """Cadastro de ETFs listados na B3 - um JSON por dia, versionado."""
-        return self.etf_dir / "b3"
-
-    @property
-    def etf_cotahist_dir(self) -> Path:
-        """Cotacoes diarias dos ETFs (COTAHIST filtrado) - um CSV por dia, versionado."""
-        return self.etf_dir / "cotahist"
-
-    @property
-    def etf_sources_debug_dir(self) -> Path:
-        """Evidencia bruta da sondagem das fontes de ETF - gitignored."""
-        return self.debug_dir / "etf-sources"
-
-    @property
-    def etf_bruto_dir(self) -> Path:
-        """Captura bruta do `etf-bruto`, uma pasta por fonte - gitignored: e
-        download reproduzivel na origem e passa de centenas de MB (PDFs de
-        regulamento, XML dos informes, um ano de pregoes)."""
-        return self.etf_dir / "bruto"
-
-    @property
-    def etf_manual_dir(self) -> Path:
-        """Planilhas que gente preenche (cadastro XP, indices, formador,
-        conferencia do regulamento, URLs de gestora, consultas da Comdinheiro)
-        - versionado: e o unico lugar de dado que nenhuma coleta refaz."""
-        return self.etf_dir / "manual"
-
-    @property
-    def etf_entrada_dir(self) -> Path:
-        """Onde a pessoa solta arquivos baixados a mao (exportacao da
-        Comdinheiro, carteira de gestora) - gitignored: dado licenciado."""
-        return self.etf_dir / "entrada"
-
-    @property
-    def etf_universo_path(self) -> Path:
-        """Um ETF por linha, com ticker, ISIN, CNPJ e categoria B3 - versionado."""
-        return self.etf_dir / "universo.csv"
-
-    @property
-    def etf_cobertura_path(self) -> Path:
-        """Cobertura da ultima captura, indicador a indicador - versionado."""
-        return self.etf_dir / "cobertura_bruto.csv"
+        apontado = os.getenv("SHELF_ETF_CAPTACAO_CSV", "").strip()
+        return Path(apontado) if apontado else self.reports_dir / "etf_captacao_mensal.csv"
 
     @property
     def distribuivel_dir(self) -> Path:
@@ -414,7 +348,6 @@ class Config:
         for path in (
             self.snapshots_dir,
             self.cvm_raw_dir,
-            self.etf_dir,
             self.cvm_extract_dir,
             self.cache_dir,
             self.reports_dir,

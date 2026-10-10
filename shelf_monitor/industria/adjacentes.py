@@ -8,8 +8,9 @@ investidor"), e nunca entram na soma do universo.
   camada do investidor: o PL que nao esta em maos de outros fundos, que e o da
   seguradora em nome do participante;
 - **ETF**: nao entrega o informe diario da CVM. A captacao vem do monitor de
-  ETFs (`python -m shelf_monitor etf --export`), que grava
-  `data/reports/etf_captacao_mensal.csv` a partir do Fundos.NET; sem esse
+  ETFs - o repositorio etf-monitor (`python -m etf_monitor etf --export`), que
+  grava `data/reports/etf_captacao_mensal.csv` a partir do Fundos.NET; aqui ele
+  e lido de `Config.etf_captacao_csv` (variavel SHELF_ETF_CAPTACAO_CSV). Sem o
   arquivo, ou sem a competencia, a camada sai indisponivel com o motivo.
 """
 from __future__ import annotations
@@ -46,11 +47,14 @@ def camada_previdencia(base: BaseIndustria, janelas: dict[str, Janela]) -> dict:
 
 
 def camada_etf(config: Config, janelas: dict[str, Janela]) -> dict:
-    caminho = config.reports_dir / "etf_captacao_mensal.csv"
+    caminho = config.etf_captacao_csv
     if not caminho.is_file():
         return {
             "available": False,
-            "reason": "sem a captação mensal de ETF: rode `python -m shelf_monitor etf --export`",
+            "reason": (
+                "sem a captação mensal de ETF: rode `python -m etf_monitor etf --export` no "
+                "etf-monitor e aponte SHELF_ETF_CAPTACAO_CSV para o data/reports/etf_captacao_mensal.csv dele"
+            ),
         }
     por_mes: dict[str, float] = {}
     pl_por_mes: dict[str, float] = {}
@@ -70,7 +74,7 @@ def camada_etf(config: Config, janelas: dict[str, Janela]) -> dict:
             "available": False,
             "reason": (
                 f"a captação de ETF em disco vai até {competencia_br(ultimo)}, antes de "
-                f"{competencia_br(referencia)}: rode `python -m shelf_monitor etf --export`"
+                f"{competencia_br(referencia)}: rode `python -m etf_monitor etf --export` no etf-monitor"
                 if ultimo else "a captação de ETF em disco está vazia"
             ),
         }

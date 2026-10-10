@@ -558,7 +558,7 @@ class RunReport:
     # Rentabilidade por fundo em janelas (1m, 3m, YTD, 12m, 24m), de
     # report.rentabilidade. Custa a leitura de ate 24 competencias do informe
     # (~2,5 min e ~260 MB na primeira vez), entao sai atras de
-    # `--with-rentabilidade` em `run`, `report` e `export` - como `--with-etf`.
+    # `--with-rentabilidade` em `run`, `report` e `export`.
     # O docstring dizia isso desde sempre; o codigo so passou a cumprir agora.
     rentabilidade: dict | None = None
     # Blocos que o modulo declarou sem sentido no dominio dele

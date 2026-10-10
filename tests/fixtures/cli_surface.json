@@ -39,31 +39,6 @@
   "--data-dir",
   "--help"
  ],
- "etf": [
-  "--anbima",
-  "--collect-sources",
-  "--data-dir",
-  "--export",
-  "--flow-source",
-  "--force",
-  "--help",
-  "--months",
-  "--no-fnet-monthly",
-  "--output",
-  "--probe-sources"
- ],
- "etf-bruto": [
-  "--cobertura",
-  "--comparar-comdinheiro",
-  "--consolidar",
-  "--data-dir",
-  "--desde",
-  "--dia",
-  "--fontes",
-  "--forcar",
-  "--help",
-  "--listar-fontes"
- ],
  "export": [
   "--collect",
   "--data-dir",
@@ -143,7 +118,6 @@
   "--platform",
   "--send-email",
   "--skip-cvm",
-  "--with-etf",
   "--with-rentabilidade"
  ],
  "watchlist-discover": [

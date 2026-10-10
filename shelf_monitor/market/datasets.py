@@ -68,9 +68,9 @@ ALL_DATASETS = (REGISTRO, CAD_FI, EXTRATO)
 
 # --- carteira mensal (CDA) ----------------------------------------------------
 # Um zip por competencia (~22 MB), com um membro por bloco de ativo mais o PL e
-# as posicoes sob sigilo. O mesmo arquivo serve a dois consumidores: a carteira
-# dos ETFs (membro cda_fie, em market/etf_bruto) e o mapa de familias (membros
-# cda_fi_*, em market/carteira).
+# as posicoes sob sigilo. Aqui ele serve ao mapa de familias (membros cda_fi_*,
+# em market/carteira); a carteira dos ETFs (membro cda_fie) e lida pelo
+# repositorio etf-monitor.
 #
 # Quantas competencias fechadas considerar, e quantos dias depois do fim do mes
 # a CVM ja costuma ter publicado (08/2026 estava no ar em 24/09/2026; 09/2026
@@ -169,7 +169,7 @@ REGISTRO_SUBCLASSE_COLUMNS = (
 
 
 # --- fora do escopo atual -----------------------------------------------------
-# O informe diario e baixado por `market/etf_flow.fetch_inf_diario_month`, fora
+# O informe diario e baixado por `market/informe_diario.fetch_inf_diario_month`, fora
 # deste catalogo. Mapeados e ainda nao baixados:
 #   lamina          /FI/DOC/LAMINA/DADOS/lamina_fi_{YYYYMM}.zip          (~10 MB/mes)
 #   historico       /FI/CAD/DADOS/cad_fi_hist.zip (gestor, classe, publico e

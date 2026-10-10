@@ -17,8 +17,6 @@ Uso:
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
     python -m shelf_monitor watchlist-discover "BTG PACTUAL"
-    python -m shelf_monitor etf                    # captacao mes a mes e competicao de ETFs
-    python -m shelf_monitor etf-bruto              # dados brutos de ETF de cada fonte do mapeamento
 """
 from __future__ import annotations
 
@@ -58,26 +56,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
-from shelf_monitor.market import anbima_boletim, etf_sources, fundosnet
-from shelf_monitor.market.etf import build_etf_catalog
 from shelf_monitor.industria.cli import registrar_subcomando as registrar_industria
-from shelf_monitor.market.etf_bruto.extrator import registrar_subcomando as registrar_etf_bruto
-from shelf_monitor.market.etf_competicao import build_etf_competicao
-from shelf_monitor.market.etf_flow import (
-    aggregate_category_weekly_flows,
-    aggregate_etf_weekly_flows,
-    flow_coverage,
-    get_recent_months,
-    run_etf_flow_pipeline,
-)
-from shelf_monitor.market.etf_captacao_mensal import (
-    FECHAMENTOS,
-    build_captacao_mensal,
-    ler_fechamentos,
-    ler_informes_do_mes,
-    meses_fechados,
-)
-from shelf_monitor.market.fie_balancete import run_etf_pl_pipeline
 from shelf_monitor.market.importer import run_import
 from shelf_monitor.report.competitive import (
     build_competitive_view,
@@ -92,17 +71,6 @@ from shelf_monitor.report.aggregate import bloco_de_gaps, cnpjs_cobertos
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.familias import print_familias, relatorio_de_familias
-from shelf_monitor.report.etf_captacao import write_etf_captacao
-from shelf_monitor.report.etf_digest import write_etf_digest
-from shelf_monitor.report.etf_report import (
-    export_etf_csv,
-    export_captacao_csv,
-    export_etf_excel,
-    print_captacao_mensal,
-    print_etf_competicao,
-    print_etf_pl,
-    print_etf_summary,
-)
 from shelf_monitor.report.mailer import build_subject, send_digest
 from shelf_monitor.report.custo import IndiceCusto, build_custo, print_custo
 from shelf_monitor.report.mandato import build_mandato, print_mandato
@@ -351,7 +319,7 @@ def build_report(
         config, report, meses_da_serie=24 if with_rentabilidade else 13
     )
     attach_custo_e_mandato(config, report, indice_custo)
-    # Opt-in, como `--with-etf` e pela mesma razao: a primeira montagem le ate
+    # Opt-in porque a primeira montagem le ate
     # 24 competencias do informe (~2,5 min e ~260 MB). Rodando sempre, todo
     # `run`, `collect`, `diff`, `report` e `export` pagava esse custo - contra
     # o que o proprio contrato em `models.RunReport.rentabilidade` promete
@@ -796,212 +764,6 @@ def git_commit(config: Config) -> None:
 # --- subcomandos -------------------------------------------------------------
 
 
-def resolver_fonte_do_fluxo(config: Config, pedida: str) -> tuple[str, str | None]:
-    """(fonte, motivo): `auto` vira `fnet` quando ha serie do Fundos.NET em disco.
-
-    O INF_DIARIO nao cobre ETF (0 de 249 em 2026-09-19, ver fie_balancete.py):
-    o fluxo que ele da e dos feeders. So fica como padrao enquanto o Fundos.NET
-    nao tem serie para fechar semanas.
-    """
-    if pedida != "auto":
-        return pedida, None
-    dias = fundosnet.dias_de_serie(config)
-    if dias >= fundosnet.MIN_DIAS_SERIE:
-        return "fnet", f"{dias} datas de informe do Fundos.NET em disco"
-    return "inf_diario", (
-        f"o Fundos.NET tem {contagem(dias, 'data', 'datas')} de informe em disco, abaixo das "
-        f"{fundosnet.MIN_DIAS_SERIE} de uma série semanal"
-    )
-
-
-def avisar_fluxo_de_feeder(motivo: str | None) -> None:
-    """O aviso que faltava: sem ele, fluxo de feeder saia como captacao de ETF."""
-    console.print()
-    console.print(
-        "[bold red]ATENÇÃO: o fluxo semanal abaixo NÃO é de ETF.[/] [red]Vem do "
-        "INF_DIARIO da CVM, que não cobre fundo de índice (0 de 249 ETFs em "
-        "19/09): mede os feeders - FIF que replicam um ETF.[/]"
-    )
-    if motivo:
-        console.print(f"[red]Fonte escolhida porque {motivo}.[/]")
-    console.print(
-        "[red]Para o fluxo do ETF: `etf --collect-sources fnet` a cada pregão; com "
-        f"{fundosnet.MIN_DIAS_SERIE} datas de informe o padrão passa a ser o "
-        "Fundos.NET.[/]"
-    )
-    console.print()
-
-
-def run_etf_monitor(config: Config) -> None:
-    """Catálogo + fluxo de ETF, chamado por `run --with-etf` e por `etf`.
-
-    Opt-in no `run` (não roda por padrão): baixa até 3 meses de INF_DIARIO -
-    tráfego extra que a coleta diária de prateleiras não pedia antes. Uma
-    falha aqui não derruba a coleta - mesmo contrato de `render_outputs`.
-    """
-    try:
-        console.print()
-        console.print("[bold]Catalogando ETFs na CVM e analisando fluxo...[/]")
-        catalogo = build_etf_catalog(config)
-        _coletar_fundosnet(config, catalogo)
-        fonte, motivo = resolver_fonte_do_fluxo(config, "auto")
-        catalog, weekly_flows, category_summaries = _fluxo_de_etf(config, fonte, catalog=catalogo)
-        _tickers_de_etf(config, catalog, weekly_flows)
-        coverage = flow_coverage(catalog, weekly_flows)
-        if fonte == "inf_diario":
-            avisar_fluxo_de_feeder(motivo)
-        print_etf_summary(
-            weekly_flows, category_summaries, catalog, coverage=coverage,
-            source_label=_ROTULO_DA_FONTE[fonte],
-        )
-        pl_series, pl_cov, pl_missing = run_etf_pl_pipeline(
-            config, catalog, get_recent_months(4)
-        )
-        print_etf_pl(pl_series, pl_cov, pl_missing)
-        competicao = _competicao_de_etf(config, catalog, pl_series)
-        captacao = _captacao_mensal_de_etf(config, catalog, coletar=False)
-        export_etf_excel(
-            weekly_flows, category_summaries, catalog,
-            config.reports_dir / ETF_PLANILHA,
-            pl_series=pl_series, fonte=fonte, competicao=competicao, captacao=captacao,
-        )
-        export_etf_csv(weekly_flows, config.reports_dir / "etf_weekly_flow.csv")
-        if captacao.get("available"):
-            export_captacao_csv(captacao, config.reports_dir / "etf_captacao_mensal.csv")
-            _md, html_path = write_etf_captacao(config, captacao)
-            console.print(f"  [green]Captação de ETF mês a mês:[/] {html_path}")
-        if competicao.get("available"):
-            _md, html_path = write_etf_digest(config, competicao)
-            console.print(f"  [green]Competição em ETFs:[/] {html_path}")
-    except Exception as exc:  # noqa: BLE001 - ETF e opcional, nao pode derrubar o run
-        console.print(f"[yellow]Falha no monitoramento de ETF:[/] {_short(str(exc))}")
-
-
-def _tickers_de_etf(config: Config, catalog: dict, weekly_flows: list | None = None, coletar: bool = True) -> None:
-    """Ticker de cada ETF, em todas as visoes.
-
-    Refaz `data/etf/tickers.csv` pela lista de ETFs da B3 quando a ultima coleta
-    tem mais de 30 dias (ou nao existe) e poe o ticker no catalogo e nos fluxos
-    ja montados - o catalogo le o arquivo ao ser construido, e esta execucao
-    ja o construiu. Sem rede, fica com o arquivo como esta.
-    """
-    if coletar and etf_sources.tickers_desatualizados(config, date.today()):
-        try:
-            resumo = etf_sources.collect_b3(config, catalog, date.today())
-            console.print(
-                f"  [dim]Tickers da B3: {resumo['tickers']} ETFs "
-                f"({', '.join(f'{k} {v}' for k, v in resumo['por_tipo'].items())})[/]"
-            )
-        except SourceUnavailable as exc:
-            console.print(
-                f"  [yellow]B3 indisponível para os tickers:[/] {_short(str(exc))} - "
-                "fica o data/etf/tickers.csv como está."
-            )
-    tickers = etf_sources.tickers_do_arquivo(config)
-    for cnpj, meta in catalog.items():
-        if cnpj in tickers:
-            meta.ticker = tickers[cnpj]
-    for flow in weekly_flows or []:
-        meta = catalog.get(flow.cnpj)
-        if meta is not None and meta.ticker:
-            flow.ticker = meta.ticker
-
-
-# A planilha de ETF abre pela captacao mes a mes; o nome deixou de ser "semanal"
-# quando o monitoramento de fluxo passou a ser mensal (2026-09-24).
-ETF_PLANILHA = "etf_captacao_mensal.xlsx"
-
-
-def _coletar_fundosnet(config: Config, catalog: dict, meses: list[str] | None = None) -> None:
-    """O que falta em disco do Fundos.NET para a captacao de ETF.
-
-    Os fechamentos mensais (o PL das pontas de cada mes), o informe de cada mes
-    fechado (captacao e resgates de todo dia, uma pagina por ETF) e o do mes em
-    aberto (refeito uma vez por dia: leva o fluxo semanal ao ultimo informe).
-    Sem rede, fica o que esta em disco, e o console diz isso.
-    """
-    meses = meses or meses_fechados(date.today(), FECHAMENTOS)
-
-    def mostrar(titulo: str, resumo: dict, chave: str, unidade: str) -> None:
-        novos = {m: v for m, v in resumo["meses"].items() if not str(v).startswith("em disco")}
-        if novos:
-            console.print(
-                f"  [dim]{titulo}: "
-                f"{', '.join(f'{m[4:]}/{m[:4]} ({v})' for m, v in novos.items())} - "
-                f"{resumo[chave]} {unidade}[/]"
-            )
-        if resumo.get("interrompida"):
-            console.print(f"  [yellow]{resumo['interrompida']}.[/]")
-
-    try:
-        mostrar(
-            "Fechamentos mensais do Fundos.NET baixados",
-            etf_sources.collect_fechamentos_mensais(config, catalog, meses=meses), "documentos", "documentos",
-        )
-        mostrar(
-            "Informe do mês no Fundos.NET (captação e resgates de todo dia)",
-            etf_sources.collect_informes_do_mes(config, catalog, meses=meses[1:]), "paginas", "páginas",
-        )
-        mostrar(
-            "Informe do mês em aberto no Fundos.NET",
-            etf_sources.collect_informes_do_mes_aberto(config, catalog), "paginas", "páginas",
-        )
-    except SourceUnavailable as exc:
-        console.print(
-            f"  [yellow]Fundos.NET indisponível para os fechamentos mensais:[/] "
-            f"{_short(str(exc))} - a captação mensal usa o que está em disco."
-        )
-
-
-def _captacao_mensal_de_etf(
-    config: Config, catalog: dict, coletar: bool = True, anbima: str | None = None
-) -> dict:
-    """Captacao de ETF mes a mes, no ano e em 12 meses.
-
-    Baixa do Fundos.NET so o que falta em disco: os fechamentos mensais (cerca
-    de 220 documentos por mes; os 14 meses da visao, na primeira vez) e o
-    informe do mes de cada ETF - uma pagina por ETF por mes, com captacao e
-    resgate de todo dia. Le o balancete de FIE dos mesmos meses, que decide
-    estreia contra informe faltando. Sem rede, usa o que ja esta em disco e diz
-    isso.
-    """
-    meses = meses_fechados(date.today(), FECHAMENTOS)
-    if coletar:
-        _coletar_fundosnet(config, catalog, meses)
-    pl_series, _cov, _missing = run_etf_pl_pipeline(config, catalog, meses)
-    captacao = build_captacao_mensal(
-        catalog, ler_fechamentos(config, meses), pl_series,
-        informes=ler_informes_do_mes(config, meses[1:]),
-    )
-    # Conferencia com o boletim da ANBIMA, quando ha anexo: o arquivo dado em
-    # --anbima (ou o mais recente da pasta dada), senao o de data/etf/anbima/.
-    anexo_path = anbima_boletim.localizar_anexo(config, anbima)
-    if anexo_path is not None:
-        anexo = anbima_boletim.ler_anexo(anexo_path)
-        if anexo is None:
-            console.print(f"  [yellow]{anexo_path.name} não parece o anexo do boletim da ANBIMA.[/]")
-        else:
-            anbima_boletim.anexar_conferencia(captacao, anexo)
-            console.print(f"  [dim]Conferência com a ANBIMA: {anexo_path.name}[/]")
-    elif anbima:
-        console.print(f"  [yellow]Nenhum anexo do boletim da ANBIMA em {anbima}.[/]")
-    print_captacao_mensal(captacao)
-    return captacao
-
-
-def _competicao_de_etf(config: Config, catalog: dict, pl_series: list) -> dict:
-    """Gestoras e segmentos de ETF, com cotistas e fluxo do Fundos.NET em disco.
-
-    Le so o que ja esta no disco: o catalogo e o PL vem prontos do chamador, e os
-    informes do Fundos.NET sao os das datas mais recentes em disco (a pagina do
-    mes em aberto, ou o que `etf --collect-sources fnet` gravou). Imprime no
-    console; quem chama decide se grava planilha e relatorio.
-    """
-    competicao = build_etf_competicao(catalog, pl_series, fundosnet.informes_recentes(config))
-    print_etf_competicao(competicao)
-    return competicao
-
-
 def cmd_run(config: Config, args: argparse.Namespace) -> int:
     config.ensure_dirs()
     platform_ids = args.platforms or list(PLATFORMS)
@@ -1019,9 +781,6 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
     )
     print_summary(report)
     failures = render_outputs(config, report, send_email=args.send_email)
-
-    if args.with_etf:
-        run_etf_monitor(config)
 
     if args.git_commit:
         git_commit(config)
@@ -1626,149 +1385,6 @@ def cmd_watchlist_discover(config: Config, args: argparse.Namespace) -> None:
     )
 
 
-def print_probes(probes: list) -> None:
-    """Tabela de sondagens, no mesmo formato do `diagnose` das prateleiras."""
-    table = Table(title="Sondagem das fontes de ETF", title_style="bold")
-    table.add_column("Fonte")
-    table.add_column("OK")
-    table.add_column("O que veio", overflow="fold")
-    for probe in probes:
-        table.add_row(
-            probe.source,
-            "[green]sim[/]" if probe.ok else "[red]não[/]",
-            _short(probe.detail, 160),
-        )
-    console.print()
-    console.print(table)
-    failing = [p for p in probes if not p.ok]
-    if failing:
-        console.print(f"[yellow]{len(failing)} de {len(probes)} sondagens sem resultado útil.[/]")
-    console.print()
-
-
-_ROTULO_DA_FONTE = {"fnet": "Fundos.NET", "inf_diario": "INF_DIARIO"}
-
-
-def _fluxo_de_etf(
-    config: Config, fonte: str, months: int = 3, force: bool = False, catalog: dict | None = None
-):
-    """(catalogo, fluxos semanais, resumo por categoria) pela fonte ja resolvida.
-
-    Pelo Fundos.NET, a janela e a mesma do INF_DIARIO: os ultimos `months`
-    meses, o corrente incluso - o disco tem mais (a pagina do mes guarda 13).
-    """
-    if fonte == "fnet":
-        console.print("[bold]Agregando o fluxo a partir dos informes diários do Fundos.NET...[/]")
-        catalog = catalog if catalog is not None else build_etf_catalog(config)
-        inicio = min(get_recent_months(months))
-        informes = [
-            i for i in fundosnet.read_fnet_csvs(config) if i.data and f"{i.data:%Y%m}" >= inicio
-        ]
-        records = fundosnet.records_from_informes(informes)
-        if not records:
-            console.print(
-                "[yellow]Nenhum informe coletado em data/etf/fnet/. Rode "
-                "`etf --collect-sources fnet` (depois de `etf --probe-sources`).[/]"
-            )
-        weekly_flows = aggregate_etf_weekly_flows(catalog, records)
-        return catalog, weekly_flows, aggregate_category_weekly_flows(weekly_flows)
-    console.print(f"[bold]Catalogando ETFs na CVM e analisando fluxo (últimos {months} meses)...[/]")
-    return run_etf_flow_pipeline(config, months_count=months, force_download=force)
-
-
-def cmd_etf(config: Config, args: argparse.Namespace) -> None:
-    """Monitora os ETFs registrados na CVM: catálogo completo (todas as
-    categorias, incluindo Renda Fixa), a captação mês a mês (captação e
-    resgates do informe diário do Fundos.NET, conferidos contra a diferença de
-    PL) e o detalhe semanal que a fonte disponível de fato cobre.
-    """
-    config.ensure_dirs()
-
-    if args.probe_sources:
-        console.print("[bold]Sondando as fontes que cobrem ETF (Fundos.NET, B3, COTAHIST)...[/]")
-        console.print(f"  [dim]evidência bruta em {config.etf_sources_debug_dir}[/]")
-        probes = etf_sources.run_probes(config, build_etf_catalog(config))
-        print_probes(probes)
-        console.print(
-            "[dim]Próximo passo: com as sondagens OK, `etf --collect-sources b3,fnet,cotahist` "
-            "grava a foto do dia e `etf --flow-source fnet` agrega o fluxo a partir dela.[/]"
-        )
-        return
-
-    if args.collect_sources:
-        sources = [s.strip() for s in args.collect_sources.split(",") if s.strip()]
-        console.print(f"[bold]Coletando fontes de ETF: {', '.join(sources)}...[/]")
-        summary = etf_sources.collect_sources(config, build_etf_catalog(config), sources)
-        for name, info in summary.items():
-            style = "red" if "erro" in info else "green"
-            console.print(f"  [{style}]{name}[/]: {info}")
-        console.print()
-
-    # O Fundos.NET antes de tudo: o fluxo semanal e a captacao mes a mes saem
-    # dele (a pagina de cada mes, com captacao, resgates e PL de todo dia).
-    catalogo = build_etf_catalog(config)
-    if not args.no_fnet_monthly:
-        _coletar_fundosnet(config, catalogo)
-    fonte, motivo = resolver_fonte_do_fluxo(config, args.flow_source)
-    catalog, weekly_flows, category_summaries = _fluxo_de_etf(
-        config, fonte, months=args.months, force=args.force, catalog=catalogo
-    )
-    _tickers_de_etf(config, catalog, weekly_flows)
-    coverage = flow_coverage(catalog, weekly_flows)
-    if fonte == "inf_diario":
-        avisar_fluxo_de_feeder(motivo)
-
-    # O catálogo sai sempre - é a resposta a "o monitor enxerga todos os
-    # ETFs?" - mesmo quando a captação semanal (fonte à parte, com cobertura
-    # própria) não tem nada a mostrar.
-    print_etf_summary(
-        weekly_flows, category_summaries, catalog, coverage=coverage,
-        source_label=_ROTULO_DA_FONTE[fonte],
-    )
-
-    # PL mensal do balancete de FIE: a única fonte medida que alcança o ETF em
-    # si, e não só os feeders. Roda sempre - são ~0,1 MB por competência, ordens
-    # de grandeza abaixo do INF_DIARIO, então não há o que tornar opt-in.
-    pl_series, pl_cov, pl_missing = run_etf_pl_pipeline(
-        config, catalog, get_recent_months(args.months + 1), force_download=args.force
-    )
-    print_etf_pl(pl_series, pl_cov, pl_missing)
-    # Quem lidera cada mercado de ETF e onde a XP compete: o PL do balancete,
-    # segmentado pelo que cada ETF replica, com cotistas e fluxo do Fundos.NET.
-    competicao = _competicao_de_etf(config, catalog, pl_series)
-    # A captação mês a mês: o monitoramento de fluxo de ETF, com as mesmas
-    # visões da competição (gestoras, segmentos, oportunidades e defesa, ETF).
-    captacao = _captacao_mensal_de_etf(config, catalog, coletar=False, anbima=args.anbima)
-
-    if args.export or args.output:
-        xlsx_path = Path(args.output) if args.output else (config.reports_dir / ETF_PLANILHA)
-        csv_path = config.reports_dir / "etf_weekly_flow.csv"
-
-        saved_xlsx = export_etf_excel(
-            weekly_flows, category_summaries, catalog, xlsx_path, pl_series=pl_series,
-            fonte=fonte, competicao=competicao, captacao=captacao,
-        )
-        saved_csv = export_etf_csv(weekly_flows, csv_path)
-        digest_md = digest_html = captacao_md = captacao_html = captacao_csv = None
-        if captacao.get("available"):
-            captacao_csv = export_captacao_csv(captacao, config.reports_dir / "etf_captacao_mensal.csv")
-            captacao_md, captacao_html = write_etf_captacao(config, captacao)
-        if competicao.get("available"):
-            digest_md, digest_html = write_etf_digest(config, competicao)
-
-        console.print()
-        console.print("[green]Arquivos exportados com sucesso:[/]")
-        console.print(f"  Planilha Excel (captação mensal, competição e catálogo): {saved_xlsx}")
-        if captacao_html:
-            console.print(f"  Captação de ETF mês a mês (html e markdown):            {captacao_html}")
-            console.print(f"                                                          {captacao_md}")
-            console.print(f"  Arquivo CSV (captação mensal por ETF):                  {captacao_csv}")
-        console.print(f"  Arquivo CSV (fluxo semanal):                            {saved_csv}")
-        if digest_html:
-            console.print(f"  Competição em ETFs (html e markdown):                   {digest_html}")
-            console.print(f"                                                          {digest_md}")
-
-
 def main() -> None:
     # --data-dir vale antes ou depois do subcomando: exigir uma das duas ordens
     # e uma pegadinha desnecessaria na linha de comando. O SUPPRESS e o que
@@ -1832,15 +1448,6 @@ def main() -> None:
         "--send-email",
         action="store_true",
         help="Enviar o digest por SMTP (requer SMTP_HOST, SMTP_FROM e SMTP_TO)",
-    )
-    run_parser.add_argument(
-        "--with-etf",
-        action="store_true",
-        help=(
-            "Também catalogar ETFs (todas as categorias, incl. Renda Fixa) e "
-            "analisar fluxo semanal - opt-in: baixa até 3 meses de INF_DIARIO "
-            "além da coleta normal"
-        ),
     )
     run_parser.add_argument(
         "--with-rentabilidade",
@@ -2040,79 +1647,6 @@ def main() -> None:
     discover_parser.add_argument("--local-zip", help="Usar um zip local em vez de baixar")
     discover_parser.set_defaults(func=cmd_watchlist_discover)
 
-    etf_parser = subparsers.add_parser(
-        "etf",
-        help="Monitorar a captação mês a mês (e o detalhe semanal) de todos os ETFs cadastrados na CVM",
-        parents=[common],
-    )
-    etf_parser.add_argument(
-        "--months",
-        type=int,
-        default=3,
-        help="Quantidade de meses recentes do INF_DIARIO a analisar (default: 3)",
-    )
-    etf_parser.add_argument(
-        "--export",
-        action="store_true",
-        help="Exportar resultados para planilha Excel (.xlsx) e arquivo CSV",
-    )
-    etf_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Forçar re-download dos arquivos da CVM mesmo se existirem no cache",
-    )
-    etf_parser.add_argument(
-        "-o", "--output", help="Caminho personalizado para salvar a planilha .xlsx"
-    )
-    etf_parser.add_argument(
-        "--probe-sources",
-        action="store_true",
-        help=(
-            "Sondar as fontes que cobrem ETF de verdade (Fundos.NET, B3 listados, "
-            "COTAHIST) e gravar a evidência bruta em data/cache/debug/etf-sources/"
-        ),
-    )
-    etf_parser.add_argument(
-        "--collect-sources",
-        metavar="FONTES",
-        help=(
-            "Coletar a foto do dia das fontes indicadas, separadas por vírgula: "
-            "b3 (tickers/CNPJ), fnet (informe diário), fnet_mensal (fechamentos "
-            "mensais), fnet_diario (o informe de cada mês fechado: captação e "
-            "resgates de todo dia), fnet_aberto (o do mês em aberto), cotahist "
-            "(cotação/liquidez)"
-        ),
-    )
-    etf_parser.add_argument(
-        "--flow-source",
-        choices=["auto", "inf_diario", "fnet"],
-        default="auto",
-        help=(
-            "De onde vem o fluxo semanal: fnet (informes diários coletados do "
-            "Fundos.NET, que cobrem FIIM) ou inf_diario (CVM; só cobre feeders). "
-            "auto (padrão): fnet quando há série em disco, senão inf_diario com aviso"
-        ),
-    )
-    etf_parser.add_argument(
-        "--anbima",
-        metavar="CAMINHO",
-        help=(
-            "Anexo do boletim de fundos da ANBIMA (arquivo .xlsx, ou a pasta onde "
-            "ficam os anexos) para conferir a captação mês a mês; sem ele, usa o "
-            "mais recente de data/etf/anbima/, se houver"
-        ),
-    )
-    etf_parser.add_argument(
-        "--no-fnet-monthly",
-        action="store_true",
-        help=(
-            "Não baixar do Fundos.NET os fechamentos mensais nem o informe do mês que "
-            "faltam em disco: a captação mês a mês usa só o que já foi coletado"
-        ),
-    )
-    etf_parser.set_defaults(func=cmd_etf)
-
-    registrar_etf_bruto(subparsers, common)
     registrar_industria(subparsers, common)
 
     args = parser.parse_args()

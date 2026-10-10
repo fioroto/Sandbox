@@ -242,7 +242,7 @@ def agrupar_por_classe(registros: list[DailyFlow]) -> dict[str, ClasseNoPeriodo]
     **A CVM retifica o informe.** O mesmo (CNPJ, subclasse, data) aparece mais de
     uma vez no arquivo do mes (1,03% dos pares em 09/2026). Sem deduplicar, duas
     versoes do mesmo dia contam como dois pregoes. Vence a ultima ocorrencia, que
-    e a retificacao - o mesmo criterio de `etf_flow._dedupe_by_day`.
+    e a retificacao - o mesmo criterio do fluxo de ETF no etf-monitor.
     """
     por_subclasse: dict[tuple[str, str], dict[date, DailyFlow]] = {}
     for registro in registros:

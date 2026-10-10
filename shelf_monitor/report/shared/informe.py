@@ -45,7 +45,7 @@ def caminho_da_competencia(
     """O zip da competencia, baixado no maximo uma vez por execucao."""
     if yyyymm in _CAMINHOS:
         return _CAMINHOS[yyyymm]
-    from shelf_monitor.market.etf_flow import fetch_inf_diario_month
+    from shelf_monitor.market.informe_diario import fetch_inf_diario_month
 
     caminho = fetch_inf_diario_month(config, yyyymm, force=force)
     _CAMINHOS[yyyymm] = caminho
