@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "platform": "itau",
+  "collected_at": "2026-09-28T19:56:51.714319",
+  "strategy": "html-scrape",
+  "strategies": [],
+  "source_counts": {},
+  "status": "unavailable",
+  "source_urls": [
+    "https://ww15.itau.com.br/privatebank/hotsite/catalogofundos2/tabela_rentabilidade/default.aspx"
+  ],
+  "error": "tabela de rentabilidade não encontrada na página",
+  "fund_count": 0,
+  "funds": []
+}
