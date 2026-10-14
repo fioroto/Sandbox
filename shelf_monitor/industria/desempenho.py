@@ -9,6 +9,13 @@ O retorno vem de `SerieMensal.retorno`: base no fechamento da competencia
 anterior a janela (convencao de lamina), subclasses ponderadas pelo PL, e a
 classe precisa aparecer em ao menos 80% das competencias. Nao e retorno total
 (a cota e ex-provento) nem e liquido de impostos.
+
+**Contra o CDI** (Fase 2): com o CDI acumulado da janela (`macro.py`), cada
+peer group ganha a mediana em % do CDI e a fracao das estrategias que ficaram
+acima dele, e cada classe o proprio % do CDI. O CDI e a referencia de custo de
+oportunidade de toda macroclasse - em acoes e internacional nao e o indicador
+do fundo, e por isso a chave diz "cdi", nunca "indicador". A cota ja vem
+liquida de taxas; o CDI, nao: a comparacao e a que o cotista faz.
 """
 from __future__ import annotations
 
@@ -36,11 +43,18 @@ def _quartil(valor: float, faixas: dict) -> int:
     return 4
 
 
-def rentabilidade_por_peer_group(base: BaseIndustria, janela: Janela) -> dict:
-    """{"n2": [...], "por_classe": {cnpj: {retorno, quartil, raiz}}} na janela."""
+def _sobre(valor: float | None, cdi: float | None) -> float | None:
+    """Retorno em fracao do CDI (1,05 = 105% do CDI); None sem CDI positivo."""
+    if valor is None or cdi is None or cdi <= 0:
+        return None
+    return round(valor / cdi, 4)
+
+
+def rentabilidade_por_peer_group(base: BaseIndustria, janela: Janela, cdi: float | None = None) -> dict:
+    """{"n2": [...], "por_classe": {cnpj: {retorno, quartil, raiz}}, "cdi"} na janela."""
     competencias = list(janela.competencias)
     if not competencias:
-        return {"n2": [], "por_classe": {}}
+        return {"n2": [], "por_classe": {}, "cdi": cdi}
     ultima = competencias[-1]
     classes_no_universo: dict[str, tuple[str, str, str]] = {}
     for linha in linhas_do_mes(base, ultima):
@@ -72,20 +86,27 @@ def rentabilidade_por_peer_group(base: BaseIndustria, janela: Janela) -> dict:
         if valor is None:
             continue
         por_raiz.setdefault((n1, n2), {})[raiz if fonte == "raiz" else cnpj] = valor
-        por_classe[cnpj] = {"retorno": round(valor, 6), "fonte": fonte, "raiz": raiz}
+        por_classe[cnpj] = {
+            "retorno": round(valor, 6), "fonte": fonte, "raiz": raiz, "sobre_cdi": _sobre(valor, cdi),
+        }
 
     grupos = []
     for (n1, n2), valores in sorted(por_raiz.items()):
         lista = list(valores.values())
         faixas = quartis(lista)
+        mediana = faixas["median"] if faixas else (sorted(lista)[len(lista) // 2] if lista else None)
         grupos.append({
             "n1": n1,
             "n2": n2,
             "estrategias": len(lista),
             "amostra_pequena": len(lista) < MIN_AMOSTRA_CATEGORIA,
             "q1": faixas["q1"] if faixas else None,
-            "mediana": faixas["median"] if faixas else (sorted(lista)[len(lista) // 2] if lista else None),
+            "mediana": mediana,
             "q3": faixas["q3"] if faixas else None,
+            "mediana_sobre_cdi": _sobre(mediana, cdi),
+            "acima_do_cdi": (
+                round(sum(1 for v in lista if v > cdi) / len(lista), 4) if cdi is not None and lista else None
+            ),
             "_faixas": faixas,
         })
     faixas_por_n2 = {(g["n1"], g["n2"]): g["_faixas"] for g in grupos}
@@ -95,4 +116,4 @@ def rentabilidade_por_peer_group(base: BaseIndustria, janela: Janela) -> dict:
         item["quartil"] = _quartil(item["retorno"], faixas) if faixas else None
     for grupo in grupos:
         grupo.pop("_faixas")
-    return {"n2": grupos, "por_classe": por_classe}
+    return {"n2": grupos, "por_classe": por_classe, "cdi": cdi}

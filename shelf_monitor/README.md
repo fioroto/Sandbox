@@ -482,12 +482,13 @@ publicada; senao o flash, se o ultimo tem 7 dias ou mais; senao nada.
 | Saida | Ciclo | O que e |
 |---|---|---|
 | `data/reports/industria_dashboard.html` | mensal | painel interativo: filtros por publico, macroclasse, papel e tipo de gestora, e o explorador dos ~8,2 mil produtos |
-| `data/reports/industria-AAAA-MM.xlsx` | mensal | planilha explorador, 15 abas |
+| `data/reports/industria-AAAA-MM.xlsx` | mensal | planilha explorador, 17 abas (com Dinamica e Macro) |
 | `data/reports/industria-AAAA-MM-DD.md/.html` | mensal | e-mail do mes (640 px, ate 100 KB) |
 | `data/reports/industria-flash-AAAA-MM-DD.md/.html` | flash | captacao da semana por macroclasse contra as 12 semanas anteriores |
 | `data/historico/industria/AAAAMM.json` | mensal | o bloco publicado, trilha de auditoria (versionado) |
 | `data/historico/cadastro/AAAAMM.csv.gz` | toda importacao da base | retrato mensal do cadastro (versionado) |
 | `data/cache/industria/` | mensal | perfis compactos e o retrato do universo que o flash usa |
+| `data/cache/sgs/` | mensal | CDI, Selic, IPCA e dolar do SGS do Banco Central; competencia fechada nao volta a rede |
 
 Tres regras mudam o numero, e toda superficie diz qual vale:
 
@@ -499,6 +500,22 @@ Tres regras mudam o numero, e toda superficie diz qual vale:
   vezes. Em 08/2026, R$ 3,80 tri contra R$ 4,28 tri brutos do mesmo universo.
 - **Estrutura.** Master, feeder, espelho e FoF pela carteira (CDA); a
   estrategia, a gestora e o retorno vem da raiz da cadeia.
+
+Da Fase 2 (entregas 2A e 2B, em 10/10/2026), toda na janela de 12 meses:
+
+- **Retorno contra o CDI.** O CDI acumulado de cada janela vem do SGS do
+  Banco Central, na mesma base do retorno (fechamento da competencia anterior,
+  exclusive, ao ultimo pregao, inclusive). Cada peer group ganha a mediana em %
+  do CDI e a fracao das estrategias acima dele; o explorador, o % do CDI de
+  cada produto. Sem o SGS (sem rede e sem cache), sai sem o % do CDI e diz.
+- **Macro.** CDI e IPCA do mes, Selic e dolar no fechamento, ao lado da
+  captacao por macroclasse, mes a mes.
+- **Dinamica da captacao.** Giro (resgates sobre o PL medio, no fluxo
+  declarado), concentracao por peer group (HHI e fatia das 5 maiores gestoras),
+  grupos gestores que entraram e sairam do universo, captacao por quartil de
+  retorno no peer group e a captacao implicita por tipo de cotista. Esta ultima
+  sai com o ruido do arredondamento do perfil ao lado: abaixo de duas vezes
+  ele, "dentro do ruido".
 
 O flash usa o universo do ultimo ciclo mensal e recusa um retrato com mais de
 45 dias. Dia do informe com menos de 90% dos produtos de um dia tipico fica de

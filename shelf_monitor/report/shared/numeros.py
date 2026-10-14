@@ -117,6 +117,15 @@ def pct(valor: float | None, casas: int = 1) -> str:
     return "-" if valor is None else f"{valor * 100:.{casas}f}%".replace(".", ",")
 
 
+def pct_com_sinal(valor: float | None, casas: int = 1) -> str:
+    """"+1,2%" - fracao com direcao (fluxo sobre o PL). Zero arredondado sai sem sinal."""
+    if valor is None:
+        return "-"
+    if abs(valor) * 100 < 0.5 * 10 ** -casas:
+        return pct(0.0, casas)
+    return ("+" if valor > 0 else "") + pct(valor, casas)
+
+
 def pp(valor: float | None) -> str:
     """Pontos percentuais com sinal: "+0,4 pp". Zero arredondado sai sem sinal."""
     if valor is None:

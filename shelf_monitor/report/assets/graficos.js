@@ -499,7 +499,7 @@ function dumbbell(mount, linhas, series, o = {}) {
     if (faixaRef) {
       svg.appendChild(el("text", {
         class: "tick", x: x(o.ref), y: H - 4, "text-anchor": "middle",
-      }, `${fmtEixo(o.ref)} = ${o.refRotulo}`));
+      }, `${(o.fmtRef || fmtEixo)(o.ref)} = ${o.refRotulo}`));
     }
     mount.replaceChildren(svg);
   });

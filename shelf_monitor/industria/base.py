@@ -1,6 +1,6 @@
 """O que o monitor da industria le para uma competencia, carregado uma vez.
 
-Tres fontes, cada uma no seu cache:
+Tres fontes da CVM, cada uma no seu cache, e o SGS do Banco Central:
 
 - o **cadastro** (retrato mensal em `data/historico/cadastro/`): o ultimo
   retrato vale para a janela inteira - atributos fixos, ver `universo.py`;
@@ -8,7 +8,9 @@ Tres fontes, cada uma no seu cache:
   `data/cache/industria/perfil/`): so as competencias mais recentes vao a
   rede, por requisicao condicional;
 - a **serie mensal do informe diario** (`data/cache/serie/`, a mesma do bloco
-  de rentabilidade), terminada na competencia pedida com `ate=`.
+  de rentabilidade), terminada na competencia pedida com `ate=`;
+- o **macro** (CDI, Selic, IPCA e dolar do SGS, em `data/cache/sgs/`), para o
+  retorno contra o CDI e o contexto da captacao (`macro.py`).
 
 A competencia padrao e a ultima fechada com perfil publicado. A CVM publica o
 perfil e a carteira de M por volta do dia 15 do mes seguinte (08/2026 estava no
@@ -25,6 +27,7 @@ from shelf_monitor.industria.cadastro import Cadastro, carregar_cadastro
 from shelf_monitor.industria.cotistas import PerfilClasse, carregar_perfil
 from shelf_monitor.industria.curadoria import Curadoria, carregar_curadoria
 from shelf_monitor.industria.estrutura import MapaDeEstrutura
+from shelf_monitor.industria.macro import Macro, carregar_macro
 from shelf_monitor.industria.taxonomia import Taxonomia
 from shelf_monitor.market.datasets import COMPETENCIAS_PERFIL_REVALIDADAS
 from shelf_monitor.report.rentabilidade import SerieMensal
@@ -62,6 +65,9 @@ class BaseIndustria:
     # perfil diz (master) e o resto fica "sem carteira".
     mapa: MapaDeFamilias | None = None
     curadoria: Curadoria | None = None
+    # CDI, Selic, IPCA e dolar da janela. None quando nao foi carregado (o
+    # bloco sai sem o macro e sem o "% do CDI").
+    macro: Macro | None = None
     _perfil_fixo: dict[str, PerfilClasse] | None = field(default=None, repr=False)
     _estrutura: MapaDeEstrutura | None = field(default=None, repr=False)
     _taxonomia: Taxonomia | None = field(default=None, repr=False)
@@ -175,6 +181,11 @@ def carregar_base(
             avisos.extend(mapa.avisos)
         if progresso:
             progresso("carteira", ", ".join(competencia_br(c) for c in mapa.competencias) if mapa else "ausente")
+
+    macro = carregar_macro(config, _inicio_do_mes(janela[0]), _fim_do_mes(competencia), baixar=baixar)
+    avisos.extend(macro.avisos)
+    if progresso:
+        progresso("macro", "CDI, Selic, IPCA e dólar do SGS" + (" (com avisos)" if macro.avisos else ""))
     return BaseIndustria(
         competencia=competencia,
         meses=janela,
@@ -184,4 +195,15 @@ def carregar_base(
         avisos=avisos,
         mapa=mapa,
         curadoria=carregar_curadoria(config),
+        macro=macro,
     )
+
+
+def _inicio_do_mes(competencia: str) -> date:
+    return date(int(competencia[:4]), int(competencia[4:6]), 1)
+
+
+def _fim_do_mes(competencia: str) -> date:
+    ano, mes = int(competencia[:4]), int(competencia[4:6])
+    seguinte = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+    return date.fromordinal(seguinte.toordinal() - 1)

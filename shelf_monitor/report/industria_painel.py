@@ -44,7 +44,7 @@ from shelf_monitor.report.dashboard import (
     _painel,
 )
 from shelf_monitor.report.shared.fontes import fontes_da_industria
-from shelf_monitor.report.shared.numeros import pct, pp, reais, reais_com_sinal
+from shelf_monitor.report.shared.numeros import pct, pct_com_sinal, pp, reais, reais_com_sinal
 from shelf_monitor.texto import contagem, data_br, periodo_br
 
 _ASSETS = Path(__file__).parent / "assets"
@@ -262,11 +262,62 @@ def _rentabilidade(item: dict) -> dict:
     tres = (item.get("rentabilidade") or {}).get("3m") or {}
     return {
         "n1": item["n1"], "n2": item["n2"],
+        "pl": item.get("pl_investidor"),
         "estrategias": doze.get("estrategias"),
         "amostra_pequena": doze.get("amostra_pequena"),
         "q1_12m": doze.get("q1"), "mediana_12m": doze.get("mediana"), "q3_12m": doze.get("q3"),
-        "mediana_3m": tres.get("mediana"),
+        "sobre_cdi_12m": doze.get("mediana_sobre_cdi"), "acima_do_cdi_12m": doze.get("acima_do_cdi"),
+        "mediana_3m": tres.get("mediana"), "sobre_cdi_3m": tres.get("mediana_sobre_cdi"),
     }
+
+
+def _dinamica(bloco: dict) -> dict:
+    """A dinamica do bloco sem a captacao por segmento de cada peer group (fica
+    na planilha: no painel, o ruido de peer group pequeno so confundiria)."""
+    dinamica = dict(bloco.get("dinamica") or {})
+    segmentos = dict(dinamica.get("captacao_por_segmento") or {})
+    segmentos.pop("n2", None)
+    dinamica["captacao_por_segmento"] = segmentos
+    gestoras = dinamica.get("gestoras") or {}
+    dinamica["gestoras"] = {
+        **gestoras,
+        **{lado: {**(gestoras.get(lado) or {}), "lista": ((gestoras.get(lado) or {}).get("lista") or [])[:10]}
+           for lado in ("entraram", "sairam")},
+    }
+    return dinamica
+
+
+def _taxa(valor: float | None) -> str:
+    """14.0 -> "14,00%" (a Selic vem do SGS em % ao ano)."""
+    return "-" if valor is None else f"{valor:.2f}%".replace(".", ",")
+
+
+def linha_do_macro(bloco: dict) -> str:
+    """"CDI em 12 meses: 14,6% · IPCA: 4,2% · Selic de 15,00% para 14,00% ao ano ·
+    dolar a R$ 5,18 (-4,5%)" - a linha de contexto do cabecalho, do e-mail e do
+    console. Vazia sem o SGS."""
+    macro = bloco.get("macro") or {}
+    if not macro.get("available"):
+        return ""
+    doze = (macro.get("janelas") or {}).get("12m") or {}
+    partes = []
+    if doze.get("cdi") is not None:
+        partes.append(f"CDI em 12 meses: {pct(doze['cdi'])}")
+    if doze.get("ipca") is not None:
+        partes.append(f"IPCA: {pct(doze['ipca'])}")
+    selic, selic_base = doze.get("selic_fim"), doze.get("selic_base")
+    if selic is not None:
+        if selic_base is not None and selic_base != selic:
+            partes.append(f"Selic de {_taxa(selic_base)} para {_taxa(selic)} ao ano")
+        else:
+            partes.append(f"Selic em {_taxa(selic)} ao ano")
+    if doze.get("dolar_fim") is not None:
+        variacao = doze.get("dolar_variacao")
+        partes.append(
+            f"dólar a R$ {doze['dolar_fim']:.2f}".replace(".", ",")
+            + (f" ({pct_com_sinal(variacao)})" if variacao is not None else "")
+        )
+    return " · ".join(partes)
 
 
 def dados_do_painel(bloco: dict, gerado: datetime | None = None) -> dict:
@@ -295,6 +346,8 @@ def dados_do_painel(bloco: dict, gerado: datetime | None = None) -> dict:
                 for j in ORDEM
             },
             "prazos": bloco["prazos"],
+            "cdi": {j: ((bloco.get("desempenho") or {}).get(j) or {}).get("cdi") for j in ("12m", "3m")},
+            "macro": linha_do_macro(bloco),
         },
         "rotulos": {
             "publico": ROTULOS_PUBLICO,
@@ -334,11 +387,16 @@ def dados_do_painel(bloco: dict, gerado: datetime | None = None) -> dict:
             for j, v in bloco["lancamentos"].items()
         },
         "adjacentes": bloco["adjacentes"],
+        "macro": bloco.get("macro") or {"available": False},
+        "dinamica": _dinamica(bloco),
         "qualidade": bloco["qualidade"],
         "avisos": bloco.get("avisos") or [],
         "fontes": [
             {"nome": f.nome, "url": f.url, "uso": f.uso}
-            for f in fontes_da_industria(com_carteira=bool(estrutura.get("com_carteira", True)))
+            for f in fontes_da_industria(
+                com_carteira=bool(estrutura.get("com_carteira", True)),
+                com_macro=bool((bloco.get("macro") or {}).get("available")),
+            )
         ],
         "dic": dic.valores,
         "cubo": cubo,
@@ -356,15 +414,6 @@ def _texto(texto: object) -> str:
     """Escapado, `**negrito**` como <strong> e valor em reais inquebravel."""
     saida = _NEGRITO.sub(r"<strong>\1</strong>", _e(texto))
     return _REAIS.sub(lambda m: f'<span class="nowrap">{m.group(0)}</span>', saida)
-
-
-def _com_sinal(fracao: float | None) -> str:
-    """"+1,2%" - fluxo em fracao do PL, que tem direcao. Zero arredondado sai sem sinal."""
-    if fracao is None:
-        return "-"
-    if abs(fracao) < 0.0005:
-        return "0,0%"
-    return ("+" if fracao > 0 else "") + pct(fracao)
 
 
 def contas(n: int | None) -> str:
@@ -413,10 +462,10 @@ def _manchetes(bloco: dict, dados: dict) -> str:
              prazo=f"fechamento de {fim} · {contagem(camadas['classes'], 'classe', 'classes')} com informe"),
         _kpi("para-onde-section", "Captação do investidor em 12 meses",
              reais_com_sinal(universo["12m"]["fluxo_investidor"]),
-             f"{_com_sinal(universo['12m']['sobre_pl'])} do PL de abertura", prazo=janelas["12m"]["texto"]),
+             f"{pct_com_sinal(universo['12m']['sobre_pl'])} do PL de abertura", prazo=janelas["12m"]["texto"]),
         _kpi("para-onde-section", f"Captação do investidor em {bloco['rotulo_competencia']}",
              reais_com_sinal(universo["1m"]["fluxo_investidor"]),
-             f"{_com_sinal(universo['1m']['sobre_pl'])} do PL de abertura", prazo=janelas["1m"]["texto"]),
+             f"{pct_com_sinal(universo['1m']['sobre_pl'])} do PL de abertura", prazo=janelas["1m"]["texto"]),
         _kpi("chega-section", "Via conta e ordem", pct(plataforma.get("conta_e_ordem")),
              "do PL, aplicado por plataformas em nome dos clientes",
              f"{pp(variacao)} em 12 meses" if variacao is not None else "",
@@ -434,6 +483,7 @@ _LEITURA = {
     "tamanho": ("onde-section", "Tamanho", None),
     "captacao": ("para-onde-section", "Captação", "12m"),
     "estrategias": ("para-onde-section", "Estratégias", "12m"),
+    "retorno": ("desempenho-section", "Retorno", "12m"),
     "canal": ("chega-section", "Canal", "canal"),
     "gestoras": ("quem-ganha-section", "Gestoras", "canal"),
 }
@@ -478,7 +528,9 @@ _COMO_LER = """<ul>
       <li><b>Casa dedicada</b>: veículo feito para um distribuidor (espelho de uma plataforma ou banco, ou marca do distribuidor no nome).</li>
       <li><b>Conta e ordem</b>: clientes de distribuidores que aplicam em nome deles (plataformas). Private e varejo seguem a classificação do administrador na CVM.</li>
       <li><b>Captação</b> é por fundo, nunca por distribuidor: a CVM não publica quem vendeu. Toda janela termina na competência de referência e tem base no fechamento da competência anterior.</li>
-      <li><b>Retorno</b>: mediana e quartis por estratégia-raiz, na cota ex-provento; não é retorno total nem líquido de impostos.</li>
+      <li><b>Retorno</b>: mediana e quartis por estratégia-raiz, na cota ex-provento; não é retorno total nem líquido de impostos. O <b>% do CDI</b> divide o retorno pelo CDI acumulado na mesma janela (SGS do Banco Central). A cota já vem líquida de taxas e o CDI, não; para o crédito incentivado, que é isento de IR, o CDI bruto é uma régua dura.</li>
+      <li><b>Giro</b>: resgates de 12 meses sobre o PL médio, no fluxo declarado (com o dinheiro de fundos). <b>HHI</b>: soma dos quadrados das fatias das gestoras no peer group, de 0 a 10.000; quanto maior, mais concentrado.</li>
+      <li><b>Captação por tipo de cotista</b>: estimada pela variação da fatia de cada tipo no perfil mensal. O perfil tem uma casa decimal; valor menor que duas vezes o ruído desse arredondamento sai como "dentro do ruído".</li>
       <li><b>Contas</b> são posições de cotistas: um CPF com três fundos conta três vezes.</li>
     </ul>"""
 
@@ -504,22 +556,35 @@ def _paineis() -> str:
     <h3>Rotação de estratégias</h3>
     <div class="matrix-scroll" id="tabela-calor"></div>
     <h3>Estratégias que mais captam e mais perdem</h3>
-    <div class="matrix-scroll" id="tabela-familias"></div>"""),
+    <div class="matrix-scroll" id="tabela-familias"></div>
+    <h3>Giro: quanto entra e quanto sai</h3>
+    <div class="matrix-scroll" id="tabela-giro"></div>
+    <h3>O macro ao lado da captação</h3>
+    <div class="matrix-scroll" id="tabela-macro"></div>"""),
         '<p class="grupo">Competição e canal</p>',
         _painel("quem-ganha-section", "Quem ganha", "fatia do PL por tipo de gestora e por grupo gestor", """
     <div class="chart-scroll" id="chart-tipos"></div>
     <h3>Grupos gestores</h3>
-    <div class="matrix-scroll" id="tabela-gestoras"></div>"""),
+    <div class="matrix-scroll" id="tabela-gestoras"></div>
+    <h3>Concentração por peer group</h3>
+    <div class="matrix-scroll" id="tabela-concentracao"></div>
+    <h3>Gestoras que entraram e que saíram</h3>
+    <div class="matrix-scroll" id="tabela-entrantes"></div>"""),
         _painel("chega-section", "Por onde chega", "conta e ordem, papel na estrutura e casas dedicadas", """
     <div class="chart-scroll" id="chart-plataforma"></div>
     <h3>Papel na estrutura</h3>
     <div class="matrix-scroll" id="tabela-papeis"></div>
     <h3>Casas dedicadas</h3>
     <div class="chart-scroll" id="chart-casas"></div>
-    <div class="matrix-scroll" id="tabela-parcerias"></div>"""),
-        _painel("desempenho-section", "Os fundos entregam?", "retorno por peer group, uma vez por estratégia-raiz", """
+    <div class="matrix-scroll" id="tabela-parcerias"></div>
+    <h3>Quem trouxe o dinheiro</h3>
+    <div class="chart-scroll" id="chart-segmentos-fluxo"></div>"""),
+        _painel("desempenho-section", "Os fundos entregam?",
+                "retorno por peer group contra o CDI, uma vez por estratégia-raiz, e se o dinheiro vai atrás", """
     <div class="chart-scroll" id="chart-rentabilidade"></div>
-    <div class="matrix-scroll" id="tabela-rentabilidade"></div>"""),
+    <div class="matrix-scroll" id="tabela-rentabilidade"></div>
+    <h3>O dinheiro vai atrás do retorno?</h3>
+    <div class="chart-scroll" id="chart-fluxo-retorno"></div>"""),
         _painel("mudou-section", "O que mudou", "o que entrou e o que saiu do universo", """
     <div class="matrix-scroll" id="tabela-lancamentos"></div>"""),
         '<p class="grupo">Explorar e conferir</p>',
@@ -546,6 +611,7 @@ def _paineis() -> str:
 def _documento(bloco: dict, dados: dict) -> str:
     meta = dados["meta"]
     prazos = " · ".join(meta["prazos"])
+    macro = f'\n    <p class="sub prazos">{html.escape(meta["macro"])}</p>' if meta.get("macro") else ""
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -566,7 +632,7 @@ def _documento(bloco: dict, dados: dict) -> str:
     <div class="kicker">Visão de mercado para a distribuição · sem casa em foco</div>
     <h1>A indústria de fundos em {html.escape(meta['rotulo'])}</h1>
     <p class="sub">O que está disponível para pessoas e empresas, para onde vai o dinheiro, quem ganha e por qual canal. Dados abertos da CVM (cadastro, informe diário, perfil mensal e carteira) &middot; gerado em {html.escape(meta['gerado_em'])}</p>
-    <p class="sub prazos">{html.escape(prazos)}</p>
+    <p class="sub prazos">{html.escape(prazos)}</p>{macro}
   </header>
 {_FILTROS}
   <main>

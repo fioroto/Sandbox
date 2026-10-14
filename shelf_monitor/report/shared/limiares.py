@@ -112,3 +112,12 @@ MAX_RETORNO_MENSAL_PLAUSIVEL = 0.50
 # retorno sai da mediana do peer group e do quartil.
 MAX_RETORNO_JANELA_PLAUSIVEL = 5.0
 MIN_RETORNO_JANELA_PLAUSIVEL = -0.95
+
+# --- captacao implicita por tipo de cotista (industria, Fase 2B) -------------
+# O perfil mensal da CVM da a fatia de cada tipo de cotista com uma casa
+# decimal (0,1 p.p.). O erro do arredondamento e uniforme em +-0,05 p.p.: o
+# desvio dele e 0,001 / raiz(12), em fracao do PL.
+ERRO_DA_FATIA_DO_PERFIL = 0.001 / 12 ** 0.5
+# A captacao de um segmento so sai como numero quando passa deste multiplo do
+# ruido somado do grupo (~95% de confianca); abaixo, sai "dentro do ruido".
+MULTIPLO_DO_RUIDO_PUBLICAVEL = 2.0

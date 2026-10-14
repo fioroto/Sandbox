@@ -13,6 +13,11 @@
 | 1C. Bloco e planilha | implementada em 28/09/2026 |
 | 1D. Painel interativo | implementada em 28/09/2026 |
 | 1E. E-mail e cadência | implementada em 29/09/2026 |
+| 2A. Retorno contra o CDI e macro | implementada em 10/10/2026 |
+| 2B. Dinâmica da captação | implementada em 10/10/2026 |
+| 2C. Custo e receita | a fazer |
+| 2D. Atributos do produto | a fazer |
+| 2E. O que mudou no cadastro | a fazer |
 
 **Medido pelo monitor em 28/09/2026** (`industria --competencia 2026-08`: cadastro de 09/2026, perfil e informe de 08/2026):
 
@@ -107,7 +112,29 @@ Os números de verificação desta spec são os do monitor.
 - **Semana do flash.** O plano pedia a semana fechada. Com a sexta chegando dias depois, o flash de segunda-feira mostraria a semana retrasada. A semana passou a ser a do último dia completo, mesmo parcial, desde que tenha ao menos 3 dias; a comparação é por dia útil.
 - **Camada do investidor no flash.** O fluxo de cada produto perde a fatia de fundos do perfil do último ciclo, gravada no retrato do universo (`data/cache/industria/universo.json`). É o mesmo rateio que o painel mensal usa quando falta o perfil do mês anterior.
 - **Tags do e-mail.** O plano proibia `<div>`, mas a casca compartilhada (`email_xp.casca`) usa um para a prévia escondida e outro para a tabela que rola no celular. Os testes proíbem `<svg>`, `<style>`, `<script>` e `<img>`, como os do digest.
-- **Envio.** O e-mail é gravado, não enviado. O envio fica na Fase 2.
+- **Envio.** O e-mail é gravado, não enviado. O envio saiu da Fase 2 por decisão de 10/10/2026 (ver seção 9).
+
+**Fase 2A e 2B medidas pelo monitor em 10/10/2026** (`industria --competencia 2026-08`, cadastro de 10/2026: 8.246 classes e R$ 3,79 tri na camada do investidor; 12 meses de 01/09/2025 a 31/08/2026, base no fechamento de 29/08/2025):
+
+| Grandeza | Número |
+|---|---|
+| CDI em 12 meses (SGS, série 12) | 14,6%; IPCA 4,2%; Selic de 15,00% para 14,00% ao ano; dólar de R$ 5,43 para R$ 5,18 (−4,5%) |
+| Peer groups com a mediana acima do CDI | 5 de 29 (sem os de amostra pequena) |
+| Mediana em % do CDI | DI grau de investimento 100%; DI soberano 98%; crédito média, alta e livre duração 100%; crédito incentivado 67%; multimercado livre 83% |
+| Captação por quartil de retorno no peer group | 1º quartil +0,1% do PL de abertura; 2º +2,2%; 3º +0,9%; 4º −2,1% |
+| Classes sem retorno de 12 meses (lançadas há pouco) | 424, com +R$ 31,7 bi de captação |
+| Giro do universo | resgates de R$ 8,85 tri, 2,2 vezes o PL médio de R$ 4,06 tri; pós-fixado e caixa 3,1 vezes, ações 0,2 |
+| Concentração do universo | HHI de 1.260 entre 778 grupos gestores (−43 em 12 meses); 5 maiores com 67,8% |
+| Peer group grande mais concentrado | Crédito baixa duração, HHI de 4.610, com Sicredi em 62% |
+| Grupos gestores que entraram / saíram | 39 (R$ 1,6 bi hoje, +R$ 1,2 bi captados) / 7 |
+| Captação implícita por tipo de cotista | conta e ordem +R$ 62,0 bi; PF varejo +R$ 58,4 bi; PJ private −R$ 41,8 bi; PJ varejo −R$ 31,5 bi; institucional +R$ 10,1 bi; PF private dentro do ruído |
+| Resíduo e ruído da captação por cotista | resíduo −R$ 6,7 bi sobre +R$ 49,5 bi de captação do investidor; ruído do arredondamento do perfil R$ 0,47 bi |
+
+- **Convenção do CDI.** Entram as taxas diárias com data depois da base e até o último pregão, inclusive: a convenção do "CDI do mês" da lâmina. A cota já vem líquida de taxas e o CDI, não. O crédito incentivado, isento de IR, sai abaixo do CDI bruto por construção, e o painel diz isso.
+- **Fluxo × retorno.** O quartil e a captação são da mesma janela, então o número mostra associação, não causa. A forma não é monotônica: o 2º quartil captou mais que o 1º.
+- **Ruído da captação por cotista.** O perfil tem uma casa decimal. O erro do arredondamento é tratado como uniforme em ±0,05 p.p., com desvio de 0,001/√12 por classe e mês, somado em quadratura (as subclasses de uma classe somam antes, porque dividem o perfil). O cálculo é conservador: trata o erro de t e o de t−1 como independentes. Valor abaixo de duas vezes o ruído do grupo sai "dentro do ruído".
+- **Cache do SGS.** Fica em `data/cache/sgs/`, fora do git. Competência fechada não volta à rede, e sem rede vale o cache, com aviso.
+- **Saídas.** O painel tem 1,79 MB, sem erro de JS e sem rolagem horizontal em 1.280 px e 390 px no Chromium headless. O e-mail tem 61,8 KB e a planilha 17 abas, com Dinâmica e Macro. O ciclo mensal com cache leva 47 s.
 
 **Mudança em relação ao plano.** Os rótulos "Grau de investimento" e "Soberano" de duração média e livre (R$ 685 bi) iam para juros e inflação. A carteira da raiz mostrou que são pós na maioria: 77 a 78% em LFT e compromissada no soberano. Por isso ficam em pós-fixado e caixa, e só viram "Juros ativo (pré e inflação)" quando pré e inflação passam de metade da carteira. Juros e inflação ficou com 2,7% do PL, que é o tamanho real do risco de juros fora da previdência.
 
@@ -309,39 +336,39 @@ Organizados pela pergunta que respondem. Salvo indicação, a camada é a do inv
 | B2 | | Rotação de estratégias | Mapa de calor N2 × mês, captação em % do PL: 12 meses por padrão, 24 com `--meses 25` | 1 |
 | B3 | | Estratégias que mais captam e mais perdem | Top 20 famílias consolidadas (master + feeders + espelhos) | 1 |
 | B4 | | Captação por público-alvo | Geral × Qualificado × Profissional | 1 |
-| B5 | | Giro | Captação bruta, resgates brutos e resgates 12m ÷ PL médio | 2 |
+| B5 | | Giro | Captação bruta, resgates brutos e resgates 12m ÷ PL médio, no fluxo declarado | 2B |
 | B6 | | Concentração da captação | % da captação positiva que ficou com as 10 maiores famílias | 2 |
 | B7 | | Flash semanal | Captação da semana por N1 contra a média das 12 semanas anteriores (média diária no mês parcial) | 1 |
 | B8 | | Para onde os alocadores levam o dinheiro | Fluxo dos FoFs nos fundos investidos, por variação de quantidade de cotas (exige cache da carteira com quantidade) | 3 |
 | C1 | Quem ganha? | Participação por grupo gestor | Share de PL e de captação 12m, variação em p.p.; gestora da estratégia (raiz) | 1 |
 | C2 | | Bancárias × independentes × plataformas × estrangeiras | Share de PL e captação por tipo de gestora | 1 |
-| C3 | | Concentração por peer group | HHI e share das 5 maiores por N2, com tendência | 2 |
-| C4 | | Entrantes e saídas | Gestoras com a primeira ou a última classe no universo em 12m | 2 |
+| C3 | | Concentração por peer group | HHI e share das 5 maiores por N2, com tendência | 2B |
+| C4 | | Entrantes e saídas | Gestoras com a primeira ou a última classe no universo em 12m | 2B |
 | D1 | Por onde o dinheiro chega? | Composição do dono do dinheiro | Fatia de cada segmento, por N1 e tendência | 1 |
 | D2 | | Plataformização | % do PL via conta e ordem, por N1 e por grupo gestor; variação 12m | 1 |
 | D3 | | Espelhos e veículos dedicados | Quantidade, PL, captação 12m e novos no mês; matriz casa dedicada × gestora da estratégia | 1 |
-| D4 | | Captação implícita por segmento | Seção 4, só no agregado | 2 |
-| D5 | | Arquitetura aberta × cativa | Extrato `DISTRIB` (rede própria, conveniada, internet), em % do PL, com a data da entrega | 2 |
+| D4 | | Captação implícita por segmento | Seção 4, só no agregado, com o ruído do perfil | 2B |
+| D5 | | Arquitetura aberta × cativa | Extrato `DISTRIB` (rede própria, conveniada, internet), em % do PL, com a data da entrega | 2D |
 | D6 | | Remuneração e conflito declarados | Lâmina `REMUN_DISTRIB`, `DISTRIB_GESTOR_UNICO`, `CONFLITO_VENDA`: texto livre, exige classificação | 3 |
-| E1 | Quanto custa? | Taxa de administração ponderada | Média ponderada pelo PL, por N2, com tendência. Só taxa em percentual e entrega do extrato com até 24 meses (regra de `report/custo.py`), com a cobertura publicada | 2 |
-| E2 | | Custo total | Lâmina `PR_PL_DESPESA`, com a última lâmina de cada classe em 12 meses (o arquivo mensal traz 1.050 classes) | 2 |
-| E3 | Quanto rende para a cadeia? | Pool de receita estimado | PL médio × taxa, por N1, N2 e grupo; rotulado como estimativa, sem performance | 2 |
-| E4 | | Receita que os fluxos trouxeram | Captação 12m × taxa do fundo | 2 |
-| E5 | | Performance | % do PL com taxa de performance, por N2 | 2 |
+| E1 | Quanto custa? | Taxa de administração ponderada | Média ponderada pelo PL, por N2, com tendência. Só taxa em percentual e entrega do extrato com até 24 meses (regra de `report/custo.py`), com a cobertura publicada | 2C |
+| E2 | | Custo total | Lâmina `PR_PL_DESPESA`, com a última lâmina de cada classe em 12 meses (o arquivo mensal traz 1.050 classes) | 2C |
+| E3 | Quanto rende para a cadeia? | Pool de receita estimado | PL médio × taxa, por N1, N2 e grupo; rotulado como estimativa, sem performance | 2C |
+| E4 | | Receita que os fluxos trouxeram | Captação 12m × taxa do fundo | 2C |
+| E5 | | Performance | % do PL com taxa de performance, por N2 | 2C |
 | F1 | O que se lança e o que se fecha? | Lançamentos e encerramentos | Primeira e última aparição no informe, mais as datas do cadastro, por N2 e gestora | 1 |
-| F2 | | Liquidez | PL por faixa de prazo de resgate, com tendência | 2 |
-| F3 | | Democratização | PL e número de classes por faixa de aplicação mínima | 2 |
+| F2 | | Liquidez | PL por faixa de prazo de resgate, com tendência | 2D |
+| F3 | | Democratização | PL e número de classes por faixa de aplicação mínima | 2D |
 | F4 | | Isentos | PL e captação do peer group Crédito incentivado | 1 |
 | F5 | | Fechado para captação (inferido) | Sem captação bruta em 60 pregões, com resgates | 3 |
-| G1 | Os fundos entregam? | Rentabilidade 12m e 3m por peer group | Mediana e quartis por raiz; o "% acima do indicador" entra na Fase 2, com o CDI do SGS | 1 |
-| G2 | | Fluxo persegue retorno? | Captação 12m em % do PL × quartil de retorno 12m | 2 |
+| G1 | Os fundos entregam? | Rentabilidade 12m e 3m por peer group | Mediana e quartis por raiz (1); mediana em % do CDI e fração das estratégias acima do CDI, com o CDI do SGS (2A) | 1 e 2A |
+| G2 | | Fluxo persegue retorno? | Captação 12m em % do PL × quartil de retorno 12m | 2B |
 | G3 | | Risco | Volatilidade e maior queda em 12m, por N2 | 3 |
 | H1 | Qual o contexto? | Camadas ao lado | Previdência: 4.395 fundos no informe de 08/2026 (R$ 3,6 tri), camada do investidor = fatia de seguradoras e EAPC. ETF: `etf_captacao_mensal`, porque o informe não cobre ETF | 1 |
-| H2 | | Macro | Selic/CDI, IPCA e dólar (SGS do BCB: séries 12, 433 e 1) sobre a captação por N1 | 2 |
-| H3 | | Conferência com a ANBIMA | Captação e PL por classe contra o boletim (anexo baixado à mão), com a diferença explicada | 2 |
-| I1 | O que mudou? | Eventos de cadastro | Diferença entre retratos mensais: troca de gestora, administrador, classificação, taxa, público; incorporação; espelho novo | 2 |
-| I2 | | Movimentos atípicos | Captação ou resgate do dia acima de X% do PL e de R$ Y mi | 2 |
-| I3 | | Radar regulatório e estrutural | Planilha curada (data, tema, fonte, efeito esperado) | 2 |
+| H2 | | Macro | Selic/CDI, IPCA e dólar (SGS do BCB: séries 12, 432, 433 e 1) sobre a captação por N1 | 2A |
+| H3 | | Conferência com a ANBIMA | Captação e PL por classe contra o boletim (anexo baixado à mão), com a diferença explicada | fora (10/10/2026) |
+| I1 | O que mudou? | Eventos de cadastro | Diferença entre retratos mensais: troca de gestora, administrador, classificação, taxa, público; incorporação; espelho novo | 2E |
+| I2 | | Movimentos atípicos | Captação ou resgate do dia acima de X% do PL e de R$ Y mi | 2E |
+| I3 | | Radar regulatório e estrutural | Planilha curada (data, tema, fonte, efeito esperado) | fora (10/10/2026) |
 
 ## 6. Consciência de mercado
 
@@ -408,11 +435,13 @@ O monitor segue o molde do bloco de mercado dos ETFs (`market/etf_captacao_mensa
 | `bloco.py` | Bloco, leitura e prazos; estado do mês por `estado_do_mes` | `market/etf_captacao_mensal.py:418-441` |
 | `flash.py` | Flash semanal | `read_daily_flows(zip, alvo=universo)` (`retail_flow.py:127`) |
 | `cli.py` | `registrar_industria(subparsers, common)`, chamado logo após `main.py:2113` | padrão de `market/etf_bruto/extrator.py:267` |
+| `macro.py` (2A) | CDI, Selic, IPCA e dólar por janela e por mês | `market/sgs.py`, cliente do SGS com cache em `data/cache/sgs/` |
+| `dinamica.py` (2B) | Giro, concentração, entrantes, fluxo × retorno e captação por segmento | `fluxos.fluxos_por`, `painel.linhas_do_mes` |
 
 **Contrato do bloco** (chaves de topo):
 - identificação e janelas: `available`, `reason`, `competencia`, `janelas{1m,3m,ano,12m}` (cada uma com rótulo, de, até e base);
 - universo e camadas: `camadas`, `funil`, `universo`, `adjacentes{etf,previdencia}`;
-- análise: `mercado{historico,decomposicao_12m}`, `estrategias{n1,n2}`, `segmentos`, `estrutura{papeis,espelhos}`, `familias_top`, `gestoras`, `publico`, `lancamentos`;
+- análise: `mercado{historico,decomposicao_12m}`, `estrategias{n1,n2}`, `segmentos`, `estrutura{papeis,espelhos}`, `familias_top`, `gestoras`, `publico`, `lancamentos`; da Fase 2, `desempenho{12m,3m}` (o CDI da janela), `dinamica{giro,concentracao,gestoras,fluxo_x_retorno,captacao_por_segmento}` e `macro{janelas,meses}`;
 - controle: `qualidade`, `limiares`, `fontes`, `leitura`, `prazos`;
 - privada: `_produtos`.
 
@@ -486,12 +515,17 @@ O resto fica onde está. `dashboard.py:76` passa a embutir `graficos + dashboard
 - **1D. Painel interativo.** Extração do `graficos.js` num commit próprio. Depois, a página com seções, filtros e explorador, e os testes dela.
 - **1E. E-mail e cadência.** E-mail mensal, flash semanal, `--ciclo auto`, passo [4/4] no `run_monitor.bat` com código de saída próprio e a seção no README.
 
-**Fase 2 — Aprofundamento**
-- Eventos de cadastro pelos retratos, com recuo por `cad_fi_hist` e cancelamentos (`--backfill-cadastro`).
-- Taxas, custo total (lâmina) e pool de receita.
-- Canal `DISTRIB`, liquidez, aplicação mínima, tributação e as demais regras de carteira.
-- Captação por segmento no agregado; giro, concentração e HHI, entrantes; fluxo × retorno.
-- SGS do BCB (CDI para o "% acima do indicador" e macro), conferência com a ANBIMA (ampliar `anbima_boletim.TIPOS`, L39), movimentos atípicos, radar regulatório e envio do e-mail.
+**Fase 2 — Aprofundamento**, em cinco entregas (ordem decidida em 10/10/2026):
+- **2A. Retorno contra o CDI e macro.** SGS do BCB (`market/sgs.py`, `industria/macro.py`): o "% do CDI" e a fração acima do CDI por peer group (G1) e o macro ao lado da captação por N1 (H2).
+- **2B. Dinâmica da captação** (`industria/dinamica.py`). Giro (B5), concentração e HHI (C3), entrantes (C4), fluxo × retorno (G2) e captação por segmento no agregado (D4).
+- **2C. Custo e receita.** Taxas, custo total (lâmina), performance e pool de receita.
+- **2D. Atributos do produto.** Canal `DISTRIB`, liquidez, aplicação mínima, tributação e as demais regras de carteira.
+- **2E. O que mudou no cadastro.** Eventos de cadastro pelos retratos, com recuo por `cad_fi_hist` e cancelamentos (`--backfill-cadastro`), e movimentos atípicos.
+
+**Fora da Fase 2** (decisão do usuário em 10/10/2026). Os três itens dependem de passo manual ou de fora do monitor:
+- o radar regulatório, uma planilha curada;
+- a conferência com a ANBIMA, que lê o anexo baixado à mão, porque os termos do portal proíbem automação. O `anbima_boletim.py` foi para o etf-monitor em 07/10/2026;
+- o envio do e-mail.
 
 **Fase 3 — Expansão**
 - FIDC, FII e Fiagro pelos informes mensais próprios.
@@ -522,7 +556,7 @@ O resto fica onde está. `dashboard.py:76` passa a embutir `graficos + dashboard
 2. `python -m shelf_monitor industria --competencia 2026-08`, medindo tempo e memória. O resultado deve reproduzir a medição do monitor na seção de status: 8.230 classes no universo e R$ 3,80 tri na camada do investidor. Diferença maior aponta mudança de regra ou de dado, e vai para as notas.
 3. Conferir cinco famílias (master com feeders e espelhos) contra a consulta pública da CVM.
 4. Abrir o painel no navegador embutido: testar filtros, explorador e largura de celular.
-5. Na Fase 2, com o anexo do boletim ANBIMA, conferir captação e PL por classe e publicar a diferença.
+5. Na Fase 2A, conferir o CDI acumulado de uma janela contra a calculadora do cidadão do Banco Central e a mediana dos peer groups de DI contra o CDI (perto de 100%).
 
 ## Riscos e limites
 
@@ -533,5 +567,5 @@ O resto fica onde está. `dashboard.py:76` passa a embutir `graficos + dashboard
   - Quase todos seguem no `registro_fundo` como cancelados.
 - **Curadoria.** Grupo econômico e casa dedicada dependem dela. A cobertura aparece no painel, e o que não está mapeado sai como "não classificado".
 - **Extrato defasado.** Só 5,0 mil classes entregaram em 2026. Por isso taxa, canal, liquidez e aplicação mínima entram na Fase 2, com a data da entrega à vista.
-- **ANBIMA.** Os termos do portal proíbem automação, então a conferência depende do anexo baixado à mão.
+- **ANBIMA.** Os termos do portal proíbem automação, e a conferência dependeria do anexo baixado à mão. Por isso saiu da Fase 2 em 10/10/2026.
 - **Agendamento.** O flash semanal só sai se o `run_monitor.bat` rodar ao menos uma vez por semana. Não há tarefa agendada (lacuna G15 de `docs/auditoria-fluxos.md`), e o `pause` do fim bloquearia uma. Isso fica como item à parte.

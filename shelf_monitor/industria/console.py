@@ -26,6 +26,41 @@ def _tabela_simples(console: Console, titulo: str, colunas: tuple[str, ...], lin
     console.print(tabela)
 
 
+def _dinamica(bloco: dict, console: Console) -> None:
+    """Fase 2: macro, fluxo x retorno, quem trouxe o dinheiro e concentracao."""
+    from shelf_monitor.report.industria_painel import linha_do_macro
+
+    macro = linha_do_macro(bloco)
+    if macro:
+        console.print(f"  Macro — {macro}")
+    else:
+        console.print(f"  [dim]{(bloco.get('macro') or {}).get('reason') or 'sem o macro'}[/]")
+    dinamica = bloco.get("dinamica") or {}
+    _tabela_simples(
+        console, "O dinheiro vai atrás do retorno? (12 meses, quartil no peer group)",
+        ("Quartil", "Classes", "Captação 12m", "% PL"),
+        [(q["rotulo"], milhar(q["classes_fim"]), reais_com_sinal(q["fluxo_investidor"]), pct(q.get("sobre_pl")))
+         for q in dinamica.get("fluxo_x_retorno") or []],
+    )
+    total = (dinamica.get("captacao_por_segmento") or {}).get("total") or {}
+    if total:
+        _tabela_simples(
+            console, "Quem trouxe o dinheiro: captação implícita por tipo de cotista (12 meses)",
+            ("Tipo de cotista", "Captação 12m"),
+            [(s["rotulo"], "dentro do ruído" if s["no_ruido"] else reais_com_sinal(s["captacao"]))
+             for s in total["segmentos"]]
+            + [("Resíduo", reais_com_sinal(total["residuo"])), ("Captação do investidor", reais_com_sinal(total["fluxo_investidor"]))],
+        )
+    universo = (dinamica.get("concentracao") or {}).get("universo") or {}
+    gestoras = dinamica.get("gestoras") or {}
+    if universo.get("hhi") is not None:
+        console.print(
+            f"  Concentração: HHI {milhar(round(universo['hhi']))} entre os grupos gestores; 5 maiores com "
+            f"{pct(universo.get('top5'))}. Em 12 meses entraram {milhar((gestoras.get('entraram') or {}).get('grupos', 0))} "
+            f"grupos gestores e saíram {milhar((gestoras.get('sairam') or {}).get('grupos', 0))}."
+        )
+
+
 def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
     console = console or Console()
     if not bloco.get("available"):
@@ -102,9 +137,10 @@ def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
     )
     _tabela_simples(
         console, "Peer groups que mais captam e mais perdem em 12 meses",
-        ("Peer group", "Macroclasse", "PL (R$ bi)", "Captação 12m", "% PL", "Mediana 12m"),
+        ("Peer group", "Macroclasse", "PL (R$ bi)", "Captação 12m", "% PL", "Mediana 12m", "% do CDI"),
         [(i["n2"], i["n1"], _bi(i["pl_investidor"]), *fluxo(i, "12m"),
-          pct((i.get("rentabilidade") or {}).get("12m", {}).get("mediana")))
+          pct((i.get("rentabilidade") or {}).get("12m", {}).get("mediana")),
+          pct((i.get("rentabilidade") or {}).get("12m", {}).get("mediana_sobre_cdi"), 0))
          for i in n2[:8] + n2[-5:]],
     )
     familias = bloco.get("familias") or {}
@@ -165,6 +201,8 @@ def imprimir_bloco(bloco: dict, console: Console | None = None) -> None:
             f"({reais(lancamentos['entrou']['pl_investidor'])} hoje) e saíram "
             f"{milhar(lancamentos['saiu']['produtos'])}."
         )
+
+    _dinamica(bloco, console)
 
     qualidade = bloco.get("qualidade") or {}
     cobertura = qualidade.get("cobertura_perfil")

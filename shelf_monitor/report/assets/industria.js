@@ -10,7 +10,9 @@
    sai do cubo - destaques, macroclasses, peer groups, captacao, canal, papel,
    tipo de gestora - e o explorador. O que vem pronto do bloco (funil, dono do
    dinheiro, mes a mes, mapa de calor, familias, gestoras, retorno,
-   lancamentos) diz no subtitulo qual filtro vale ali, quando vale algum.
+   lancamentos e a dinamica da Fase 2: giro, macro, concentracao, entrantes,
+   captacao por tipo de cotista e fluxo x retorno) diz no subtitulo qual
+   filtro vale ali, quando vale algum.
 
    Dinheiro do cubo e do explorador chega em milhares de reais (o Python
    compacta) e volta a reais na leitura, antes de qualquer conta. */
@@ -636,10 +638,86 @@
     });
   }
 
+  // Bilhoes com sinal e uma casa, para tabela com a unidade no cabecalho.
+  // Zero arredondado sai sem sinal: "-0,0" leria como perda.
+  const bi = v => (!ok(v) ? "-" : Math.abs(v) < 5e7 ? "0,0" : (v > 0 ? "+" : "") + numBR(v / 1e9, 1));
+  // "3,1×" - giro e entrada, em vezes o PL medio.
+  const vezes = v => (ok(v) ? numBR(v, 1) + "×" : "-");
+
+  function desenharGiro() {
+    const g = (DADOS.dinamica || {}).giro || {};
+    const mount = document.getElementById("tabela-giro");
+    const total = g.total || {};
+    // Macroclasse com menos de 0,1% do PL medio sai: dez fundos minusculos
+    // giram qualquer coisa e nao dizem nada do mercado.
+    const itens = (g.n1 || []).filter(i => i.pl_medio > 0.001 * (total.pl_medio || 0));
+    if (!itens.length) { mount.innerHTML = VAZIO; return; }
+    const linha = (rotulo, i, classe) => ({
+      classe,
+      celulas: [rotulo, texto(dinheiro(i.captacao)), texto(dinheiro(i.resgates)),
+        sinal(texto(dinheiroSinal(i.captacao_liquida)), i.captacao_liquida), texto(dinheiro(i.pl_medio)),
+        vezes(i.entrada), `<b>${vezes(i.giro)}</b>`],
+    });
+    const linhas = itens.map(i => linha(escapeHtml(i.n1), i, FILTRO.n1 === i.n1 ? "selecionada" : ""));
+    if (g.total) linhas.push(linha("Universo", g.total, "total"));
+    mount.innerHTML = tabela([{ rotulo: "Macroclasse" }, { rotulo: "Captação bruta", num: true },
+      { rotulo: "Resgates", num: true }, { rotulo: "Líquido", num: true }, { rotulo: "PL médio", num: true },
+      { rotulo: "Entrada", num: true }, { rotulo: "Giro", num: true }], linhas);
+    const maior = itens.slice().sort((a, b) => (b.giro || 0) - (a.giro || 0))[0];
+    figura(mount, {
+      titulo: maior ? `${maior.n1} gira ${numBR(maior.giro, 1)} vezes o PL médio em 12 meses` : "Giro por macroclasse",
+      sub: `Captação bruta e resgates declarados, com o dinheiro que um fundo aplica em outro, ${META.janelas["12m"].texto}; ` +
+        "PL médio do fim de cada mês; entrada = captação bruta ÷ PL médio, giro = resgates ÷ PL médio" + SEM_FILTRO,
+      fonte: FONTE,
+    });
+  }
+
+  function desenharMacro() {
+    const m = DADOS.macro || {};
+    const mount = document.getElementById("tabela-macro");
+    if (!m.available) {
+      mount.innerHTML = `<p class="empty">${escapeHtml(m.reason || "Sem o SGS do Banco Central.")}</p>`;
+      return;
+    }
+    const meses = m.meses || [];
+    // So as macroclasses que moveram ao menos R$ 100 mi num mes.
+    const n1s = ordenar("n1", [...new Set(meses.flatMap(x => Object.keys(x.por_n1 || {})))])
+      .filter(n1 => meses.some(x => Math.abs((x.por_n1 || {})[n1] || 0) >= 1e8));
+    const taxa = v => (ok(v) ? numBR(v, 2) + "%" : "-");
+    const linhas = meses.map(x => ({
+      celulas: [competenciaBR(x.competencia), sinal(`<b>${bi(x.fluxo_investidor)}</b>`, x.fluxo_investidor),
+        ...n1s.map(n1 => { const v = (x.por_n1 || {})[n1]; return sinal(bi(v), v); }),
+        fracao(x.cdi, 2), fracaoSinal(x.ipca, 2), taxa(x.selic), ok(x.dolar) ? numBR(x.dolar, 2) : "-"],
+    }));
+    const j12 = (m.janelas || {})["12m"] || {};
+    const soma = f => meses.reduce((a, x) => a + (f(x) || 0), 0);
+    const total = soma(x => x.fluxo_investidor);
+    linhas.push({
+      classe: "total",
+      celulas: ["12 meses", sinal(`<b>${bi(total)}</b>`, total),
+        ...n1s.map(n1 => { const v = soma(x => (x.por_n1 || {})[n1]); return sinal(bi(v), v); }),
+        fracao(j12.cdi, 1), fracaoSinal(j12.ipca, 1), taxa(j12.selic_fim), ok(j12.dolar_fim) ? numBR(j12.dolar_fim, 2) : "-"],
+    });
+    mount.innerHTML = tabela([{ rotulo: "Competência" }, { rotulo: "Captação (R$ bi)", num: true },
+      ...n1s.map(n1 => ({ rotulo: n1, num: true })), { rotulo: "CDI", num: true }, { rotulo: "IPCA", num: true },
+      { rotulo: "Selic (fim)", num: true }, { rotulo: "Dólar (fim)", num: true }], linhas);
+    const real = ok(j12.cdi) && ok(j12.ipca) ? (1 + j12.cdi) / (1 + j12.ipca) - 1 : null;
+    const fig = figura(mount, {
+      titulo: ok(real) ? `CDI de ${fracao(j12.cdi)} contra IPCA de ${fracao(j12.ipca)} em 12 meses: juro real de ${fracao(real)}`
+        : "O macro ao lado da captação",
+      sub: `Captação líquida do investidor por macroclasse, em R$ bilhões, por competência, ` +
+        `${periodoBR(META.janelas["12m"].de, META.janelas["12m"].ate)}; CDI e IPCA do mês; Selic (meta, % ao ano) e ` +
+        "dólar (PTAX venda, R$) no último dia útil; na linha de 12 meses, o CDI e o IPCA acumulados" + SEM_FILTRO,
+      fonte: "Fonte: CVM (informe diário e perfil mensal) para a captação; Banco Central, SGS (séries 12, 432, 433 e 1) para o macro.",
+    });
+    if (fig) fig.classList.add("fig-larga");
+  }
+
   function desenharParaOnde() {
     seguro("captação por estratégia", desenharFluxos);
     seguro("rotação", desenharCalor);
     seguro("famílias", desenharFamilias);
+    seguro("giro", desenharGiro);
   }
 
   /* --- quem ganha -------------------------------------------------------------- */
@@ -667,6 +745,84 @@
     });
     barrasH(mount, linhas, { aria: "Fatia do PL por tipo de gestora" });
     seguro("gestoras", desenharGestoras);
+    seguro("concentração", desenharConcentracao);
+  }
+
+  function desenharConcentracao() {
+    const c = (DADOS.dinamica || {}).concentracao || {};
+    const mount = document.getElementById("tabela-concentracao");
+    const universo = c.universo || {};
+    const itens = (c.n2 || []).filter(i => FILTRO.n1 === TODOS || i.n1 === FILTRO.n1);
+    if (!itens.length) { mount.innerHTML = VAZIO; return; }
+    const linhas = [];
+    let n1Atual = null;
+    const posN1 = v => { const i = ORDEM.n1.indexOf(v); return i < 0 ? ORDEM.n1.length : i; };
+    itens.slice().sort((a, b) => posN1(a.n1) - posN1(b.n1) || b.pl_investidor - a.pl_investidor)
+      .forEach(i => {
+        if (i.n1 !== n1Atual) { n1Atual = i.n1; linhas.push({ grupo: i.n1 }); }
+        linhas.push({
+          celulas: [escapeHtml(i.n2), texto(dinheiro(i.pl_investidor)), inteiro(i.gestoras),
+            `<b>${ok(i.hhi) ? inteiro(Math.round(i.hhi)) : "-"}</b>`,
+            ok(i.variacao_hhi) ? (i.variacao_hhi > 0 ? "+" : "") + inteiro(Math.round(i.variacao_hhi)) : "-",
+            fracao(i.top5, 0), `${escapeHtml(i.lider || "-")}<small>${fracao(i.fatia_do_lider)}</small>`],
+        });
+      });
+    if (universo.hhi) {
+      linhas.push({ classe: "total", celulas: ["Universo", texto(dinheiro(universo.pl_investidor)), inteiro(universo.gestoras),
+        `<b>${inteiro(Math.round(universo.hhi))}</b>`,
+        ok(universo.variacao_hhi) ? (universo.variacao_hhi > 0 ? "+" : "") + inteiro(Math.round(universo.variacao_hhi)) : "-",
+        fracao(universo.top5, 0), `${escapeHtml(universo.lider || "-")}<small>${fracao(universo.fatia_do_lider)}</small>`] });
+    }
+    mount.innerHTML = tabela([{ rotulo: "Peer group" }, { rotulo: "PL", num: true }, { rotulo: "Gestoras", num: true },
+      { rotulo: "HHI", num: true }, { rotulo: "Em 12 meses", num: true }, { rotulo: "5 maiores", num: true },
+      { rotulo: "Líder" }], linhas);
+    // O titulo escolhe entre os peer groups com ao menos 1% do PL: com duas
+    // gestoras, um HHI de 5.000 nao diz nada do mercado.
+    const grandes = itens.filter(i => ok(i.hhi) && i.pl_investidor >= 0.01 * (universo.pl_investidor || 0));
+    const mais = grandes.slice().sort((a, b) => b.hhi - a.hhi)[0];
+    figura(mount, {
+      titulo: mais ? `${nomeN2(mais.n1, mais.n2)} é o peer group grande mais concentrado: ${mais.lider} tem ${fracao(mais.fatia_do_lider, 0)}`
+        : "Concentração por peer group",
+      sub: `HHI (0 a 10.000) e fatia das 5 maiores, pelo PL do investidor de cada grupo gestor da estratégia em ${FIM}; ` +
+        `variação do HHI contra ${BASE_12M} (negativa = mercado mais disputado)` +
+        (FILTRO.n1 !== TODOS ? ` · macroclasse: ${FILTRO.n1}` : "") + " · só o filtro de macroclasse vale aqui",
+      fonte: FONTE,
+    });
+  }
+
+  function desenharEntrantes() {
+    const g = (DADOS.dinamica || {}).gestoras || {};
+    const entraram = g.entraram || {}, sairam = g.sairam || {};
+    const mount = document.getElementById("tabela-entrantes");
+    const resumo = tabela([{ rotulo: "" }, { rotulo: "Grupos", num: true }, { rotulo: "PL do investidor", num: true },
+      { rotulo: "Captação 12m", num: true }], [
+      { celulas: [`No universo em ${escapeHtml(BASE_12M)}`, inteiro(g.grupos_na_base || 0), "", ""] },
+      { celulas: ["Entraram", inteiro(entraram.grupos || 0), texto(dinheiro(entraram.pl_investidor)),
+        sinal(texto(dinheiroSinal(entraram.fluxo_investidor)), entraram.fluxo_investidor)] },
+      { celulas: ["Saíram", inteiro(sairam.grupos || 0), texto(dinheiro(sairam.pl_investidor)), ""] },
+      { classe: "total", celulas: [`No universo em ${escapeHtml(FIM)}`, inteiro(g.grupos_no_fim || 0), "", ""] },
+    ]);
+    const lista = [];
+    if ((entraram.lista || []).length) {
+      lista.push({ grupo: "Maiores entradas" });
+      entraram.lista.forEach(i => lista.push({ celulas: [`${escapeHtml(i.grupo)}<small>${escapeHtml(ROTULO.tipo_gestora(i.tipo))}</small>`,
+        `desde ${competenciaBR(i.primeira)}`, escapeHtml(i.n2 || "-"), texto(dinheiroFino(i.pl_investidor)),
+        sinal(texto(dinheiroFinoSinal(i.fluxo_investidor)), i.fluxo_investidor)] }));
+    }
+    if ((sairam.lista || []).length) {
+      lista.push({ grupo: "Saídas" });
+      sairam.lista.forEach(i => lista.push({ celulas: [`${escapeHtml(i.grupo)}<small>${escapeHtml(ROTULO.tipo_gestora(i.tipo))}</small>`,
+        `até ${competenciaBR(i.ultima)}`, "", i.pl_investidor > 0 ? texto(dinheiroFino(i.pl_investidor)) : "-", ""] }));
+    }
+    mount.innerHTML = resumo + (lista.length ? tabela([{ rotulo: "Grupo gestor" }, { rotulo: "No universo" },
+      { rotulo: "Peer group principal" }, { rotulo: "PL do investidor", num: true }, { rotulo: "Captação 12m", num: true }], lista) : "");
+    figura(mount, {
+      titulo: `${inteiro(entraram.grupos || 0)} grupos gestores entraram no universo em 12 meses e ${inteiro(sairam.grupos || 0)} saíram`,
+      sub: `Entrou: sem produto no universo em ${BASE_12M} e com produto dentro da janela (${META.janelas["12m"].texto}). ` +
+        `Saiu: tinha produto na base ou na janela e não tem em ${FIM}. PL do investidor no fim (entradas) ou no último mês ` +
+        "presente (saídas); os 10 maiores de cada lado" + SEM_FILTRO,
+      fonte: FONTE,
+    });
   }
 
   function desenharGestoras() {
@@ -791,15 +947,62 @@
     });
   }
 
+  function desenharSegmentosFluxo() {
+    const s = (DADOS.dinamica || {}).captacao_por_segmento || {};
+    const t = s.total;
+    const mount = document.getElementById("chart-segmentos-fluxo");
+    if (!t || !(t.segmentos || []).length) { mount.innerHTML = VAZIO; return; }
+    const { grafico, tabela: mountTabela } = graficoComTabela(mount);
+    const rotulo = x => x.rotulo + (x.no_ruido ? " (dentro do ruído)" : "");
+    const linhas = [...t.segmentos.map(x => ({
+      label: rotulo(x), value: x.captacao, display: dinheiroSinal(x.captacao),
+      color: x.no_ruido ? "var(--comp-2)" : "var(--comp-1)",
+    })), { label: "Resíduo (não explicado)", value: t.residuo, display: dinheiroSinal(t.residuo), color: "var(--comp-2)" }];
+    const medidos = t.segmentos.filter(x => !x.no_ruido);
+    const entrou = medidos.slice().sort((a, b) => b.captacao - a.captacao)[0];
+    const saiu = medidos.slice().sort((a, b) => a.captacao - b.captacao)[0];
+    figura(mount, {
+      titulo: entrou && saiu && entrou.captacao > 0 && saiu.captacao < 0
+        ? `${entrou.rotulo} trouxe ${dinheiroSinal(entrou.captacao)} em 12 meses; ${saiu.rotulo} tirou ${dinheiro(Math.abs(saiu.captacao))}`
+        : "Captação do investidor por tipo de cotista",
+      sub: `Captação implícita de cada tipo de cotista em ${META.janelas["12m"].texto}: a variação da fatia dele no perfil ` +
+        `mensal, descontado o rendimento. Somada ao resíduo, dá a captação do investidor (${dinheiroSinal(t.fluxo_investidor)}); ` +
+        `os fundos que compram fundos, fora dela, somam ${dinheiroSinal(t.fundos)}. Ruído do arredondamento do perfil: ` +
+        `${dinheiro(t.ruido)}` + SEM_FILTRO,
+      fonte: "Fonte: CVM, perfil mensal (composição do PL por tipo de cotista) e informe diário; estimativa do monitor.",
+    });
+    barrasDivergentes(grafico, linhas, { aria: "Captação do investidor por tipo de cotista em 12 meses", maxRotulo: 44 });
+    const n1s = (s.n1 || []).filter(i => Math.abs(i.fluxo_investidor) >= 1e8 || i.segmentos.some(x => Math.abs(x.captacao) >= 1e8));
+    const chaves = t.segmentos.map(x => x.chave);
+    const nomes = Object.fromEntries(t.segmentos.map(x => [x.chave, x.rotulo]));
+    const celula = (lista, chave) => {
+      const x = (lista || []).find(y => y.chave === chave);
+      if (!x) return "-";
+      return x.no_ruido ? '<span class="fraco">≈0</span>' : sinal(bi(x.captacao), x.captacao);
+    };
+    const linhaDe = (rotuloLinha, i, classe) => ({
+      classe, celulas: [rotuloLinha, ...chaves.map(c => celula(i.segmentos, c)), sinal(bi(i.residuo), i.residuo),
+        sinal(`<b>${bi(i.fluxo_investidor)}</b>`, i.fluxo_investidor)],
+    });
+    mountTabela.innerHTML = tabela([{ rotulo: "Macroclasse (R$ bi)" }, ...chaves.map(c => ({ rotulo: nomes[c], num: true })),
+      { rotulo: "Resíduo", num: true }, { rotulo: "Captação do investidor", num: true }],
+    [...n1s.map(i => linhaDe(escapeHtml(i.n1), i, "")), linhaDe("Universo", t, "total")]);
+  }
+
   /* --- desempenho ------------------------------------------------------------ */
+  const CDI = META.cdi || {};
+  // "105% do CDI" - o retorno sobre o CDI da mesma janela.
+  const doCdi = (v, cdi) => (ok(v) && ok(cdi) && cdi > 0 ? `${numBR((v / cdi) * 100, 0)}% do CDI` : "");
+
   function desenharDesempenho() {
     const itens = (DADOS.rentabilidade || []).filter(i => (FILTRO.n1 === TODOS || i.n1 === FILTRO.n1) && ok(i.mediana_12m));
     const porN1 = new Map();
     itens.forEach(i => { if (!porN1.has(i.n1)) porN1.set(i.n1, []); porN1.get(i.n1).push(i); });
     const n1s = ordenar("n1", [...porN1.keys()]);
     const j12 = META.janelas["12m"], j3 = META.janelas["3m"];
-    const sub = `Retorno da cota em 12 meses, ${j12.texto}; uma vez por estratégia-raiz, cota ex-provento, ` +
+    const sub = `Retorno da cota em ${j12.texto}; uma vez por estratégia-raiz, cota ex-provento, ` +
       "sem impostos; peer group com amostra pequena só na tabela" +
+      (ok(CDI["12m"]) ? `; a linha vertical é o CDI da mesma janela (${fracao(CDI["12m"])})` : "") +
       (FILTRO.n1 !== TODOS ? ` · macroclasse: ${FILTRO.n1}` : "") + " · só o filtro de macroclasse vale aqui";
 
     // Uma faixa por macroclasse, cada uma no proprio eixo: acoes vao de -30% a
@@ -807,9 +1010,13 @@
     // fica so na tabela: tres fundos de "sem rotulo" esticavam o eixo do
     // multimercado ate -60%.
     const mount = document.getElementById("chart-rentabilidade");
+    const comMediana = itens.filter(i => !i.amostra_pequena && ok(i.acima_do_cdi_12m));
+    const batem = comMediana.filter(i => i.mediana_12m > CDI["12m"]).length;
     figura(mount, {
-      titulo: "Retorno de 12 meses por peer group: mediana e quartis",
-      sub, fonte: "Fonte: CVM, informe diário (cota); peer group pela classificação do monitor.",
+      titulo: ok(CDI["12m"]) && comMediana.length
+        ? `${batem} de ${comMediana.length} peer groups tiveram a mediana acima do CDI de ${fracao(CDI["12m"])} em 12 meses`
+        : "Retorno de 12 meses por peer group: mediana e quartis",
+      sub, fonte: "Fonte: CVM, informe diário (cota); CDI do Banco Central (SGS, série 12); peer group pela classificação do monitor.",
     });
     const noGrafico = n1s.filter(n1 => porN1.get(n1).some(i => !i.amostra_pequena));
     mount.innerHTML = noGrafico.length ? "" : VAZIO;
@@ -832,6 +1039,7 @@
       ], {
         fmt: v => fracao(v), fmtEixo: v => numBR(v * 100, casas) + "%", nota: l => fracao(l.valores.mediana),
         aria: `Retorno de 12 meses dos peer groups de ${n1}`,
+        ...(ok(CDI["12m"]) ? { ref: CDI["12m"], refRotulo: "CDI em 12 meses", fmtRef: v => fracao(v) } : {}),
       });
     });
 
@@ -840,18 +1048,51 @@
       linhas.push({ grupo: n1 });
       porN1.get(n1).slice().sort((a, b) => b.mediana_12m - a.mediana_12m).forEach(i => linhas.push({
         celulas: [escapeHtml(i.n2) + (i.amostra_pequena ? " *" : ""), inteiro(i.estrategias), fracao(i.q1_12m),
-          `<b>${fracao(i.mediana_12m)}</b>`, fracao(i.q3_12m), fracao(i.mediana_3m)],
+          `<b>${fracao(i.mediana_12m)}</b>`, fracao(i.q3_12m),
+          ok(i.sobre_cdi_12m) ? `${numBR(i.sobre_cdi_12m * 100, 0)}%` : "-", fracao(i.acima_do_cdi_12m, 0),
+          fracao(i.mediana_3m), ok(i.sobre_cdi_3m) ? `${numBR(i.sobre_cdi_3m * 100, 0)}%` : "-"],
       }));
     });
     const mountT = document.getElementById("tabela-rentabilidade");
     mountT.innerHTML = linhas.length ? tabela([{ rotulo: "Peer group" }, { rotulo: "Estratégias", num: true },
       { rotulo: "Quartil inferior", num: true }, { rotulo: "Mediana 12m", num: true },
-      { rotulo: "Quartil superior", num: true }, { rotulo: "Mediana 3m", num: true }], linhas) : VAZIO;
+      { rotulo: "Quartil superior", num: true }, { rotulo: "Mediana em % do CDI", num: true },
+      { rotulo: "Estratégias acima do CDI", num: true }, { rotulo: "Mediana 3m", num: true },
+      { rotulo: "3m em % do CDI", num: true }], linhas) : VAZIO;
     figura(mountT, {
-      titulo: "Os números do gráfico, com a mediana de 3 meses",
-      sub: `12 meses: ${j12.texto}. 3 meses: ${j3.texto}. * amostra pequena: poucas estratégias no peer group`,
-      fonte: "Fonte: CVM, informe diário (cota).",
+      titulo: "Os números do gráfico, contra o CDI e com a mediana de 3 meses",
+      sub: `12 meses: ${j12.texto}, CDI de ${fracao(CDI["12m"])}. 3 meses: ${j3.texto}, CDI de ${fracao(CDI["3m"])}. ` +
+        "Crédito incentivado é isento de IR: contra o CDI bruto, sai abaixo por construção. " +
+        "* amostra pequena: poucas estratégias no peer group",
+      fonte: "Fonte: CVM, informe diário (cota); Banco Central, SGS (CDI, série 12).",
     });
+  }
+
+  function desenharFluxoRetorno() {
+    const q = (DADOS.dinamica || {}).fluxo_x_retorno || [];
+    const mount = document.getElementById("chart-fluxo-retorno");
+    const quartis = q.filter(x => x.quartil && ok(x.sobre_pl));
+    if (!quartis.length) { mount.innerHTML = VAZIO; return; }
+    const { grafico, tabela: mountTabela } = graficoComTabela(mount);
+    const melhor = quartis.find(x => x.quartil === 1), pior = quartis.find(x => x.quartil === 4);
+    const sem = q.find(x => !x.quartil);
+    figura(mount, {
+      titulo: melhor && pior
+        ? `Quem rendeu mais no peer group captou ${fracaoSinal(melhor.sobre_pl)} do PL em 12 meses; quem rendeu menos, ${fracaoSinal(pior.sobre_pl)}`
+        : "Captação por quartil de retorno",
+      sub: `Captação do investidor em ${META.janelas["12m"].texto}, em % do PL de abertura, por quartil do retorno de 12 meses ` +
+        "da estratégia-raiz no próprio peer group. Mesma janela nos dois eixos: mostra associação, não causa" +
+        (sem ? `. Sem retorno de 12 meses (lançados há pouco ou sem cota suficiente): ${inteiro(sem.classes_fim)} classes, ` +
+          `${dinheiroSinal(sem.fluxo_investidor)}, só na tabela` : "") + SEM_FILTRO,
+      fonte: FONTE,
+    });
+    barrasDivergentes(grafico, quartis.map(x => ({
+      label: x.rotulo, value: x.sobre_pl, display: `${fracaoSinal(x.sobre_pl)} (${dinheiroSinal(x.fluxo_investidor)})`,
+    })), { aria: "Captação por quartil de retorno em 12 meses", maxRotulo: 34 });
+    mountTabela.innerHTML = tabela([{ rotulo: "Quartil de retorno" }, { rotulo: "Classes", num: true },
+      { rotulo: "PL de abertura", num: true }, { rotulo: "Captação 12m", num: true }, { rotulo: "% do PL", num: true }],
+    q.map(x => ({ celulas: [escapeHtml(x.rotulo), inteiro(x.classes_fim), texto(dinheiro(x.pl_investidor_abertura)),
+      sinal(texto(dinheiroSinal(x.fluxo_investidor)), x.fluxo_investidor), sinal(fracaoSinal(x.sobre_pl), x.sobre_pl)] })));
   }
 
   /* --- o que mudou ----------------------------------------------------------- */
@@ -924,8 +1165,10 @@
         return `<td class="num ${classeSinal(p.fluxo_12m)}">${texto(dinheiroFinoSinal(p.fluxo_12m))}</td>`;
       case "sobre_pl_12m":
         return `<td class="num ${classeSinal(p.sobre_pl_12m)}">${fracaoSinal(p.sobre_pl_12m)}</td>`;
-      case "retorno_12m":
-        return `<td class="num">${fracao(p.retorno_12m)}${ok(p.quartil_12m) ? `<small>${p.quartil_12m}º quartil</small>` : ""}</td>`;
+      case "retorno_12m": {
+        const nota = [doCdi(p.retorno_12m, CDI["12m"]), ok(p.quartil_12m) ? `${p.quartil_12m}º quartil` : ""].filter(Boolean);
+        return `<td class="num">${fracao(p.retorno_12m)}${nota.length ? `<small>${nota.join(" · ")}</small>` : ""}</td>`;
+      }
       case "conta_e_ordem":
         return `<td class="num">${fracao(p.conta_e_ordem, 0)}</td>`;
       case "taxa_adm":
@@ -992,8 +1235,8 @@
     });
     document.getElementById("explorador-nota").textContent =
       `Um produto (classe ou subclasse) por linha, com os filtros do topo. PL do investidor em ${FIM}; ` +
-      `captação e % do PL ${META.janelas["12m"].texto}; retorno da estratégia-raiz em 12 meses e o quartil ` +
-      "dela no peer group (1º = melhor); conta e ordem em fração do PL; taxa de administração do cadastro. " +
+      `captação e % do PL ${META.janelas["12m"].texto}; retorno da estratégia-raiz em 12 meses, em % do CDI ` +
+      "e o quartil dela no peer group (1º = melhor); conta e ordem em fração do PL; taxa de administração do cadastro. " +
       "Clique no cabeçalho para ordenar. " + FONTE;
   }
 
@@ -1057,7 +1300,13 @@
       ["PL com perfil e carteira divergentes em mais de 25 p.p.", dinheiro(e.pl_com_divergencia)],
       ["Origem da estratégia, em fração do PL", origem || "-"],
       ["PL em grupos gestores curados", fracao((DADOS.gestoras || {}).cobertura_curada)],
+      ["CDI em 12 meses (SGS do Banco Central)", ok(CDI["12m"]) ? fracao(CDI["12m"], 2) : ((DADOS.macro || {}).reason || "sem o SGS")],
     ];
+    const seg = ((DADOS.dinamica || {}).captacao_por_segmento || {}).total;
+    if (seg) {
+      itens.push(["Captação por tipo de cotista: resíduo e ruído do perfil, 12 meses",
+        `resíduo ${dinheiroSinal(seg.residuo)}; ruído ${dinheiro(seg.ruido)} (sai como número acima de ${dinheiro(seg.piso)})`]);
+    }
     const mountQ = document.getElementById("tabela-qualidade");
     mountQ.innerHTML = tabela([{ rotulo: "Indicador" }, { rotulo: "Valor" }],
       itens.map(([k, v]) => ({ celulas: [escapeHtml(k), texto(v)] })));
@@ -1106,6 +1355,10 @@
   seguro("dono do dinheiro", desenharSegmentos);
   seguro("funil", desenharFunil);
   seguro("mês a mês", desenharHistorico);
+  seguro("macro", desenharMacro);
+  seguro("entrantes", desenharEntrantes);
+  seguro("quem trouxe o dinheiro", desenharSegmentosFluxo);
+  seguro("fluxo e retorno", desenharFluxoRetorno);
   seguro("contexto", desenharContexto);
   seguro("fontes", desenharFontes);
   atualizar();

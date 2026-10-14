@@ -22,7 +22,7 @@ from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.report.industria_painel import ARQUIVO as ARQUIVO_DO_PAINEL
-from shelf_monitor.report.industria_painel import contas, nome_curto, ticket
+from shelf_monitor.report.industria_painel import contas, linha_do_macro, nome_curto, ticket
 from shelf_monitor.report.shared.email_xp import (
     UL,
     cabecalho,
@@ -44,7 +44,7 @@ from shelf_monitor.report.shared.fontes import (
     fontes_da_industria,
 )
 from shelf_monitor.report.shared.graficos_email import Linha, barras, barras_divergentes, figura
-from shelf_monitor.report.shared.numeros import pct, pp, reais, reais_com_sinal
+from shelf_monitor.report.shared.numeros import pct, pct_com_sinal, pp, reais, reais_com_sinal
 from shelf_monitor.texto import competencia_br, data_br, milhar, periodo_br
 
 _ROTULO_DO_MONITOR = "Monitor da indústria de fundos"
@@ -53,6 +53,7 @@ _FONTE_DAS_FIGURAS = (
     "grupo gestor pela classificação do monitor."
 )
 _TOP_PEER_GROUPS = 6
+_TOP_RETORNO = 8
 _TOP_FAMILIAS = 5
 _TOP_GRUPOS = 10
 _TOP_CASAS = 5
@@ -62,6 +63,7 @@ _TOP_CASAS = 5
 # tabela do e-mail ja traz, menos o mes a mes, que tambem esta no markdown.
 _ORCAMENTO_DO_EMAIL = 100_000
 _FIGURAS_POR_CORTE = (
+    ("fluxo_retorno", "captação por quartil de retorno"),
     ("tipos", "tipo de gestora"),
     ("segmentos", "dono do dinheiro"),
     ("peer_groups", "captação por peer group"),
@@ -73,14 +75,6 @@ _FIGURAS_POR_CORTE = (
 def _sem_marcas(texto: str) -> str:
     """A frase da leitura sem o `**` do markdown - a previa e o texto puro."""
     return re.sub(r"\*\*", "", texto)
-
-
-def _com_sinal(fracao: float | None) -> str:
-    if fracao is None:
-        return "-"
-    if abs(fracao) < 0.0005:
-        return "0,0%"
-    return ("+" if fracao > 0 else "") + pct(fracao)
 
 
 def _nome_n2(itens: list[dict]) -> dict[tuple[str, str], str]:
@@ -124,9 +118,9 @@ def _destaques(bloco: dict) -> list[tuple[str, str, str]]:
         ("PL disponível para PF e PJ, na camada do investidor", reais(camadas["pl_investidor"]),
          f"fechamento de {fim}; {milhar(camadas['classes'])} classes com informe"),
         ("Captação do investidor em 12 meses", reais_com_sinal(universo["12m"]["fluxo_investidor"]),
-         f"{_com_sinal(universo['12m']['sobre_pl'])} do PL de abertura; {_prazo(bloco, '12m')}"),
+         f"{pct_com_sinal(universo['12m']['sobre_pl'])} do PL de abertura; {_prazo(bloco, '12m')}"),
         (f"Captação do investidor em {bloco['rotulo_competencia']}", reais_com_sinal(universo["1m"]["fluxo_investidor"]),
-         f"{_com_sinal(universo['1m']['sobre_pl'])} do PL de abertura; {_prazo(bloco, '1m')}"),
+         f"{pct_com_sinal(universo['1m']['sobre_pl'])} do PL de abertura; {_prazo(bloco, '1m')}"),
         ("Fatia do PL via conta e ordem", pct(plataforma.get("conta_e_ordem")),
          (f"{pp(variacao)} em 12 meses; " if variacao is not None else "") + f"{fim} contra {base_12m}"),
         ("Contas (posições de cotistas, não CPFs)", contas(cotistas),
@@ -142,13 +136,13 @@ def _linhas_n1(bloco: dict) -> list[list[str]]:
         um = (item.get("janelas") or {}).get("1m") or {}
         linhas.append([
             item["n1"], reais(item["pl_investidor"]), pct(item.get("fatia")),
-            reais_com_sinal(doze.get("fluxo_investidor")), _com_sinal(doze.get("sobre_pl")),
+            reais_com_sinal(doze.get("fluxo_investidor")), pct_com_sinal(doze.get("sobre_pl")),
             reais_com_sinal(um.get("fluxo_investidor")),
         ])
     universo = bloco["mercado"]["janelas"]
     linhas.append([
         "Total", reais(bloco["camadas"]["pl_investidor"]), "100%",
-        reais_com_sinal(universo["12m"]["fluxo_investidor"]), _com_sinal(universo["12m"]["sobre_pl"]),
+        reais_com_sinal(universo["12m"]["fluxo_investidor"]), pct_com_sinal(universo["12m"]["sobre_pl"]),
         reais_com_sinal(universo["1m"]["fluxo_investidor"]),
     ])
     return linhas
@@ -185,6 +179,92 @@ def _casas(bloco: dict) -> list[dict]:
     return [c for c in (bloco.get("estrutura") or {}).get("casas_dedicadas", []) if c.get("casa")][:_TOP_CASAS]
 
 
+def _cdi(bloco: dict, janela: str = "12m") -> float | None:
+    return ((bloco.get("desempenho") or {}).get(janela) or {}).get("cdi")
+
+
+def _sobre_cdi(valor: float | None) -> str:
+    """1,05 -> "105%" (mediana em % do CDI)."""
+    return "-" if valor is None else f"{valor * 100:.0f}%"
+
+
+def _retorno_por_peer_group(bloco: dict) -> list[list[str]]:
+    """Os maiores peer groups por PL: mediana de 12 meses, % do CDI e quantas
+    estrategias passaram do CDI."""
+    itens = [
+        i for i in bloco["estrategias"]["n2"]
+        if ((i.get("rentabilidade") or {}).get("12m") or {}).get("mediana") is not None
+        and not i["rentabilidade"]["12m"].get("amostra_pequena")
+    ]
+    nomes = _nome_n2(bloco["estrategias"]["n2"])
+    linhas = []
+    for item in sorted(itens, key=lambda i: -i["pl_investidor"])[:_TOP_RETORNO]:
+        doze = item["rentabilidade"]["12m"]
+        linhas.append([
+            nomes[(item["n1"], item["n2"])], reais(item["pl_investidor"]), pct(doze["mediana"]),
+            _sobre_cdi(doze.get("mediana_sobre_cdi")), pct(doze.get("acima_do_cdi"), 0),
+        ])
+    return linhas
+
+
+def _quartis(bloco: dict) -> list[dict]:
+    return (bloco.get("dinamica") or {}).get("fluxo_x_retorno") or []
+
+
+def _linhas_fluxo_retorno(bloco: dict) -> list[list[str]]:
+    return [[q["rotulo"], milhar(q["classes_fim"]), reais_com_sinal(q["fluxo_investidor"]),
+             pct_com_sinal(q["sobre_pl"])] for q in _quartis(bloco)]
+
+
+def _segmentos_do_fluxo(bloco: dict) -> dict:
+    return ((bloco.get("dinamica") or {}).get("captacao_por_segmento") or {}).get("total") or {}
+
+
+def _linhas_segmentos_do_fluxo(bloco: dict) -> list[list[str]]:
+    total = _segmentos_do_fluxo(bloco)
+    if not total:
+        return []
+    linhas = [[s["rotulo"], "dentro do ruído" if s["no_ruido"] else reais_com_sinal(s["captacao"])]
+              for s in total["segmentos"]]
+    linhas.append(["Resíduo (não explicado)", reais_com_sinal(total["residuo"])])
+    linhas.append(["Captação do investidor", reais_com_sinal(total["fluxo_investidor"])])
+    return linhas
+
+
+def _frase_do_giro(bloco: dict) -> str:
+    giro = ((bloco.get("dinamica") or {}).get("giro") or {}).get("total") or {}
+    if giro.get("giro") is None:
+        return ""
+    vezes = f"{giro['giro']:.1f}".replace(".", ",")
+    return (
+        f"Giro: em 12 meses saíram {reais(giro['resgates'])} em resgates, {vezes} vezes o PL médio "
+        f"de {reais(giro['pl_medio'])} (fluxo declarado, com o dinheiro de fundos)."
+    )
+
+
+def _frase_da_concentracao(bloco: dict) -> str:
+    universo = (((bloco.get("dinamica") or {}).get("concentracao")) or {}).get("universo") or {}
+    if universo.get("hhi") is None:
+        return ""
+    variacao = universo.get("variacao_hhi")
+    return (
+        f"Concentração: HHI de {milhar(round(universo['hhi']))} (de 0 a 10.000) entre os grupos gestores do universo"
+        + (f", {'+' if variacao > 0 else ''}{milhar(round(variacao))} em 12 meses" if variacao is not None else "")
+        + f"; os 5 maiores têm {pct(universo.get('top5'))} do PL."
+    )
+
+
+def _frase_dos_entrantes(bloco: dict) -> str:
+    gestoras = (bloco.get("dinamica") or {}).get("gestoras") or {}
+    entraram, sairam = gestoras.get("entraram") or {}, gestoras.get("sairam") or {}
+    if not entraram and not sairam:
+        return ""
+    return (
+        f"{milhar(entraram.get('grupos', 0))} grupos gestores entraram no universo em 12 meses "
+        f"({reais(entraram.get('pl_investidor'))} hoje) e {milhar(sairam.get('grupos', 0))} saíram."
+    )
+
+
 def _como_ler() -> list[str]:
     return [
         "Universo disponível: fundos líquidos que um cliente PF ou PJ pode comprar; saem previdência, "
@@ -192,7 +272,10 @@ def _como_ler() -> list[str]:
         "Camada do investidor: PL e captação sem o dinheiro que um fundo aplica em outro (perfil mensal "
         "da CVM) - o FoF e o espelho não contam duas vezes.",
         "Captação é por fundo, nunca por distribuidor: a CVM não publica quem vendeu.",
-        "Estratégia, gestora e retorno vêm da raiz da cadeia master/feeder/espelho.",
+        "Estratégia, gestora e retorno vêm da raiz da cadeia master/feeder/espelho; o % do CDI divide o "
+        "retorno pelo CDI da mesma janela (SGS do Banco Central).",
+        "Captação por tipo de cotista: estimada pela variação da fatia de cada tipo no perfil mensal; abaixo de "
+        "duas vezes o ruído do arredondamento do perfil, sai como \"dentro do ruído\".",
     ]
 
 
@@ -222,6 +305,7 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
         "",
         "Prazos: " + "; ".join(bloco["prazos"]) + ".",
         "",
+        *([f"Macro: {linha_do_macro(bloco)}.", ""] if linha_do_macro(bloco) else []),
         "## Leitura do mês",
         "",
         *[f"- {frase}" for frase in bloco["leitura"]],
@@ -235,6 +319,7 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
         "",
         *_md_tabela(["Macroclasse", "PL", "Fatia", "Captação 12m", "% do PL", "No mês"],
                     _linhas_n1(bloco), {1, 2, 3, 4, 5}),
+        *([_frase_do_giro(bloco), ""] if _frase_do_giro(bloco) else []),
         f"### Peer groups que mais captaram e mais perderam ({_prazo(bloco, '12m')})",
         "",
     ]
@@ -242,7 +327,7 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
     linhas += _md_tabela(
         ["Peer group", "PL", "Captação 12m", "% do PL"],
         [[nomes[(i["n1"], i["n2"])], reais(i["pl_investidor"]),
-          reais_com_sinal(i["janelas"]["12m"]["fluxo_investidor"]), _com_sinal(i["janelas"]["12m"]["sobre_pl"])]
+          reais_com_sinal(i["janelas"]["12m"]["fluxo_investidor"]), pct_com_sinal(i["janelas"]["12m"]["sobre_pl"])]
          for i in _peer_groups(bloco)],
         {1, 2, 3},
     )
@@ -259,11 +344,19 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
     linhas += _md_tabela(
         ["", "Estratégia", "Gestora", "Peer group", "Captação 12m", "% do PL"],
         [["mais captou", nome_curto(f["nome"]), f["gestora"], f["n2"], reais_com_sinal(f["fluxo_investidor"]),
-          _com_sinal(f.get("sobre_pl"))] for f in captam]
+          pct_com_sinal(f.get("sobre_pl"))] for f in captam]
         + [["mais perdeu", nome_curto(f["nome"]), f["gestora"], f["n2"], reais_com_sinal(f["fluxo_investidor"]),
-            _com_sinal(f.get("sobre_pl"))] for f in perdem],
+            pct_com_sinal(f.get("sobre_pl"))] for f in perdem],
         {4, 5},
     )
+    cdi = _cdi(bloco)
+    linhas += ["## Os fundos entregam?", "",
+               f"### Retorno de 12 meses dos maiores peer groups ({_prazo(bloco, '12m')}"
+               + (f"; CDI de {pct(cdi)}" if cdi is not None else "") + ")", ""]
+    linhas += _md_tabela(["Peer group", "PL", "Mediana 12m", "% do CDI", "Estratégias acima do CDI"],
+                         _retorno_por_peer_group(bloco), {1, 2, 3, 4})
+    linhas += [f"### O dinheiro vai atrás do retorno? Captação por quartil de retorno no peer group ({_prazo(bloco, '12m')})", ""]
+    linhas += _md_tabela(["Quartil de retorno", "Classes", "Captação 12m", "% do PL"], _linhas_fluxo_retorno(bloco), {1, 2, 3})
     fim = data_br(bloco["informe"]["ate"])
     base_12m = data_br(_janela(bloco, "12m").get("data_base"))
     linhas += ["## Quem ganha e por onde chega", "", f"### Tipo de gestora (fatia do PL em {fim} e variação contra {base_12m})", ""]
@@ -277,9 +370,14 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
           reais_com_sinal(g.get("fluxo_investidor_12m"))] for g in (bloco["gestoras"].get("grupos") or [])[:_TOP_GRUPOS]],
         {2, 3, 4},
     )
+    if _frase_da_concentracao(bloco):
+        linhas += [_frase_da_concentracao(bloco), ""]
     linhas += [f"### Dono do dinheiro (perfil mensal de {bloco['rotulo_competencia']}, variação contra {base_12m})", ""]
     linhas += _md_tabela(["Cotista", "Fatia do PL", "Em 12 meses"],
                          [[s["rotulo"], pct(s["fatia"]), pp(s.get("variacao_pp"))] for s in _segmentos(bloco)], {1, 2})
+    if _linhas_segmentos_do_fluxo(bloco):
+        linhas += [f"### Quem trouxe o dinheiro: captação por tipo de cotista ({_prazo(bloco, '12m')})", ""]
+        linhas += _md_tabela(["Tipo de cotista", "Captação 12m"], _linhas_segmentos_do_fluxo(bloco), {1})
     linhas += [f"### Casas dedicadas (veículos feitos para um distribuidor, {fim})", ""]
     linhas += _md_tabela(["Casa", "PL do investidor", "Captação 12m"],
                          [[c["casa"], reais(c["pl_investidor"]), reais_com_sinal(c.get("fluxo_investidor_12m"))]
@@ -287,6 +385,8 @@ def render_email_markdown(bloco: dict, config: Config | None = None, gerado_em: 
     linhas += ["## O que mudou", ""]
     linhas += _md_tabela(["Janela", "Entraram", "PL ao entrar", "Saíram", "PL ao sair"],
                          _linhas_de_lancamentos(bloco), {1, 2, 3, 4})
+    if _frase_dos_entrantes(bloco):
+        linhas += [_frase_dos_entrantes(bloco), ""]
     linhas += ["## Camadas ao lado (fora do total do universo)", ""]
     linhas += _md_tabela(["Camada", "PL", "Captação 12m", "Fonte"], _linhas_adjacentes(bloco), {1, 2})
     linhas += ["## Qualidade e como ler", ""]
@@ -357,7 +457,10 @@ def _onde_ver_mais(bloco: dict) -> str:
 
 
 def _fontes(bloco: dict):
-    return fontes_da_industria(com_carteira=bool((bloco.get("estrutura") or {}).get("com_carteira", True)))
+    return fontes_da_industria(
+        com_carteira=bool((bloco.get("estrutura") or {}).get("com_carteira", True)),
+        com_macro=bool((bloco.get("macro") or {}).get("available")),
+    )
 
 
 # --- html do mes ---------------------------------------------------------------------
@@ -437,6 +540,22 @@ def _figura_segmentos(bloco: dict) -> str:
                   esc("Fonte: CVM, perfil mensal (composição do PL por tipo de cotista); PL do informe diário."))
 
 
+def _figura_fluxo_retorno(bloco: dict) -> str:
+    quartis = [q for q in _quartis(bloco) if q.get("quartil") and q.get("sobre_pl") is not None]
+    melhor = next((q for q in quartis if q["quartil"] == 1), None)
+    pior = next((q for q in quartis if q["quartil"] == 4), None)
+    if not melhor or not pior:
+        return ""
+    corpo = barras_divergentes([Linha(q["rotulo"], q["sobre_pl"], pct_com_sinal(q["sobre_pl"])) for q in quartis])
+    return figura(
+        f"Quem rendeu mais no peer group captou {pct_com_sinal(melhor['sobre_pl'])} do PL; quem rendeu menos, "
+        f"{pct_com_sinal(pior['sobre_pl'])}",
+        f"Captação do investidor em % do PL de abertura por quartil de retorno de 12 meses no peer group, "
+        f"{_prazo(bloco, '12m')}; mesma janela nos dois eixos: associação, não causa",
+        corpo, esc(_FONTE_DAS_FIGURAS),
+    )
+
+
 def _montador_do_html(bloco: dict, config: Config | None, gerado_em: datetime):
     rotulo = bloco["rotulo_competencia"]
     fim = data_br(bloco["informe"]["ate"])
@@ -447,6 +566,7 @@ def _montador_do_html(bloco: dict, config: Config | None, gerado_em: datetime):
         "mensal": _figura_mensal(bloco),
         "tipos": _figura_tipos(bloco),
         "segmentos": _figura_segmentos(bloco),
+        "fluxo_retorno": _figura_fluxo_retorno(bloco),
     }
     destaques = tabela(["Destaque", "Valor"], [
         [f"{esc(rotulo_)}{miudo(esc(prazo))}", f"<strong>{esc(valor)}</strong>"]
@@ -459,7 +579,7 @@ def _montador_do_html(bloco: dict, config: Config | None, gerado_em: datetime):
 
     def linha_de_familia(f: dict) -> list[str]:
         return [f"{esc(nome_curto(f['nome']))}{miudo(esc(f['gestora']))}", esc(f["n2"]),
-                esc(reais_com_sinal(f["fluxo_investidor"])), esc(_com_sinal(f.get("sobre_pl")))]
+                esc(reais_com_sinal(f["fluxo_investidor"])), esc(pct_com_sinal(f.get("sobre_pl")))]
 
     familias = tabela(["Estratégia e gestora", "Peer group", "Captação 12m", "% do PL"],
                       (["Mais captaram"] + [linha_de_familia(f) for f in captam] if captam else [])
@@ -476,6 +596,16 @@ def _montador_do_html(bloco: dict, config: Config | None, gerado_em: datetime):
     ], direita={1, 2}, sinal={2})
     lancamentos = tabela(["Janela", "Entraram", "PL ao entrar", "Saíram", "PL ao sair"],
                          [[esc(c) for c in linha] for linha in _linhas_de_lancamentos(bloco)], direita={1, 2, 3, 4})
+    retorno = tabela(["Peer group", "PL", "Mediana 12m", "% do CDI", "Acima do CDI"],
+                     [[esc(c) for c in linha] for linha in _retorno_por_peer_group(bloco)], direita={1, 2, 3, 4})
+    fluxo_retorno = tabela(["Quartil de retorno", "Classes", "Captação 12m", "% do PL"],
+                           [[esc(c) for c in linha] for linha in _linhas_fluxo_retorno(bloco)],
+                           direita={1, 2, 3}, sinal={2, 3})
+    segmentos_do_fluxo = tabela(["Tipo de cotista", "Captação 12m"],
+                                [[esc(c) for c in linha] for linha in _linhas_segmentos_do_fluxo(bloco)],
+                                direita={1}, sinal={1}, total=True) if _linhas_segmentos_do_fluxo(bloco) else ""
+    cdi = _cdi(bloco)
+    macro = linha_do_macro(bloco)
     adjacentes = tabela(["Camada", "PL", "Captação 12m", "Fonte"],
                         [[esc(c) for c in linha] for linha in _linhas_adjacentes(bloco)], direita={1, 2}, sinal={2})
     previa = esc(_sem_marcas(bloco["leitura"][0])) if bloco.get("leitura") else ""
@@ -494,19 +624,31 @@ def _montador_do_html(bloco: dict, config: Config | None, gerado_em: datetime):
             cabecalho("Visão de mercado para a distribuição · sem casa em foco", titulo,
                       f"Execução de {gerado_em:%d/%m/%Y %H:%M} · competência {rotulo}")
             + nota(esc("Prazos: " + "; ".join(bloco["prazos"]) + "."))
+            + (nota(esc(f"Macro: {macro}.")) if macro else "")
             + secao("Leitura do mês") + _lista(bloco["leitura"])
             + secao("Destaques") + destaques
             + secao("Para onde vai o dinheiro")
             + fig["macroclasses"] + tabela_n1
+            + (nota(esc(_frase_do_giro(bloco))) if _frase_do_giro(bloco) else "")
             + fig["peer_groups"] + fig["mensal"]
             + nota(esc(f"Estratégias que mais captaram e mais perderam, {_prazo(bloco, '12m')}.")) + familias
+            + secao("Os fundos entregam?")
+            + nota(esc(f"Retorno de 12 meses dos {_TOP_RETORNO} maiores peer groups por PL, mediana por estratégia-raiz, "
+                       f"{_prazo(bloco, '12m')}" + (f"; CDI de {pct(cdi)} no período." if cdi is not None else ".")))
+            + retorno
+            + fig["fluxo_retorno"]
+            + nota(esc(f"Captação por quartil de retorno de 12 meses no peer group, {_prazo(bloco, '12m')}.")) + fluxo_retorno
             + secao("Quem ganha e por onde chega")
             + fig["tipos"]
             + nota(esc(f"Grupos gestores: os {_TOP_GRUPOS} maiores por PL do investidor em {fim}; fatia e "
                        f"variação contra {base_12m}; captação {_prazo(bloco, '12m')}.")) + grupos
+            + (nota(esc(_frase_da_concentracao(bloco))) if _frase_da_concentracao(bloco) else "")
             + fig["segmentos"]
+            + (nota(esc(f"Quem trouxe o dinheiro: captação implícita por tipo de cotista, {_prazo(bloco, '12m')}; "
+                        "estimada pelo perfil mensal.")) + segmentos_do_fluxo if segmentos_do_fluxo else "")
             + nota(esc(f"Casas dedicadas: veículos feitos para um distribuidor, PL em {fim}.")) + casas
             + secao("O que mudou") + lancamentos
+            + (nota(esc(_frase_dos_entrantes(bloco))) if _frase_dos_entrantes(bloco) else "")
             + secao("Camadas ao lado") + nota(esc("Previdência e ETF nunca entram no total do universo.")) + adjacentes
             + secao("Qualidade e como ler") + _lista(_qualidade(bloco) + _como_ler())
             + chamada(md_para_html(_onde_ver_mais(bloco)).replace("`", ""))

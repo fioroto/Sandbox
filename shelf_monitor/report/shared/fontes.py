@@ -94,15 +94,26 @@ CVM_EXTRATO_INDUSTRIA = replace(
     CVM_EXTRATO,
     uso="prazo de resgate e o flag de fundo espelho declarado",
 )
+# API aberta a uso automatizado (conferido em 10/10/2026: responde 200 com o
+# CDI do dia).
+BCB_SGS = Fonte(
+    nome="Sistema Gerenciador de Séries Temporais (SGS) do Banco Central",
+    url="https://www3.bcb.gov.br/sgspub/",
+    uso="CDI (série 12), meta Selic (432), IPCA (433) e dólar PTAX venda (1): retorno em % do CDI e contexto macro",
+    url_dados="https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json",
+)
 FONTES_INDUSTRIA = (
     CVM_CADASTRO_INDUSTRIA, CVM_INFORME_DIARIO_INDUSTRIA, CVM_PERFIL_MENSAL,
-    CVM_CDA_INDUSTRIA, CVM_EXTRATO_INDUSTRIA,
+    CVM_CDA_INDUSTRIA, CVM_EXTRATO_INDUSTRIA, BCB_SGS,
 )
 
 
-def fontes_da_industria(com_carteira: bool = True) -> list[Fonte]:
-    """As fontes do monitor da industria; sem a carteira quando ela nao entrou."""
-    return [f for f in FONTES_INDUSTRIA if com_carteira or f is not CVM_CDA_INDUSTRIA]
+def fontes_da_industria(com_carteira: bool = True, com_macro: bool = True) -> list[Fonte]:
+    """As fontes do monitor da industria; sem a carteira ou o SGS quando nao entraram."""
+    return [
+        f for f in FONTES_INDUSTRIA
+        if (com_carteira or f is not CVM_CDA_INDUSTRIA) and (com_macro or f is not BCB_SGS)
+    ]
 
 
 def fonte_da_vitrine(config: Config, platform_id: str, rotulo: str) -> Fonte | None:

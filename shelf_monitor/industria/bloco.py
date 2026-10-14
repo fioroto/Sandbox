@@ -19,10 +19,11 @@ from shelf_monitor.industria.agregados import (
     secoes_de_gestoras,
     secoes_de_publico,
 )
-from shelf_monitor.industria.base import BaseIndustria
+from shelf_monitor.industria.base import BaseIndustria, competencia_anterior
 from shelf_monitor.industria.cotistas import PF_PJ, SEGMENTOS
 from shelf_monitor.industria.curadoria import TIPOS_DE_GESTORA
 from shelf_monitor.industria.desempenho import rentabilidade_por_peer_group
+from shelf_monitor.industria.dinamica import secao_dinamica
 from shelf_monitor.industria.explorador import linhas_do_explorador
 from shelf_monitor.industria.fluxos import (
     fluxos_por,
@@ -33,6 +34,7 @@ from shelf_monitor.industria.fluxos import (
     total,
 )
 from shelf_monitor.industria.janelas import ORDEM, janelas as montar_janelas, prazos
+from shelf_monitor.industria.macro import janela_macro
 from shelf_monitor.industria.painel import (
     Camadas,
     camadas_do_universo,
@@ -42,7 +44,7 @@ from shelf_monitor.industria.painel import (
 from shelf_monitor.industria.taxonomia import N1_ORDEM
 from shelf_monitor.industria.universo import CAMADAS_AO_LADO, ROTULOS, UNIVERSO
 from shelf_monitor.report.shared.fontes import fontes_da_industria
-from shelf_monitor.report.shared.numeros import pct, pp, reais, reais_com_sinal
+from shelf_monitor.report.shared.numeros import pct, pct_com_sinal, pp, reais, reais_com_sinal
 from shelf_monitor.texto import competencia_br, data_br, milhar
 
 # Tamanho das listas do bloco (familias, gestoras, parcerias).
@@ -303,6 +305,53 @@ def _lancamentos(base: BaseIndustria, jan) -> dict:
     return saida
 
 
+def _macro(base: BaseIndustria, jan) -> dict:
+    """CDI, IPCA, Selic e dolar por janela e mes a mes, ao lado da captacao
+    por macroclasse (H2). Sem o SGS, a secao sai indisponivel com o motivo."""
+    macro = base.macro
+    if macro is None or not macro.series.get("cdi"):
+        motivo = "; ".join(macro.avisos) if macro and macro.avisos else "série do CDI não carregada"
+        return {"available": False, "reason": f"sem o SGS do Banco Central: {motivo}"}
+    meses = []
+    for mes in jan["12m"].competencias:
+        por_n1: dict[str, float] = {}
+        total_mes = 0.0
+        for linha in linhas_do_mes(base, mes):
+            if linha.motivo != UNIVERSO:
+                continue
+            n1 = dimensoes(base, linha).n1
+            por_n1[n1] = por_n1.get(n1, 0.0) + linha.fluxo_investidor
+            total_mes += linha.fluxo_investidor
+        fim = base.serie.calendario(mes)[1]
+        anterior = competencia_anterior(mes)
+        base_mes = base.serie.calendario(anterior)[1] if anterior in base.serie.meses else None
+        cdi = macro.cdi_entre(base_mes, fim)
+        ipca = macro.ipca_do_mes(mes)
+        meses.append({
+            "competencia": mes,
+            "fluxo_investidor": round(total_mes, 2),
+            "por_n1": {n1: round(v, 2) for n1, v in por_n1.items()},
+            "cdi": None if cdi is None else round(cdi, 6),
+            "ipca": None if ipca is None else round(ipca, 6),
+            "selic": macro.valor_em("selic_meta", fim),
+            "dolar": macro.valor_em("dolar", fim),
+        })
+    fim = jan["1m"].ate
+    cdi_ao_ano = macro.cdi_ao_ano(fim)
+    return {
+        "available": True,
+        "janelas": {j: janela_macro(macro, jan[j]) for j in ORDEM},
+        "meses": meses,
+        "fim": fim.isoformat() if fim else None,
+        "cdi_ao_ano": None if cdi_ao_ano is None else round(cdi_ao_ano, 6),
+        "selic_fim": macro.valor_em("selic_meta", fim),
+        "convencao": (
+            "CDI composto das taxas diárias com data depois da base e até o fim, inclusive; "
+            "IPCA composto das competências da janela; Selic e dólar (PTAX venda) no último dia útil"
+        ),
+    }
+
+
 def montar_bloco(base: BaseIndustria, config: Config | None = None) -> dict:
     """O bloco da competencia de referencia da base."""
     competencia = base.competencia
@@ -335,7 +384,9 @@ def montar_bloco(base: BaseIndustria, config: Config | None = None) -> dict:
     pf_pj = sum(camadas.segmentos.get(c, 0.0) for c in PF_PJ)
     itens = [(l, dimensoes(base, l)) for l in linhas if l.motivo == UNIVERSO]
     historico = historico_mensal(base)
-    rentabilidade = {j: rentabilidade_por_peer_group(base, jan[j]) for j in ("12m", "3m")}
+    macro = _macro(base, jan)
+    cdi = {j: ((macro.get("janelas") or {}).get(j) or {}).get("cdi") for j in ("12m", "3m")}
+    rentabilidade = {j: rentabilidade_por_peer_group(base, jan[j], cdi[j]) for j in ("12m", "3m")}
 
     degraus = {d.motivo: d for d in funil}
     ao_lado = {}
@@ -380,9 +431,17 @@ def montar_bloco(base: BaseIndustria, config: Config | None = None) -> dict:
         "gestoras": _gestoras(base, jan, itens),
         "plataformizacao": _plataformizacao(base, jan),
         "lancamentos": _lancamentos(base, jan),
+        "desempenho": {
+            j: {"cdi": cdi[j], "estrategias": len({c["raiz"] for c in rentabilidade[j]["por_classe"].values()})}
+            for j in ("12m", "3m")
+        },
+        "dinamica": secao_dinamica(base, jan, rentabilidade),
+        "macro": macro,
         "qualidade": _qualidade(base, linhas, historico),
         "avisos": list(base.avisos),
-        "fontes": [f.nome for f in fontes_da_industria(com_carteira=base.mapa is not None)],
+        "fontes": [
+            f.nome for f in fontes_da_industria(com_carteira=base.mapa is not None, com_macro=macro["available"])
+        ],
         "_base": base,
         "_linhas": linhas,
         "_itens": itens,
@@ -405,7 +464,7 @@ def _maior(itens: list[dict], chave: str, reverso: bool = True) -> dict | None:
 # O assunto de cada frase da leitura: o painel e o e-mail apontam cada uma
 # para o bloco que a detalha, sem depender da posicao (as frases sao
 # condicionais - sem plataformizacao, a de canal nao sai).
-TOPICOS_DA_LEITURA = ("tamanho", "captacao", "estrategias", "canal", "gestoras")
+TOPICOS_DA_LEITURA = ("tamanho", "captacao", "estrategias", "retorno", "canal", "gestoras")
 
 
 def leitura(bloco: dict) -> list[str]:
@@ -447,6 +506,16 @@ def leitura_com_topicos(bloco: dict) -> list[tuple[str, str]]:
             f"O peer group que mais captou em 12 meses foi **{ganha['n2']}** "
             f"({reais_com_sinal(ganha['janelas']['12m']['fluxo_investidor'])}); o que mais perdeu, "
             f"**{perde['n2']}** ({reais_com_sinal(perde['janelas']['12m']['fluxo_investidor'])})."
+        ))
+    quartis = {q["quartil"]: q for q in (bloco.get("dinamica") or {}).get("fluxo_x_retorno") or []}
+    melhor, pior = quartis.get(1) or {}, quartis.get(4) or {}
+    if melhor.get("sobre_pl") is not None and pior.get("sobre_pl") is not None:
+        cdi = ((bloco.get("desempenho") or {}).get("12m") or {}).get("cdi")
+        frases.append(("retorno",
+            f"Os fundos do 1º quartil de retorno em 12 meses no seu peer group captaram "
+            f"**{pct_com_sinal(melhor['sobre_pl'])}** do PL de abertura; os do 4º quartil, "
+            f"**{pct_com_sinal(pior['sobre_pl'])}**"
+            + (f" (CDI de {pct(cdi)} no período)." if cdi is not None else ".")
         ))
     plataforma = (bloco.get("plataformizacao") or {}).get("total") or {}
     if plataforma.get("conta_e_ordem") is not None and plataforma.get("variacao_pp") is not None:

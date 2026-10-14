@@ -23,6 +23,7 @@ from shelf_monitor.industria.cadastro import ROTULOS_PUBLICO
 from shelf_monitor.industria.curadoria import TIPOS_DE_GESTORA
 from shelf_monitor.industria.estrutura import PAPEIS
 from shelf_monitor.industria.janelas import ORDEM, ROTULOS as ROTULOS_JANELA
+from shelf_monitor.industria.taxonomia import N1_ORDEM
 from shelf_monitor.report.shared.fontes import fontes_da_industria
 from shelf_monitor.report.spreadsheet import _salvar
 from shelf_monitor.report.shared.numeros import pct, reais
@@ -173,7 +174,9 @@ def _aba_estrategias(wb: Workbook, bloco: dict) -> None:
     colunas += [(f"Captação {ROTULOS_JANELA[j]} (R$ mi)", 14, MI_SINAL) for j in ORDEM]
     colunas += [("Captação 12m / PL de abertura", 14, PCT_SINAL),
                 ("Retorno 12m: 1º quartil", 12, PCT), ("Retorno 12m: mediana", 12, PCT),
-                ("Retorno 12m: 3º quartil", 12, PCT), ("Retorno 3m: mediana", 12, PCT),
+                ("Retorno 12m: 3º quartil", 12, PCT), ("Mediana 12m em % do CDI", 12, PCT),
+                ("Estratégias acima do CDI em 12m", 12, PCT), ("Retorno 3m: mediana", 12, PCT),
+                ("Mediana 3m em % do CDI", 12, PCT),
                 ("Estratégias com retorno", 12, INT), ("Amostra pequena", 10, None)]
     linhas = []
     for i in estr["n2"]:
@@ -183,11 +186,15 @@ def _aba_estrategias(wb: Workbook, bloco: dict) -> None:
             [i["n1"], i["n2"], i["classes"], _mi(i["pl_investidor"]), i.get("fatia")]
             + [_mi(_fluxo(i, j)) for j in ORDEM]
             + [_fluxo(i, "12m", "sobre_pl"), r12.get("q1"), r12.get("mediana"), r12.get("q3"),
-               r3.get("mediana"), r12.get("estrategias"), "sim" if r12.get("amostra_pequena") else ""]
+               r12.get("mediana_sobre_cdi"), r12.get("acima_do_cdi"), r3.get("mediana"), r3.get("mediana_sobre_cdi"),
+               r12.get("estrategias"), "sim" if r12.get("amostra_pequena") else ""]
         )
+    cdi = {j: ((bloco.get("desempenho") or {}).get(j) or {}).get("cdi") for j in ("12m", "3m")}
     aba.escrever(
         "Retorno: mediana e quartis por estratégia-raiz (uma vez por master), base no fechamento da "
-        "competência anterior; não é retorno total nem líquido de impostos.", _NOTA,
+        "competência anterior; não é retorno total nem líquido de impostos. % do CDI: a mediana sobre o CDI "
+        f"acumulado da mesma janela (12 meses: {pct(cdi['12m'])}; 3 meses: {pct(cdi['3m'])}; SGS do Banco Central).",
+        _NOTA,
     )
     aba.tabela(colunas, linhas, filtro=True)
 
@@ -243,6 +250,108 @@ def _aba_gestoras(wb: Workbook, bloco: dict) -> None:
     ])
 
 
+def _aba_dinamica(wb: Workbook, bloco: dict) -> None:
+    dinamica = bloco.get("dinamica") or {}
+    aba = _Aba(wb, "Dinâmica", "Dinâmica da captação: giro, concentração, entrantes e fluxo × retorno")
+    aba.escrever(f"Tudo na janela de {_prazo(bloco)}; PL de abertura no fechamento de "
+                 f"{data_br(bloco['janelas']['12m']['data_base'])}.", _NOTA)
+
+    giro = dinamica.get("giro") or {}
+    aba.escrever("Giro: quanto entra e quanto sai (fluxo declarado, com o dinheiro de fundos)", _NEGRITO)
+    colunas = [("Macroclasse", 24, None), ("Captação bruta (R$ mi)", 16, MI), ("Resgates (R$ mi)", 16, MI),
+               ("Líquido (R$ mi)", 14, MI_SINAL), ("PL médio (R$ mi)", 16, MI),
+               ("Entrada (× PL médio)", 12, "0.00"), ("Giro (× PL médio)", 12, "0.00")]
+
+    def linha_giro(rotulo: str, item: dict) -> list:
+        return [rotulo, _mi(item.get("captacao")), _mi(item.get("resgates")), _mi(item.get("captacao_liquida")),
+                _mi(item.get("pl_medio")), item.get("entrada"), item.get("giro")]
+
+    total = giro.get("total") or {}
+    aba.tabela(colunas, [linha_giro(i["n1"], i) for i in giro.get("n1") or []],
+               total=linha_giro("Universo", total) if total else None)
+
+    concentracao = dinamica.get("concentracao") or {}
+    aba.escrever("Concentração por peer group: grupos gestores da estratégia, pelo PL do investidor", _NEGRITO)
+    aba.escrever("HHI de 0 a 10.000 (soma dos quadrados das fatias). Variação contra 12 meses antes.", _NOTA)
+    colunas = [("Macroclasse", 20, None), ("Peer group", 40, None), ("PL (R$ mi)", 14, MI), ("Gestoras", 10, INT),
+               ("Gestoras 12m antes", 10, INT), ("HHI", 10, "#,##0"), ("HHI 12m antes", 10, "#,##0"),
+               ("Variação do HHI", 10, "+#,##0;-#,##0;0"), ("5 maiores", 10, PCT), ("5 maiores 12m antes", 10, PCT),
+               ("Líder", 30, None), ("Fatia do líder", 10, PCT)]
+
+    def linha_conc(n1: str, n2: str, item: dict) -> list:
+        return [n1, n2, _mi(item.get("pl_investidor")), item.get("gestoras"), item.get("gestoras_12m_antes"),
+                item.get("hhi"), item.get("hhi_12m_antes"), item.get("variacao_hhi"), item.get("top5"),
+                item.get("top5_12m_antes"), item.get("lider"), item.get("fatia_do_lider")]
+
+    universo = concentracao.get("universo") or {}
+    aba.tabela(colunas, [linha_conc(i["n1"], i["n2"], i) for i in concentracao.get("n2") or []],
+               total=linha_conc("Universo", "", universo) if universo else None, filtro=True)
+
+    gestoras = dinamica.get("gestoras") or {}
+    entraram, sairam = gestoras.get("entraram") or {}, gestoras.get("sairam") or {}
+    aba.escrever(
+        f"Grupos gestores que entraram e saíram: {gestoras.get('grupos_na_base', 0)} no universo na base, "
+        f"{gestoras.get('grupos_no_fim', 0)} no fim; entraram {entraram.get('grupos', 0)}, saíram "
+        f"{sairam.get('grupos', 0)}", _NEGRITO,
+    )
+    aba.escrever("Entrou: sem produto no universo na base e com produto dentro da janela. Saiu: tinha produto na "
+                 "base ou na janela e não tem no fim. Os 20 maiores de cada lado.", _NOTA)
+    aba.tabela(
+        [("Grupo gestor", 40, None), ("Tipo", 16, None), ("Primeira competência", 14, None),
+         ("Peer group principal", 34, None), ("PL do investidor no fim (R$ mi)", 16, MI),
+         ("Captação 12m (R$ mi)", 14, MI_SINAL)],
+        [[i["grupo"], TIPOS_DE_GESTORA.get(i.get("tipo"), i.get("tipo")), competencia_br(i["primeira"]), i.get("n2"),
+          _mi(i.get("pl_investidor")), _mi(i.get("fluxo_investidor"))] for i in entraram.get("lista") or []],
+    )
+    aba.tabela(
+        [("Grupo gestor", 40, None), ("Tipo", 16, None), ("Última competência", 14, None),
+         ("PL do investidor ao sair (R$ mi)", 16, MI)],
+        [[i["grupo"], TIPOS_DE_GESTORA.get(i.get("tipo"), i.get("tipo")), competencia_br(i["ultima"]),
+          _mi(i.get("pl_investidor"))] for i in sairam.get("lista") or []],
+    )
+
+    aba.escrever("O dinheiro vai atrás do retorno? Captação por quartil de retorno de 12 meses no peer group", _NEGRITO)
+    aba.escrever("Mesma janela nos dois eixos: mostra associação, não causa. Quartil 1 é o de cima.", _NOTA)
+    aba.tabela(
+        [("Quartil", 30, None), ("Classes no fim", 12, INT), ("PL de abertura (R$ mi)", 16, MI),
+         ("PL no fim (R$ mi)", 16, MI), ("Captação 12m (R$ mi)", 16, MI_SINAL), ("Captação / PL de abertura", 14, PCT_SINAL)],
+        [[q["rotulo"], q["classes_fim"], _mi(q["pl_investidor_abertura"]), _mi(q["pl_investidor_fim"]),
+          _mi(q["fluxo_investidor"]), q.get("sobre_pl")] for q in dinamica.get("fluxo_x_retorno") or []],
+    )
+
+
+def _aba_macro(wb: Workbook, bloco: dict) -> None:
+    macro = bloco.get("macro") or {}
+    aba = _Aba(wb, "Macro", "O macro ao lado da captação: CDI, IPCA, Selic e dólar")
+    if not macro.get("available"):
+        aba.escrever(macro.get("reason") or "Sem o SGS do Banco Central.", _NOTA)
+        return
+    aba.escrever(f"SGS do Banco Central: CDI (série 12), meta Selic (432), IPCA (433), dólar PTAX venda (1). "
+                 f"{macro.get('convencao', '')}.", _NOTA)
+    colunas = [("Janela", 14, None), ("De", 12, None), ("Até", 12, None), ("CDI", 10, "0.00%"),
+               ("IPCA", 10, "0.00%"), ("Selic na base (% a.a.)", 12, "0.00"), ("Selic no fim (% a.a.)", 12, "0.00"),
+               ("Dólar na base (R$)", 12, "0.0000"), ("Dólar no fim (R$)", 12, "0.0000"), ("Variação do dólar", 12, PCT_SINAL)]
+    linhas = []
+    for chave in ORDEM:
+        janela, item = bloco["janelas"][chave], (macro.get("janelas") or {}).get(chave) or {}
+        linhas.append([janela["rotulo"], data_br(janela.get("data_base")), data_br(janela.get("ate")), item.get("cdi"),
+                       item.get("ipca"), item.get("selic_base"), item.get("selic_fim"), item.get("dolar_base"),
+                       item.get("dolar_fim"), item.get("dolar_variacao")])
+    aba.tabela(colunas, linhas)
+    meses = macro.get("meses") or []
+    n1s = [n1 for n1 in N1_ORDEM if any(n1 in (m.get("por_n1") or {}) for m in meses)]
+    colunas = [("Competência", 12, None), ("Captação do investidor (R$ mi)", 16, MI_SINAL)]
+    colunas += [(f"{n1} (R$ mi)", 14, MI_SINAL) for n1 in n1s]
+    colunas += [("CDI no mês", 10, "0.00%"), ("IPCA no mês", 10, "+0.00%;-0.00%;0.00%"),
+                ("Selic no fim (% a.a.)", 12, "0.00"), ("Dólar no fim (R$)", 12, "0.0000")]
+    aba.tabela(colunas, [
+        [competencia_br(m["competencia"]), _mi(m["fluxo_investidor"])]
+        + [_mi((m.get("por_n1") or {}).get(n1)) for n1 in n1s]
+        + [m.get("cdi"), m.get("ipca"), m.get("selic"), m.get("dolar")]
+        for m in meses
+    ])
+
+
 def _aba_dono(wb: Workbook, bloco: dict) -> None:
     aba = _Aba(wb, "Dono do dinheiro", "De quem é o dinheiro do universo, e por onde ele chega")
     aba.escrever(
@@ -269,6 +378,36 @@ def _aba_dono(wb: Workbook, bloco: dict) -> None:
         [i["gestora"], _mi(i["pl"]), i.get("conta_e_ordem"), i.get("conta_e_ordem_12m_antes"), i.get("variacao_pp")]
         for i in plataforma.get("por_gestora") or []
     ])
+    segmentos = (bloco.get("dinamica") or {}).get("captacao_por_segmento") or {}
+    total = segmentos.get("total")
+    if not total:
+        return
+    aba.escrever(f"Quem trouxe o dinheiro: captação implícita por tipo de cotista, {_prazo(bloco)}", _NEGRITO)
+    aba.escrever(
+        "Por classe e mês: PL(t) × fatia(t) − PL(t−1) × fatia(t−1) × (1 + retorno); sem o mês anterior, o fluxo "
+        "declarado × fatia(t). Os tipos do investidor mais o resíduo dão a captação do investidor; \"fundos\" é a "
+        f"dupla contagem que a camada do investidor tira. Ruído do arredondamento do perfil no universo: "
+        f"{reais(total.get('ruido'))}; valor abaixo de {reais(total.get('piso'))} sai marcado.", _NOTA,
+    )
+    chaves = [s["chave"] for s in total["segmentos"]]
+    rotulos = {s["chave"]: s["rotulo"] for s in total["segmentos"]}
+    colunas = [("Macroclasse", 22, None), ("Peer group", 36, None)]
+    colunas += [(f"{rotulos[c]} (R$ mi)", 14, MI_SINAL) for c in chaves]
+    colunas += [("Resíduo (R$ mi)", 14, MI_SINAL), ("Captação do investidor (R$ mi)", 16, MI_SINAL),
+                ("Fundos, fora da camada (R$ mi)", 16, MI_SINAL), ("Ruído (R$ mi)", 12, MI),
+                ("Tipos dentro do ruído", 30, None)]
+
+    def linha(n1: str, n2: str, item: dict) -> list:
+        valores = {s["chave"]: s for s in item.get("segmentos") or []}
+        return (
+            [n1, n2] + [_mi((valores.get(c) or {}).get("captacao")) for c in chaves]
+            + [_mi(item.get("residuo")), _mi(item.get("fluxo_investidor")), _mi(item.get("fundos")),
+               _mi(item.get("ruido")), ", ".join(s["rotulo"] for s in item.get("segmentos") or [] if s.get("no_ruido"))]
+        )
+
+    aba.tabela(colunas, [linha(i["n1"], "", i) for i in segmentos.get("n1") or []]
+               + [linha(i["n1"], i["n2"], i) for i in segmentos.get("n2") or []],
+               total=linha("Universo", "", total), filtro=True)
 
 
 def _aba_estrutura(wb: Workbook, bloco: dict) -> None:
@@ -428,6 +567,9 @@ def _aba_periodos(wb: Workbook, bloco: dict) -> None:
         linhas.append([f"Captação {janela['rotulo']}", f"de {data_br(janela['de'])} a {data_br(janela['ate'])}; "
                        f"PL de abertura no fechamento de {data_br(janela['data_base'])}"])
     linhas.append(["Retorno 12m e 3m", "base no fechamento da competência anterior à janela (convenção de lâmina)"])
+    linhas.append(["Dinâmica (giro, concentração, entrantes, fluxo × retorno) e captação por tipo de cotista",
+                   f"12 meses: de {data_br(bloco['janelas']['12m']['de'])} a {data_br(bloco['janelas']['12m']['ate'])}"])
+    linhas.append(["Macro", "CDI e IPCA acumulados em cada janela; Selic e dólar no último dia útil da base e do fim"])
     aba.tabela([("Aba ou número", 50, None), ("Prazo", 90, None)], linhas)
 
 
@@ -438,7 +580,8 @@ def _aba_fontes(wb: Workbook, bloco: dict) -> None:
     aba.tabela([("Fonte", 48, None), ("O que entra", 70, None), ("Endereço para consulta", 70, None)], [])
     aba.linha = inicio + 1
     com_carteira = (bloco.get("estrutura") or {}).get("com_carteira", True)
-    for fonte in fontes_da_industria(com_carteira=com_carteira):
+    com_macro = bool((bloco.get("macro") or {}).get("available"))
+    for fonte in fontes_da_industria(com_carteira=com_carteira, com_macro=com_macro):
         nome = aba.ws.cell(row=aba.linha, column=1, value=fonte.nome)
         nome.hyperlink, nome.font = fonte.url, _LINK
         aba.ws.cell(row=aba.linha, column=2, value=fonte.uso).font = _CORPO
@@ -461,12 +604,14 @@ def gravar_planilha(config: Config, bloco: dict, gerado: datetime | None = None)
     _aba_mapa_de_calor(wb, bloco)
     _aba_familias(wb, bloco)
     _aba_gestoras(wb, bloco)
+    _aba_dinamica(wb, bloco)
     _aba_dono(wb, bloco)
     _aba_estrutura(wb, bloco)
     _aba_publico(wb, bloco)
     _aba_explorador(wb, bloco)
     _aba_lancamentos(wb, bloco)
     _aba_adjacentes(wb, bloco)
+    _aba_macro(wb, bloco)
     _aba_qualidade(wb, bloco)
     _aba_periodos(wb, bloco)
     _aba_fontes(wb, bloco)
