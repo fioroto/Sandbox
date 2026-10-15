@@ -363,8 +363,9 @@ def casca(
     o bloco condicional `[if mso]` fixa os 640 px so para ele, e os outros
     clientes encolhem a tabela ate a largura do telefone. `color-scheme` claro
     declarado: o modo escuro automatico inverteria a rampa dos graficos. A
-    previa (o texto que a caixa de entrada mostra ao lado do assunto) e a
-    frase de abertura, escondida no corpo. `titulo` e `previa` chegam escapados.
+    previa (o texto que a caixa de entrada mostra ao lado do assunto) vai
+    escondida no corpo; quem chama escolhe o texto (o digest usa o cabecalho,
+    ou o alerta). `titulo` e `previa` chegam escapados.
 
     `faixa` e a linha de topo, na largura toda do cartao (a faixa preta do
     padrao executivo da XP, de `faixa()`). `largura` alarga a pagina para o

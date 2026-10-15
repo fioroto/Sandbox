@@ -1343,7 +1343,7 @@ class TestGapBlock(unittest.TestCase):
         kapitalo = block["funds"][0]
         self.assertEqual(kapitalo["cnpj"], "40000000000404")
         self.assertEqual(kapitalo["houses_count"], 2)
-        self.assertEqual(kapitalo["houses_label"], "BTG Pactual, Itaú (íon)")
+        self.assertEqual(kapitalo["houses_label"], "BTG Pactual, Itaú")
         # Melhores condicoes entre as casas que vitrinam.
         self.assertEqual(kapitalo["min_initial"], 1000.0)
         self.assertEqual(kapitalo["admin_fee_pct"], 1.5)

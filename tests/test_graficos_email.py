@@ -355,7 +355,7 @@ class TestDigest(unittest.TestCase):
                 self.assertNotIn(proibido, html)
 
     def test_casca_de_e_mail(self):
-        from shelf_monitor.report.digest import _frase_principal, render_html
+        from shelf_monitor.report.digest import _linha_do_cabecalho, render_html
         from shelf_monitor.report.digest_visao import montar_visao
 
         report = _relatorio()
@@ -364,10 +364,13 @@ class TestDigest(unittest.TestCase):
         self.assertIn('<meta name="supported-color-schemes" content="light">', html)
         self.assertIn('max-width:640px', html)
         self.assertIn('<!--[if mso]><table role="presentation" width="640"', html)
-        # A previa escondida e a frase de abertura, sem o negrito do markdown.
+        # A previa escondida e a linha do cabecalho (casas e semana): a frase de
+        # abertura saiu em 15/10/2026.
         previa = re.search(r'<div style="display:none;[^"]*">([^<]*)', html).group(1)
-        frase = _frase_principal(montar_visao(report))[0].replace("**", "")
-        self.assertTrue(previa.startswith(frase[:40]))
+        cabecalho = _linha_do_cabecalho(
+            montar_visao(report), report.generated_at.strftime("%d/%m/%Y %H:%M")
+        )
+        self.assertTrue(previa.startswith(cabecalho[:40]))
         self.assertIn("<title>Monitor de Prateleiras de Fundos</title>", html)
 
     def test_sem_bloco_nao_ha_figura(self):
@@ -386,7 +389,7 @@ class TestDigest(unittest.TestCase):
         for edicao in ("semanal", "mensal"):
             html = render_html(vazio, None, edicao)
             self.assertEqual(html.count(MARCA_DA_FIGURA), 0)
-            self.assertIn("a captação deles não foi medida", html)
+            self.assertIn("a captação dos gaps não foi medida", html)
 
     def test_cada_secao_com_dado_ganha_figura(self):
         from shelf_monitor.report.digest import _html_performance_section

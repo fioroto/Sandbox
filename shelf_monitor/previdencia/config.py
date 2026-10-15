@@ -2,9 +2,11 @@
 
 As casas mantem o id do modulo de fundos (xp, btg, itau, nu, inter): e o que
 preserva a cor de cada uma nos graficos, a ordem canonica e a XP como baseline.
-O que muda e o canal - e o rotulo, quando o canal e outro produto: a vitrine de
-previdencia do Itau e o catalogo do Private Bank, nao a prateleira Ion, e sai
-rotulada assim (ver `ROTULOS_PROPRIOS`).
+O que muda e o canal: a vitrine de previdencia do Itau e o catalogo do Private
+Bank, nao a prateleira Ion. Ate 15/10/2026 ela saia rotulada "Itaú Private";
+desde entao o nome e so "Itaú", como no modulo de fundos (pedido do usuario), e
+o canal fica nas notas e no link da fonte. `ROTULOS_PROPRIOS` segue como o
+mecanismo para um rotulo que difira.
 
 URLs levantadas em 2026-09-22 e sondadas no navegador antes de virar coletor:
 
@@ -60,7 +62,7 @@ PLATAFORMAS: dict[str, PlatformConfig] = {
     ),
     "itau": PlatformConfig(
         platform_id="itau",
-        label="Itaú Private",
+        label="Itaú",
         strategies=[CollectorStrategy.HTML_SCRAPE],
         shelf_url=URL_ITAU,
         notes=(

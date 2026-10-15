@@ -86,11 +86,12 @@ PLATFORMS: dict[str, PlatformConfig] = {
     ),
     "itau": PlatformConfig(
         platform_id="itau",
-        label="Itaú (íon)",
+        label="Itaú",
         strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
+            "Prateleira de varejo íon; o rótulo é só \"Itaú\" desde 2026-10-15. "
             "Lista de rentabilidade paginada em ~10 fundos (48 páginas, 477 "
             "fundos em 2026-10-14). Akamai barra HTTP simples e o headless shell "
             "do Playwright, mas não o Chromium completo em --headless=new - que é "

@@ -10,6 +10,7 @@ from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.distribuivel import PODE_DISTRIBUIR, BaseDistribuivel
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
 from shelf_monitor.familias import (
+    COBERTO_CORRELATO,
     COBERTO_EQUIVALENTE,
     COBERTO_ESPELHO,
     GAP_ESTRATEGIA,
@@ -711,6 +712,7 @@ _ETAPAS_DO_FUNIL: tuple[tuple[str, str], ...] = (
     ("mesma_classe", PRESENTE),
     ("espelho", COBERTO_ESPELHO),
     ("equivalente", COBERTO_EQUIVALENTE),
+    ("correlato", COBERTO_CORRELATO),
     ("outra_liquidez", OUTRA_LIQUIDEZ),
     ("sem_dado", SEM_DADO),
     ("estrategia", GAP_ESTRATEGIA),
@@ -727,7 +729,9 @@ def _funil(vereditos: list[dict | None]) -> dict:
     tipos = Counter((v or {}).get("tipo") for v in vereditos)
     funil = {chave: tipos.get(tipo, 0) for chave, tipo in _ETAPAS_DO_FUNIL}
     funil["aparentes"] = len(vereditos)
-    funil["cobertos"] = funil["mesma_classe"] + funil["espelho"] + funil["equivalente"]
+    funil["cobertos"] = (
+        funil["mesma_classe"] + funil["espelho"] + funil["equivalente"] + funil["correlato"]
+    )
     funil["reais"] = funil["aparentes"] - funil["cobertos"] - funil["outra_liquidez"]
     funil["verificado"] = any(v is not None for v in vereditos) or not vereditos
     return funil
@@ -769,6 +773,11 @@ def frase_do_funil(gap_block: dict) -> str | None:
             f"{contagem(funil['equivalente'], 'tem', 'têm')} equivalente da mesma "
             "gestora com carteira equivalente"
         )
+    if funil.get("correlato"):
+        partes.append(
+            f"{contagem(funil['correlato'], 'é outra versão', 'são outra versão')} de "
+            f"estratégia que a {base} já tem, da mesma gestora"
+        )
     if funil.get("outra_liquidez"):
         partes.append(
             f"{contagem(funil['outra_liquidez'], 'é coberto', 'são cobertos')} só em "
@@ -795,7 +804,7 @@ def frase_do_funil(gap_block: dict) -> str | None:
         cobertura = "; ".join(partes)
         fecho = f"{'sobra' if reais == 1 else 'sobram'} {contagem(reais, 'gap real', 'gaps reais')}"
     else:
-        cobertura = "nenhum é coberto por espelho ou equivalente"
+        cobertura = "nenhum é coberto por espelho, equivalente ou correlato"
         fecho = (
             "é gap real" if reais == 1
             else f"são todos gaps reais ({milhar(reais)})"
@@ -811,8 +820,8 @@ def resumo_do_funil(gap_block: dict) -> str | None:
     funil = gap_block["funil"]
     return (
         f"{contagem(funil['aparentes'], 'gap aparente', 'gaps aparentes')}: "
-        f"{contagem(funil['cobertos'], 'já coberto', 'já cobertos')} por espelho ou "
-        f"equivalente, {milhar(funil['outra_liquidez'])} só em outra liquidez - "
+        f"{contagem(funil['cobertos'], 'já coberto', 'já cobertos')} por espelho, "
+        f"equivalente ou correlato, {milhar(funil['outra_liquidez'])} só em outra liquidez - "
         f"{contagem(funil['reais'], 'gap real', 'gaps reais')} "
         f"(carteira da CVM de {competencia_br((gap_block['carteira'].get('competencias') or [''])[0])})"
     )
@@ -836,7 +845,10 @@ def notas_da_cobertura(gap_block: dict) -> list[str]:
             "carteira publicada. Espelho: 95% ou mais do PL em cotas de um único "
             "fundo. Equivalente: mesma gestora e categoria ANBIMA, no máximo 15% "
             "da carteira em faixas diferentes e ao menos 60% dos ativos em comum. "
-            "Sem carteira que decida, o possível equivalente só informa."
+            "Correlato: mesma gestora e o mesmo nome de estratégia, fora as marcas "
+            "de versão (Advisory, Seleção, Access, IU), de clone (II) e de faixa "
+            "(Plus, D30) - outra versão do que a XP já tem. Sem carteira que "
+            "decida e com outro nome, o possível equivalente só informa."
         )
     elif carteira.get("aviso"):
         notas.append(f"Atenção: {carteira['aviso']}.")
@@ -870,8 +882,8 @@ def notas_da_cobertura(gap_block: dict) -> list[str]:
 
 
 def cnpjs_cobertos(gap_block: dict) -> set[str]:
-    """CNPJs de gap aparente que a base cobre (mesma classe, espelho ou
-    equivalente). Os outros blocos que dizem "a XP nao tem" - consenso na
+    """CNPJs de gap aparente que a base cobre (mesma classe, espelho,
+    equivalente ou correlato). Os outros blocos que dizem "a XP nao tem" - consenso na
     leitura competitiva, oportunidade de grade na captacao - excluem estes, para
     nenhum chamar de lacuna o que o bloco de gaps diz estar coberto."""
     return {f["cnpj"] for f in gap_block.get("cobertos") or [] if f.get("cnpj")}
@@ -897,8 +909,8 @@ def build_gap_block(
       vitrine" em vez de "incluir".
 
     Cada gap aparente recebe um veredito por lente (`familias.Veredito`):
-    coberto por espelho ou equivalente sai da contagem de gaps reais e vai para
-    `cobertos`, com a evidencia - nada some. Sem o mapa (carteira da CVM
+    coberto por espelho, equivalente ou correlato sai da contagem de gaps reais
+    e vai para `cobertos`, com a evidencia - nada some. Sem o mapa (carteira da CVM
     ausente) o bloco e o de antes, CNPJ contra CNPJ, com o aviso.
 
     Protecoes anti-falso-alarme, na mesma linha de _exclusive_cnpjs:

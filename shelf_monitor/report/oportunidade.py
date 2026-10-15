@@ -10,8 +10,10 @@ Aqui as duas viram uma, com a regra dos gaps (`aggregate._esforco_do_gap`).
 O recorte, sobre o bloco de gaps ja ranqueado das casas do digest:
 
 - **gap real**: fora da vitrine da XP, sem espelho nem equivalente pela
-  carteira, sem ser so outra faixa de liquidez e fora da lista da casa
-  (`distribuivel`; esforco "expor na vitrine" ou "ativar distribuição");
+  carteira, sem correlato da mesma gestora (outra versao da mesma estrategia,
+  como o Advisory da XP contra o Seleção do Itau - `familias`), sem ser so
+  outra faixa de liquidez e fora da lista da casa (`distribuivel`; esforco
+  "expor na vitrine" ou "ativar distribuição");
 - **captando**: o criterio da grade (`FundFlow.entrou`) - captacao liquida em 3
   meses positiva, com cotistas novos onde cotista mede gente, PL de ao menos
   R$ 1 mi no inicio e sem movimento estrutural;
@@ -33,39 +35,11 @@ from shelf_monitor.report.aggregate import (
     ESFORCO_OPERACIONAL,
     chave_do_gap,
 )
-from shelf_monitor.report.retail_flow import (
-    _MIN_PL_RANKING,
-    classificar_ritmo,
-    serie_semanal,
-)
+from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
 
 # O que a lista da casa ja tem (fora da vitrine) e o que so falta em outra
 # faixa de liquidez nao e gap real.
 _NAO_REAIS = frozenset({ESFORCO_EXPOR, ESFORCO_ATIVAR, ESFORCO_LIQUIDEZ})
-
-
-def ritmo_da_serie(serie: list[dict]) -> dict | None:
-    """A semana de referencia (a ultima) contra as anteriores, por dia util.
-
-    A mesma regra do ritmo de cada fundo (`classificar_ritmo`), aplicada a soma.
-    None sem semana de referencia ou sem base.
-    """
-    if len(serie) < 2:
-        return None
-    atual = serie[-1]
-    anteriores = [s for s in serie[:-1] if s["dias"]]
-    dias = sum(s["dias"] for s in anteriores)
-    if not atual["dias"] or not dias:
-        return None
-    agora = atual["captacao_liquida"] / atual["dias"]
-    base = sum(s["captacao_liquida"] for s in anteriores) / dias
-    return {
-        "por_dia": round(agora, 2),
-        "por_dia_base": round(base, 2),
-        "ritmo": classificar_ritmo(agora, base),
-        # Fracao acima (ou abaixo) da base; so faz sentido com base positiva.
-        "variacao": round(agora / base - 1, 4) if base > 0 else None,
-    }
 
 
 def oportunidade_de_grade(
@@ -106,13 +80,14 @@ def oportunidade_de_grade(
     )
     linhas = [fundo for fundo, _ in transferiveis]
 
+    # Sem recorte semanal (informe sem semana completa) a captacao da semana
+    # nao existe - e "-", nunca zero.
     recorte = flow.get("_recorte")
-    semanas = recorte.todas() if recorte is not None else []
-    serie = serie_semanal([fluxo for _, fluxo in transferiveis], semanas) if semanas else []
+    com_semana = bool(recorte is not None and recorte.todas())
     return {
         **_cabecalho(gaps, com_cotistas),
         "por_casa": [
-            _da_casa(concorrente, reais, transferiveis, semanas)
+            _da_casa(concorrente, reais, transferiveis, com_semana)
             for concorrente in gaps.get("competitors") or []
         ],
         "com_fluxo": True,
@@ -127,17 +102,15 @@ def oportunidade_de_grade(
         "captacao_3m": round(sum(f.captacao_liquida for _, f in transferiveis), 2),
         "captacao_semana": (
             round(sum(f.captacao_semana or 0.0 for _, f in transferiveis), 2)
-            if semanas else None
+            if com_semana else None
         ),
         "cotistas_3m": sum(f.variacao_cotistas for _, f in transferiveis),
-        "serie_semanal": serie,
-        "ritmo": ritmo_da_serie(serie),
         "linhas": linhas,
     }
 
 
 def _da_casa(
-    concorrente: dict, reais: list[dict], transferiveis: list[tuple], semanas: list
+    concorrente: dict, reais: list[dict], transferiveis: list[tuple], com_semana: bool
 ) -> dict:
     """A oportunidade de um concorrente: os gaps reais da vitrine dele.
 
@@ -147,7 +120,6 @@ def _da_casa(
     """
     pid = concorrente["platform_id"]
     da_casa = [(f, fluxo) for f, fluxo in transferiveis if pid in (f.get("houses") or [])]
-    serie = serie_semanal([fluxo for _, fluxo in da_casa], semanas) if semanas else []
     return {
         "platform_id": pid,
         "label": concorrente["label"],
@@ -155,11 +127,9 @@ def _da_casa(
         "total_transferiveis": len(da_casa),
         "captacao_semana": (
             round(sum(fluxo.captacao_semana or 0.0 for _, fluxo in da_casa), 2)
-            if semanas else None
+            if com_semana else None
         ),
         "captacao_3m": round(sum(fluxo.captacao_liquida for _, fluxo in da_casa), 2),
-        "serie_semanal": serie,
-        "ritmo": ritmo_da_serie(serie),
         "linhas": [f for f, _ in da_casa],
     }
 
@@ -193,8 +163,6 @@ def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
             "total_transferiveis": len(da_casa),
             "captacao_semana": None,
             "captacao_3m": None,
-            "serie_semanal": [],
-            "ritmo": None,
             "linhas": da_casa,
         })
     return {
@@ -212,7 +180,5 @@ def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
         "captacao_3m": None,
         "captacao_semana": None,
         "cotistas_3m": None,
-        "serie_semanal": [],
-        "ritmo": None,
         "linhas": linhas,
     }

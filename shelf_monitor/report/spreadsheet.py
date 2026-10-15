@@ -778,7 +778,8 @@ def _add_gaps_sheets(
         value="Gap aparente = fundo de varejo na vitrine de 1+ concorrente e fora da "
         "base da XP (por CNPJ). Comparação vitrine x vitrine: o catálogo Open "
         "Finance não conta em nenhum dos lados. Gap real = gap aparente que nem "
-        "espelho nem equivalente cobre; os cobertos estão na aba 'Gaps cobertos', "
+        "espelho, nem equivalente, nem correlato da mesma gestora cobre; os "
+        "cobertos estão na aba 'Gaps cobertos', "
         "com a evidência. 'Gestora na base XP' e 'Possível equivalente' informam - "
         "nunca removem um fundo da lista.",
     ).font = _NOTE_FONT
@@ -849,8 +850,8 @@ def _add_gaps_sheets(
         row=row + 2, column=1,
         value="Contagens por vitrine (varejo) de cada casa na categoria; "
         "'Gaps reais' = quantos gaps da aba 'Gaps XP' caem na categoria; "
-        "'Cobertos' = gaps aparentes da categoria que a XP cobre por espelho ou "
-        "equivalente (aba 'Gaps cobertos'). Categorias ordenadas por gaps reais; "
+        "'Cobertos' = gaps aparentes da categoria que a XP cobre por espelho, "
+        "equivalente ou correlato (aba 'Gaps cobertos'). Categorias ordenadas por gaps reais; "
         "além das primeiras, agregadas em 'Outras'.",
     ).font = _NOTE_FONT
     cat_sheet.freeze_panes = "A2"
@@ -1294,7 +1295,9 @@ def _add_methodology_sheet(
             "não conta em nenhum dos lados. Com a carteira mensal da CVM, cada gap "
             "aparente recebe um veredito: coberto por espelho (chega ao mesmo "
             "master que um fundo da XP), coberto por equivalente (mesma gestora e "
-            "categoria, carteira próxima e ativos em comum), coberto em outra "
+            "categoria, carteira próxima e ativos em comum), coberto por correlato "
+            "(mesma gestora e mesmo nome de estratégia, em outra versão: Advisory, "
+            "Seleção, Access, II, Plus), coberto em outra "
             "faixa de liquidez, ou gap real (de estratégia, de gestora, ou sem "
             "carteira que decida). Os cobertos saem da contagem e vão para a aba "
             "'Gaps cobertos' com a evidência. XP indisponível ou sem vitrine "

@@ -301,12 +301,13 @@ function renderGaps(gaps) {
       { id: "mesma", coluna: 1, valor: funil.mesma_classe || 0, rotulo: "Mesma classe, outro CNPJ", cor: cinza },
       { id: "espelho", coluna: 1, valor: funil.espelho || 0, rotulo: "Espelho de fundo da XP", cor: cinza },
       { id: "equivalente", coluna: 1, valor: funil.equivalente || 0, rotulo: "Equivalente na XP", cor: cinza },
+      { id: "correlato", coluna: 1, valor: funil.correlato || 0, rotulo: "Outra versão na XP", cor: cinza },
       { id: "liquidez", coluna: 1, valor: funil.outra_liquidez || 0, rotulo: "Só em outra liquidez", cor: cinza },
       { id: "estrategia", coluna: 2, valor: funil.estrategia || 0, rotulo: "De estratégia", cor: real },
       { id: "gestora", coluna: 2, valor: funil.gestora || 0, rotulo: "De gestora", cor: real },
       { id: "sem_dado", coluna: 2, valor: funil.sem_dado || 0, rotulo: "Sem carteira para decidir", cor: "var(--comp-2)" },
     ];
-    const ligacoes = ["reais", "mesma", "espelho", "equivalente", "liquidez"].map(id => ({
+    const ligacoes = ["reais", "mesma", "espelho", "equivalente", "correlato", "liquidez"].map(id => ({
       de: "aparentes", para: id, valor: nos.find(n => n.id === id).valor,
       cor: id === "reais" ? faixaReal : cinza, opacidade: id === "reais" ? 0.5 : 0.32,
       rotulo: nos.find(n => n.id === id).rotulo,

@@ -19,9 +19,17 @@ Tres relacoes, da mais forte para a mais fraca:
   no maximo `LIMIAR_DISTANCIA_CARTEIRA` de distancia. Agrupados por ligacao
   completa (todo par dentro do limiar), para a familia nao se esticar em
   cadeia;
+- **correlato**: outra versao da mesma estrategia da mesma gestora (raiz do
+  CNPJ do gestor) que a carteira nao ligou - o feeder de cada distribuidor
+  ("Advisory" na XP, "Seleção" no Itau e no BTG, "Access", "IU"), o clone
+  ("II") e a faixa ("Plus", "D30"). Decide pelo nome da estrategia
+  (`palavras_da_estrategia`) e, ao contrario das outras heuristicas,
+  reclassifica: pedido de 15/10/2026, gap real e so o fundo que a XP nao tem
+  de forma nenhuma. No digest de 14/10/2026, 51 dos 504 gaps reais eram isso
+  (o Kapitalo Tarkus FIC do BTG contra o Tarkus Advisory da XP);
 - **possivel equivalente**: mesma gestora e mesma categoria, sem carteira que
-  permita decidir. Informa, nunca reclassifica - a regra da casa para
-  heuristica.
+  permita decidir e com outro nome de estrategia. Informa, nunca reclassifica -
+  a regra da casa para heuristica.
 
 Uma familia de estrategia reune as versoes (um master e seus espelhos cada)
 que entregam a mesma exposicao. A liquidez e de cada classe: um espelho pode
@@ -33,10 +41,12 @@ distribuivel chegam como conjuntos de CNPJ em `cobertura`.
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from shelf_monitor.cnpj_por_nome import palavras_do_nome
 from shelf_monitor.config import Config
 from shelf_monitor.market.carteira import (
     ATIVOS_OPACOS,
@@ -95,6 +105,7 @@ FAIXAS_LIQUIDEZ: tuple[tuple[int | None, str], ...] = (
 PRESENTE = "presente"
 COBERTO_ESPELHO = "coberto_espelho"
 COBERTO_EQUIVALENTE = "coberto_equivalente"
+COBERTO_CORRELATO = "coberto_correlato"
 OUTRA_LIQUIDEZ = "outra_liquidez"
 GAP_ESTRATEGIA = "gap_estrategia"
 GAP_GESTORA = "gap_gestora"
@@ -104,12 +115,13 @@ ROTULOS_VEREDITO: dict[str, str] = {
     PRESENTE: "mesma classe na base",
     COBERTO_ESPELHO: "coberto por espelho",
     COBERTO_EQUIVALENTE: "coberto por equivalente",
+    COBERTO_CORRELATO: "coberto por correlato da mesma gestora",
     OUTRA_LIQUIDEZ: "coberto em outra liquidez",
     GAP_ESTRATEGIA: "gap de estratégia",
     GAP_GESTORA: "gap de gestora",
     SEM_DADO: "sem dado de carteira",
 }
-COBERTOS = (PRESENTE, COBERTO_ESPELHO, COBERTO_EQUIVALENTE)
+COBERTOS = (PRESENTE, COBERTO_ESPELHO, COBERTO_EQUIVALENTE, COBERTO_CORRELATO)
 GAPS_REAIS = (GAP_ESTRATEGIA, GAP_GESTORA, SEM_DADO)
 
 ALTA, MEDIA, BAIXA = "alta", "média", "baixa"
@@ -118,6 +130,46 @@ ALTA, MEDIA, BAIXA = "alta", "média", "baixa"
 _INDICADOR_VAZIO = {"", "NAO SE APLICA", "OUTROS"}
 # Situacoes em que a classe nao cobre nada: nao capta, ou deixou de existir.
 _INATIVA = ("CANCEL", "INCORPORA", "LIQUIDA")
+
+# Correlato: o que o nome carrega alem da estrategia. Marcas de versao - o
+# feeder de cada distribuidor ("Advisory" na XP, "Seleção"/"Selection" no Itau
+# e no BTG, "Access", "IU" do Itau Unibanco, o nome da casa que distribui), o
+# veiculo para um publico ("Institucional", "Alocadores", "Dist.") e o papel
+# na estrutura ("Feeder", "Master") -, e a faixa da mesma estrategia ("Plus",
+# "Premium", "NTNB35"). Numero, letra de classe e romano (clone "II") saem por
+# regra, em `palavras_da_estrategia`.
+_MARCAS_DE_VERSAO = frozenset({
+    "ADVISORY", "SELECAO", "SELECTION", "ACCESS", "IU", "XP", "ITAU", "UNIBANCO",
+    "BTG", "BTGP", "PACTUAL", "INTER", "ORAMA", "PRIVATE", "PERSONNALITE",
+    "UNICLASS", "INSTITUCIONAL", "ALOCADORES", "DIST", "DISTRIBUIDORES",
+    "FEEDER", "MASTER", "PLUS", "PREMIUM", "NTNB",
+})
+# Classe de ativo e rotulos regulatorios, ja na forma canonica de
+# `cnpj_por_nome.palavras_do_nome`: dizem a categoria, nao a estrategia.
+_CLASSE_DE_ATIVO_NO_NOME = frozenset(
+    {"RF", "MM", "ACOES", "CP", "LP", "REFERENCIADO", "IE", "IS", "FIDC"}
+)
+_ROMANO = re.compile(r"^[IVX]+$")
+
+
+def palavras_da_estrategia(
+    nome: str | None, marca: frozenset[str] = frozenset()
+) -> frozenset[str]:
+    """O nome da estrategia: o que sobra sem forma juridica, classe de ativo,
+    marca da gestora (`marca`), marcas de versao, numero, letra e romano.
+
+    "KAPITALO TARKUS ADVISORY FIF EM COTAS DE FIA" e "KAPITALO TARKUS SELEÇÃO
+    FIF CIC EM AÇÕES", com a marca KAPITALO, dao os dois {"TARKUS"}. Nome que
+    e so marca e forma juridica ("TB SELEÇÃO FIF CIC EM AÇÕES") da vazio.
+    """
+    return frozenset(
+        palavra
+        for palavra in palavras_do_nome(nome) - _CLASSE_DE_ATIVO_NO_NOME - marca
+        if not (
+            palavra.isdigit() or len(palavra) == 1 or _ROMANO.match(palavra)
+            or palavra in _MARCAS_DE_VERSAO
+        )
+    )
 
 
 def faixa_de_liquidez(dias: int | None) -> str | None:
@@ -303,7 +355,7 @@ class Veredito:
     confianca: str | None = None
     cobre: str | None = None
     nome_cobre: str | None = None
-    ligacao: str | None = None  # "mesma classe" | "espelho" | "equivalente"
+    ligacao: str | None = None  # "mesma classe" | "espelho" | "equivalente" | "correlato"
     master: str | None = None
     nome_master: str | None = None
     master_cobre: str | None = None
@@ -362,6 +414,8 @@ class BaseIndexada:
     por_master: dict[str, list[str]]
     por_familia: dict[str, list[str]]
     raizes: frozenset[str]
+    # Raiz da gestora da estrategia -> classes da base: os candidatos a correlato.
+    por_raiz: dict[str, list[str]] = field(default_factory=dict)
 
 
 class MapaDeFamilias:
@@ -870,6 +924,7 @@ class MapaDeFamilias:
                 classes.update(self.classes_de(normalizado) or [normalizado])
         por_master: dict[str, list[str]] = {}
         por_familia: dict[str, list[str]] = {}
+        por_raiz: dict[str, list[str]] = {}
         raizes: set[str] = set()
         for cnpj in sorted(classes):
             master = self.master_de(cnpj)
@@ -880,7 +935,12 @@ class MapaDeFamilias:
             for dona in (self._classes.get(cnpj), self._classes.get(master)):
                 if dona and dona.raiz_gestor:
                     raizes.add(dona.raiz_gestor)
-        return BaseIndexada(frozenset(classes), por_master, por_familia, frozenset(raizes))
+            referencia = self._referencia_da_estrategia(cnpj, master)
+            if referencia is not None:
+                por_raiz.setdefault(referencia.raiz_gestor, []).append(cnpj)
+        return BaseIndexada(
+            frozenset(classes), por_master, por_familia, frozenset(raizes), por_raiz
+        )
 
     def _referencia_da_estrategia(self, gap: str, master: str) -> Classe | None:
         """A classe que diz de quem e a estrategia: o master, senao o proprio gap."""
@@ -975,6 +1035,17 @@ class MapaDeFamilias:
             return Veredito(tipo=SEM_DADO, **comum)
         if raiz not in base.raizes:
             return Veredito(tipo=GAP_GESTORA, **comum)
+        # A mesma estrategia em outra versao, que a carteira nao ligou: a XP ja
+        # a tem (pedido de 15/10/2026).
+        correlatos = sorted(self._correlatos(gap, master, referencia, base), key=ordem)
+        if correlatos:
+            cobre = correlatos[0]
+            return Veredito(
+                tipo=COBERTO_CORRELATO, confianca=MEDIA, cobre=cobre,
+                nome_cobre=self.nome(cobre), ligacao="correlato",
+                master_cobre=self.master_de(cobre), dmais_cobre=self._dmais(cobre),
+                **comum,
+            )
         declarados = self._equivalentes_declarados(master, referencia, base)
         if not declarados:
             return Veredito(tipo=GAP_ESTRATEGIA, **comum)
@@ -988,6 +1059,34 @@ class MapaDeFamilias:
             tipo=SEM_DADO, confianca=BAIXA, possivel_equivalente=possivel,
             nome_possivel_equivalente=self.nome(possivel), **comum,
         )
+
+    def _correlatos(
+        self, gap: str, master: str, referencia: Classe, base: BaseIndexada
+    ) -> list[str]:
+        """Classes da base da mesma gestora com o mesmo nome de estrategia.
+
+        O nome e o de `palavras_da_estrategia`, sem a marca da gestora. Quando
+        dos dois lados ele e so marca e forma juridica ("TB SELEÇÃO FIF CIC EM
+        AÇÕES" e "TB ADVISORY FIC DE FIA"), decide a mesma categoria ANBIMA.
+        """
+        candidatos = base.por_raiz.get(referencia.raiz_gestor) or []
+        if not candidatos:
+            return []
+        marca = palavras_do_nome(referencia.gestor)
+        alvo = palavras_da_estrategia(self.nome(gap) or self.nome(master), marca)
+        categoria = normalize_text(self._anbima(master, referencia))
+        achados = []
+        for cnpj in candidatos:
+            outro_master = self.master_de(cnpj)
+            palavras = palavras_da_estrategia(self.nome(cnpj) or self.nome(outro_master), marca)
+            if alvo or palavras:
+                if alvo == palavras:
+                    achados.append(cnpj)
+                continue
+            outra = self._referencia_da_estrategia(cnpj, outro_master)
+            if categoria and normalize_text(self._anbima(outro_master, outra)) == categoria:
+                achados.append(cnpj)
+        return achados
 
     def _equivalentes_declarados(
         self, master: str, referencia: Classe, base: BaseIndexada

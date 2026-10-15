@@ -211,7 +211,9 @@ class TestUmaDefinicaoDeMovimento(unittest.TestCase):
         # so conta entrada e saida; a alteracao fica no dashboard e na planilha.
         markdown = render_markdown(self.report)
         self.assertIn("1 entrada, 1 saída na vitrine - 2 fundos na vitrine.", markdown)
-        self.assertIn("1 fundo entrou e 1 saiu das vitrines de BTG Pactual", markdown)
+        # A frase de abertura com o movimento das vitrines saiu (15/10/2026): o
+        # numero fica so na secao das vitrines e no assunto.
+        self.assertNotIn("1 fundo entrou e 1 saiu", markdown)
         subject = build_subject(self.report)
         self.assertIn("1 entrada / 1 saída", subject)
         self.assertNotIn("alteração", subject)

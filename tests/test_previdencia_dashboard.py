@@ -230,7 +230,7 @@ class TestVisaoExecutiva(_Base):
         itau = _vitrine("itau", [None, None], 33330000)
         pagina = self._pagina(_relatorio(itau))
         self.assertIn("seguradora não publicada", self._executiva(pagina))
-        self.assertIn("Itaú Private 2 fundos, sem seguradora publicada", _texto(pagina))
+        self.assertIn("Itaú 2 fundos, sem seguradora publicada", _texto(pagina))
 
 
 class TestPaineis(_Base):

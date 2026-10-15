@@ -221,7 +221,8 @@ class TestReservaNoRelatorio(unittest.TestCase):
         md = render_markdown(report, None, "semanal")
         self.assertIn("as análises usam a de 07/10/2026, a última válida", md)
         self.assertIn("Entradas e saídas não medidas nesta execução", md)
-        self.assertIn("nas vitrines de Itaú (íon)", md)
+        # O Itau entra no resumo por concorrente da oportunidade.
+        self.assertIn("| Itaú |", md)
         html = render_html(report, None, "semanal")
         self.assertIn("as análises usam a de 07/10/2026, a última válida", html)
         self.assertIn("entradas e saídas não medidas", html)

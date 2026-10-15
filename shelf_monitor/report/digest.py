@@ -9,9 +9,9 @@ informacao. So XP, BTG e Itau (`Config.casas_do_digest`, recorte em
 `digest_visao`); a mensagem principal, com mais destaque, e a oportunidade de
 grade e os gaps reais. Na ordem:
 
-1. **Oportunidade de grade e gaps** (`report.oportunidade`): os gaps reais que
-   estao captando, com a captacao da semana, a de 3 meses, o ritmo e o esforco
-   de trazer cada um - e a evolucao semanal da soma deles;
+1. **Oportunidade de grade e gaps** (`report.oportunidade`): os numeros em
+   destaque, o resumo por concorrente e os gaps reais que estao captando, com
+   a captacao da semana, a de 3 meses, o ritmo e o esforco de trazer cada um;
 2. **Ritmo de captacao**: o mapa de ritmo por casa e as maiores captacoes e
    resgates, agora com a semana;
 3. **Radar CVM**: o que as gestoras do BTG e do Itau registraram - so os
@@ -25,6 +25,12 @@ captacao por casa, por familia e mes a mes (a CVM nao atribui fluxo a
 distribuidor), o ticket de entrada, as alteracoes de condicao e as listas
 "XP perdendo", "Acelerando" e "Viraram saida". Todo fundo da casa sai com o
 servico da lista (`distribuivel`): Distribuicao ou FaaS.
+
+Em 15/10/2026, a pedido da area, sairam tambem a frase de abertura (a
+oportunidade em uma frase, que repetia os numeros em destaque), a frase do
+funil ("504 gaps reais nas vitrines...") e a evolucao semanal da captacao dos
+gaps, com as miniaturas por casa. O digest abre direto nas secoes; a unica
+frase antes delas e o alerta de coleta que falhou inteira.
 """
 from __future__ import annotations
 
@@ -112,10 +118,8 @@ from shelf_monitor.report.shared.graficos_email import (
     Celula,
     Linha,
     LinhaDeCalor,
-    Serie,
     barras,
     barras_divergentes,
-    colunas_por_casa,
     figura,
     grades_por_casa,
     mapa_de_calor,
@@ -286,7 +290,7 @@ def _casas_do_fundo(fundo: dict, visao: VisaoDoDigest) -> str:
 
 
 def _concorrentes(visao: VisaoDoDigest) -> str:
-    """"BTG Pactual e Itaú (íon)" - os concorrentes do digest, pelo rotulo."""
+    """"BTG Pactual e Itaú" - os concorrentes do digest, pelo rotulo."""
     return _juntar([_platform_label(c) for c in visao.concorrentes])
 
 
@@ -342,32 +346,6 @@ def _prazos_da_captacao(flow: dict) -> list[str]:
             )
         )
     return linhas
-
-
-def _semanas_de_comparacao(flow: dict | None) -> int:
-    return int(((_recorte_semanal(flow) or {}).get("comparacao") or {}).get("semanas") or 12)
-
-
-# O ritmo da soma dos gaps em palavras, contra as semanas anteriores.
-_RITMO_EM_PALAVRAS = {
-    "acelerando": "acima do ritmo das {n} semanas anteriores",
-    "desacelerando": "abaixo do ritmo das {n} semanas anteriores",
-    "estavel": "no ritmo das {n} semanas anteriores",
-    "virou_entrada": "voltando a captar depois de {n} semanas de saída",
-    "virou_saida": "com saída líquida depois de {n} semanas captando",
-    "saida_persistente": "com saída líquida, como nas {n} semanas anteriores",
-}
-
-
-def _ritmo_em_palavras(ritmo: dict | None, semanas: int) -> str:
-    if not ritmo:
-        return ""
-    texto = _RITMO_EM_PALAVRAS.get(ritmo["ritmo"], "").format(n=semanas)
-    if texto and ritmo.get("variacao") is not None and ritmo["ritmo"] in (
-        "acelerando", "desacelerando", "estavel"
-    ):
-        texto += f" ({ritmo['variacao']:+.0%} por dia útil)"
-    return texto
 
 
 # --- abertura ------------------------------------------------------------------
@@ -455,97 +433,26 @@ def _summary_sentence(report: RunReport) -> tuple[str, bool]:
     )
 
 
-def _frase_das_vitrines(visao: VisaoDoDigest) -> tuple[str, bool]:
-    """O que entrou e saiu das vitrines do digest - sem alteracao de condicao."""
-    report = visao.report
-    first_run = all(d.is_first_run for d in report.shelf_diffs) if report.shelf_diffs else True
-    if first_run:
-        return _summary_sentence(report)
-    movimentos = movimentos_do_run(report)
-    casas = _juntar([_platform_label(d.platform) for d in report.shelf_diffs])
-    entradas, saidas = len(movimentos.entradas), len(movimentos.saidas)
-    if not (entradas or saidas):
-        return f"Nenhum fundo entrou nem saiu das vitrines de {casas} desde a última coleta.", False
-    return (
-        f"{contagem(entradas, 'fundo entrou', 'fundos entraram')} e "
-        f"{contagem(saidas, 'saiu', 'saíram')} das vitrines de {casas} desde a "
-        "última coleta.",
-        False,
-    )
+def _alerta(visao: VisaoDoDigest) -> str | None:
+    """A unica frase antes das secoes: a coleta que falhou inteira.
 
-
-def _gaps(op: dict, n: int) -> str:
-    """"333 gaps reais" com a carteira da CVM; "333 gaps" sem ela, CNPJ contra CNPJ.
-
-    Sem a carteira, espelho e equivalente nao foram verificados: chamar de real
-    seria afirmar o que ninguem checou.
-    """
-    if (op.get("carteira") or {}).get("available"):
-        return contagem(n, "gap real", "gaps reais")
-    return contagem(n, "gap", "gaps")
-
-
-def _frase_da_oportunidade(visao: VisaoDoDigest) -> str:
-    """A mensagem principal: quantos gaps reais captam, quanto, e em que ritmo."""
-    op = visao.oportunidade
-    flow = visao.report.retail_flow
-    concorrentes = _juntar(op.get("concorrentes") or []) or "dos concorrentes"
-    n = op["total_transferiveis"]
-    if not n:
-        return (
-            f"Nenhum gap real das vitrines de {concorrentes} capta varejo em 3 meses: "
-            f"{_gaps(op, op['total_reais'])} sem captação "
-            "com cotistas novos."
-        )
-    frase = (
-        f"**{contagem(n, 'fundo capta', 'fundos captam')} nas vitrines de {concorrentes}, "
-        f"fora da XP, e {'pode' if n == 1 else 'podem'} entrar na grade**: "
-    )
-    partes = []
-    semana = _semana(flow)
-    if op.get("captacao_semana") is not None and semana:
-        trecho = f"{_mm(op['captacao_semana'])} na semana {periodo_br(semana['de'], semana['ate'])}"
-        ritmo = _ritmo_em_palavras(op.get("ritmo"), _semanas_de_comparacao(flow))
-        partes.append(f"{trecho}, {ritmo}" if ritmo else trecho)
-    periodo = (flow or {}).get("periodo") or {}
-    partes.append(
-        f"{_mm(op['captacao_3m'])} em 3 meses, {periodo_br(periodo.get('de'), periodo.get('ate'))}"
-    )
-    frase += "; ".join(partes) + "."
-    if op.get("total_operacionais"):
-        frase += (
-            f" {contagem(op['total_operacionais'], 'é', 'são')} de gestora que a XP "
-            "já distribui."
-        )
-    return frase
-
-
-def _frase_principal(visao: VisaoDoDigest) -> tuple[str, bool]:
-    """A frase que abre o digest e vai na previa do e-mail, e se e um alerta.
-
-    A mensagem principal e a oportunidade de grade (pedido de 14/10/2026). Sem
-    ela - a previdencia, onde gap por CNPJ nao se aplica, ou execucao sem o
-    bloco de gaps - abre com o movimento das vitrines.
+    Ate 15/10/2026 o digest abria com a oportunidade em uma frase ("67 fundos
+    captam nas vitrines...") ou com o movimento das vitrines - repetiam os
+    numeros em destaque e a secao de vitrines, e sairam a pedido da area. Fica
+    o alerta, que nenhuma secao da.
     """
     report = visao.report
     coletadas = [s for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE]
     if report.snapshots and not coletadas:
-        return _summary_sentence(report)
-    op = visao.oportunidade
-    if op.get("available") and op.get("com_fluxo"):
-        return _frase_da_oportunidade(visao), False
-    if op.get("available"):
-        return (
-            f"{_gaps(op, op['total_reais'])} nas vitrines de "
-            f"{_juntar(op.get('concorrentes') or [])}; sem o informe diário da CVM nesta "
-            "execução, a captação deles não foi medida.",
-            False,
-        )
-    return _frase_das_vitrines(visao)
+        return _summary_sentence(report)[0]
+    return None
 
 
 def _linha_do_cabecalho(visao: VisaoDoDigest, gerado: str) -> str:
-    """"BTG Pactual e Itaú (íon) · semana de ... · execução de ..." - sem markup."""
+    """"BTG Pactual e Itaú · semana de ... · execução de ..." - sem markup.
+
+    E tambem a previa do e-mail quando nao ha alerta.
+    """
     semana = _semana(visao.report.retail_flow)
     return _linha(
         _concorrentes(visao),
@@ -558,67 +465,39 @@ def _linha_do_cabecalho(visao: VisaoDoDigest, gerado: str) -> str:
 # --- oportunidade de grade e gaps ----------------------------------------------
 
 
-def _abertura_da_oportunidade(visao: VisaoDoDigest) -> str:
-    """O funil da oportunidade em uma frase: reais, captando, proprio, restam."""
-    op = visao.oportunidade
-    concorrentes = _juntar(op.get("concorrentes") or [])
-    frase = (
-        f"{_gaps(op, op['total_reais'])} nas vitrines de "
-        f"{concorrentes}"
-    )
-    if not op.get("com_fluxo"):
-        return (
-            frase + "; sem o informe diário da CVM nesta execução, a captação deles não foi "
-            "medida. A lista segue o esforço de trazer, sem o produto próprio do concorrente."
-        )
-    frase += (
-        f"; {contagem(op['total_captando'], 'capta', 'captam')} varejo em 3 meses"
-    )
-    if op.get("total_produto_do_concorrente"):
-        frase += (
-            f", {contagem(op['total_produto_do_concorrente'], 'é', 'são')} produto próprio "
-            "do concorrente e não se transfere"
-            if op["total_produto_do_concorrente"] == 1 else
-            f", {milhar(op['total_produto_do_concorrente'])} são produto próprio do "
-            "concorrente e não se transferem"
-        )
+def _numeros_da_oportunidade(op: dict) -> list[tuple]:
+    """Os numeros em destaque, (valor, rotulo[, destaque]): os mesmos no HTML e no markdown.
+
+    "Gap real" so com a carteira da CVM: sem ela, espelho, equivalente e
+    correlato nao foram verificados.
+    """
     n = op["total_transferiveis"]
-    if not n:
-        return frase + "."
-    cotistas = (
-        f", {_inteiro(op['cotistas_3m'])} cotistas" if op.get("com_cotistas") else ""
-    )
-    semana = (
-        f" e {_mm(op['captacao_semana'])} na semana" if op.get("captacao_semana") is not None
-        else ""
-    )
-    frase += (
-        f". Restam **{contagem(n, 'fundo', 'fundos')}, {_mm(op['captacao_3m'])} em 3 "
-        f"meses{semana}**{cotistas}: {milhar(op['total_operacionais'])} de gestora que a XP "
-        f"já distribui, {milhar(op['total_abrir_gestora'])} exigem abrir gestora"
-    )
-    if op.get("total_gestora_indefinida"):
-        frase += f", {milhar(op['total_gestora_indefinida'])} sem gestora identificada"
-    return frase + ". Ordenados pelo esforço de trazer e, dentro dele, pela captação em 3 meses."
-
-
-def _funil_curto(visao: VisaoDoDigest) -> str:
-    """O funil numa linha, sob os numeros em destaque, que ja dizem o resto."""
-    op = visao.oportunidade
-    partes = [
-        f"{_gaps(op, op['total_reais'])} nas vitrines de "
-        f"{_juntar(op.get('concorrentes') or [])}",
-        f"{contagem(op['total_captando'], 'capta', 'captam')} varejo em 3 meses",
+    real = (op.get("carteira") or {}).get("available")
+    gaps = ("gap real" if n == 1 else "gaps reais") if real else ("gap" if n == 1 else "gaps")
+    deles = "dele" if n == 1 else "deles"
+    numeros: list[tuple] = [
+        (milhar(n), f"{'fundo' if n == 1 else 'fundos'} para a grade: {gaps} captando", True)
     ]
-    proprios = op.get("total_produto_do_concorrente") or 0
-    if proprios:
-        partes.append(
-            f"{milhar(proprios)} {'é' if proprios == 1 else 'são'} produto próprio do "
-            f"concorrente e {'fica' if proprios == 1 else 'ficam'} fora"
-        )
+    if op.get("captacao_semana") is not None:
+        numeros.append((_mm(op["captacao_semana"]), f"captação {deles} na semana"))
+    numeros.append((_mm(op["captacao_3m"]), f"captação {deles} em 3 meses"))
+    if op.get("com_cotistas"):
+        numeros.append((_inteiro(op["cotistas_3m"]), "cotistas em 3 meses"))
+    abrir = op["total_abrir_gestora"]
+    numeros += [
+        (milhar(op["total_operacionais"]), "de gestora que a XP já distribui"),
+        (milhar(abrir), "exige abrir gestora" if abrir == 1 else "exigem abrir gestora"),
+    ]
     if op.get("total_gestora_indefinida"):
-        partes.append(f"{milhar(op['total_gestora_indefinida'])} sem gestora identificada")
-    return _linha(*partes)
+        numeros.append((milhar(op["total_gestora_indefinida"]), "sem gestora identificada"))
+    return numeros
+
+
+# Sem o informe diario nao ha numero em destaque, e o leitor tem de saber por que.
+_SEM_CAPTACAO = (
+    "Sem o informe diário da CVM nesta execução, a captação dos gaps não foi medida; "
+    "a lista segue o esforço de trazer, sem o produto próprio do concorrente."
+)
 
 
 def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
@@ -627,24 +506,24 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     carteira = op.get("carteira") or {}
     competencias = carteira.get("competencias") or []
     criterio = (
-        "Gap real: fundo na vitrine do concorrente, fora da vitrine da XP e da lista da "
-        "casa, sem espelho nem equivalente pela carteira mensal da CVM"
+        "Gap real: fundo na vitrine do concorrente que a XP não tem de forma nenhuma - "
+        "fora da vitrine e da lista da casa, sem espelho nem equivalente pela carteira "
+        "mensal da CVM"
         + (f" (CDA de {competencia_br(competencias[0])})" if competencias else "")
-        + " e sem ser só outra faixa de liquidez."
+        + ", sem outra versão da mesma estratégia da mesma gestora (Advisory, Seleção, "
+        "Access, II, Plus) e sem ser só outra faixa de liquidez."
         if carteira.get("available") else
         "Gap: fundo na vitrine do concorrente e fora da vitrine da XP e da lista da casa, "
-        "CNPJ contra CNPJ - sem a carteira da CVM, espelho e equivalente não foram "
-        "verificados."
+        "CNPJ contra CNPJ - sem a carteira da CVM, espelho, equivalente e outra versão da "
+        "mesma estratégia não foram verificados."
     )
     notas = [criterio]
-    resto = []
-    if op.get("com_fluxo") and op.get("sem_informe"):
-        resto.append(f"{milhar(op['sem_informe'])} sem informe diário")
-    if resto or op.get("total_reais"):
+    if op.get("total_reais"):
         notas.append(
-            f"A lista inteira dos {_gaps(op, op['total_reais'])}"
-            + (f" ({', '.join(resto)})" if resto else "")
-            + " está na planilha."
+            "Na planilha: os gaps reais na aba Gaps XP e os cobertos, com o fundo da XP "
+            "que cobre cada um, na aba Gaps cobertos."
+            if carteira.get("available") else
+            "A lista completa dos gaps está na planilha, aba Gaps XP."
         )
     fora = [
         e for e in op.get("excluded") or []
@@ -750,14 +629,6 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
     return lines
 
 
-def _serie_em_texto(serie: list[dict]) -> str:
-    return " · ".join(
-        f"{data_br(s['segunda'])[:5]} "
-        f"{_mm(s['media_diaria']) if s['media_diaria'] is not None else '-'}"
-        for s in serie
-    )
-
-
 def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     op = visao.oportunidade
     lines = ["## Oportunidade de grade e gaps", ""]
@@ -767,7 +638,13 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
         return lines + [f"Análise suprimida nesta execução: {op.get('reason')}.", ""]
     if op.get("baseline_warning"):
         lines += [f"**Atenção:** {op['baseline_warning']}.", ""]
-    lines += [_abertura_da_oportunidade(visao), ""]
+    if op.get("com_fluxo"):
+        # Os numeros em destaque do HTML, um por linha.
+        lines += [
+            f"- **{numero[0]}** {numero[1]}" for numero in _numeros_da_oportunidade(op)
+        ] + [""]
+    else:
+        lines += [_SEM_CAPTACAO, ""]
     lines += _md_resumo_por_casa(op)
 
     com_cotistas = op.get("com_cotistas")
@@ -787,11 +664,6 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     if resto > 0:
         lines += [f"Mais {milhar(resto)} na planilha.", ""]
 
-    series = [c for c in op.get("por_casa") or [] if len(c.get("serie_semanal") or []) > 1]
-    if series:
-        lines += ["**Evolução semanal** - captação por dia útil desses fundos, MM/dia:", ""]
-        lines += [f"- {c['label']}: {_serie_em_texto(c['serie_semanal'])}" for c in series]
-        lines.append("")
     for nota in _notas_da_oportunidade(visao):
         lines.append(f"_{nota}_")
     flow = visao.report.retail_flow
@@ -799,68 +671,6 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
         lines.append(f"_Prazos: {'; '.join(_prazos_da_captacao(flow))}._")
     lines.append("")
     return lines
-
-
-def _figura_da_evolucao(visao: VisaoDoDigest) -> str:
-    """A evolucao semanal da captacao dos gaps, uma miniatura por concorrente.
-
-    O titulo afirma o ritmo da soma (acelera ou nao); as miniaturas, na mesma
-    escala, mostram de que casa ele vem - o Itau sempre ao lado do BTG.
-    """
-    op = visao.oportunidade
-    ritmo = op.get("ritmo")
-    casas = [c for c in op.get("por_casa") or [] if len(c.get("serie_semanal") or []) > 1]
-    if not casas or not ritmo:
-        return ""
-    serie = casas[0]["serie_semanal"]
-    ultima = len(serie) - 1
-    # Uma data a cada quatro semanas e a da semana de referencia: treze rotulos
-    # nao cabem nos ~320 px do telefone.
-    rotulos = [
-        data_br(s["segunda"])[:5] if i % 4 == ultima % 4 else ""
-        for i, s in enumerate(serie)
-    ]
-    corpo = colunas_por_casa(
-        [
-            Serie(
-                casa["label"],
-                tuple(s["media_diaria"] for s in casa["serie_semanal"]),
-                nota=(
-                    f"semana: {_mm(casa['ritmo']['por_dia'])}/dia, "
-                    f"{nome_da_tendencia(casa['ritmo']['ritmo'])}"
-                    if casa.get("ritmo") else ""
-                ),
-                **_marca(casa["platform_id"]),
-            )
-            for casa in casas
-        ],
-        rotulos, por_linha=2,
-    )
-    if not corpo:
-        return ""
-    n = _semanas_de_comparacao(visao.report.retail_flow)
-    agora, base = _mm(ritmo["por_dia"]), _mm(ritmo["por_dia_base"])
-    titulos = {
-        "acelerando": f"A captação dos gaps acelera: {agora}/dia na semana, contra {base}/dia nas {n} anteriores",
-        "desacelerando": f"A captação dos gaps desacelera: {agora}/dia na semana, contra {base}/dia nas {n} anteriores",
-        "estavel": f"A captação dos gaps segue no ritmo: {agora}/dia na semana, {base}/dia nas {n} anteriores",
-        "virou_entrada": f"Os gaps voltam a captar: {agora}/dia na semana, contra {base}/dia nas {n} anteriores",
-        "virou_saida": f"Os gaps passam a perder dinheiro: {agora}/dia na semana, contra {base}/dia nas {n} anteriores",
-        "saida_persistente": f"Os gaps seguem com saída: {agora}/dia na semana, {base}/dia nas {n} anteriores",
-    }
-    total = op.get("serie_semanal") or serie
-    return figura(
-        titulos.get(ritmo["ritmo"], f"{agora}/dia na semana"),
-        _linha(
-            f"Captação líquida dos {contagem(op['total_transferiveis'], 'fundo', 'fundos')} "
-            "da oportunidade, média por dia útil, MM/dia, por concorrente",
-            f"{len(total)} semanas, {periodo_br(total[0]['de'], total[-1]['ate'])}",
-            "mesma escala",
-        ),
-        corpo,
-        "Fundo nas duas vitrines conta nas duas. Semana com feriado conta só os dias "
-        "úteis com informe. " + _fonte_html(CVM_INFORME_DIARIO),
-    )
 
 
 def _html_resumo_por_casa(op: dict) -> str:
@@ -904,26 +714,12 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
 
     com_cotistas = op.get("com_cotistas")
     if op.get("com_fluxo"):
-        numeros = [(milhar(op["total_transferiveis"]), "fundos para a grade: gaps reais captando", True)]
-        if op.get("captacao_semana") is not None:
-            numeros.append((_mm(op["captacao_semana"]), "captação deles na semana"))
-        numeros.append((_mm(op["captacao_3m"]), "captação deles em 3 meses"))
-        if com_cotistas:
-            numeros.append((_inteiro(op["cotistas_3m"]), "cotistas em 3 meses"))
-        numeros += [
-            (milhar(op["total_operacionais"]), "de gestora que a XP já distribui"),
-            (milhar(op["total_abrir_gestora"]), "exigem abrir gestora"),
-        ]
-        parts.append(numeros_em_destaque(numeros))
-        parts.append(f'<p style="{_LEGENDA}">{_esc(_funil_curto(visao))}.</p>')
+        parts.append(numeros_em_destaque(_numeros_da_oportunidade(op)))
     else:
-        parts.append(f'<p style="{_P}">{_md_para_html(_abertura_da_oportunidade(visao))}</p>')
+        parts.append(f'<p style="{_P}">{_esc(_SEM_CAPTACAO)}</p>')
     parts.append(_html_resumo_por_casa(op))
 
-    if "evolucao" not in omitir:
-        parts.append(_figura_da_evolucao(visao))
-
-    grupos = [(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
+    grupos =[(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
     if grupos:
         semana = _semana(visao.report.retail_flow)
         parts.append(_legenda(_linha(
@@ -2188,8 +1984,9 @@ def render_markdown(
         f"{identidade.descricao_relatorio}: {_linha_do_cabecalho(visao, generated).replace(' · ', ' - ')}",
         "",
     ]
-    sentence, is_alert = _frase_principal(visao)
-    lines += [f"**{sentence}**" if is_alert else sentence, ""]
+    alerta = _alerta(visao)
+    if alerta:
+        lines += [f"**{alerta}**", ""]
 
     lines += _md_oportunidade(visao)
     lines += _md_ritmo(visao)
@@ -2240,7 +2037,6 @@ _FIGURAS_POR_CORTE = (
     ("custo", "custo"),
     ("rentabilidade", "rentabilidade"),
     ("ritmo", "ritmo dos fundos"),
-    ("evolucao", "evolução semanal dos gaps"),
 )
 
 
@@ -2265,9 +2061,10 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
     generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
     identidade = config if config is not None else Config
     fontes_config = config if config is not None else Config()
-    sentence, is_alert = _frase_principal(visao)
-    # A previa do e-mail e texto puro: sem o **negrito** do markdown.
-    previa = sentence.replace("**", "")
+    alerta = _alerta(visao)
+    # A previa do e-mail e texto puro: o alerta, ou as casas e a semana do
+    # cabecalho - o assunto ja traz a oportunidade.
+    previa = alerta or _linha_do_cabecalho(visao, generated)
 
     urls = _urls_das_vitrines(fontes_config, recortado)
     vitrines = _html_vitrines(recortado, urls, visao)
@@ -2277,10 +2074,8 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
     # monitor em caixa alta a esquerda, a data da execucao a direita.
     faixa = _faixa(identidade.rotulo_assunto, report.generated_at.strftime("%d/%m/%Y"))
     lede = (
-        f'<p style="{_CHAMADA}font-size:15px;"><strong>{_md_para_html(sentence)}</strong></p>'
-        if is_alert
-        else f'<p style="font-size:16px;line-height:1.5;color:{TINTA};margin:0 0 16px;">'
-        f"{_md_para_html(sentence)}</p>"
+        f'<p style="{_CHAMADA}font-size:15px;"><strong>{_md_para_html(alerta)}</strong></p>'
+        if alerta else ""
     )
     nomes = dict(_FIGURAS_POR_CORTE)
 

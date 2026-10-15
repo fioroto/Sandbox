@@ -1411,29 +1411,6 @@ def ritmo_da_semana(semanas: list[SemanaDoFundo]) -> str:
     return classificar_ritmo(atual.media_diaria, base)
 
 
-def serie_semanal(fluxos: list[FundFlow], semanas: list[Semana]) -> list[dict]:
-    """A captacao somada dos fundos em cada semana do recorte, e por dia util.
-
-    Por dia util da semana (os dias completos dela), nao por dia observado de
-    cada fundo: e a soma de um conjunto, e a semana com feriado tem menos dias.
-    """
-    saida = []
-    for i, semana in enumerate(semanas):
-        total = sum(
-            f.semanas[i].captacao_liquida for f in fluxos if len(f.semanas) > i
-        )
-        dias = len(semana.dias)
-        saida.append({
-            "segunda": semana.segunda.isoformat(),
-            "de": semana.de.isoformat(),
-            "ate": semana.ate.isoformat(),
-            "dias": dias,
-            "captacao_liquida": round(total, 2),
-            "media_diaria": round(total / dias, 2) if dias else None,
-        })
-    return saida
-
-
 def monthly_by_fund(registros: list[DailyFlow]) -> dict[str, list[MonthlyFlow]]:
     """Quebra o fluxo de cada fundo por competencia."""
     por_fundo: dict[str, dict[str, list[DailyFlow]]] = {}

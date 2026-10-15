@@ -11,8 +11,9 @@ Duas perguntas que o monitor responde:
    ligadas a cada casa, com destaque para os que estao em **fase pre-operacional** -
    registrados e ainda nao lancados.
 
-Casas monitoradas: BTG Pactual, Itaú (íon), Nu, Banco Inter, com a XP como baseline
-de comparacao.
+Casas monitoradas: BTG Pactual, Itaú (a prateleira de varejo íon), Nu, Banco Inter,
+com a XP como baseline de comparacao. Em toda superficie o nome e so "Itaú" desde
+15/10/2026 - nos fundos e na previdencia.
 
 ## Uso
 
@@ -95,7 +96,7 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (fora da vitrine da XP e da lista da casa, sem espelho nem equivalente pela carteira) que captam varejo em 3 meses, sem o produto proprio do concorrente; numeros em destaque, a evolucao semanal da captacao deles e os 10 primeiros pelo esforco de trazer |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses, sem o produto proprio do concorrente; numeros em destaque, o resumo por concorrente e os 5 primeiros de cada um pelo esforco de trazer |
 | Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
 | Radar CVM | o que as gestoras dos grupos BTG e Itau registraram - sem a XP e sem fundo cancelado (14/10/2026: so os ativos contam e a passagem para cancelado nao vira movimento, em todas as superficies; o extrato gravado segue inteiro), e dito que e a gestora, nao a vitrine |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
@@ -109,10 +110,17 @@ da semana (acelerando, desacelerando, virou saida...) usa a regra e a faixa de 2
 ritmo mensal. Todo fundo que a XP tem sai com o servico da lista da casa
 (`XP · Distribuição` ou `XP · FaaS`).
 
+Em 15/10/2026, a pedido da area, o digest perdeu mais tres pecas: a frase de
+abertura ("67 fundos captam nas vitrines..."), a frase do funil ("504 gaps reais nas
+vitrines...") e a evolucao semanal da captacao dos gaps, com as miniaturas por casa.
+Ele abre direto na secao; a unica frase antes dela e o alerta de coleta que falhou
+inteira, e a previa do e-mail e a linha do cabecalho (casas e semana) - o assunto ja
+traz a oportunidade. O ritmo de cada fundo segue na tabela ("Ritmo na semana").
+
 **O Itau em todas as analises** (pedido de 14/10/2026). A oportunidade sai por
 concorrente: o resumo de cada um (gaps reais, quantos captam, captacao na semana e
-em 3 meses), os 5 primeiros de cada um e a evolucao semanal com uma miniatura por
-casa - numa lista unica o BTG, de vitrine maior, ocupava o topo inteiro. E a coleta
+em 3 meses) e os 5 primeiros de cada um - numa lista unica o BTG, de vitrine maior,
+ocupava o topo inteiro. E a coleta
 que falha nao tira a casa das analises: para as casas de `Config.vitrine_de_reserva`
 (hoje, o Itau), um dia sem vitrine utilizavel - coleta indisponivel, so o catalogo
 Open Finance, menos de 30 fundos ou CNPJ em menos de metade da vitrine - entra com a
@@ -418,7 +426,9 @@ em paginas proprias.
 
 A XP desenha 50 cards, mas a API que a pagina chama devolve os 223; ela exige a
 chave do Azure APIM, entao o coletor le a resposta que a propria pagina recebe.
-O Itau e o Private Bank, nao a prateleira íon - sai rotulado "Itaú Private".
+O Itau e o Private Bank, nao a prateleira íon. Saia rotulado "Itaú Private" ate
+15/10/2026; desde entao o nome e so "Itaú", como no monitor de fundos, e o canal
+fica nas notas da casa e no link da fonte.
 
 **Itau Private: CNPJ pela cota, e a pagina fora do ar.** A pagina nao publica
 CNPJ, mas publica a cota de cada plano com a data; a mesma cota, no mesmo dia,
@@ -816,13 +826,28 @@ O mapa de familias (`familias.py`) sai da carteira mensal da CVM (CDA,
   (Sparta Max: concorrente D+61, XP D+121). Liquidez nao informada nao rebaixa.
 
 Cada gap aparente recebe um veredito: mesma classe (outro CNPJ da mesma classe),
-coberto por espelho (confianca alta), coberto por equivalente (media), coberto em
-outra liquidez, gap de estrategia, gap de gestora, ou sem dado de carteira. So
-evidencia estrutural ou de carteira reclassifica; o "possivel equivalente" (mesma
-gestora e categoria, sem carteira que decida, ou nome parecido) **informa e nunca
-remove** um fundo da lista. Os cobertos saem da contagem e vao para a aba "Gaps
-cobertos" da planilha, com o fundo XP que cobre, o master, o D+ dos dois lados, a
-distancia e a sobreposicao.
+coberto por espelho (confianca alta), coberto por equivalente (media), coberto por
+correlato (media), coberto em outra liquidez, gap de estrategia, gap de gestora, ou
+sem dado de carteira. Os cobertos saem da contagem e vao para a aba "Gaps cobertos"
+da planilha, com o fundo XP que cobre, o master, o D+ dos dois lados, a distancia e
+a sobreposicao.
+
+**Correlato** (15/10/2026, pedido do usuario: gap real e so o que a XP nao tem de
+forma nenhuma). E outra versao da mesma estrategia da mesma gestora (raiz do CNPJ
+do gestor) que a carteira nao ligou: o nome da estrategia e o mesmo depois de tirar
+forma juridica, classe de ativo, a marca da gestora e as marcas de versao - o
+feeder de cada distribuidor ("Advisory", "Seleção", "Selection", "Access", "IU"), o
+publico ("Institucional", "Alocadores", "Dist."), o papel ("Feeder", "Master"), a
+faixa ("Plus", "Premium", "NTNB35"), numero, letra de classe e o clone romano ("II")
+(`familias.palavras_da_estrategia`). Quando o nome dos dois lados e so marca ("TB
+SELEÇÃO" e "TB ADVISORY"), decide a mesma categoria ANBIMA. Medido no digest de
+14/10/2026: 51 dos 504 gaps reais eram correlatos - o Kapitalo Tarkus FIC do BTG
+contra o Tarkus Advisory da XP, o RPS Long Bias Selection D30 contra o Advisory D30,
+o HIX Capital FIC contra o Institucional -, e a grade caiu de 67 para 54 fundos. E a
+unica heuristica de nome que reclassifica; o "possivel equivalente" (mesma gestora e
+categoria, sem carteira que decida e com OUTRO nome de estrategia - o MAN AHL Target
+Risk contra o Gama Pearl Diver, ambos da Gama) **informa e nunca remove** um fundo
+da lista.
 
 A gestora que decide o esforco e a **da estrategia** (a do master), nao a do
 veiculo: o BTGP Thunderbolt, feeder de marca propria do BTG, investe no SPX Raptor

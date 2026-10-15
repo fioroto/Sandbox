@@ -9,7 +9,8 @@ O digest passou a ser semanal de fato e mais curto. Os testes travam:
   janela de 3 meses terminando no mesmo ultimo dia completo;
 - o mes anterior revalidado na CVM (a semana pode cruzar a virada do mes);
 - a oportunidade de grade: gaps reais que captam, sem o produto proprio do
-  concorrente nem o que a lista da casa ja tem, com a evolucao semanal;
+  concorrente nem o que a lista da casa ja tem; desde 15/10/2026 sem a frase
+  de abertura, sem a frase do funil e sem a evolucao semanal da soma;
 - o recorte as casas do digest (XP, BTG e Itau): Nu e Inter fora, o radar sem
   a XP;
 - o servico da lista da casa (Distribuicao ou FaaS) ao lado do fundo da XP;
@@ -330,15 +331,6 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         self.assertAlmostEqual(self.op["captacao_semana"], 150 * MI)
         self.assertAlmostEqual(self.op["captacao_3m"], 590 * MI)
 
-    def test_evolucao_semanal_e_o_ritmo_da_soma(self):
-        serie = self.op["serie_semanal"]
-        self.assertEqual(len(serie), 13)
-        self.assertEqual(serie[-1]["segunda"], "2026-10-05")
-        self.assertAlmostEqual(serie[-1]["media_diaria"], 30 * MI)
-        self.assertAlmostEqual(serie[0]["media_diaria"], 10 * MI)
-        self.assertEqual(self.op["ritmo"]["ritmo"], "acelerando")
-        self.assertAlmostEqual(self.op["ritmo"]["variacao"], 2.0)
-
     def test_gap_que_a_lista_da_casa_tem_nao_e_oportunidade(self):
         from shelf_monitor.report.digest_visao import montar_visao
 
@@ -354,18 +346,24 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         self.assertIn("Fundo A FIC FIM", nomes)
         self.assertTrue(all("nu" not in f["vitrines"] for f in recortado.retail_flow["top_captacao"]))
 
-    def test_digest_abre_com_a_oportunidade_e_mostra_a_semana(self):
+    def test_digest_abre_direto_nas_secoes_com_os_numeros_em_destaque(self):
+        """15/10/2026, pedido da area: sem a frase de abertura ("1 fundo capta
+        nas vitrines..."), sem a frase do funil ("N gaps nas vitrines...") e sem
+        a evolucao semanal da soma. Os numeros em destaque dizem a oportunidade."""
         from shelf_monitor.report.digest import render_html, render_markdown
 
         report = _relatorio()
         md = render_markdown(report, None, "semanal")
         self.assertIn(
-            "**1 fundo capta nas vitrines de BTG Pactual, fora da XP, e pode entrar na "
-            "grade**: +150,0 MM na semana de 05/10/2026 a 09/10/2026, acima do ritmo das 12 "
-            "semanas anteriores (+200% por dia útil); +590,0 MM em 3 meses, de 03/08/2026 a "
-            "09/10/2026. 1 é de gestora que a XP já distribui.",
+            "execução de 14/10/2026 08:00\n\n## Oportunidade de grade e gaps\n\n"
+            "- **1** fundo para a grade: gap captando\n"
+            "- **+150,0 MM** captação dele na semana\n"
+            "- **+590,0 MM** captação dele em 3 meses\n",
             md,
         )
+        for fora in ("capta nas vitrines", "gaps nas vitrines", "Evolução semanal",
+                     "acima do ritmo das 12"):
+            self.assertNotIn(fora, md)
         # A ordem das secoes e o que saiu do semanal.
         ordem = ["## Oportunidade de grade e gaps", "## Ritmo de captação", "## Radar CVM",
                  "## Vitrines: entradas e saídas", "## Fontes"]
@@ -378,8 +376,14 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         self.assertIn("gestoras dos grupos concorrentes", md)
         html = render_html(report, None, "semanal")
         texto = _texto(html)
-        self.assertIn("A captação dos gaps acelera: +30,0 MM/dia na semana, contra +10,0 "
-                      "MM/dia nas 12 anteriores", texto)
+        self.assertIn("fundo para a grade: gap captando", texto)
+        for fora in ("A captação dos gaps", "MM/dia", "gaps nas vitrines", "capta nas vitrines"):
+            self.assertNotIn(fora, texto)
+        # A previa do e-mail: as casas e a semana, como o cabecalho.
+        previa = re.search(r'<div style="display:none;[^"]*">([^<]*)', html).group(1)
+        self.assertTrue(
+            previa.startswith("BTG Pactual e Itaú · semana de 05/10/2026 a 09/10/2026")
+        )
         self.assertIn("Fundo A FIC FIM", texto)
         self.assertNotIn("BTG Proprio B FIC FIM 12.", texto)
 
@@ -394,8 +398,8 @@ class TestOportunidadeDeGrade(unittest.TestCase):
 
 
 class TestOportunidadePorConcorrente(unittest.TestCase):
-    """O Itau sempre ao lado do BTG (pedido de 14/10/2026): resumo, lista e
-    evolucao por concorrente, e nao um ranking unico que o BTG ocupa inteiro."""
+    """O Itau sempre ao lado do BTG (pedido de 14/10/2026): resumo e lista por
+    concorrente, e nao um ranking unico que o BTG ocupa inteiro."""
 
     @classmethod
     def setUpClass(cls):
@@ -413,7 +417,6 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
         self.assertAlmostEqual(por_casa["btg"]["captacao_semana"], 150 * MI)
         self.assertAlmostEqual(por_casa["itau"]["captacao_semana"], 170 * MI)
         self.assertEqual(self.op["total_transferiveis"], 2)
-        self.assertEqual(len(por_casa["itau"]["serie_semanal"]), 13)
 
     def test_digest_lista_os_primeiros_de_cada_concorrente(self):
         from shelf_monitor.report.digest import render_html, render_markdown
@@ -421,20 +424,20 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
         md = render_markdown(self.report, None, "semanal")
         # Sem a carteira da CVM a coluna e "Gaps", nao "Gaps reais".
         self.assertIn("| Concorrente | Gaps | Captando | Semana | 3 meses |", md)
-        self.assertIn("| Itaú (íon) |", md)
+        # O nome da casa e so "Itaú" (pedido de 15/10/2026).
+        self.assertIn("| Itaú |", md)
+        self.assertNotIn("íon", md)
         # Cada fundo uma vez: A no grupo do BTG (com as duas casas), E no do Itau.
         self.assertIn("**BTG Pactual** - o primeiro", md)
-        self.assertIn("**Itaú (íon)** - o primeiro", md)
+        self.assertIn("**Itaú** - o primeiro", md)
         self.assertEqual(md.count("Fundo A FIC FIM ("), 1)
         self.assertIn("| BTG, Itaú |", md)
-        self.assertIn("- Itaú (íon): 13/07", md)
         html = render_html(self.report, None, "semanal")
         texto = _texto(html)
         self.assertIn("Os 5 primeiros de cada concorrente", texto)
-        self.assertIn(">Itaú (íon)</td></tr>", html)
-        # Uma miniatura por concorrente na evolucao semanal, na mesma escala.
-        self.assertIn("por concorrente", texto)
-        self.assertIn("semana: +34,0 MM/dia", texto)
+        self.assertIn(">Itaú</td></tr>", html)
+        # A evolucao semanal com uma miniatura por casa saiu.
+        self.assertNotIn("MM/dia", texto)
 
 
 class TestRadarSemCancelados(unittest.TestCase):

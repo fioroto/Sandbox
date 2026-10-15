@@ -9,7 +9,8 @@ Os fundos da fixture reproduzem os casos medidos em 26/09/2026: o espelho da
 linha "Advisory" da XP, o feeder de marca propria do BTG sobre master de outra
 gestora (BTGP Thunderbolt -> SPX Raptor), a estrategia que a XP tem so em
 outra liquidez (Sparta Max D+61 contra D+121) e o fundo sem carteira publicada
-que so o nome aproxima.
+que so o nome liga - desde 15/10/2026 um correlato, outra versao da mesma
+estrategia (Delta Macro contra o Delta Macro Advisory da XP), e nao gap real.
 """
 from __future__ import annotations
 
@@ -20,10 +21,10 @@ from pathlib import Path
 
 from shelf_monitor.distribuivel import DISTRIBUI, PODE_DISTRIBUIR, BaseDistribuivel
 from shelf_monitor.familias import (
+    COBERTO_CORRELATO,
     COBERTO_ESPELHO,
     GAP_ESTRATEGIA,
     OUTRA_LIQUIDEZ,
-    SEM_DADO,
     MapaDeFamilias,
 )
 from shelf_monitor.models import (
@@ -205,7 +206,8 @@ class TestFunil(unittest.TestCase):
         self.assertEqual(coberto["veredito"]["tipo"], COBERTO_ESPELHO)
         self.assertEqual(coberto["veredito"]["cobre"], ALFA_ADVISORY)
         self.assertNotIn(ALFA_ACCESS, _por_cnpj(self.bloco["funds"]))
-        self.assertEqual(cnpjs_cobertos(self.bloco), {ALFA_ACCESS})
+        # Os cobertos: o espelho e o correlato (ver o teste do Delta Macro).
+        self.assertEqual(cnpjs_cobertos(self.bloco), {ALFA_ACCESS, DELTA_INTER})
 
     def test_estrategia_so_em_outra_liquidez_fica_na_lista_mas_nao_na_conta(self):
         gap = _por_cnpj(self.bloco["funds"])[SPARTA_INTER]
@@ -230,11 +232,17 @@ class TestFunil(unittest.TestCase):
         gap = _por_cnpj(ranquear_gaps(self.bloco["funds"]))[BTG_SELIC]
         self.assertEqual(gap["esforco"], ESFORCO_NAO_TRANSFERIVEL)
 
-    def test_nome_parecido_sem_carteira_informa_e_continua_gap_real(self):
-        gap = _por_cnpj(self.bloco["funds"])[DELTA_INTER]
-        self.assertEqual(gap["veredito"]["tipo"], SEM_DADO)
-        self.assertEqual(gap["veredito"]["possivel_equivalente"], DELTA_XP)
-        self.assertTrue(gap["veredito"]["gap_real"])
+    def test_outra_versao_da_mesma_estrategia_e_correlato_e_sai_da_conta(self):
+        """Pedido de 15/10/2026: gap real e so o que a XP nao tem de forma
+        nenhuma. "DELTA MACRO FIC" e o "DELTA MACRO ADVISORY FIC" da XP sao a
+        mesma estrategia da mesma gestora, sem carteira que os ligue."""
+        self.assertNotIn(DELTA_INTER, _por_cnpj(self.bloco["funds"]))
+        coberto = _por_cnpj(self.bloco["cobertos"])[DELTA_INTER]
+        self.assertEqual(coberto["veredito"]["tipo"], COBERTO_CORRELATO)
+        self.assertEqual(coberto["veredito"]["cobre"], DELTA_XP)
+        self.assertEqual(coberto["veredito"]["ligacao"], "correlato")
+        self.assertFalse(coberto["veredito"]["gap_real"])
+        self.assertEqual(self.bloco["funil"]["correlato"], 1)
 
     def test_a_lista_abre_pelo_gap_real_mais_barato_e_a_liquidez_vem_depois(self):
         """Versao de liquidez custa o mesmo que a inclusao operacional, mas a
@@ -252,12 +260,17 @@ class TestFunil(unittest.TestCase):
     def test_categorias_contam_gaps_reais_e_cobertos(self):
         categorias = {c["category"]: c for c in self.bloco["categories"]}
         self.assertEqual(sum(c["gap_count"] for c in categorias.values()), self.bloco["total_gaps"])
-        self.assertEqual(sum(c["cobertos"] for c in categorias.values()), 1)
+        self.assertEqual(sum(c["cobertos"] for c in categorias.values()), 2)
 
     def test_a_frase_do_funil_diz_os_numeros_do_bloco(self):
         frase = frase_do_funil(self.bloco)
         self.assertIn(f"Dos {self.bloco['gaps_aparentes']} gaps aparentes", frase)
         self.assertIn("1 é espelho", frase)
+        self.assertIn(
+            "1 é outra versão de estratégia que a vitrine da XP Investimentos já tem, "
+            "da mesma gestora",
+            frase,
+        )
         self.assertIn(f"sobram {self.bloco['total_gaps']} gaps reais", frase)
 
     def test_ordem_nao_depende_da_ordem_de_coleta(self):
@@ -471,12 +484,13 @@ class TestSuperficies(_ComPasta):
         self.assertEqual(set(), cnpjs_md - cnpjs_html)
         self.assertIn("pela carteira mensal da CVM (CDA de ago/2026)", markdown)
         # Sem informe diario, a lista sai pelo esforco e diz por que.
-        self.assertIn("a captação deles não foi medida", markdown)
+        self.assertIn("a captação dos gaps não foi medida", markdown)
 
     def test_dashboard_leva_o_funil_os_cobertos_e_as_notas(self):
         dados = build_dashboard_data(self._relatorio())["gaps"]
         self.assertEqual(dados["frase_funil"], frase_do_funil(dados))
-        self.assertEqual([f["cnpj"] for f in dados["cobertos"]], [ALFA_ACCESS])
+        self.assertEqual([f["cnpj"] for f in dados["cobertos"]], [ALFA_ACCESS, DELTA_INTER])
+        self.assertTrue(any("Correlato: mesma gestora" in n for n in dados["notas_cobertura"]))
         self.assertTrue(any("Lista distribuível" in n for n in dados["notas_cobertura"]))
 
     def test_planilha_ganha_gaps_cobertos_e_familias(self):

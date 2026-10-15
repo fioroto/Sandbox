@@ -106,7 +106,7 @@ class TestDigest(unittest.TestCase):
         self.assertIn("Ponderada por cotistas", markdown)
         self.assertIn("PL menos cotistas", markdown)
         self.assertIn("Oportunidade de grade e gaps", markdown)
-        self.assertIn("nas vitrines de BTG Pactual", markdown)
+        self.assertIn("| BTG Pactual |", markdown)
         self.assertNotIn("Não se aplica", markdown)
 
 

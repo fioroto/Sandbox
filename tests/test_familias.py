@@ -17,6 +17,7 @@ from unittest import mock
 from shelf_monitor.familias import (
     ALTA,
     BAIXA,
+    COBERTO_CORRELATO,
     COBERTO_EQUIVALENTE,
     COBERTO_ESPELHO,
     GAP_ESTRATEGIA,
@@ -26,6 +27,7 @@ from shelf_monitor.familias import (
     PRESENTE,
     SEM_DADO,
     MapaDeFamilias,
+    palavras_da_estrategia,
 )
 from shelf_monitor.market import carteira as carteira_mod
 try:
@@ -335,14 +337,98 @@ class TestVeredito(unittest.TestCase):
         self.assertEqual(mapa.cobertura(MASTER, [acoes]).tipo, GAP_ESTRATEGIA)
 
     def test_sem_carteira_que_decida_o_possivel_equivalente_so_informa(self):
+        """Mesma gestora e categoria, outro nome de estrategia: so informa."""
         a, b = "93000000000101", "93000000000202"
         cda = Cda().pl(b, 100.0).sigilo(b, 100.0, "Debêntures")
-        mapa = mapa_de([classe(a, "ALFA X FIC", *ALFA), classe(b, "ALFA X ADVISORY", *ALFA)], cda)
+        mapa = mapa_de(
+            [classe(a, "ALFA ORION FIC", *ALFA), classe(b, "ALFA VEGA ADVISORY", *ALFA)], cda
+        )
         veredito = mapa.cobertura(a, [b])
         self.assertEqual(veredito.tipo, SEM_DADO)
         self.assertTrue(veredito.gap_real)
         self.assertEqual(veredito.possivel_equivalente, b)
         self.assertEqual(veredito.confianca, BAIXA)
+
+
+class TestCorrelato(unittest.TestCase):
+    """Outra versao da mesma estrategia que a carteira nao ligou (15/10/2026).
+
+    O caso medido: o Kapitalo Tarkus FIC na vitrine do BTG e o Tarkus Advisory
+    na da XP, sem carteira que os ligasse - e o gap real contava o fundo.
+    """
+
+    TARKUS_BTG, TARKUS_XP = "94000000000101", "94000000000202"
+    ORION_XP, VEGA_BTG = "94000000000303", "94000000000404"
+
+    def _mapa(self, nome_xp: str = "ALFA TARKUS ADVISORY FIF EM COTAS DE FIA",
+              anbima_xp: str = "Ações Livre") -> MapaDeFamilias:
+        cda = Cda().pl(self.TARKUS_XP, 100.0).sigilo(self.TARKUS_XP, 100.0)
+        return mapa_de([
+            classe(self.TARKUS_BTG, "ALFA TARKUS SELEÇÃO FIF CIC EM AÇÕES", *ALFA,
+                   anbima="Ações Livre"),
+            classe(self.TARKUS_XP, nome_xp, *ALFA, anbima=anbima_xp),
+            classe(self.ORION_XP, "ALFA ORION ADVISORY FIC FIM", *ALFA),
+            classe(self.VEGA_BTG, "ALFA VEGA FIC FIM", *ALFA),
+        ], cda)
+
+    def test_outra_versao_da_mesma_estrategia_e_coberta_por_correlato(self):
+        veredito = self._mapa().cobertura(self.TARKUS_BTG, [self.TARKUS_XP, self.ORION_XP])
+        self.assertEqual(veredito.tipo, COBERTO_CORRELATO)
+        self.assertEqual(veredito.cobre, self.TARKUS_XP)
+        self.assertEqual(veredito.ligacao, "correlato")
+        self.assertEqual(veredito.confianca, MEDIA)
+        self.assertTrue(veredito.coberto)
+        self.assertFalse(veredito.gap_real)
+
+    def test_outra_estrategia_da_mesma_gestora_continua_gap(self):
+        veredito = self._mapa().cobertura(self.VEGA_BTG, [self.TARKUS_XP, self.ORION_XP])
+        self.assertNotEqual(veredito.tipo, COBERTO_CORRELATO)
+        self.assertTrue(veredito.gap_real)
+
+    def test_mesmo_nome_de_outra_gestora_nao_e_correlato(self):
+        outra = "95000000000101"
+        mapa = mapa_de([
+            classe(self.TARKUS_BTG, "ALFA TARKUS SELEÇÃO FIF CIC EM AÇÕES", *ALFA),
+            classe(self.ORION_XP, "ALFA ORION ADVISORY FIC FIM", *ALFA),
+            classe(outra, "BETA TARKUS ADVISORY FIC FIM", *BETA),
+        ], Cda())
+        veredito = mapa.cobertura(self.TARKUS_BTG, [self.ORION_XP, outra])
+        self.assertNotEqual(veredito.tipo, COBERTO_CORRELATO)
+
+    def test_nome_so_de_marca_dos_dois_lados_decide_pela_categoria(self):
+        """"ALFA SELEÇÃO" e "ALFA ADVISORY": o nome nao diz a estrategia."""
+        cda = Cda()
+        mapa = mapa_de([
+            classe("96000000000101", "ALFA SELEÇÃO FIF CIC EM AÇÕES", *ALFA, anbima="Ações Livre"),
+            classe("96000000000202", "ALFA ADVISORY FIC DE FIA", *ALFA, anbima="Ações Livre"),
+            classe("96000000000303", "ALFA ADVISORY FIC RF", *ALFA,
+                   anbima="Renda Fixa Duração Livre Crédito Livre"),
+        ], cda)
+        acoes = mapa.cobertura("96000000000101", ["96000000000202"])
+        self.assertEqual(acoes.tipo, COBERTO_CORRELATO)
+        renda_fixa = mapa.cobertura("96000000000101", ["96000000000303"])
+        self.assertNotEqual(renda_fixa.tipo, COBERTO_CORRELATO)
+
+    def test_o_nome_da_estrategia_sem_versao_classe_nem_marca(self):
+        self.assertEqual(
+            palavras_da_estrategia(
+                "KAPITALO TARKUS ADVISORY FUNDO DE INVESTIMENTO FINANCEIRO EM COTAS DE FI "
+                "EM AÇÕES", frozenset({"KAPITALO"}),
+            ),
+            {"TARKUS"},
+        )
+        self.assertEqual(
+            palavras_da_estrategia("RPS LONG BIAS SELECTION D30 FI FINANCEIRO EM COTAS"),
+            {"RPS", "LONG", "BIAS"},
+        )
+        # O clone ("II") sai; o INFRA do fundo incentivado fica - distingue.
+        self.assertEqual(
+            palavras_da_estrategia(
+                "ARX HEDGE II FIC DE FIF INVESTIMENTO EM INFRAESTRUTURA RENDA FIXA",
+                frozenset({"ARX"}),
+            ),
+            {"HEDGE", "INFRA"},
+        )
 
     def test_cnpj_fora_do_cadastro_e_sem_dado(self):
         mapa = mapa_de([classe(MASTER, "M", *ALFA)], carteira_de_credito(Cda(), MASTER))

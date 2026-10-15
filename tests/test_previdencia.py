@@ -138,10 +138,16 @@ class TestConfigPrevidencia(unittest.TestCase):
 
 
 class TestRotulos(unittest.TestCase):
-    def test_itau_sai_como_private_so_durante_o_bloco(self):
-        self.assertEqual(ROTULOS_PROPRIOS, {"itau": "Itaú Private"})
+    def test_itau_e_so_itau_nos_dois_modulos(self):
+        """Ate 15/10/2026 a previdencia rotulava "Itaú Private"; desde entao o
+        nome e so "Itaú", como no modulo de fundos (pedido do usuario)."""
+        self.assertEqual(ROTULOS_PROPRIOS, {})
+        self.assertEqual(PLATFORMS["itau"].label, "Itaú")
+        self.assertEqual(ConfigPrevidencia().platform("itau").label, "Itaú")
+
+    def test_rotulo_proprio_vale_so_durante_o_bloco(self):
         self.assertEqual(rotulo_da_casa("itau"), PLATFORMS["itau"].label)
-        with rotulos_sobrepostos(ROTULOS_PROPRIOS):
+        with rotulos_sobrepostos({"itau": "Itaú Private"}):
             self.assertEqual(rotulo_da_casa("itau"), "Itaú Private")
             self.assertEqual(rotulo_da_casa("btg"), PLATFORMS["btg"].label)
         self.assertEqual(rotulo_da_casa("itau"), PLATFORMS["itau"].label)
@@ -732,7 +738,8 @@ class TestPipelinePrevidencia(unittest.TestCase):
 
         dashboard = (self.config.reports_dir / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn("<title>Monitor de Previdência</title>", dashboard)
-        self.assertIn("Itaú Private", dashboard)
+        self.assertIn("Itaú", dashboard)
+        self.assertNotIn("Itaú Private", dashboard)
         # A pagina da previdencia, e nao a de fundos com os blocos suprimidos.
         self.assertIn('id="limites-section"', dashboard)
         self.assertNotIn('id="gaps-section"', dashboard)
@@ -768,7 +775,7 @@ class TestGanchosCompartilhados(unittest.TestCase):
         report = self._report()
         self.assertTrue(render_markdown(report).startswith("# Monitor de Prateleiras de Fundos"))
         self.assertIn(
-            "Concorrentes da XP: BTG Pactual e Itaú (íon) - execução de", render_markdown(report)
+            "Concorrentes da XP: BTG Pactual e Itaú - execução de", render_markdown(report)
         )
         self.assertIn("<title>Monitor de Prateleiras de Fundos</title>", render_html(report))
 
