@@ -140,34 +140,57 @@ CAD_FI_ROWS = [
      "CUSTODIANTE Y", "AUDITORA X"],
 ]
 
+# Nomes conferidos contra o cabecalho real de extrato_fi.csv (117 colunas), nao
+# contra o que o esquema deveria ter. Ate 2026-09-20 esta fixture trazia
+# VL_TAXA_ENTRADA, VL_TAXA_SAIDA, INVEST_INICIAL_MIN, VL_SALDO_MIN e
+# QT_DIA_CONVER_COTA - nomes que a CVM nao usa. Como ela casava com o parser e
+# nao com a fonte, o teste passava e as colunas saiam vazias em producao.
 EXTRATO_COLUMNS = [
     "TP_FUNDO_CLASSE", "CNPJ_FUNDO_CLASSE", "DENOM_SOCIAL", "DT_COMPTC",
     "POLIT_INVEST", "PUBLICO_ALVO", "TRIB_LPRAZO", "EXISTE_TAXA_PERFM",
-    "TAXA_PERFM", "PARAM_TAXA_PERFM", "TAXA_ADM", "VL_TAXA_ENTRADA",
-    "VL_TAXA_SAIDA", "INVEST_INICIAL_MIN", "VL_SALDO_MIN",
-    "QT_DIA_CONVER_COTA", "QT_DIA_PAGTO_RESGATE",
+    "TAXA_PERFM", "PARAM_TAXA_PERFM", "TAXA_ADM",
+    "EXISTE_TAXA_INGRESSO", "TAXA_INGRESSO_REAL", "TAXA_INGRESSO_PR",
+    "EXISTE_TAXA_SAIDA", "TAXA_SAIDA_REAL", "TAXA_SAIDA_PR",
+    "TAXA_CUSTODIA_MAX", "APLIC_MIN",
+    "QT_DIA_CONVERSAO_COTA", "QT_DIA_PAGTO_RESGATE",
+    "ATIVO_CRED_PRIV", "APLIC_MAX_ATIVO_CRED_PRIV",
+    "INVEST_EXTERIOR", "APLIC_MAX_ATIVO_EXTERIOR",
+    "OPER_DERIV", "OPER_VL_SUPERIOR_PL", "FATOR_OPER_VL_SUPERIOR_PL",
+    "FUNDO_ESPELHO",
 ]
 
 EXTRATO_ROWS = [
     # CNPJ COM mascara - o cadastro traz sem. E a causa n.1 de join vazio.
     ["CLASSES - FIF", "12.345.678/0001-91", "BTG DIGITAL RF CP", "2026-06-30",
      "Renda fixa com credito privado", "Investidores em Geral", "S", "N",
-     "", "", "0.50", "0", "0", "100.00", "100.00", "1", "1"],
+     "", "", "0.50", "N", "", "", "N", "", "", "0.030000", "100.00", "1", "1",
+     "S", "100.000000000000", "N", "", "S", "N", "", "N"],
     # Entrega mais recente da mesma classe: e esta que deve valer.
     ["CLASSES - FIF", "12.345.678/0001-91", "BTG DIGITAL RF CP", "2026-08-25",
      "Renda fixa com credito privado", "Investidores em Geral", "S", "N",
-     "", "", "0.45", "0", "0", "100.00", "100.00", "1", "1"],
+     "", "", "0.45", "N", "", "", "N", "", "", "0.030000", "100.00", "1", "1",
+     "S", "100.000000000000", "N", "", "S", "N", "", "N"],
+    # Unica classe que cobra ingresso e saida - no arquivo real sao 0,1% e
+    # 3,3% das linhas, e os dois valores so vem preenchidos quando o flag e S.
     ["CLASSES - FIF", "42.345.678/0001-94", "KINEA IPCA SENIOR", "2026-08-25",
      "Titulos indexados ao IPCA", "Investidores Qualificados", "S", "S",
-     "20.00", "IPCA + 5%", "0.60", "0", "0", "5000.00", "1000.00", "1", "3"],
+     "20.00", "IPCA + 5%", "0.60",
+     "S", "0.000000000000", "2.500000000000",
+     "S", "0.000000000000", "5.000000000000",
+     "0.050000", "5000.00", "1", "3",
+     "S", "50.000000000000", "S", "20.00", "S", "S", "100.00", "S"],
     # Taxa em REAIS no mesmo campo que normalmente traz percentual.
     ["CLASSES - FIF", "62.345.678/0001-96", "KINEA IPCA SUBORDINADA", "2026-08-25",
      "Titulos indexados ao IPCA", "Investidores Profissionais", "S", "S",
-     "20.00", "IPCA + 6%", "30000.00", "0", "0", "1000000.00", "0", "1", "30"],
+     "20.00", "IPCA + 6%", "30000.00", "N", "", "", "N", "", "",
+     "0.000000", "1000000.00", "1", "30",
+     "S", "100.000000000000", "S", "100.00", "S", "S", "0.00", ""],
     # Texto livre em vez de numero - permitido para investidor qualificado.
     ["CLASSES - FIF", "52.345.678/0001-95", "NU GLOBAL", "2026-08-25",
      "Investimento no exterior", "Investidores em Geral", "S", "N",
-     "", "", "conforme regulamento", "0", "0", "500.00", "0", "1", "5"],
+     "", "", "conforme regulamento", "N", "", "", "N", "", "",
+     "0.060000", "500.00", "0", "5",
+     "N", "", "S", "100.00", "N", "N", "", "N"],
 ]
 
 

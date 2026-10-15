@@ -152,7 +152,7 @@ def probe_open_finance(config: Config, platform: PlatformConfig) -> list[Probe]:
                 f"open-finance/{platform.platform_id}",
                 "-",
                 False,
-                "nenhum endpoint /funds encontrado no diretorio para esta marca",
+                "nenhum endpoint /funds encontrado no diretório para esta marca",
             )
         )
         return probes
@@ -190,7 +190,7 @@ def probe_open_finance(config: Config, platform: PlatformConfig) -> list[Probe]:
         "first_item_keys": sorted(items[0]) if items else [],
     }
     detail = (
-        f"{len(items)} fundos na pagina 1 (pedi {requested_page_size}); "
+        f"{len(items)} fundos na página 1 (pedi {requested_page_size}); "
         f"totalRecords={total_records}, totalPages={total_pages}"
     )
     if items and len(items) < requested_page_size and (total_pages or 0) > 1:
@@ -274,7 +274,7 @@ def probe_browser(config: Config, platform: PlatformConfig) -> Probe:
     total = len(from_json | from_dom)
     detail = (
         f"HTTP {capture.status}, {len(capture.html)} bytes renderizados, "
-        f"{len(capture.responses)} requisicoes ({capture.json_responses} JSON); "
+        f"{len(capture.responses)} requisições ({capture.json_responses} JSON); "
         f"{total} fundos ({len(from_json)} pelo JSON, {len(from_dom)} pelo DOM)"
     )
     if not total:
@@ -322,7 +322,7 @@ def probe_page(config: Config, platform: PlatformConfig) -> Probe:
         f"{findings['linhas_tr']} <tr>, {findings['scripts_json']} blocos JSON"
     )
     if not usable:
-        detail += " - parece casca de SPA (dados vem por JavaScript)"
+        detail += " - parece casca de SPA (dados vêm por JavaScript)"
     return Probe(
         f"pagina/{platform.platform_id}", platform.shelf_url, usable, detail, evidence, findings
     )
@@ -351,7 +351,7 @@ def probe_tls(config: Config, host: str, port: int = 443) -> Probe:
     try:
         socket.getaddrinfo(host, port)
     except OSError as exc:
-        return Probe("tls", url, False, f"DNS nao resolve: {exc}")
+        return Probe("tls", url, False, f"DNS não resolve: {exc}")
 
     def connect() -> socket.socket:
         """Socket ate o host, atravessando o proxy quando ha um configurado."""
@@ -388,7 +388,7 @@ def probe_tls(config: Config, host: str, port: int = 443) -> Probe:
     except ssl.SSLError as exc:
         verify_error = " ".join(str(exc).split())
     except OSError as exc:
-        return Probe("tls", url, False, f"conexao falhou: {exc}")
+        return Probe("tls", url, False, f"conexão falhou: {exc}")
 
     # 2. Sem verificacao, so para ler o que o servidor apresentou. Nada e
     #    coletado por esta conexao - ela existe para explicar a falha acima.
@@ -402,7 +402,7 @@ def probe_tls(config: Config, host: str, port: int = 443) -> Probe:
                 findings.update(_describe_chain(tls))
     except OSError as exc:
         return Probe(
-            "tls", url, False, f"{verify_error[:120]} (e o handshake cru tambem falhou: {exc})"
+            "tls", url, False, f"{verify_error[:120]} (e o handshake cru também falhou: {exc})"
         )
 
     cause = _tls_cause(verify_error, findings, host)
@@ -448,30 +448,30 @@ def _tls_cause(verify_error: str, findings: dict, host: str) -> str:
     lowered = verify_error.lower()
 
     if findings.get("auto_assinado") or "self signed" in lowered or "self-signed" in lowered:
-        return "certificado auto-assinado (tipico de proxy que intercepta TLS)"
+        return "certificado auto-assinado (típico de proxy que intercepta TLS)"
     if "expired" in lowered:
-        return f"certificado vencido (valido ate {findings.get('valido_ate')})"
+        return f"certificado vencido (válido até {findings.get('valido_ate')})"
     if "hostname mismatch" in lowered or "doesn't match" in lowered:
-        return f"certificado e de outro nome: {findings.get('nomes')}"
+        return f"certificado é de outro nome: {findings.get('nomes')}"
     if "unable to get local issuer" in lowered:
         if findings.get("certificados_apresentados") == 1:
             return (
-                "cadeia incompleta no servidor: ele apresenta so o certificado "
-                "folha, sem a intermediaria. E defeito do servidor - do lado do "
-                "cliente so se contorna baixando a guarda, o que este monitor "
-                "nao faz"
+                "cadeia incompleta no servidor: ele apresenta só o certificado "
+                "folha, sem a intermediária. É defeito do servidor - do lado do "
+                "cliente só se contorna baixando a guarda, o que este monitor "
+                "não faz"
             )
         return (
-            "emissor desconhecido: a CA que assinou nao esta no bundle de "
-            "confianca deste ambiente"
+            "emissor desconhecido: a CA que assinou não está no bundle de "
+            "confiança deste ambiente"
         )
 
     names = findings.get("nomes") or []
     if names and not any(
         host == n or (n.startswith("*.") and host.endswith(n[1:])) for n in names
     ):
-        return f"certificado e de outro nome: {names}"
-    return "falha de verificacao nao classificada - veja os campos em findings"
+        return f"certificado é de outro nome: {names}"
+    return "falha de verificação não classificada - veja os campos em findings"
 
 
 def probe_inter_sitemap(config: Config) -> list[Probe]:

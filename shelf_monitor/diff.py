@@ -7,10 +7,14 @@ confia na coleta atual (ver `SUSPECT_SHRINK_RATIO`).
 from __future__ import annotations
 
 import re
+from collections import defaultdict
+from dataclasses import replace
 from difflib import SequenceMatcher
 
 from shelf_monitor.config import (
     FUZZY_RENAME_THRESHOLD,
+    SUSPECT_GROWTH_MIN_FUNDS,
+    SUSPECT_GROWTH_RATIO,
     SUSPECT_SHRINK_RATIO,
 )
 from shelf_monitor.models import (
@@ -25,7 +29,9 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.cnpj_por_nome import palavras_do_nome
 from shelf_monitor.normalize import name_slug
+from shelf_monitor.profile import na_vitrine
 
 # (rotulo, extrator) - o rotulo aparece no digest.
 _TRACKED = (
@@ -72,15 +78,34 @@ def _missing_sources(
 
 
 def assess_quality(
-    current: ShelfSnapshot, previous: ShelfSnapshot | None
+    current: ShelfSnapshot,
+    previous: ShelfSnapshot | None,
+    espera_vitrine: bool = False,
 ) -> ShelfSnapshot:
-    """Rebaixa para PARTIAL uma coleta que encolheu demais ou perdeu uma fonte.
+    """Rebaixa para PARTIAL uma coleta sem vitrine, que encolheu ou perdeu fonte.
 
     A marcacao precisa viver no snapshot, nao so no diff: um snapshot truncado
     salvo como OK vira a baseline confiavel do dia seguinte, e a prateleira
     inteira reaparece como "entradas" quando a coleta volta ao normal.
+
+    `espera_vitrine` diz que a casa declara uma fonte de vitrine. Sem nenhum
+    fundo de vitrine, a coleta e parcial mesmo sem baseline: em 2026-09-13 XP,
+    BTG e Itau foram gravados OK so com o catalogo do Open Finance - para um
+    monitor de vitrine, a coleta que falhou justamente na vitrine.
     """
-    if current.status != SnapshotStatus.OK or previous is None or not previous.funds:
+    if current.status != SnapshotStatus.OK:
+        return current
+
+    if espera_vitrine and current.funds and not any(f.on_listing for f in current.funds):
+        current.status = SnapshotStatus.PARTIAL
+        note = (
+            f"nenhum fundo de vitrine nesta coleta - só o catálogo respondeu "
+            f"({len(current.funds)} fundos); tratada como parcial"
+        )
+        current.error = f"{note} | {current.error}" if current.error else note
+        return current
+
+    if previous is None or not previous.funds:
         return current
 
     ratio = len(current.funds) / len(previous.funds)
@@ -103,7 +128,8 @@ def assess_quality(
             for source in missing
         )
         note = (
-            f"fonte(s) da coleta anterior sem resposta nesta: {detail}; "
+            f"{'fonte' if len(missing) == 1 else 'fontes'} da coleta anterior sem "
+            f"resposta nesta: {detail}; "
             f"{len(current.funds)} contra {len(previous.funds)} fundos - "
             "tratada como parcial"
         )
@@ -165,6 +191,109 @@ def _may_be_rename(old_slug: str, new_slug: str) -> bool:
     return _similarity(old_slug, new_slug) >= FUZZY_RENAME_THRESHOLD
 
 
+def _nomes(fund: FundOffer) -> set[frozenset[str]]:
+    """O nome do fundo e as grafias que o merge guardou, em palavras canonicas.
+
+    As palavras do resolvedor por nome, e nao o texto: a vitrine do Itau passou
+    de "Itau Cash Enhanced USD Multimercado" a "... Subclasse I" entre 25/09 e
+    14/10/2026, no mesmo dia em que o fundo ganhou CNPJ.
+    """
+    nomes = {palavras_do_nome(fund.name)}
+    nomes.update(palavras_do_nome(v) for v in fund.extra.get("name_variants") or [])
+    nomes.discard(frozenset())
+    return nomes
+
+
+def _identificados_por_nome(index: dict[str, FundOffer]) -> dict[frozenset[str], set[str]]:
+    """Nome canonico -> identidades dos fundos da VITRINE com CNPJ.
+
+    So a vitrine: o registro que so o catalogo tem nao e o fundo da vitrine que
+    trocou de chave - e o nome dele, em palavras canonicas, empata com o do
+    irmao (FIC e master), o que desfaria o casamento certo.
+    """
+    por_nome: dict[frozenset[str], set[str]] = defaultdict(set)
+    for identity, fund in index.items():
+        if fund.cnpj and fund.on_listing:
+            for nome in _nomes(fund):
+                por_nome[nome].add(identity)
+    return por_nome
+
+
+def _reconcile_identificacao(
+    added: list[FundOffer],
+    removed: list[FundOffer],
+    previous_index: dict[str, FundOffer],
+    current_index: dict[str, FundOffer],
+) -> tuple[list[FundOffer], list[FundOffer], list[FundChange]]:
+    """Fundo que ganhou (ou perdeu) o CNPJ entre duas coletas nao entrou nem saiu.
+
+    Sem CNPJ, a identidade e o slug do nome. Quando a coleta passa a
+    identificar um fundo da vitrine pelo nome (shelf_monitor.cnpj_por_nome), o
+    mesmo fundo troca de chave: some como `slug:...` e reaparece como CNPJ - ou
+    se funde ao registro do catalogo que ja estava la. Medido na primeira
+    coleta do Itau com CNPJ (2026-10-14, contra 25/09): sem esta passada, a
+    vitrine teria 368 saidas e 21 entradas; com ela, 2 e 10. E cada empate novo
+    ou desfeito numa semana qualquer viraria uma entrada e uma saida falsas.
+
+    O casamento e pelo nome em palavras canonicas (as do resolvedor por nome),
+    contra o nome e as grafias que o merge guarda em `name_variants` quando o
+    fundo da vitrine se une ao catalogo; so entre um lado sem CNPJ e um fundo
+    da vitrine com CNPJ, e so quando um fundo leva aquele nome. Mudanca de
+    campo so e reportada quando os dois registros vieram das mesmas fontes: o
+    do catalogo traz o minimo e a taxa do Open Finance, e compara-lo com o da
+    vitrine inventaria uma alteracao.
+    """
+    agora = _identificados_por_nome(current_index)
+    antes = _identificados_por_nome(previous_index)
+    sai_de_added: set[int] = set()
+    sai_de_removed: set[int] = set()
+    mudancas: list[FundChange] = []
+
+    def parear(antigo: FundOffer, novo: FundOffer, identity: str) -> None:
+        if sorted(antigo.sources) != sorted(novo.sources):
+            return
+        changes = _field_changes(antigo, novo)
+        if changes:
+            mudancas.append(FundChange(identity=identity, name=novo.name, changes=changes))
+
+    added_por_id = {id(f): f for f in added}
+    removed_por_id = {id(f): f for f in removed}
+
+    # Saiu sem CNPJ e voltou com: o mesmo fundo, agora identificado.
+    for fund in removed:
+        if fund.cnpj:
+            continue
+        alvos = agora.get(palavras_do_nome(fund.name), set())
+        if len(alvos) != 1:
+            continue
+        identity = next(iter(alvos))
+        novo = current_index[identity]
+        sai_de_removed.add(id(fund))
+        if id(novo) in added_por_id and id(novo) not in sai_de_added:
+            sai_de_added.add(id(novo))
+            parear(fund, novo, identity)
+
+    # Entrou sem CNPJ e estava com: o mesmo fundo, que perdeu a identificacao.
+    for fund in added:
+        if fund.cnpj or id(fund) in sai_de_added:
+            continue
+        origens = antes.get(palavras_do_nome(fund.name), set())
+        if len(origens) != 1:
+            continue
+        identity = next(iter(origens))
+        antigo = previous_index[identity]
+        sai_de_added.add(id(fund))
+        if id(antigo) in removed_por_id and id(antigo) not in sai_de_removed:
+            sai_de_removed.add(id(antigo))
+            parear(antigo, fund, fund.identity)
+
+    return (
+        [f for f in added if id(f) not in sai_de_added],
+        [f for f in removed if id(f) not in sai_de_removed],
+        mudancas,
+    )
+
+
 def _reconcile_renames(
     added: list[FundOffer], removed: list[FundOffer]
 ) -> tuple[list[FundOffer], list[FundOffer], list[FundChange]]:
@@ -217,12 +346,37 @@ def diff_shelf(
 
     if current.status == SnapshotStatus.UNAVAILABLE:
         diff.suspect = True
-        diff.suspect_reason = current.error or "coleta indisponivel"
+        diff.suspect_reason = current.error or "coleta indisponível"
         return diff
 
     if previous is None:
         # Primeira coleta: tudo e "novo", mas isso nao e novidade competitiva.
         diff.added = list(current.funds)
+        return diff
+
+    # O espelho do anti-churn de encolhimento, para a vitrine que aparece ou
+    # cresce de escala: a coleta passou a ver mais, e o que ela ve pela
+    # primeira vez nao entrou na prateleira. Em 2026-09-19 o conserto do
+    # navegador levou tres vitrines de 0 a ~600 fundos e o digest publicou
+    # "828 fundos entraram". Nova linha de base: nada entra, sai ou muda.
+    # A vitrine de varejo, a mesma que o digest publica ao lado deste motivo:
+    # contada com os restritos, a frase dizia "649 fundos na vitrine" e "a
+    # vitrine passou de 0 para 660" na mesma linha (BTG, 19/09).
+    vitrine_antes = sum(1 for f in previous.funds if na_vitrine(f))
+    vitrine_agora = sum(1 for f in current.funds if na_vitrine(f))
+    mudou_de_escala = (
+        vitrine_agora / vitrine_antes >= SUSPECT_GROWTH_RATIO
+        and vitrine_agora - vitrine_antes >= SUSPECT_GROWTH_MIN_FUNDS
+        if vitrine_antes
+        else vitrine_agora > 0
+    )
+    if mudou_de_escala:
+        diff.nova_linha_de_base = True
+        diff.suspect = True
+        diff.suspect_reason = (
+            f"a vitrine passou de {vitrine_antes} para {vitrine_agora} fundos: ganho "
+            "de cobertura da coleta, não movimento de prateleira"
+        )
         return diff
 
     current_index = _index(current.funds)
@@ -242,6 +396,10 @@ def diff_shelf(
                 FundChange(identity=identity, name=new_fund.name, changes=field_changes)
             )
 
+    added, removed, identificados = _reconcile_identificacao(
+        added, removed, previous_index, current_index
+    )
+    changed.extend(identificados)
     added, removed, renamed = _reconcile_renames(added, removed)
     changed.extend(renamed)
 
@@ -266,9 +424,11 @@ def diff_shelf(
         missing = _missing_sources(current, previous)
         if missing and len(current.funds) < len(previous.funds):
             diff.suspect = True
+            uma = len(missing) == 1
             diff.suspect_reason = (
-                f"fonte(s) {', '.join(missing)} da coleta anterior nao responderam "
-                f"nesta ({len(current.funds)} contra {len(previous.funds)} fundos)"
+                f"{'fonte' if uma else 'fontes'} {', '.join(missing)} da coleta anterior "
+                f"{'não respondeu' if uma else 'não responderam'} nesta "
+                f"({len(current.funds)} contra {len(previous.funds)} fundos)"
             )
 
     # Coleta suspeita: as "saidas" provavelmente sao da coleta, nao da prateleira.
@@ -285,7 +445,7 @@ def diff_cvm(current: CvmSnapshot, previous: CvmSnapshot | None) -> CvmDiff:
 
     if current.status == SnapshotStatus.UNAVAILABLE:
         diff.suspect = True
-        diff.suspect_reason = current.error or "extrato indisponivel"
+        diff.suspect_reason = current.error or "extrato indisponível"
         return diff
 
     # Uma coluna renomeada pela CVM faz a watchlist casar com nada e o extrato
@@ -346,3 +506,27 @@ def diff_cvm(current: CvmSnapshot, previous: CvmSnapshot | None) -> CvmDiff:
         changes, key=lambda c: (not c.is_launch, c.fund.name)
     )
     return diff
+
+
+def radar_sem_cancelados(
+    snapshot: CvmSnapshot, diff: CvmDiff | None
+) -> tuple[CvmSnapshot, CvmDiff | None]:
+    """O radar que os relatorios mostram: sem fundo cancelado (pedido de 14/10/2026).
+
+    O extrato gravado e o diff continuam olhando o cadastro inteiro - a mudanca
+    de situacao precisa dos dois lados. O que muda e o que chega as superficies
+    (digest, dashboard, deck, planilha e assunto do e-mail): o fundo ja
+    cancelado sai da contagem e das listas, a passagem para "Cancelado" nao vira
+    movimento, e o fundo que sumiu do extrato nao e listado. Medido no extrato
+    de 28/09/2026: 1.884 dos 4.416 fundos do BTG e 986 dos 5.056 do Itau eram
+    cancelados - quase metade do "registrados" do BTG.
+    """
+    ativos = replace(snapshot, funds=[f for f in snapshot.funds if not f.is_cancelled])
+    if diff is None:
+        return ativos, None
+    return ativos, replace(
+        diff,
+        new_registrations=[f for f in diff.new_registrations if not f.is_cancelled],
+        situation_changes=[c for c in diff.situation_changes if not c.is_cancellation],
+        cancelled=[],
+    )

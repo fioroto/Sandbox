@@ -145,15 +145,38 @@ class ClassFees:
     performance_fee: float | None = None
     performance_fee_benchmark: str | None = None
     has_performance_fee: str | None = None
-    entry_fee: float | None = None
-    exit_fee: float | None = None
+    # Ingresso e saida vem em tres colunas cada: o flag S/N, que a CVM preenche
+    # em 100% das linhas, e os dois valores, preenchidos so quando o flag e S.
+    # Guardar o flag separado importa porque ele e a unica leitura confiavel:
+    # medido em 2026-09-20 sobre as 38.547 linhas do extrato, so 44 classes
+    # (0,1%) cobram ingresso e 1.281 (3,3%) cobram saida. "Valor ausente" aqui
+    # quer dizer "nao cobra", nao "nao informou" - e sem o flag as duas coisas
+    # ficariam indistinguiveis.
+    has_entry_fee: str | None = None
+    entry_fee_pct: float | None = None
+    entry_fee_amount: float | None = None
+    has_exit_fee: str | None = None
+    exit_fee_pct: float | None = None
+    exit_fee_amount: float | None = None
+    custody_fee_max: float | None = None
     min_initial: float | None = None
-    min_balance: float | None = None
     redemption_quotation_days: int | None = None
     redemption_payment_days: int | None = None
     target_audience: str | None = None
     investment_policy: str | None = None
     long_term_taxation: str | None = None
+    # Mandato declarado: o que o regulamento AUTORIZA, nunca o que a carteira
+    # carrega. Um fundo pode ter autorizacao para 100% de credito privado e
+    # carregar 10%. Medir exposicao realizada exigiria a CDA, que nao esta no
+    # escopo - entao todo rotulo derivado daqui diz "autorizado".
+    credit_private: str | None = None
+    credit_private_max: float | None = None
+    foreign: str | None = None
+    foreign_max: float | None = None
+    derivatives: str | None = None
+    leverage: str | None = None
+    leverage_factor: float | None = None
+    mirror_fund: str | None = None
 
 
 @dataclass

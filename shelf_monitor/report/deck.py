@@ -12,12 +12,17 @@ comparacao visual importa (arquitetura aberta).
 """
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import RunReport
-from shelf_monitor.report.aggregate import build_dashboard_data
+from shelf_monitor.report.aggregate import build_dashboard_data, listing_funds, resumo_do_funil
+from shelf_monitor.report.shared import (
+    fontes_do_relatorio,
+    movimentos_de_vitrine,
+    rotulo_da_casa,
+)
+from shelf_monitor.texto import competencia_br, periodo_br
 
 # Paleta de referencia (modo claro) - a mesma do dashboard.
 _INK = "0B0B0B"
@@ -55,10 +60,10 @@ def render_deck(config: Config, report: RunReport) -> Path:
 
     matrix = listing.get("matrix") or []
     # Matriz so de "sem classificacao" nao e matriz - e a ausencia da base.
-    if len(matrix) == 1 and matrix[0].get("category") == "Sem classificacao":
+    if len(matrix) == 1 and matrix[0].get("category") == "Sem classificação":
         matrix = []
 
-    _cover(prs, report)
+    _cover(prs, report, config.capa_deck)
     _headline(prs, data, platforms)
     if matrix:
         _matrix(prs, {**listing, "matrix": matrix}, platforms)
@@ -69,13 +74,18 @@ def render_deck(config: Config, report: RunReport) -> Path:
         _gaps(prs, gaps)
     if platforms:
         _architecture(prs, platforms)
-        _costs(prs, platforms)
+        _costs(prs, platforms, data.get("custo"))
+    _captacao(prs, data.get("flow") or {})
     _movements(prs, report)
     _cvm_radar(prs, data)
     _methodology(prs, report, data)
+    _fontes(prs, report, config)
 
     config.reports_dir.mkdir(parents=True, exist_ok=True)
-    path = config.reports_dir / f"prateleiras-{report.generated_at.date().isoformat()}.pptx"
+    path = (
+        config.reports_dir
+        / f"{config.prefixo_arquivo}-{report.generated_at.date().isoformat()}.pptx"
+    )
     prs.save(path)
     return path
 
@@ -175,11 +185,11 @@ def _table(slide, x, y, w, headers, rows, *, col_widths=None, size=11):
 # --- slides ------------------------------------------------------------------
 
 
-def _cover(prs, report: RunReport):
+def _cover(prs, report: RunReport, titulo: str):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
     _rect(slide, 0.6, 2.1, 1.6, 0.06, _SERIES[0])
-    _text(slide, 0.6, 2.4, 11, 1.0, "Prateleiras de fundos", 40, bold=True)
+    _text(slide, 0.6, 2.4, 11, 1.0, titulo, 40, bold=True)
     _text(slide, 0.6, 3.3, 11, 0.6, "Leitura competitiva das vitrines de varejo", 18,
           color=_INK_SOFT)
     houses = ", ".join(s.platform for s in report.snapshots)
@@ -191,16 +201,18 @@ def _cover(prs, report: RunReport):
 def _headline(prs, data: dict, platforms: list[dict]):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "A vitrine em numeros",
-           "Vitrine = a listagem que o cliente ve na casa; catalogo = tudo que ela "
+    _title(slide, "A vitrine em números",
+           "Vitrine = a listagem que o cliente vê na casa; catálogo = tudo que ela "
            "administra (Open Finance)")
 
     tiles = [
-        (p["label"], _fmt(p["total"]), f"catalogo: {_fmt(p.get('catalog_total'))}")
+        (p["label"], _fmt(p["total"]), f"catálogo: {_fmt(p.get('catalog_total'))}")
         for p in platforms
     ] or [("Sem vitrines coletadas", "-", "rode a coleta com navegador")]
+    # Previdencia: cruzar vitrines por CNPJ mede o veiculo de cada seguradora.
+    sem_cnpj = (data.get("suprimidos") or {}).get("cnpj")
     shared = (data.get("listing") or {}).get("shared_all")
-    if shared:
+    if shared and not sem_cnpj:
         tiles.append(("Em 2+ vitrines", _fmt(shared), "mesmo CNPJ"))
 
     width = 2.85
@@ -212,11 +224,15 @@ def _headline(prs, data: dict, platforms: list[dict]):
         _text(slide, x + 0.2, 3.05, width - 0.4, 0.35, note, 10, color=_MUTED)
 
     exclusives = [(p["label"], p.get("exclusive", 0)) for p in platforms]
-    if exclusives:
-        _text(slide, 0.6, 4.0, 12, 0.4, "Diferenciais na vitrine (por CNPJ)", 14, bold=True)
+    if exclusives and sem_cnpj:
+        _text(slide, 0.6, 4.0, 12, 0.4, "Fundos só nesta vitrine (por CNPJ)", 14, bold=True)
+        _text(slide, 0.6, 4.5, 12, 1.2, f"Não se aplica a este monitor: {sem_cnpj}.",
+              11, color=_MUTED)
+    elif exclusives:
+        _text(slide, 0.6, 4.0, 12, 0.4, "Fundos só nesta vitrine (por CNPJ)", 14, bold=True)
         _table(
             slide, 0.6, 4.5, 6.5,
-            ["Casa", "Fundos de varejo que so ela oferta"],
+            ["Casa", "Fundos de varejo que só ela oferta"],
             [[label, _fmt(count)] for label, count in exclusives],
             col_widths=[2, 3],
         )
@@ -226,7 +242,7 @@ def _matrix(prs, listing: dict, platforms: list[dict]):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
     _title(slide, "Matriz vitrine - casa x classe ANBIMA",
-           "Classificacao oficial (join por CNPJ com o registro CVM); "
+           "Classificação oficial (join por CNPJ com o registro CVM); "
            "mais escuro = mais fundos")
 
     matrix = listing["matrix"][:12]
@@ -253,15 +269,28 @@ def _matrix(prs, listing: dict, platforms: list[dict]):
 def _gaps(prs, gaps: dict):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "Gaps de prateleira - o que os concorrentes vitrinam e a XP nao",
+    funil = resumo_do_funil(gaps)
+    _title(slide, "Gaps de prateleira - o que os concorrentes vitrinam e a XP não",
+           funil or
            "Fundo de varejo na vitrine de 1+ concorrente e fora da vitrine da XP "
-           "(por CNPJ); o catalogo Open Finance nao conta em nenhum dos lados")
+           "(por CNPJ); o catálogo Open Finance não conta em nenhum dos lados")
 
-    tiles = [
-        ("Fundos de gap", _fmt(gaps["total_gaps"]), "fora da vitrine XP"),
-        ("Em 2+ vitrines", _fmt(gaps["multi_house_gaps"]), "mais de uma casa"),
-        ("Vitrine da XP", _fmt(gaps["baseline_listing_total"]), "base de comparacao"),
-    ]
+    if (gaps.get("carteira") or {}).get("available"):
+        # Com a carteira da CVM a manchete e o gap REAL: o aparente que a XP
+        # cobre por espelho ou equivalente nao e decisao de comite.
+        tiles = [
+            ("Gaps reais", _fmt(gaps["total_gaps"]), "sem espelho nem equivalente"),
+            ("Já cobertos", _fmt(gaps.get("total_cobertos", 0)),
+             f"de {_fmt(gaps.get('gaps_aparentes', 0))} gaps aparentes"),
+            ("Em outra liquidez", _fmt(gaps.get("gaps_liquidez", 0)),
+             "a XP tem a estratégia em outro D+"),
+        ]
+    else:
+        tiles = [
+            ("Fundos de gap", _fmt(gaps["total_gaps"]), "fora da vitrine XP"),
+            ("Em 2+ vitrines", _fmt(gaps["multi_house_gaps"]), "mais de uma casa"),
+            ("Vitrine da XP", _fmt(gaps["baseline_listing_total"]), "base de comparação"),
+        ]
     width = 2.85
     for index, (label, value, note) in enumerate(tiles):
         x = 0.6 + index * (width + 0.25)
@@ -282,21 +311,32 @@ def _gaps(prs, gaps: dict):
 
     funds = gaps.get("funds") or []
     if funds:
-        _text(slide, 0.6, 3.1, 7.5, 0.35, "Maiores gaps (por presenca)", 13, bold=True)
+        # "por presenca" era o criterio antigo. A lista chega ordenada por
+        # esforco de incluir e, dentro de cada faixa, pela captacao - a mesma
+        # ordem do dashboard, do digest e da planilha. Num slide de decisao,
+        # abrir pelo que nao se transfere seria o pior comeco possivel.
+        _text(slide, 0.6, 3.1, 7.5, 0.35,
+              "Maiores gaps (pelo que dá para fechar)", 13, bold=True)
+
+        def mm(valor):
+            if valor is None:
+                return "-"
+            return f"{valor / 1e6:+,.0f} MM".replace(",", ".")
+
         _table(
             slide, 0.6, 3.5, 7.5,
-            ["Fundo", "Categoria", "Casas", "Menor min", "Menor taxa"],
+            ["Fundo", "Categoria", "Casas", "Captação", "Esforço"],
             [
                 [clip(f["name"]), f["category"], f["houses_label"],
-                 money(f["min_initial"]), pct(f["admin_fee_pct"])]
+                 mm(f.get("captacao_liquida")), f.get("esforco") or "-"]
                 for f in funds[:8]
             ],
-            col_widths=[3.2, 1.7, 1.4, 1.0, 0.9], size=10,
+            col_widths=[2.7, 1.5, 1.2, 1.0, 1.1], size=10,
         )
 
     categories = gaps.get("categories") or []
     if categories:
-        _text(slide, 8.4, 3.1, 4.3, 0.35, "Categorias em deficit", 13, bold=True)
+        _text(slide, 8.4, 3.1, 4.3, 0.35, "Categorias em déficit", 13, bold=True)
 
         def best_label(entry):
             best = entry["best_competitor"]
@@ -315,11 +355,22 @@ def _gaps(prs, gaps: dict):
 
     notes = []
     if gaps.get("baseline_warning"):
-        notes.append(f"Atencao: {gaps['baseline_warning']}.")
+        notes.append(f"Atenção: {gaps['baseline_warning']}.")
     if gaps.get("excluded"):
         out = "; ".join(f"{e['label']} ({e['reason']})" for e in gaps["excluded"])
         notes.append(f"Fora do universo: {out}.")
-    notes.append("Lista completa na planilha (aba Gaps XP).")
+    carteira = gaps.get("carteira") or {}
+    if carteira.get("available") and carteira.get("competencias"):
+        notes.append(
+            "Espelho e equivalência pela carteira mensal da CVM de "
+            f"{competencia_br(carteira['competencias'][0])}."
+        )
+    elif carteira.get("aviso"):
+        notes.append(f"Atenção: {carteira['aviso']}.")
+    notes.append(
+        "Lista completa na planilha (abas Gaps XP e Gaps cobertos)."
+        if gaps.get("total_cobertos") else "Lista completa na planilha (aba Gaps XP)."
+    )
     _text(slide, 0.6, 6.95, 12.1, 0.4, " ".join(notes), 9.5, color=_MUTED)
 
 
@@ -327,7 +378,7 @@ def _architecture(prs, platforms: list[dict]):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
     _title(slide, "Arquitetura aberta",
-           "Produto de gestora da propria casa vs. de terceiros, na vitrine")
+           "Produto de gestora da própria casa vs. de terceiros, na vitrine")
 
     # Legenda com amostra de cor + rotulo em tinta.
     for index, (color, label) in enumerate(
@@ -358,67 +409,178 @@ def _architecture(prs, platforms: list[dict]):
         y += 0.62
 
     _text(slide, 0.6, y + 0.3, 12, 0.4,
-          '"Gestora da casa" segue a mesma watchlist do radar CVM - a definicao e uma so.',
+          '"Gestora da casa" segue a mesma watchlist do radar CVM - a definição é uma só.',
           10, color=_MUTED)
 
 
-def _costs(prs, platforms: list[dict]):
+def _costs(prs, platforms: list[dict], custo: dict | None = None):
+    """Custo relativo a categoria + ticket de entrada, num slide so.
+
+    O deck publicava APENAS os quartis de taxa bruta - justamente a leitura
+    que o dashboard desautoriza duas secoes depois da propria ("comparar a
+    taxa bruta entre casas mede o mix da prateleira, nao o preco"). Uma casa
+    com mais renda fixa (~0,2% a.a.) aparecia mais barata que uma com mais
+    acoes (~2%) sem que nenhum produto custasse diferente, e quem via so o
+    deck nao tinha como saber disso.
+
+    Agora o indice vem primeiro, quando o extrato da CVM permite calcula-lo, e
+    a taxa bruta sai. O ticket fica: aplicacao minima e comparavel entre casas
+    sem depender de mix.
+    """
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "Custo e ticket de entrada",
-           "Quartis da taxa de administracao e mediana do minimo - quartis mostram "
-           "a forma da prateleira; media esconderia")
 
-    def pct(value):
-        return f"{_fmt(value)}%" if value is not None else "-"
-
-    rows = []
-    for p in platforms:
-        fee = p.get("fee_quartiles") or {}
-        minimum = p.get("min_quartiles") or {}
-        rows.append([
-            p["label"],
-            pct(fee.get("q1")), pct(fee.get("median")), pct(fee.get("q3")),
-            f"R$ {_fmt(minimum.get('median'))}" if minimum.get("median") is not None else "-",
-            f"{round((p.get('cnpj_coverage') or 0) * 100)}%",
-        ])
-    _table(
-        slide, 0.6, 1.7, 10.5,
-        ["Casa", "Taxa q1", "Taxa mediana", "Taxa q3", "Minimo mediano", "Cobertura CNPJ"],
-        rows, col_widths=[2.2, 1, 1.2, 1, 1.6, 1.4],
+    tem_indice = bool(custo and custo.get("available"))
+    _title(
+        slide,
+        "Custo relativo à categoria e ticket de entrada" if tem_indice
+        else "Ticket de entrada",
+        "Índice 1,00x = exatamente a mediana da categoria de cada fundo; o que "
+        "decide é a diferença ENTRE as casas, não a distância de 1,00x"
+        if tem_indice else
+        "Quartis da aplicação mínima - quartis mostram a forma da prateleira; "
+        "média esconderia",
     )
-    _text(slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.5,
-          "Taxa e a maxima publicada pela casa (mesma semantica do maxAdminFee do "
-          "Open Finance). Celulas vazias = a fonte nao publica o campo.",
-          10, color=_MUTED)
+
+    def share(value):
+        return f"{round((value or 0) * 100)}%" if value is not None else "-"
+
+    minimos = {p["platform_id"]: (p.get("min_quartiles") or {}) for p in platforms}
+    rotulos = {p["platform_id"]: p["label"] for p in platforms}
+
+    if tem_indice:
+        rows = []
+        for casa in custo["casas"]:
+            minimo = minimos.get(casa["platform_id"], {})
+            indice = casa.get("indice_mediano")
+            rows.append([
+                casa["label"],
+                f"{indice:.2f}x" if indice is not None else "-",
+                share(casa.get("share_caro")),
+                share(casa.get("share_barato")),
+                share(casa.get("share_liquidez_imediata")),
+                f"R$ {_fmt(minimo.get('median'))}" if minimo.get("median") is not None else "-",
+            ])
+        cabecalho = ["Casa", "Índice mediano", "Caros", "Baratos",
+                     "Resgate até D+1", "Ticket mediano"]
+        larguras = [2.2, 1.6, 1.0, 1.1, 1.7, 1.6]
+        nota = (
+            "Índice = taxa do fundo dividida pela mediana da MESMA categoria no "
+            "universo de varejo da CVM. Nenhuma casa cobra 60% acima do mercado: "
+            "a vitrine exibe a classe de varejo, que carrega a camada de "
+            "distribuição, e o universo inclui classes sem ela."
+        )
+    else:
+        rows = [
+            [
+                rotulos[pid],
+                f"R$ {_fmt(m.get('q1'))}" if m.get("q1") is not None else "-",
+                f"R$ {_fmt(m.get('median'))}" if m.get("median") is not None else "-",
+                f"R$ {_fmt(m.get('q3'))}" if m.get("q3") is not None else "-",
+            ]
+            for pid, m in minimos.items()
+        ]
+        cabecalho = ["Casa", "Mínimo q1", "Mínimo mediano", "Mínimo q3"]
+        larguras = [2.6, 2.0, 2.2, 2.0]
+        nota = (
+            "Custo relativo à categoria não calculado: "
+            f"{(custo or {}).get('reason') or 'sem base de mercado importada'}. "
+            "A taxa bruta não entra no lugar dele - entre casas ela mede o mix "
+            "da prateleira, não o preço do produto."
+        )
+
+    _table(slide, 0.6, 1.7, 10.5, cabecalho, rows, col_widths=larguras)
+    _text(slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.6, nota, 10, color=_MUTED)
+
+
+def _mm_deck(valor: float | None) -> str:
+    if valor is None:
+        return "-"
+    return f"{valor / 1e6:+,.0f} MM".replace(",", ".")
+
+
+def _captacao(prs, flow: dict):
+    """A leitura de captacao num slide: as frases e a tabela por familia.
+
+    O deck nao tinha captacao nenhuma - o bloco que mais separa as vitrines
+    (medido em 24/09: -R$ 1,3 bi na XP contra +R$ 3,0 bi no BTG) so saia no
+    digest e no dashboard. As frases sao as mesmas das outras superficies.
+    """
+    if not flow.get("available"):
+        return
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    periodo = flow.get("periodo") or {}
+    _title(slide, "Captação dos fundos de vitrine",
+           f"Informe diário da CVM, {periodo_br(periodo.get('de'), periodo.get('ate'))} - fluxo "
+           "do fundo no mercado inteiro, não só o que entrou por cada casa")
+
+    leitura = flow.get("leitura") or []
+    y = 1.6
+    for frase in leitura:
+        _text(slide, 0.6, y, 12.1, 0.55, frase, 11.5)
+        y += 0.55
+
+    casas = flow.get("casas") or []
+    familias = flow.get("por_categoria") or []
+    if casas and familias:
+        y += 0.2
+        _text(slide, 0.6, y, 12, 0.35, "Por família de ativo", 13, bold=True)
+        _table(
+            slide, 0.6, y + 0.4, 12.1,
+            ["Família", *[c["label"] for c in casas], "Todas as vitrines"],
+            [
+                [
+                    linha["categoria"],
+                    *[
+                        _mm_deck(linha["casas"][c["platform_id"]]["captacao_liquida"])
+                        if linha["casas"].get(c["platform_id"], {}).get("fundos") else "-"
+                        for c in casas
+                    ],
+                    _mm_deck(linha["universo"]["captacao_liquida"]),
+                ]
+                for linha in familias[:6]
+            ],
+            col_widths=[2.4, *[1.8] * len(casas), 2.0],
+            size=10,
+        )
 
 
 def _movements(prs, report: RunReport):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
     _title(slide, "Movimentos desde a coleta anterior",
-           "Entradas e saidas por casa; coletas suspeitas nao geram churn")
+           "Entradas e saídas na vitrine de varejo; coletas suspeitas não geram churn")
 
     rows = []
     for diff in report.shelf_diffs:
-        if diff.is_first_run:
-            rows.append([diff.platform, "-", "-", "primeira coleta (baseline)"])
+        if diff.nova_linha_de_base:
+            rows.append([
+                rotulo_da_casa(diff.platform), "-", "-",
+                f"nova linha de base: {diff.suspect_reason}",
+            ])
             continue
-        note = "coleta suspeita - saidas suprimidas" if diff.suspect else ""
-        sample = ", ".join(f.name for f in diff.added[:3])
-        if len(diff.added) > 3:
+        if diff.is_first_run:
+            rows.append([rotulo_da_casa(diff.platform), "-", "-", "primeira coleta (linha de base)"])
+            continue
+        # A mesma conta do digest e do assunto: so a vitrine. O exemplo de
+        # entrada tambem - antes o slide citava fundo que so estava no catalogo.
+        casa = movimentos_de_vitrine(diff, report.snapshot_for(diff.platform))
+        note = "coleta suspeita - saídas suprimidas" if diff.suspect else ""
+        sample = ", ".join(f.name for f in casa.entradas[:3])
+        if len(casa.entradas) > 3:
             sample += ", ..."
         rows.append([
-            diff.platform,
-            _fmt(len(diff.added)),
-            "-" if diff.suspect else _fmt(len(diff.removed)),
-            note or sample or "sem movimentos",
+            rotulo_da_casa(diff.platform),
+            _fmt(len(casa.entradas)),
+            "-" if diff.suspect else _fmt(len(casa.saidas)),
+            note or sample or "sem movimentos na vitrine",
         ])
     if not rows:
-        rows = [["-", "-", "-", "sem diffs nesta execucao"]]
+        rows = [["-", "-", "-", "sem diffs nesta execução"]]
     _table(slide, 0.6, 1.7, 12.1,
-           ["Casa", "Entradas", "Saidas", "Observacao / exemplos de entrada"],
-           rows, col_widths=[1.4, 1, 1, 6], size=10)
+           ["Casa", "Entradas", "Saídas", "Observação / exemplos de entrada"],
+           rows, col_widths=[2.0, 1, 1, 5.4], size=10)
 
 
 def _cvm_radar(prs, data: dict):
@@ -427,20 +589,20 @@ def _cvm_radar(prs, data: dict):
         return
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "Radar CVM - visao antecipada",
-           "Fundos registrados por gestoras ligadas as casas; pre-operacional = "
-           "registrado e ainda nao lancado")
+    _title(slide, "Radar CVM - visão antecipada",
+           "Fundos registrados por gestoras ligadas às casas; pré-operacional = "
+           "registrado e ainda não lançado")
 
     houses = cvm.get("houses") or []
     _table(slide, 0.6, 1.6, 7.5,
-           ["Casa", "Registrados", "Pre-operacionais"],
+           ["Casa", "Ativos", "Pré-operacionais"],
            [[h["label"], _fmt(h["total"]), _fmt(h["pre_operational"])] for h in houses],
            col_widths=[2.5, 1.5, 1.5])
 
     recents = (cvm.get("pre_operational_funds") or [])[:6]
     if recents:
         y = 1.6 + 0.32 * (len(houses) + 1) + 0.4
-        _text(slide, 0.6, y, 12, 0.4, "Registros pre-operacionais mais recentes", 13,
+        _text(slide, 0.6, y, 12, 0.4, "Registros pré-operacionais mais recentes", 13,
               bold=True)
         _table(slide, 0.6, y + 0.45, 12.1,
                ["Fundo", "Casa", "Gestora", "Registro"],
@@ -449,21 +611,48 @@ def _cvm_radar(prs, data: dict):
                col_widths=[5, 1.4, 2.6, 1.2], size=9)
 
 
+def _fontes(prs, report: RunReport, config: Config):
+    """As fontes do relatorio, com o nome clicavel e o endereco visivel.
+
+    Slide proprio porque o de metodologia ja ocupa a pagina inteira com uma
+    linha por casa. O endereco vai escrito alem de clicavel: deck impresso ou
+    exportado em PDF perde o hiperlink.
+    """
+    from pptx.util import Pt
+
+    fontes = fontes_do_relatorio(report, config)
+    if not fontes:
+        return
+    slide = _blank(prs)
+    _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
+    _title(slide, "Fontes", "Onde conferir cada número - clique no nome para abrir")
+    y = 1.5
+    for fonte in fontes:
+        caixa = _text(slide, 0.6, y, 12.1, 0.32, fonte.nome, 12, bold=True)
+        caixa.text_frame.paragraphs[0].runs[0].hyperlink.address = fonte.url
+        uso = caixa.text_frame.paragraphs[0].add_run()
+        uso.text = f" - {fonte.uso}"
+        uso.font.size = Pt(11)
+        uso.font.name = _FONT
+        _text(slide, 0.6, y + 0.3, 12.1, 0.3, fonte.url, 9, color=_MUTED)
+        y += 0.62
+
+
 def _methodology(prs, report: RunReport, data: dict):
     slide = _blank(prs)
     _rect(slide, 0, 0, _SLIDE_W_IN, _SLIDE_H_IN, _SURFACE)
-    _title(slide, "Metodologia e proveniencia")
+    _title(slide, "Metodologia e proveniência")
 
     restricted = (data.get("restricted") or {}).get("total") or 0
     lines = [
-        ("Vitrine", "fundo presente no canal da propria casa (site, API do portal ou "
-                    "area logada). Open Finance = catalogo regulatorio, usado para "
-                    "enriquecer e como referencia."),
+        ("Vitrine", "fundo presente no canal da própria casa (site, API do portal ou "
+                    "área logada). Open Finance = catálogo regulatório, usado para "
+                    "enriquecer e como referência."),
         ("Perfil de varejo",
          f"fundos exclusivos/restritos ({_fmt(restricted)} nesta coleta) ficam fora "
-         "de toda analise; o inventario deles esta na aba 'Restritos (auxiliar)' "
+         "de toda análise; o inventário deles está na aba 'Restritos (auxiliar)' "
          "da planilha e no dashboard."),
-        ("Precedencia", "Open Finance > area logada > API do portal > navegador > HTML; "
+        ("Precedência", "Open Finance > área logada > API do portal > navegador > HTML; "
                         "fontes que faltam preenchem, nunca sobrescrevem."),
     ]
     enrichment = data.get("enrichment")
@@ -473,21 +662,25 @@ def _methodology(prs, report: RunReport, data: dict):
     )
     if identifiable:
         pct = round(100 * enrichment["matched"] / identifiable)
-        lines.append(("Normalizacao ANBIMA",
-                      f"join com o registro oficial CVM por CNPJ e por codigo: "
-                      f"{enrichment['matched']} de {identifiable} fundos "
-                      f"identificaveis ({pct}%); a gestora vem do registro em "
+        lines.append(("Normalização ANBIMA",
+                      f"join com o registro oficial CVM por CNPJ e por código: "
+                      f"{_fmt(enrichment['matched'])} de {_fmt(identifiable)} fundos "
+                      f"identificáveis ({pct}%); a gestora vem do registro em "
                       f"{_fmt(enrichment.get('managers_from_cvm', 0))} deles."))
     else:
-        lines.append(("Normalizacao ANBIMA",
-                      "nao aplicada - base de mercado nao importada "
+        lines.append(("Normalização ANBIMA",
+                      "não aplicada - base de mercado não importada "
                       "(python -m shelf_monitor market)."))
     for snapshot in report.snapshots:
-        listing_count = sum(1 for f in snapshot.funds if f.on_listing)
+        # `listing_funds` e nao `f.on_listing` direto: a vitrine de varejo tira
+        # os exclusivos/restritos. Contando so `on_listing`, o deck publicava um
+        # numero de vitrine MAIOR que o do dashboard para a mesma coleta.
+        listing_count = len(listing_funds(snapshot))
         lines.append((
-            snapshot.platform,
+            rotulo_da_casa(snapshot.platform),
             f"{snapshot.collected_at.strftime('%d/%m/%Y')} - status "
-            f"{snapshot.status.value}; vitrine {listing_count} de {len(snapshot.funds)}"
+            f"{snapshot.status.value}; vitrine {_fmt(listing_count)} de "
+            f"{_fmt(len(snapshot.funds))}"
             + (f"; obs: {snapshot.error[:120]}" if snapshot.error else ""),
         ))
 

@@ -9,7 +9,7 @@ Tres regras que valem para tudo aqui:
 **A base e a vitrine, nunca o catalogo.** Posicionamento e o que o cliente ve na
 tela. O catalogo Open Finance mede o que a casa administra, o que e outra
 pergunta - somar os 10.073 do BTG contra os 668 da XP compararia coisas
-diferentes e daria um numero espetacularmente errado. Reusamos `_listing_funds`
+diferentes e daria um numero espetacularmente errado. Reusamos `listing_funds`
 do aggregate para que a regra de pertinencia (varejo + vitrine) exista num unico
 lugar.
 
@@ -30,32 +30,44 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from shelf_monitor.config import PLATFORMS, Config
-from shelf_monitor.enrich import KEY_ANBIMA
-from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot, SnapshotStatus
+from shelf_monitor.classify import (
+    CATEGORIA_ESTRUTURADO,
+    KEY_VIA,
+    label_nivel1,
+    so_nivel1,
+)
+from shelf_monitor.config import Config
+from shelf_monitor.models import BLOCO_CNPJ, FundOffer, ShelfSnapshot, SnapshotStatus
 from shelf_monitor.report.aggregate import (
-    ASSET_CLASS_LABELS,
     _canonical_order,
-    _listing_funds,
+    listing_funds,
     _median,
     _offer_manager,
     _platform_label,
     anbima_category,
+    categoria_comparavel,
     is_own_product,
 )
 from shelf_monitor.storage import load_shelf_snapshot, shelf_snapshot_dates
+from shelf_monitor.texto import contagem
+from shelf_monitor.report.shared import (
+    MIN_AMOSTRA_TICKET,
+    MIN_VITRINE,
+    SOBRE_INDICE,
+    SUB_INDICE,
+)
 
 # Abaixo disto a vitrine nao sustenta leitura de posicionamento: um punhado de
 # fundos destacados na home nao e a prateleira da casa.
-_MIN_VITRINE = 30
+_MIN_VITRINE = MIN_VITRINE
 
 # Fracao minima de um campo preenchido para a metrica daquele campo valer. Com
 # 30% de cobertura a mediana descreve o terco que foi publicado, nao a vitrine.
 _MIN_FIELD_COVERAGE = 0.5
 
 # Indice fora desta faixa e aposta declarada, nao ruido de arredondamento.
-_OVER_INDEX = 1.35
-_UNDER_INDEX = 0.7
+_OVER_INDEX = SOBRE_INDICE
+_UNDER_INDEX = SUB_INDICE
 
 # Uma categoria com meia duzia de fundos gera indice instavel (um fundo a mais
 # dobra o share). Fora do ranking de apostas, mas continua contada no total.
@@ -73,9 +85,10 @@ _RETAIL_TICKET = 1_000.0
 # vitrine so o CNPJ serve para cruzar casas.
 _MIN_CNPJ_COVERAGE = 0.5
 
-# Minimo de fundos com ticket publicado pela vitrine para a mediana significar
-# algo. Abaixo disso a casa entra como "nao publica", nao como "publica caro".
-_MIN_TICKET_SAMPLE = 30
+# Minimo de fundos com ticket lido da vitrine para a mediana significar algo.
+# Abaixo disso a casa entra como "sem base na coleta", nao como "publica caro".
+# O mesmo limiar vale para a leitura de ticket das superficies (`aggregate`).
+_MIN_TICKET_SAMPLE = MIN_AMOSTRA_TICKET
 
 
 def _coverage(funds: list[FundOffer], attr: str) -> float:
@@ -89,45 +102,99 @@ def _has_field(funds: list[FundOffer], attr: str) -> bool:
     return _coverage(funds, attr) >= _MIN_FIELD_COVERAGE
 
 
-# Os dois eixos de categoria, e por que sao dois.
+# Os dois eixos de categoria, e por que agora sao o MESMO eixo em duas
+# granularidades.
 #
-# Medido em 2026-09-19 nas vitrines: a classificacao ANBIMA cobre 100% do BTG,
-# 86% da XP, 78% do Inter e **3% do Itau**. Ja `asset_class` (Renda Fixa, Acoes,
-# Multimercado, Cambial, Internacional, Previdencia) cobre 93% a 100% das quatro.
+# Ate 2026-09-20 eram duas taxonomias: o eixo grosso vinha da heuristica
+# `asset_class` e o fino da ANBIMA. A mistura produzia numero espetacularmente
+# errado - sem casar com o cadastro, um fundo do Itau caia no rotulo grosso
+# "Renda Fixa", que as outras casas quase nao usavam, e o Itau aparecia com 17x
+# o share das concorrentes ali e 11x em "Multimercado". Nao era aposta de
+# prateleira: era o balde que so ele usava, porque so ele nao casava.
 #
-# Comparar indice de concentracao no eixo fino misturando as duas coisas produz
-# numero espetacularmente errado: sem casar com a ANBIMA, um fundo do Itau cai no
-# rotulo grosso "Renda Fixa", que as outras casas quase nao usam - e o Itau
-# aparecia com 17x o share das concorrentes em "Renda Fixa" e 11x em
-# "Multimercado". Nao era aposta de prateleira, era o balde que so ele usava.
+# A causa nunca foi a taxonomia, e sim a identidade: o Itau publica CNPJ em 5,9%
+# da vitrine, e nenhuma casa publica codigo CVM. ANBIMA e CVM tinham exatamente
+# a mesma cobertura em toda casa - onde o join acontece as duas chegam juntas,
+# onde nao acontece nenhuma chega.
 #
-# Por isso o eixo COMPARAVEL e o grosso, onde todas entram; o eixo FINO e uma
-# segunda camada, restrita a quem tem cobertura ANBIMA, com os demais excluidos
-# por escrito.
-_MIN_ANBIMA_COVERAGE = 0.5
+# Com `shelf_monitor.classify` resolvendo a categoria pelo nome quando falta
+# identidade, a cobertura do Itau foi a 100% e os dois eixos passaram a sair da
+# mesma fonte: o grosso e o nivel 1 da categoria oficial, o fino e ela inteira.
+# Tres guardas mantem a comparacao honesta, e cada uma corrige um artefato
+# medido: rotulo publicado pela casa nao vale como oficial (o BTG aparecia com
+# "Direitos Creditorios" que so ele tem); fundo resolvido so no nivel 1 nao
+# entra no eixo fino (o Itau aparecia com "RENDA FIXA 22,20x"); e produto
+# estruturado tem balde proprio (a XP aparecia apostando "16,6x mais
+# Estruturado", que e tipo de produto, nao composicao de prateleira).
+#
+# O limiar abaixo deixou de medir cobertura ANBIMA e passou a medir cobertura de
+# CLASSIFICACAO, por qualquer das vias. Com a cascata, as quatro vitrines ficam
+# entre 94% e 100%.
+_MIN_CLASSIFICACAO = 0.5
 
 # Rotulo unico para o que nao tem classe conhecida. Fica fora do ranking de
 # apostas: "a casa X tem 2,8x mais Sem classificacao" e um fato sobre o join com a
 # base oficial, nao sobre a estrategia da casa.
-_UNCLASSIFIED = "Sem classificacao"
+_UNCLASSIFIED = "Sem classificação"
+
+# Produto que o cadastro da CVM nao classifica (FIDC, FII, FIP...). Fica de
+# fora do ranking de apostas como o "Sem classificacao", mas por outro motivo:
+# ali falta join, aqui a taxonomia simplesmente nao cobre o produto.
+#
+# Deixa-lo dentro produzia numero enganoso: medido em 2026-09-20, a XP aparecia
+# apostando "16,6x mais Estruturado" que as concorrentes. Nao e composicao de
+# prateleira - e que 6,7% da vitrine dela sao FIDC/FII, contra 0,6% do BTG, e o
+# balde existe justamente porque a ANBIMA nao classifica esses produtos. A
+# diferenca e real e merece bloco proprio, nao uma linha no ranking de apostas.
+_ESTRUTURADO = "Estruturado"
+
+# Rotulos que contam no total mas nao disputam indice de concentracao.
+_FORA_DO_EIXO = frozenset({_UNCLASSIFIED, _ESTRUTURADO})
+
+
+# Rotulo do eixo grosso gravado por quem precisa de um nivel 1 diferente do que
+# `label_nivel1` deriva da categoria. Hoje so a previdencia: todo rotulo ANBIMA
+# dela tem nivel 1 "Previdencia", e o eixo grosso de uma vitrine so de
+# previdencia colapsava num balde unico (shelf_monitor.previdencia.eixo). O
+# modulo de fundos nunca grava esta chave - para ele, nada muda.
+KEY_CATEGORIA_GROSSA = "categoria_grossa"
 
 
 def coarse_category(fund: FundOffer) -> str:
-    """Classe do fundo no eixo comparavel entre todas as casas."""
-    if fund.asset_class == AssetClass.OUTROS:
+    """Nivel 1 da categoria oficial - o eixo grosso, comparavel entre casas."""
+    categoria = categoria_comparavel(fund)
+    if not categoria:
         return _UNCLASSIFIED
-    return ASSET_CLASS_LABELS[fund.asset_class]
+    if categoria == CATEGORIA_ESTRUTURADO:
+        return _ESTRUTURADO
+    return fund.extra.get(KEY_CATEGORIA_GROSSA) or label_nivel1(categoria)
 
 
 def fine_category(fund: FundOffer) -> str:
-    """Categoria ANBIMA, so quando ela existe de fato (sem o fallback da CVM)."""
-    return fund.extra.get(KEY_ANBIMA) or _UNCLASSIFIED
+    """A categoria oficial inteira - o eixo fino, mesma taxonomia do grosso.
+
+    Fundo resolvido so no nivel 1 fica de fora: ele tem categoria para o eixo
+    grosso e nao para o fino, e promove-lo aqui criaria um balde grosso dentro
+    da comparacao fina - o artefato que o eixo unico veio corrigir.
+    """
+    categoria = categoria_comparavel(fund)
+    if not categoria or categoria == CATEGORIA_ESTRUTURADO:
+        return _UNCLASSIFIED
+    if so_nivel1(fund.extra.get(KEY_VIA)):
+        return _UNCLASSIFIED
+    return categoria
 
 
-def anbima_coverage(funds: list[FundOffer]) -> float:
+def classificacao_coverage(funds: list[FundOffer]) -> float:
+    """Fracao da vitrine com categoria do cadastro, por qualquer via.
+
+    Mede classificacao, nao ANBIMA: o resolver por nome devolve categoria
+    ANBIMA tanto quanto o join por CNPJ devolve. O que muda e a procedencia,
+    que fica em `categoria_via`.
+    """
     if not funds:
         return 0.0
-    return sum(1 for f in funds if f.extra.get(KEY_ANBIMA)) / len(funds)
+    return sum(1 for f in funds if categoria_comparavel(f)) / len(funds)
 
 
 def _counts(funds: list[FundOffer], categoria) -> dict[str, int]:
@@ -145,11 +212,11 @@ def _shares(funds: list[FundOffer], categoria) -> dict[str, float]:
     teria todos os shares diluidos e pareceria sub-indexada em tudo.
     """
     counts = _counts(funds, categoria)
-    classificados = sum(n for cat, n in counts.items() if cat != _UNCLASSIFIED)
+    classificados = sum(n for cat, n in counts.items() if cat not in _FORA_DO_EIXO)
     if not classificados:
         return {}
     return {
-        cat: n / classificados for cat, n in counts.items() if cat != _UNCLASSIFIED
+        cat: n / classificados for cat, n in counts.items() if cat not in _FORA_DO_EIXO
     }
 
 
@@ -186,13 +253,18 @@ class PlatformPosition:
     categories: int
     over_index: list[CategoryBet] = field(default_factory=list)
     under_index: list[CategoryBet] = field(default_factory=list)
-    # Eixo fino ANBIMA - vazio para quem nao tem cobertura (ver _MIN_ANBIMA_COVERAGE).
+    # Eixo fino - vazio para quem nao tem cobertura (ver _MIN_CLASSIFICACAO).
     fine_over: list[CategoryBet] = field(default_factory=list)
     fine_under: list[CategoryBet] = field(default_factory=list)
-    anbima_cov: float = 0.0
+    classificacao_cov: float = 0.0
     median_min: float | None = None
     retail_ticket_share: float | None = None
-    median_admin_fee: float | None = None
+    # Mediana da taxa da vitrine INTEIRA - mede composicao, nao preco: uma casa
+    # com mais renda fixa (~0,2% ao ano) sai "mais barata" que uma com mais
+    # acoes (~2%) sem que produto nenhum custe diferente. O nome diz isso para
+    # que ninguem a leia como custo. O custo comparavel esta em `report.custo`,
+    # que divide cada fundo pela mediana da propria categoria.
+    median_admin_fee_mix: float | None = None
     own_product_share: float | None = None
     distinct_managers: int | None = None
     top3_manager_share: float | None = None
@@ -211,10 +283,10 @@ class PlatformPosition:
             "under_index": [b.to_dict() for b in self.under_index],
             "fine_over": [b.to_dict() for b in self.fine_over],
             "fine_under": [b.to_dict() for b in self.fine_under],
-            "anbima_cov": round(self.anbima_cov, 3),
+            "classificacao_cov": round(self.classificacao_cov, 3),
             "median_min": self.median_min,
             "retail_ticket_share": self.retail_ticket_share,
-            "median_admin_fee": self.median_admin_fee,
+            "median_admin_fee_mix": self.median_admin_fee_mix,
             "own_product_share": self.own_product_share,
             "distinct_managers": self.distinct_managers,
             "top3_manager_share": self.top3_manager_share,
@@ -241,23 +313,23 @@ def vitrine_snapshots(snapshots: list[ShelfSnapshot]) -> tuple[dict[str, list[Fu
         if snapshot.status == SnapshotStatus.UNAVAILABLE or not snapshot.funds:
             excluded.append({
                 "platform_id": snapshot.platform, "label": label,
-                "reason": "coleta indisponivel nesta execucao",
+                "reason": "coleta indisponível nesta execução",
             })
             continue
-        listing = _listing_funds(snapshot)
+        listing = listing_funds(snapshot)
         if not listing:
             excluded.append({
                 "platform_id": snapshot.platform, "label": label,
                 "reason": (
-                    f"sem vitrine coletada (estrategia: {snapshot.strategy.value}); "
-                    "o catalogo Open Finance nao e vitrine"
+                    f"sem vitrine coletada (estratégia: {snapshot.strategy.value}); "
+                    "o catálogo Open Finance não é vitrine"
                 ),
             })
             continue
         if len(listing) < _MIN_VITRINE:
             excluded.append({
                 "platform_id": snapshot.platform, "label": label,
-                "reason": f"vitrine com {len(listing)} fundos, abaixo do minimo de {_MIN_VITRINE}",
+                "reason": f"vitrine com {len(listing)} fundos, abaixo do mínimo de {_MIN_VITRINE}",
             })
             continue
         usable[snapshot.platform] = listing
@@ -298,7 +370,7 @@ def identifiable_vitrines(
             "platform_id": pid,
             "label": _platform_label(pid),
             "reason": (
-                f"CNPJ em apenas {cnpj_coverage(funds):.0%} da vitrine - nao da para "
+                f"CNPJ em apenas {cnpj_coverage(funds):.0%} da vitrine - não dá para "
                 "cruzar os fundos dela com as outras casas"
             ),
         }
@@ -310,20 +382,23 @@ def identifiable_vitrines(
 def vitrine_only_values(funds: list[FundOffer], attr: str) -> list[float]:
     """Valores de um campo que so podem ter vindo da VITRINE, nao do catalogo.
 
-    Existe porque o merge une fontes e nao registra qual delas preencheu cada
-    campo. Um fundo cujas fontes nao incluem o Open Finance necessariamente teve
-    o campo preenchido pela vitrine - e esse subconjunto e o unico comparavel
-    entre casas.
+    Existe porque o merge une fontes e o Open Finance vence na precedencia. Um
+    fundo cujas fontes nao incluem o Open Finance necessariamente teve o campo
+    preenchido pela vitrine - e esse subconjunto e o unico comparavel entre casas.
+    Para aplicacao minima ha uma via a mais, `FundOffer.minimo_vitrine`: o valor
+    que o merge guardou da fonte de vitrine antes da precedencia agir.
 
-    Medido em 2026-09-19, e a razao de o helper existir: dos 514 fundos da
-    vitrine da XP com aplicacao minima, TODOS tiveram o valor vindo do registro
-    Open Finance - a vitrine da XP nao publica minimo (os 154 fundos so de
-    Playwright nao tem nenhum). Ja BTG (173 fundos, mediana R$ 500) e Itau (431,
-    mediana R$ 500) publicam na propria vitrine. Comparar os dois lados direto
-    opoe o minimo institucional da classe, que o Open Finance informa, ao ticket
-    de varejo que o site mostra - e concluiria que a XP pede R$ 50 mil onde as
-    concorrentes pedem R$ 1 mil, o que o dado nao sustenta.
+    Historico que explica a regra: em 2026-09-19, dos 514 fundos da vitrine da XP
+    com aplicacao minima, todos tinham o valor vindo do Open Finance, e os 154 so
+    de navegador nao tinham nenhum. Lia-se "a vitrine da XP nao publica minimo".
+    Nao era a vitrine: era o coletor, que nao reconhecia o campo
+    `minimalInitialInvestment` do XHR da lista. Conferido em 2026-09-23, a lista
+    da XP exibe o minimo e 78% dela tem minimo de ate R$ 1.000. Comparar direto o
+    minimo institucional da classe com o ticket que o site mostra concluiria que
+    a XP pede R$ 50 mil onde as concorrentes pedem R$ 1 mil.
     """
+    if attr == "min_initial":
+        return [value for f in funds if (value := f.minimo_vitrine) is not None]
     return [
         value for f in funds
         if "open-finance" not in f.sources
@@ -367,8 +442,9 @@ def build_positioning(snapshots: list[ShelfSnapshot]) -> dict:
         return {
             "available": False,
             "reason": (
-                f"{len(vitrines)} vitrine(s) utilizavel(is): posicionamento relativo "
-                "precisa de ao menos duas para haver com o que comparar"
+                f"{contagem(len(vitrines), 'vitrine utilizável', 'vitrines utilizáveis')}: "
+                "posicionamento relativo precisa de ao menos duas para haver com o que "
+                "comparar"
             ),
             "excluded": excluded,
         }
@@ -383,34 +459,36 @@ def build_positioning(snapshots: list[ShelfSnapshot]) -> dict:
 
         over, under = _bets(funds, peers, coarse_category)
 
-        # Eixo fino: so entra quem tem cobertura ANBIMA, e a comparacao e contra
-        # os pares que TAMBEM tem - comparar categoria fina contra quem nao a
-        # publica mediria a cobertura do join, nao a prateleira.
-        cobertura = anbima_coverage(funds)
+        # Eixo fino: so entra quem tem cobertura de classificacao, e a
+        # comparacao e contra os pares que TAMBEM tem - comparar categoria fina
+        # contra quem nao a tem mediria a cobertura do join, nao a prateleira.
+        cobertura = classificacao_coverage(funds)
         fine_peers = [
             f for pid, fs in vitrines.items()
-            if pid != platform_id and anbima_coverage(fs) >= _MIN_ANBIMA_COVERAGE
+            if pid != platform_id and classificacao_coverage(fs) >= _MIN_CLASSIFICACAO
             for f in fs
         ]
-        if cobertura >= _MIN_ANBIMA_COVERAGE and fine_peers:
+        if cobertura >= _MIN_CLASSIFICACAO and fine_peers:
             fine_over, fine_under = _bets(funds, fine_peers, fine_category)
         else:
             fine_over, fine_under = [], []
 
         sem_dado: list[str] = []
-        mins = [f.min_initial for f in funds if f.min_initial is not None]
-        if _has_field(funds, "min_initial"):
+        # So o minimo que a VITRINE mostra: o `min_initial` de um fundo que
+        # tambem esta no catalogo e o minimo institucional do Open Finance.
+        mins = vitrine_only_values(funds, "min_initial")
+        if funds and len(mins) / len(funds) >= _MIN_FIELD_COVERAGE:
             median_min = _median(mins)
             retail_share = sum(1 for v in mins if v <= _RETAIL_TICKET) / len(mins)
         else:
             median_min = retail_share = None
-            sem_dado.append("aplicacao minima")
+            sem_dado.append("aplicação mínima")
 
         if _has_field(funds, "admin_fee_pct"):
             median_fee = _median([f.admin_fee_pct for f in funds if f.admin_fee_pct is not None])
         else:
             median_fee = None
-            sem_dado.append("taxa de administracao")
+            sem_dado.append("taxa de administração")
 
         managers = [m for m in (_offer_manager(f) for f in funds) if m]
         if len(managers) / len(funds) >= _MIN_FIELD_COVERAGE:
@@ -436,10 +514,10 @@ def build_positioning(snapshots: list[ShelfSnapshot]) -> dict:
             under_index=under[:4],
             fine_over=fine_over[:4],
             fine_under=fine_under[:4],
-            anbima_cov=cobertura,
+            classificacao_cov=cobertura,
             median_min=median_min,
             retail_ticket_share=retail_share,
-            median_admin_fee=median_fee,
+            median_admin_fee_mix=median_fee,
             own_product_share=own_share,
             distinct_managers=distinct,
             top3_manager_share=top3_share,
@@ -516,8 +594,8 @@ def build_manager_reach(snapshots: list[ShelfSnapshot], baseline_id: str = "xp")
         return {
             "available": False,
             "reason": (
-                f"{len(com_gestora)} vitrine(s) com gestora publicada: o alcance por "
-                "gestora precisa de ao menos duas"
+                f"{contagem(len(com_gestora), 'vitrine', 'vitrines')} com gestora "
+                "publicada: o alcance por gestora precisa de ao menos duas"
             ),
             "excluded": excluded + sem_gestora,
         }
@@ -597,22 +675,28 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
 
         caminho = config.platform_snapshots_dir(platform_id) / f"{max(anteriores).isoformat()}.json"
         anterior = load_shelf_snapshot(caminho)
-        vitrine_anterior = _listing_funds(anterior)
+        vitrine_anterior = listing_funds(anterior)
         if not vitrine_anterior:
             sem_base.append({
                 "platform_id": platform_id, "label": label,
                 "reason": (
-                    f"snapshot de {max(anteriores).isoformat()} nao tinha vitrine "
-                    f"(estrategia: {anterior.strategy.value}); a serie de vitrine "
-                    f"comeca em {atual.snapshot_date.isoformat()}"
+                    f"snapshot de {max(anteriores).isoformat()} não tinha vitrine "
+                    f"(estratégia: {anterior.strategy.value}); a série de vitrine "
+                    f"começa em {atual.snapshot_date.isoformat()}"
                 ),
             })
             continue
 
         antes = {f.identity: f for f in vitrine_anterior}
         agora = {f.identity: f for f in funds_hoje}
-        entradas = [agora[k] for k in agora.keys() - antes.keys()]
-        saidas = [antes[k] for k in antes.keys() - agora.keys()]
+        # `sorted` porque a diferenca de `dict.keys()` e um set, cuja ordem de
+        # iteracao muda entre processos (hash de str e randomizado). Sem isto,
+        # `exemplos_entrada` traz cinco fundos diferentes a cada execucao e o
+        # empate em `saldo_por_categoria` muda quais categorias sobrevivem ao
+        # corte - duas execucoes seguidas do mesmo codigo, sobre os mesmos
+        # snapshots, davam JSON diferente.
+        entradas = [agora[k] for k in sorted(agora.keys() - antes.keys())]
+        saidas = [antes[k] for k in sorted(antes.keys() - agora.keys())]
 
         por_categoria: dict[str, int] = {}
         for fund in entradas:
@@ -631,8 +715,10 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
             "vitrine_agora": len(funds_hoje),
             "entradas": len(entradas),
             "saidas": len(saidas),
+            # Desempate pelo nome: varias categorias com saldo -1 e o caso
+            # comum, e so o valor absoluto nao decide quais seis ficam.
             "saldo_por_categoria": dict(
-                sorted(por_categoria.items(), key=lambda kv: -abs(kv[1]))[:6]
+                sorted(por_categoria.items(), key=lambda kv: (-abs(kv[1]), kv[0]))[:6]
             ),
             "exemplos_entrada": [f.name[:70] for f in entradas[:5]],
         })
@@ -641,7 +727,7 @@ def build_momentum(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
         "available": bool(movimentos),
         "reason": (
             None if movimentos else
-            "nenhuma casa tem duas coletas de VITRINE para comparar - a serie comeca nesta execucao"
+            "nenhuma casa tem duas coletas de VITRINE para comparar - a série começa nesta execução"
         ),
         "movimentos": sorted(movimentos, key=lambda m: -(m["entradas"] - m["saidas"])),
         "sem_base": sem_base,
@@ -682,40 +768,22 @@ def _fmt_money(value: float | None) -> str:
     return f"R$ {value:.0f}"
 
 
-def build_xp_decisions(
-    snapshots: list[ShelfSnapshot], baseline_id: str = "xp"
-) -> dict:
-    """Do diagnostico para a decisao: o que a XP faz na segunda-feira.
+def _decisao_consenso(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Fundo que varias concorrentes exibem e a XP nao.
 
-    Cada item traz o numero que o sustenta e o esforco que ele custa, porque uma
-    lista de oportunidades sem custo nao e priorizavel: adicionar fundo de
-    gestora ja distribuida e outra conversa que abrir gestora nova.
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
     """
-    vitrines, excluded = vitrine_snapshots(snapshots)
-    if baseline_id not in vitrines:
-        motivo = next(
-            (e["reason"] for e in excluded if e["platform_id"] == baseline_id),
-            "vitrine ausente nesta execucao",
-        )
-        return {
-            "available": False,
-            "reason": f"vitrine da {_platform_label(baseline_id)} indisponivel: {motivo}",
-            "excluded": excluded,
-        }
-
-    base = vitrines[baseline_id]
-    concorrentes = {pid: fs for pid, fs in vitrines.items() if pid != baseline_id}
-    if not concorrentes:
-        return {
-            "available": False,
-            "reason": "nenhuma vitrine concorrente utilizavel nesta execucao",
-            "excluded": excluded,
-        }
-
     decisoes: list[Decision] = []
-    base_cnpjs = {f.cnpj for f in base if f.cnpj}
-    base_managers = {m for m in (_offer_manager(f) for f in base) if m}
-
     # (a) Consenso: fundo que varias concorrentes exibem e a XP nao. So entram as
     # concorrentes cuja vitrine da para cruzar por CNPJ - com a do Itau a 6%, o
     # "2 de 3 concorrentes" seria contado sobre uma casa que quase nao participa.
@@ -741,16 +809,16 @@ def build_xp_decisions(
         ]
         exemplos = sorted(consenso, key=lambda item: -len(item[1]))[:5]
         decisoes.append(Decision(
-            titulo="Fundos que a concorrencia exibe em consenso e a XP nao",
+            titulo="Fundos que a concorrência exibe em consenso e a XP não",
             tese=(
-                "Um fundo na vitrine de varias casas ao mesmo tempo ja passou pelo "
-                "crivo comercial de todas elas - e o sinal mais barato de demanda "
+                "Um fundo na vitrine de várias casas ao mesmo tempo já passou pelo "
+                "crivo comercial de todas elas - é o sinal mais barato de demanda "
                 "validada que existe nesta base."
             ),
             evidencia=(
                 f"{len(consenso)} fundos aparecem na vitrine de pelo menos "
-                f"{minimo_casas} das {len(cruzaveis)} concorrentes cruzaveis por CNPJ "
-                f"({', '.join(_platform_label(p) for p in cruzaveis)}) e estao fora da "
+                f"{minimo_casas} das {len(cruzaveis)} concorrentes cruzáveis por CNPJ "
+                f"({', '.join(_platform_label(p) for p in cruzaveis)}) e estão fora da "
                 "vitrine da XP. Exemplos: "
                 + "; ".join(
                     f"{fundo_por_cnpj[c].name[:44]} ({len(casas)} casas)"
@@ -764,14 +832,33 @@ def build_xp_decisions(
             ),
             tamanho=f"{len(consenso)} fundos",
             acao=(
-                f"Comecar pelos {len(ja_distribuida)} cuja gestora a XP ja distribui - "
-                "inclusao operacional, sem negociacao nova. Os "
+                f"Começar pelos {len(ja_distribuida)} cuja gestora a XP já distribui - "
+                "inclusão operacional, sem negociação nova. Os "
                 f"{len(consenso) - len(ja_distribuida)} restantes exigem abrir gestora."
             ),
             esforco="operacional" if ja_distribuida else "comercial",
             confianca="alta",
         ))
 
+    return decisoes
+
+
+def _decisao_subindexacao(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Categoria em que a vitrine da XP esta rasa.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (b) Sub-indexacao por categoria, com o tamanho da lacuna em fundos.
     posicao = build_positioning(snapshots)
     if posicao.get("available"):
@@ -784,15 +871,15 @@ def build_xp_decisions(
             decisoes.append(Decision(
                 titulo=f"Vitrine sub-indexada em {pior.category}",
                 tese=(
-                    "Categoria em que as concorrentes dedicam mais espaco de vitrine "
-                    "que a XP. Espaco de vitrine e escolha editorial: quando quatro "
+                    "Categoria em que as concorrentes dedicam mais espaço de vitrine "
+                    "que a XP. Espaço de vitrine é escolha editorial: quando quatro "
                     "casas dedicam mais que a quinta, ou elas viram demanda que a "
-                    "quinta nao viu, ou a quinta decidiu nao competir ali - e vale "
+                    "quinta não viu, ou a quinta decidiu não competir ali - e vale "
                     "saber qual das duas."
                 ),
                 evidencia=(
                     f"{pior.category}: {pior.share:.1%} da vitrine da XP contra "
-                    f"{pior.peer_share:.1%} nas concorrentes (indice {pior.index:.2f})."
+                    f"{pior.peer_share:.1%} nas concorrentes (índice {pior.index:.2f})."
                     # A clausula so aparece quando ha outras - senao a evidencia
                     # terminava com "Outras sub-indexadas:" e nada depois.
                     + (
@@ -803,18 +890,37 @@ def build_xp_decisions(
                         )
                         + "."
                         if len(base_pos.under_index) > 1
-                        else " E a unica classe em que a XP fica abaixo das concorrentes."
+                        else " É a única classe em que a XP fica abaixo das concorrentes."
                     )
                 ),
                 tamanho=f"~{faltam} fundos para igualar o share das concorrentes",
                 acao=(
                     "Decidir explicitamente entre cobrir a categoria ou registrar que "
-                    "a ausencia e estrategica - hoje nao ha registro de qual e o caso."
+                    "a ausência é estratégica - hoje não há registro de qual é o caso."
                 ),
                 esforco="analise",
                 confianca="alta",
             ))
 
+    return decisoes
+
+
+def _decisao_acessibilidade(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Ticket de entrada, so sobre minimo da propria vitrine.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (c) Acessibilidade: so sobre minimo publicado PELA VITRINE (ver
     # vitrine_only_values). Quando o baseline nao publica, a conclusao muda de
     # "ticket mais alto" para "ticket nao exibido" - que e outra decisao.
@@ -829,38 +935,44 @@ def build_xp_decisions(
     if pares and len(base_mins) < _MIN_TICKET_SAMPLE:
         peer_median = _median(peer_mins)
         peer_retail = sum(1 for v in peer_mins if v <= _RETAIL_TICKET) / len(peer_mins)
+        # Sem minimo da vitrine da XP, o que falta e DADO da coleta, nao uma
+        # decisao de produto: em 2026-09-19 esta decisao recomendou a XP "exibir
+        # o ticket na listagem", e a lista da XP ja exibia - o coletor e que nao
+        # lia o campo. Ela so pode apontar o buraco do monitor.
         decisoes.append(Decision(
-            titulo="A vitrine da XP nao exibe aplicacao minima; as concorrentes exibem",
+            titulo="Sem o ticket da vitrine da XP na coleta: acessibilidade sem comparação",
             tese=(
-                "Aplicacao minima e a primeira barreira que o investidor de varejo "
-                "encontra, antes de qualquer comparacao de rentabilidade. Quando a "
-                "concorrente mostra o ticket na propria listagem e a XP nao, o cliente "
-                "consegue filtrar por aquilo que consegue comprar na casa dela e nao na "
-                "nossa - e a comparacao de acessibilidade fica impossivel de fazer, "
-                "para o cliente e para nos."
+                "Aplicação mínima é a primeira barreira que o investidor de varejo "
+                "encontra, antes de qualquer comparação de rentabilidade. Sem o mínimo "
+                "que a própria vitrine da XP exibe, a porta de entrada dela não pode "
+                "ser comparada com a das concorrentes - nem para dizer que é maior, "
+                "nem para dizer que é menor."
             ),
             evidencia=(
-                f"Nenhum dos {len(base)} fundos da vitrine da XP traz minimo vindo da "
-                "propria vitrine: os valores existentes vem do registro Open Finance, "
-                "que informa o minimo institucional da classe, nao o ticket de varejo. "
+                f"Só {len(base_mins)} dos {len(base)} fundos da vitrine da XP têm "
+                "mínimo lido da própria vitrine, abaixo dos "
+                f"{_MIN_TICKET_SAMPLE} necessários; nos demais o mínimo que existe é o "
+                "do registro Open Finance, o institucional da classe, não o ticket que "
+                "a tela mostra. "
                 + "; ".join(
                     f"{_platform_label(pid)} publica em {len(vals)} fundos "
                     f"(mediana {_fmt_money(_median(vals))}, "
                     f"{sum(1 for v in vals if v <= _RETAIL_TICKET) / len(vals):.0%} "
-                    f"ate {_fmt_money(_RETAIL_TICKET)})"
+                    f"até {_fmt_money(_RETAIL_TICKET)})"
                     for pid, vals in pares.items()
                 )
-                + f". Somadas, as concorrentes tem mediana {_fmt_money(peer_median)} e "
-                f"{peer_retail:.0%} da vitrine acessivel por ate "
+                + f". Somadas, as concorrentes têm mediana {_fmt_money(peer_median)} e "
+                f"{peer_retail:.0%} da vitrine acessível por até "
                 f"{_fmt_money(_RETAIL_TICKET)}."
             ),
-            tamanho=f"0 de {len(base)} fundos da vitrine da XP com ticket exibido",
+            tamanho=(
+                f"{len(base_mins)} de {len(base)} fundos da vitrine da XP com ticket "
+                "da própria vitrine na coleta"
+            ),
             acao=(
-                "Duas frentes, e a ordem importa: (1) produto - avaliar exibir o ticket "
-                "na listagem, como as concorrentes fazem; (2) monitor - capturar o campo "
-                "no XHR da vitrine da XP, sem o que esta comparacao continua impossivel. "
-                "Ate entao, nao ha base para afirmar que o ticket da XP e maior nem menor "
-                "que o das concorrentes."
+                "Monitor, não produto: conferir por que o coletor da XP não trouxe a "
+                "aplicação mínima da lista. Até la, não há base para afirmar que o "
+                "ticket da XP é maior nem menor que o das concorrentes."
             ),
             esforco="analise",
             confianca="alta",
@@ -874,52 +986,90 @@ def build_xp_decisions(
             decisoes.append(Decision(
                 titulo="Ticket de entrada acima das concorrentes",
                 tese=(
-                    "Aplicacao minima e a primeira barreira que o investidor de varejo "
-                    "encontra, antes de qualquer comparacao de rentabilidade."
+                    "Aplicação mínima é a primeira barreira que o investidor de varejo "
+                    "encontra, antes de qualquer comparação de rentabilidade."
                 ),
                 evidencia=(
                     f"Mediana da vitrine da XP em {_fmt_money(base_median)} contra "
-                    f"{_fmt_money(peer_median)} nas concorrentes que publicam na propria "
+                    f"{_fmt_money(peer_median)} nas concorrentes que publicam na própria "
                     f"vitrine ({', '.join(_platform_label(p) for p in pares)}). Fundos "
-                    f"acessiveis por ate {_fmt_money(_RETAIL_TICKET)}: {base_retail:.0%} "
-                    f"na XP contra {peer_retail:.0%} nelas. Comparacao restrita ao minimo "
-                    "publicado pela propria vitrine."
+                    f"acessíveis por até {_fmt_money(_RETAIL_TICKET)}: {base_retail:.0%} "
+                    f"na XP contra {peer_retail:.0%} nelas. Comparação restrita ao mínimo "
+                    "publicado pela própria vitrine."
                 ),
                 tamanho=(
-                    f"{base_retail:.0%} contra {peer_retail:.0%} de vitrine acessivel a "
+                    f"{base_retail:.0%} contra {peer_retail:.0%} de vitrine acessível a "
                     f"{_fmt_money(_RETAIL_TICKET)}"
                 ),
                 acao=(
-                    "Checar se os fundos de maior giro tem classe de minimo menor "
-                    "disponivel - o mesmo fundo com outra classe resolve sem produto novo."
+                    "Checar se os fundos de maior giro têm classe de mínimo menor "
+                    "disponível - o mesmo fundo com outra classe resolve sem produto novo."
                 ),
                 esforco="operacional",
                 confianca="media",
             ))
 
+    return decisoes
+
+
+def _decisao_gestoras(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """Gestora com distribuicao ampla e ausente na XP.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (d) Gestoras com distribuicao ampla e ausentes na XP.
     alcance = build_manager_reach(snapshots, baseline_id=baseline_id)
     if alcance.get("available") and alcance["_ausentes"]:
         ausentes = alcance["_ausentes"]
         top = ausentes[:5]
         decisoes.append(Decision(
-            titulo="Gestoras distribuidas por varias concorrentes e ausentes na XP",
+            titulo="Gestoras distribuídas por várias concorrentes e ausentes na XP",
             tese=(
-                "Gestora presente em multiplas vitrines ja resolveu due diligence, "
+                "Gestora presente em múltiplas vitrines já resolveu due diligence, "
                 "operacional e comercial em mais de uma casa - o custo de entrada "
-                "para a proxima e menor que o de uma gestora sem distribuicao."
+                "para a próxima é menor que o de uma gestora sem distribuição."
             ),
             evidencia=(
                 f"{len(ausentes)} gestoras aparecem em 2 ou mais vitrines concorrentes "
-                "e em nenhuma posicao da vitrine da XP. Maiores: "
+                "e em nenhuma posição da vitrine da XP. Maiores: "
                 + "; ".join(f"{r.manager[:34]} ({r.reach} casas, {r.total_funds} fundos)" for r in top)
             ),
             tamanho=f"{len(ausentes)} gestoras",
-            acao="Priorizar por numero de casas e volume de fundos ja distribuidos.",
+            acao="Priorizar por número de casas e volume de fundos já distribuídos.",
             esforco="comercial",
             confianca="media",
         ))
 
+    return decisoes
+
+
+def _decisao_exclusivos(
+    base: list[FundOffer],
+    concorrentes: dict[str, list[FundOffer]],
+    base_cnpjs: set[str],
+    base_managers: set[str],
+    baseline_id: str,
+    snapshots: list[ShelfSnapshot],
+    vitrines: dict[str, list[FundOffer]],
+) -> list[Decision]:
+    """O que so a XP tem - ativo a defender, nao gap.
+
+    Extraida de `build_xp_decisions`, que reunia as cinco num corpo de 274
+    linhas. Cada decisao e independente: le a vitrine, decide se tem o que
+    dizer, e devolve zero ou uma `Decision`.
+    """
+    decisoes: list[Decision] = []
     # (e) O que so a XP tem - o ativo a defender, nao um gap a fechar.
     todas_cruzaveis, _ = identifiable_vitrines(vitrines)
     exclusivos = _exclusive_on_vitrine(todas_cruzaveis).get(baseline_id, set())
@@ -927,28 +1077,95 @@ def build_xp_decisions(
         decisoes.append(Decision(
             titulo="Diferencial exclusivo da vitrine da XP",
             tese=(
-                "O inverso do gap, e a metade da analise competitiva que costuma "
-                "faltar: o que so a XP exibe e o que a concorrencia ainda nao copiou."
+                "O inverso do gap, é a metade da análise competitiva que costuma "
+                "faltar: o que só a XP exibe e o que a concorrência ainda não copiou."
             ),
             evidencia=(
                 f"{len(exclusivos)} fundos aparecem na vitrine da XP e em nenhuma das "
-                f"{len(todas_cruzaveis) - 1} concorrentes cruzaveis por CNPJ "
-                f"({len(exclusivos) / len(base):.0%} da vitrine). Uma casa que nao "
-                "publica CNPJ na vitrine nao pode desmentir a exclusividade, entao o "
-                "numero e um teto."
+                f"{len(todas_cruzaveis) - 1} concorrentes cruzáveis por CNPJ "
+                f"({len(exclusivos) / len(base):.0%} da vitrine). Uma casa que não "
+                "publica CNPJ na vitrine não pode desmentir a exclusividade, então o "
+                "número é um teto."
             ),
             tamanho=f"{len(exclusivos)} fundos exclusivos",
             acao=(
                 "Usar como argumento comercial e monitorar quando um deles aparecer "
-                "na vitrine concorrente - a perda de exclusividade e um evento."
+                "na vitrine concorrente - a perda de exclusividade é um evento."
             ),
             esforco="analise",
             confianca="alta",
         ))
 
+    return decisoes
+
+
+def build_xp_decisions(
+    snapshots: list[ShelfSnapshot],
+    baseline_id: str = "xp",
+    suprimidos: dict[str, str] | None = None,
+    cobertos: set[str] | None = None,
+) -> dict:
+    """Do diagnostico para a decisao: o que a XP faz na segunda-feira.
+
+    Cada item traz o numero que o sustenta e o esforco que ele custa, porque uma
+    lista de oportunidades sem custo nao e priorizavel: adicionar fundo de
+    gestora ja distribuida e outra conversa que abrir gestora nova.
+
+    Com BLOCO_CNPJ em `suprimidos` (previdencia), saem as duas decisoes que
+    cruzam vitrines por CNPJ - consenso ("inclusao operacional") e exclusivos:
+    com um veiculo por seguradora, as duas descrevem a seguradora.
+
+    `cobertos` sao os CNPJs que a vitrine da XP cobre por espelho ou
+    equivalente (`aggregate.cnpjs_cobertos`): o consenso nao os chama de
+    lacuna, pela mesma regra do bloco de gaps.
+    """
+    vitrines, excluded = vitrine_snapshots(snapshots)
+    if baseline_id not in vitrines:
+        motivo = next(
+            (e["reason"] for e in excluded if e["platform_id"] == baseline_id),
+            "vitrine ausente nesta execução",
+        )
+        return {
+            "available": False,
+            "reason": f"vitrine da {_platform_label(baseline_id)} indisponível: {motivo}",
+            "excluded": excluded,
+        }
+
+    base = vitrines[baseline_id]
+    concorrentes = {pid: fs for pid, fs in vitrines.items() if pid != baseline_id}
+    if not concorrentes:
+        return {
+            "available": False,
+            "reason": "nenhuma vitrine concorrente utilizável nesta execução",
+            "excluded": excluded,
+        }
+
+    decisoes: list[Decision] = []
+    base_cnpjs = {f.cnpj for f in base if f.cnpj}
+    base_managers = {m for m in (_offer_manager(f) for f in base) if m}
+
+    por_cnpj = (_decisao_consenso, _decisao_exclusivos)
+    sem_cnpj = (suprimidos or {}).get(BLOCO_CNPJ)
+    for construir in (
+        _decisao_consenso,
+        _decisao_subindexacao,
+        _decisao_acessibilidade,
+        _decisao_gestoras,
+        _decisao_exclusivos,
+    ):
+        if sem_cnpj and construir in por_cnpj:
+            continue
+        # So o consenso ve os cobertos como "ja na XP": nas demais decisoes a
+        # base continua sendo a vitrine literal.
+        cnpjs = base_cnpjs | (cobertos or set()) if construir is _decisao_consenso else base_cnpjs
+        decisoes.extend(construir(
+            base, concorrentes, cnpjs, base_managers,
+            baseline_id, snapshots, vitrines,
+        ))
+
     return {
         "available": bool(decisoes),
-        "reason": None if decisoes else "nenhum sinal acima do limiar nesta execucao",
+        "reason": None if decisoes else "nenhum sinal acima do limiar nesta execução",
         "baseline_id": baseline_id,
         "baseline_label": _platform_label(baseline_id),
         "concorrentes": [_platform_label(p) for p in concorrentes],
@@ -958,14 +1175,24 @@ def build_xp_decisions(
     }
 
 
-def build_competitive_view(config: Config, snapshots: list[ShelfSnapshot]) -> dict:
-    """As quatro visoes, numa estrutura."""
+def build_competitive_view(
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    cobertos: set[str] | None = None,
+) -> dict:
+    """As quatro visoes, numa estrutura.
+
+    `suprimidos` vem do Config (`blocos_suprimidos`), como no RunReport.
+    `cobertos` vai para as decisoes (ver `build_xp_decisions`).
+    """
+    suprimidos = dict(config.blocos_suprimidos)
     return {
         "gerado_em": date.today().isoformat(),
+        "suprimidos": suprimidos,
         "posicionamento": build_positioning(snapshots),
         "gestoras": build_manager_reach(snapshots),
         "momentum": build_momentum(config, snapshots),
-        "decisoes": build_xp_decisions(snapshots),
+        "decisoes": build_xp_decisions(snapshots, suprimidos=suprimidos, cobertos=cobertos),
     }
 
 
@@ -973,7 +1200,7 @@ def build_competitive_view(config: Config, snapshots: list[ShelfSnapshot]) -> di
 
 
 def _fmt_index(index: float) -> str:
-    return "so esta casa" if index == float("inf") else f"{index:.2f}x"
+    return "só esta casa" if index == float("inf") else f"{index:.2f}x"
 
 
 def _fmt_pct(value: float | None) -> str:
@@ -986,6 +1213,7 @@ def print_competitive_view(view: dict) -> None:
     from rich.table import Table
 
     console = Console()
+    sem_cnpj = (view.get("suprimidos") or {}).get(BLOCO_CNPJ)
 
     # 1. posicionamento
     pos = view["posicionamento"]
@@ -994,39 +1222,43 @@ def print_competitive_view(view: dict) -> None:
     if not pos["available"]:
         console.print(f"   [yellow]{pos['reason']}[/]")
     else:
-        table = Table(title="Posicionamento no eixo comparavel (classe de ativo)", title_style="bold")
+        table = Table(title="Posicionamento no eixo comparável (classe de ativo)", title_style="bold")
         table.add_column("Casa")
         table.add_column("Vitrine", justify="right")
         table.add_column("Aposta acima")
         table.add_column("Abaixo das demais")
-        table.add_column("So ela tem", justify="right")
+        if not sem_cnpj:
+            table.add_column("Só ela tem", justify="right")
         table.add_column("Gestoras", justify="right")
-        table.add_column("Casa propria", justify="right")
+        table.add_column("Casa própria", justify="right")
         for p_ in pos["positions"]:
+            so_ela = [] if sem_cnpj else [
+                f"{p_['exclusive']} ({p_['exclusive_share']:.0%})"
+                if p_["exclusive"] is not None else "s/CNPJ"
+            ]
             table.add_row(
                 p_["label"],
                 str(p_["vitrine"]),
                 ", ".join(f"{b['category']} {_fmt_index(b['index'])}" for b in p_["over_index"][:2]) or "-",
                 ", ".join(f"{b['category']} {b['index']:.2f}x" for b in p_["under_index"][:2]) or "-",
-                (
-                    f"{p_['exclusive']} ({p_['exclusive_share']:.0%})"
-                    if p_["exclusive"] is not None else "s/CNPJ"
-                ),
+                *so_ela,
                 str(p_["distinct_managers"]) if p_["distinct_managers"] else "s/dado",
                 _fmt_pct(p_["own_product_share"]),
             )
         console.print(table)
+        if sem_cnpj:
+            console.print(f"   [dim]sem \"só ela tem\" e sem decisões por CNPJ: {sem_cnpj}.[/]")
 
         finos = [p_ for p_ in pos["positions"] if p_["fine_over"] or p_["fine_under"]]
         if finos:
-            fine = Table(title="Eixo fino ANBIMA - so casas com cobertura", title_style="bold")
+            fine = Table(title="Eixo fino ANBIMA - só casas com cobertura", title_style="bold")
             fine.add_column("Casa")
-            fine.add_column("ANBIMA", justify="right")
+            fine.add_column("Classif.", justify="right")
             fine.add_column("Categorias em que lidera")
             for p_ in finos:
                 fine.add_row(
                     p_["label"],
-                    f"{p_['anbima_cov']:.0%}",
+                    f"{p_['classificacao_cov']:.0%}",
                     ", ".join(f"{b['category']} {_fmt_index(b['index'])}" for b in p_["fine_over"][:3]) or "-",
                 )
             console.print(fine)
@@ -1034,7 +1266,8 @@ def print_competitive_view(view: dict) -> None:
                 if p_ not in finos:
                     console.print(
                         f"   [dim]{p_['label']} fora do eixo fino: cobertura ANBIMA de "
-                        f"{p_['anbima_cov']:.0%} - as classes dela vem da heuristica de nome.[/]"
+                        f"{p_['classificacao_cov']:.0%} - o resto da vitrine dela não "
+                        f"casou com o cadastro por nenhuma via.[/]"
                     )
     for e in pos.get("excluded", []):
         console.print(f"   [dim]fora: {e['label']} - {e['reason']}[/]")
@@ -1042,7 +1275,7 @@ def print_competitive_view(view: dict) -> None:
     # 2. gestoras
     ges = view["gestoras"]
     console.print()
-    console.print("[bold]2. Gestoras[/] - quem ganhou distribuicao, e onde a XP nao esta")
+    console.print("[bold]2. Gestoras[/] - quem ganhou distribuição, e onde a XP não está")
     if not ges["available"]:
         console.print(f"   [yellow]{ges['reason']}[/]")
     else:
@@ -1050,7 +1283,7 @@ def print_competitive_view(view: dict) -> None:
         table.add_column("Gestora")
         table.add_column("Casas", justify="right")
         table.add_column("Fundos", justify="right")
-        table.add_column("Distribuicao")
+        table.add_column("Distribuição")
         for r in ges["mais_distribuidas"][:8]:
             table.add_row(
                 r["manager"][:42], str(r["reach"]), str(r["total_funds"]),
@@ -1060,9 +1293,9 @@ def print_competitive_view(view: dict) -> None:
         ausentes = ges["ausentes_no_baseline"]
         if ausentes:
             console.print(
-                f"   [yellow]{ges['total_ausentes_no_baseline']} gestora(s) em 2+ "
-                "vitrines concorrentes e "
-                "ausente(s) na XP:[/] "
+                f"   [yellow]{contagem(ges['total_ausentes_no_baseline'], 'gestora', 'gestoras')} "
+                "em 2+ vitrines concorrentes e "
+                f"{'ausente' if ges['total_ausentes_no_baseline'] == 1 else 'ausentes'} na XP:[/] "
                 + "; ".join(f"{r['manager'][:30]} ({r['reach']} casas)" for r in ausentes[:5])
             )
     for e in ges.get("excluded", []):
@@ -1087,12 +1320,12 @@ def print_competitive_view(view: dict) -> None:
     for s in mom.get("sem_base", []):
         console.print(f"   [dim]{s['label']}: {s['reason']}[/]")
     if not mom.get("movimentos"):
-        console.print(f"   [yellow]{mom.get('reason') or 'sem serie comparavel'}[/]")
+        console.print(f"   [yellow]{mom.get('reason') or 'sem série comparável'}[/]")
 
     # 4. decisoes
     dec = view["decisoes"]
     console.print()
-    console.print("[bold]4. Decisoes para a XP[/] - o que fazer, com o numero que sustenta")
+    console.print("[bold]4. Decisões para a XP[/] - o que fazer, com o número que sustenta")
     if not dec["available"]:
         console.print(f"   [yellow]{dec['reason']}[/]")
         return
@@ -1106,9 +1339,9 @@ def print_competitive_view(view: dict) -> None:
         console.print()
         console.print(
             f"   [bold]{index}. {d['titulo']}[/]  "
-            f"[{cor}]{d['esforco']}[/] / confianca {d['confianca']}"
+            f"[{cor}]{d['esforco']}[/] / confiança {d['confianca']}"
         )
         console.print(f"      [bold]tamanho:[/] {d['tamanho']}")
         console.print(f"      [dim]tese:[/] {d['tese']}")
-        console.print(f"      [dim]evidencia:[/] {d['evidencia']}")
-        console.print(f"      [bold]acao:[/] {d['acao']}")
+        console.print(f"      [dim]evidência:[/] {d['evidencia']}")
+        console.print(f"      [bold]ação:[/] {d['acao']}")

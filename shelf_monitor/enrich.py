@@ -16,6 +16,11 @@ import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from shelf_monitor.classify import (
+    KEY_CATEGORIA,
+    KEY_VIA,
+    ClassificationIndex,
+)
 from shelf_monitor.config import Config
 from shelf_monitor.models import AssetClass, FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import (
@@ -73,6 +78,11 @@ class EnrichmentStats:
     anbima_filled: int = 0
     managers_from_cvm: int = 0
     managers_inferred: int = 0
+    # Fundos cuja categoria saiu do resolver por nome (shelf_monitor.classify),
+    # contados por via. Sao os que o join por identidade nao alcancou - 95,9%
+    # da vitrine do Itau, medido em 2026-09-20.
+    classified_by_name: int = 0
+    by_name_via: dict[str, int] = field(default_factory=dict)
     by_platform: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -85,6 +95,8 @@ class EnrichmentStats:
             "anbima_filled": self.anbima_filled,
             "managers_from_cvm": self.managers_from_cvm,
             "managers_inferred": self.managers_inferred,
+            "classified_by_name": self.classified_by_name,
+            "by_name_via": self.by_name_via,
             "by_platform": self.by_platform,
         }
 
@@ -306,6 +318,18 @@ def enrich_offer(offer: FundOffer, record: MarketRecord) -> None:
         offer.extra[KEY_ANBIMA] = record.anbima
     if record.cvm:
         offer.extra.setdefault(KEY_CVM, record.cvm)
+    # KEY_CATEGORIA e o eixo comparavel, e so aceita valor do CADASTRO.
+    #
+    # KEY_ANBIMA nao serve para isso: os coletores tambem escrevem nele o
+    # rotulo que a propria casa publica (`anbimaRating` no BTG, `anbimaCategory`
+    # no Open Finance), e quando o cadastro nao traz classificacao o valor da
+    # casa fica la. Medido em 2026-09-20, foi assim que o BTG apareceu apostando
+    # em "Direitos Creditorios" que "so ele tem": o rotulo era dele, nao da
+    # base, e nenhuma concorrente usava aquele balde. E o mesmo erro que o
+    # eixo grosso heuristico cometia, por outra porta.
+    oficial = record.anbima or record.cvm
+    if oficial:
+        offer.extra[KEY_CATEGORIA] = oficial
     if record.gestor:
         offer.extra[KEY_GESTOR_OFICIAL] = record.gestor
         # Grafia diferente da mesma razao social ("... LTDA" vs "... Ltda")
@@ -407,9 +431,16 @@ def infer_manager(fund: FundOffer, brand_index: dict[str, str]) -> bool:
 
 
 def enrich_snapshots(
-    config: Config, snapshots: list[ShelfSnapshot]
+    config: Config,
+    snapshots: list[ShelfSnapshot],
+    classificador: type[ClassificationIndex] = ClassificationIndex,
 ) -> EnrichmentStats | None:
-    """Enriquece todos os fundos in-place. None quando nao ha base importada."""
+    """Enriquece todos os fundos in-place. None quando nao ha base importada.
+
+    `classificador` e a classe do resolvedor por nome da segunda passada. O
+    modulo de previdencia passa o dele (`previdencia.eixo.IndicePrevidencia`),
+    que so aceita classe previdenciaria; o padrao e o de sempre.
+    """
     lookup = MarketLookup.load(config)
     if lookup is None:
         return None
@@ -437,12 +468,42 @@ def enrich_snapshots(
             had_anbima = bool(offer.extra.get(KEY_ANBIMA))
             enrich_offer(offer, record)
             offer.extra[KEY_MATCH] = matched_by
+            if offer.extra.get(KEY_CATEGORIA):
+                offer.extra[KEY_VIA] = matched_by
             if record.gestor:
                 stats.managers_from_cvm += 1
             if not had_anbima and offer.extra.get(KEY_ANBIMA):
                 stats.anbima_filled += 1
 
-    # Segunda passada: fundos que sobraram sem gestora (tabela do Itau sem
+    # Segunda passada: classificacao por nome, so para quem o join por
+    # identidade nao alcancou. E o que impede uma casa que nao publica CNPJ de
+    # entrar na leitura competitiva com um terco da prateleira classificada -
+    # ver o docstring de shelf_monitor.classify para a cascata e a cobertura.
+    index = classificador.load(config.market_dir)
+    if index is not None:
+        for snapshot in snapshots:
+            per_platform = stats.by_platform.setdefault(
+                snapshot.platform, {"total": 0, "matched": 0}
+            )
+            for offer in snapshot.funds:
+                if offer.extra.get(KEY_CATEGORIA):
+                    continue
+                resolucao = index.resolve(offer)
+                if resolucao is None:
+                    continue
+                # Nunca preenche CNPJ: a via resolveu a categoria, nao a
+                # identidade, e afirmar identidade aqui seria inventar dado.
+                offer.extra[KEY_CATEGORIA] = resolucao.categoria
+                offer.extra[KEY_VIA] = resolucao.via
+                stats.classified_by_name += 1
+                stats.by_name_via[resolucao.via] = (
+                    stats.by_name_via.get(resolucao.via, 0) + 1
+                )
+                per_platform["classified_by_name"] = (
+                    per_platform.get("classified_by_name", 0) + 1
+                )
+
+    # Terceira passada: fundos que sobraram sem gestora (tabela do Itau sem
     # CNPJ, por exemplo) tentam a marca no prefixo do nome. Depois do join,
     # para o indice de marcas incluir as gestoras oficiais recem-carimbadas.
     known_managers = set(lookup.managers())

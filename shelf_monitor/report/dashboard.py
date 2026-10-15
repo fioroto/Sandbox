@@ -1,969 +1,960 @@
-"""Dashboard HTML comparativo, self-contained.
+"""Dashboard HTML comparativo, self-contained - visao executiva primeiro.
+
+Duas camadas. No topo, a visao executiva: as manchetes (um numero por pergunta,
+com o prazo), as leituras da coleta e o placar casa a casa. E HTML estatico,
+montado aqui em Python - aparece inteiro mesmo quando o arquivo abre num
+visualizador que bloqueia script (a pre-visualizacao de anexo do e-mail, por
+exemplo). Abaixo, cada bloco analitico mora num painel recolhido, aberto sob
+demanda; o corpo dos paineis continua desenhado pelo JS a partir do JSON
+embutido.
+
+Ate 24/09/2026 a pagina abria com todos os blocos expandidos: ~13 mil pixels de
+altura, 20 tabelas e ~4.300 palavras antes de qualquer conclusao. Quem abria
+para decidir rolava atras do numero; quem queria o detalhe ja o tinha. O
+detalhe continua todo aqui - so deixou de ser o caminho obrigatorio.
+
+Tema claro, sempre. O painel seguia o tema do sistema operacional e abria
+escuro em maquina configurada assim; a leitura executiva, e a impressao dela, e
+em fundo claro.
 
 Os graficos sao SVG desenhado no proprio arquivo: sem dependencia de CDN, o
 arquivo abre offline e o commit fica auditavel. Cada grafico tem uma tabela
 equivalente (exigida pela regra de contraste da paleta em modo claro).
+
+Linguagem visual (docs/linguagem-visual.md, desde 27/09/2026): figura com
+etiqueta vermelha, titulo que afirma a leitura, subtitulo com unidade e prazo e
+fonte no rodape, a la The Economist e McKinsey; cor por casa com a cor de marca
+de cada uma, a XP com a de destaque (shared/estilo.py). Aqui em Python ficam a
+faixa por casa das manchetes (`_faixa`) e a barra fina do placar (`_mini`); os
+graficos dos paineis sao do JS.
 """
 from __future__ import annotations
 
 import html
 import json
+import re
 from pathlib import Path
 
-from shelf_monitor.config import Config
-from shelf_monitor.models import RunReport
+from shelf_monitor.config import PLATFORMS, Config
+from shelf_monitor.models import (
+    BLOCO_CNPJ,
+    BLOCO_COTISTAS,
+    BLOCO_PRODUTO_PROPRIO,
+    RunReport,
+)
 from shelf_monitor.report.aggregate import build_dashboard_data
-
-# Paleta categorica validada (scripts/validate_palette.js) - slots 1..5, na ordem.
-# A cor segue a plataforma, nunca a posicao no ranking.
-_SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
-_SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
-
-_STYLE = """
-.flow-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.65; }
-.flow-list .dim { color: var(--muted); }
-
-:root {
-  color-scheme: light;
-  --surface-1: #fcfcfb;
-  --page: #f9f9f7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11,11,11,0.10);
-  --good: #0ca30c;
-  --warning: #fab219;
-  --critical: #d03b3b;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --border: rgba(255,255,255,0.10);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --surface-1: #1a1a19;
-  --page: #0d0d0d;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: rgba(255,255,255,0.10);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
-}
-
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--page);
-  color: var(--text-primary);
-  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
-header.page { margin-bottom: 32px; }
-h1 { font-size: 26px; font-weight: 620; margin: 0 0 6px; letter-spacing: -0.01em; }
-.sub { color: var(--text-secondary); margin: 0; }
-h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
-.card-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 20px; }
-.card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 22px 24px;
-  margin-bottom: 20px;
-}
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 14px; margin-bottom: 24px; }
-.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
-.tile .label { color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-.tile .value { font-size: 30px; font-weight: 600; line-height: 1.15; margin-top: 6px; }
-.tile .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
-
-.subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
-.subgrid h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
-.subgrid .card-sub { margin-bottom: 12px; }
-.matrix-scroll { overflow-x: auto; }
-.matrix { border-collapse: collapse; font-size: 13px; width: 100%; }
-.matrix th { color: var(--text-secondary); font-weight: 600; font-size: 12px; padding: 6px 10px; text-align: right; }
-.matrix th.rowh { text-align: left; padding-left: 0; }
-.matrix td { padding: 0; border: 2px solid var(--surface-1); }
-.matrix td .cell { display: block; padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; border-radius: 4px; min-width: 52px; }
-.matrix td .zero { color: var(--muted); }
-.matrix td.rowlabel { color: var(--text-primary); padding: 7px 12px 7px 0; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
-.coverage { color: var(--text-secondary); font-size: 12.5px; border-top: 1px solid var(--grid); margin-top: 18px; padding-top: 12px; }
-
-.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-.legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-secondary); }
-.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
-
-.chart-scroll { overflow-x: auto; }
-svg { display: block; max-width: 100%; }
-svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.axis-label { fill: var(--text-secondary); font-size: 12px; }
-.gridline { stroke: var(--grid); stroke-width: 1; }
-.baseline { stroke: var(--axis); stroke-width: 1; }
-.bar { transition: opacity .12s ease; }
-.bar-group:hover .bar { opacity: .45; }
-.bar-group .bar:hover { opacity: 1; }
-
-.table-scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-.table-scroll table { min-width: max-content; }
-.table-scroll th:first-child, .table-scroll td:first-child { padding-left: 0; }
-th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--grid); }
-th { color: var(--text-secondary); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-tbody tr:last-child td { border-bottom: none; }
-details { margin-top: 18px; }
-summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; padding: 6px 0; }
-summary:hover { color: var(--text-primary); }
-details[open] summary { margin-bottom: 10px; }
-
-.pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); }
-.pill.ok { color: var(--good); }
-.pill.partial { color: var(--warning); }
-.pill.unavailable { color: var(--critical); }
-.note-box { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: var(--text-secondary); font-size: 13px; margin-top: 14px; }
-.empty { color: var(--muted); font-style: italic; padding: 12px 0; }
-footer { color: var(--muted); font-size: 12px; margin-top: 36px; border-top: 1px solid var(--border); padding-top: 16px; }
-"""
-
-_SCRIPT = r"""
-const DATA = JSON.parse(document.getElementById("dashboard-data").textContent);
-const SERIES_VARS = ["--s1", "--s2", "--s3", "--s4", "--s5"];
-const platformColor = {};
-// A cor segue a casa, ancorada na ordem canonica - nao na ordem em que ela
-// aparece nesta execucao. Assim uma casa mantem sua cor entre execucoes, e as
-// casas que so aparecem no radar CVM tambem recebem a sua.
-(DATA.house_order || DATA.platforms.map(p => p.platform_id)).forEach((id, i) => {
-  platformColor[id] = `var(${SERIES_VARS[i % SERIES_VARS.length]})`;
-});
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-function el(name, attrs = {}, text) {
-  const node = document.createElementNS(SVG_NS, name);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function niceMax(value) {
-  if (value <= 5) return 5;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
-  for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
-    if (value <= step * magnitude) return step * magnitude;
-  }
-  return 10 * magnitude;
-}
-
-/* Barras agrupadas: categorias no eixo x, uma serie por plataforma.
-   Gap de 2px entre barras vizinhas (a superficie separa, nao uma borda);
-   topo arredondado em 4px ancorado na linha de base. */
-function groupedBars(mount, categories, series, opts = {}) {
-  if (!categories.length || !series.length) {
-    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
-    return;
-  }
-  const barW = opts.barWidth || 15;
-  const gap = 2;
-  const groupPad = 26;
-  const padL = 52, padR = 16, padT = 12, padB = 62;
-  const groupW = series.length * barW + (series.length - 1) * gap;
-  const plotW = categories.length * (groupW + groupPad) + groupPad;
-  const plotH = opts.height || 240;
-  const width = padL + plotW + padR;
-  const height = padT + plotH + padB;
-
-  const maxValue = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
-  const y = v => padT + plotH - (v / maxValue) * plotH;
-
-  const svg = el("svg", {
-    viewBox: `0 0 ${width} ${height}`, width, height,
-    role: "img", "aria-label": opts.ariaLabel || "grafico de barras agrupadas",
-  });
-
-  const ticks = 4;
-  for (let i = 0; i <= ticks; i++) {
-    const value = (maxValue / ticks) * i;
-    const yy = y(value);
-    svg.appendChild(el("line", {
-      class: i === 0 ? "baseline" : "gridline",
-      x1: padL, x2: padL + plotW, y1: yy, y2: yy,
-    }));
-    svg.appendChild(el("text", {
-      class: "tick", x: padL - 9, y: yy + 4, "text-anchor": "end",
-    }, String(Math.round(value))));
-  }
-
-  categories.forEach((category, ci) => {
-    const groupX = padL + groupPad + ci * (groupW + groupPad);
-    const group = el("g", { class: "bar-group" });
-
-    series.forEach((s, si) => {
-      const value = s.values[ci] || 0;
-      const x = groupX + si * (barW + gap);
-      const barH = Math.max(0, padT + plotH - y(value));
-      if (barH > 0) {
-        const r = Math.min(4, barW / 2, barH);
-        // Topo arredondado, base reta ancorada no eixo.
-        const path = el("path", {
-          class: "bar",
-          d: `M ${x} ${padT + plotH} L ${x} ${y(value) + r}
-              Q ${x} ${y(value)} ${x + r} ${y(value)}
-              L ${x + barW - r} ${y(value)} Q ${x + barW} ${y(value)} ${x + barW} ${y(value) + r}
-              L ${x + barW} ${padT + plotH} Z`,
-          fill: platformColor[s.id] || "var(--s1)",
-        });
-        path.appendChild(el("title", {}, `${s.label} - ${category}: ${value}`));
-        group.appendChild(path);
-      }
-      // Alvo de hover maior que a marca, cobrindo toda a altura do plot.
-      const hit = el("rect", {
-        x: x - gap / 2, y: padT, width: barW + gap, height: plotH, fill: "transparent",
-      });
-      hit.appendChild(el("title", {}, `${s.label} - ${category}: ${value}`));
-      group.appendChild(hit);
-    });
-
-    const labelX = groupX + groupW / 2;
-    wrapLabel(svg, category, labelX, padT + plotH + 18, groupW + groupPad - 6);
-    svg.appendChild(group);
-  });
-
-  mount.innerHTML = "";
-  mount.appendChild(svg);
-}
-
-function wrapLabel(svg, text, x, y, maxWidth) {
-  const words = String(text).split(" ");
-  const perLine = maxWidth < 70 ? 1 : 2;
-  const lines = [];
-  for (let i = 0; i < words.length; i += perLine) {
-    lines.push(words.slice(i, i + perLine).join(" "));
-  }
-  lines.slice(0, 3).forEach((line, i) => {
-    svg.appendChild(el("text", {
-      class: "tick", x, y: y + i * 13, "text-anchor": "middle",
-    }, line));
-  });
-}
-
-/* Barras horizontais de serie unica: uma cor por plataforma (a entidade),
-   com o valor rotulado direto na ponta - nenhum valor fica so no tooltip. */
-function horizontalBars(mount, rows, opts = {}) {
-  if (!rows.length) {
-    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
-    return;
-  }
-  const rowH = 30, barH = 15, padL = 148, padR = 60, padT = 6, padB = 10;
-  const plotW = opts.width || 620;
-  const width = padL + plotW + padR;
-  const height = padT + rows.length * rowH + padB;
-  const maxValue = niceMax(Math.max(1, ...rows.map(r => r.value)));
-
-  const svg = el("svg", {
-    viewBox: `0 0 ${width} ${height}`, width, height,
-    role: "img", "aria-label": opts.ariaLabel || "grafico de barras",
-  });
-
-  rows.forEach((row, i) => {
-    const y = padT + i * rowH;
-    const barW = (row.value / maxValue) * plotW;
-    svg.appendChild(el("text", {
-      class: "axis-label", x: padL - 12, y: y + barH - 2, "text-anchor": "end",
-    }, row.label));
-
-    if (barW > 0) {
-      const r = Math.min(4, barW, barH / 2);
-      const path = el("path", {
-        class: "bar",
-        d: `M ${padL} ${y} L ${padL + barW - r} ${y}
-            Q ${padL + barW} ${y} ${padL + barW} ${y + r}
-            L ${padL + barW} ${y + barH - r} Q ${padL + barW} ${y + barH} ${padL + barW - r} ${y + barH}
-            L ${padL} ${y + barH} Z`,
-        fill: row.color || "var(--s1)",
-      });
-      path.appendChild(el("title", {}, `${row.label}: ${row.value}`));
-      svg.appendChild(path);
-    }
-    svg.appendChild(el("text", {
-      class: "tick", x: padL + barW + 8, y: y + barH - 2,
-    }, row.display !== undefined ? row.display : String(row.value)));
-  });
-
-  svg.appendChild(el("line", {
-    class: "baseline", x1: padL, x2: padL, y1: padT, y2: padT + rows.length * rowH - (rowH - barH),
-  }));
-
-  mount.innerHTML = "";
-  mount.appendChild(svg);
-}
-
-function renderLegend(mount, platforms) {
-  mount.innerHTML = platforms.map(p =>
-    `<span><i class="swatch" style="background:${platformColor[p.platform_id] || "var(--s1)"}"></i>` +
-    `${escapeHtml(p.label)}</span>`
-  ).join("");
-}
-
-/* Nomes de fundo e de gestora vem de fontes externas: qualquer valor que entre
-   no innerHTML passa por aqui antes. So colunas marcadas com `raw` (montadas
-   por este proprio script) escapam da regra. */
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, ch => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[ch]));
-}
-
-function table(mount, columns, rows) {
-  if (!rows.length) {
-    mount.innerHTML = '<p class="empty">Sem dados.</p>';
-    return;
-  }
-  const head = columns.map(c =>
-    `<th class="${c.num ? "num" : ""}">${escapeHtml(c.label)}</th>`).join("");
-  const body = rows.map(r =>
-    `<tr>${columns.map(c => {
-      const value = r[c.key] ?? "-";
-      return `<td class="${c.num ? "num" : ""}">${c.raw ? value : escapeHtml(value)}</td>`;
-    }).join("")}</tr>`).join("");
-  // Tabela larga rola dentro do proprio card; a pagina nunca rola na horizontal.
-  mount.innerHTML =
-    `<div class="table-scroll"><table><thead><tr>${head}</tr></thead>` +
-    `<tbody>${body}</tbody></table></div>`;
-}
-
-const usable = DATA.platforms.filter(p => p.status !== "unavailable" && p.total_funds > 0);
-
-// --- Matriz de classes ------------------------------------------------------
-/* --- Vitrine de varejo ---------------------------------------------------- */
-/* Rampa sequencial (um matiz, claro->escuro) da paleta validada; o texto da
-   celula escolhe tinta pelo passo do preenchimento, nunca a cor da serie. */
-const SEQ_STEPS = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
-function heatColor(value, max) {
-  if (!value) return null;
-  const idx = Math.min(SEQ_STEPS.length - 1,
-    Math.floor((value / max) * SEQ_STEPS.length));
-  return { fill: SEQ_STEPS[idx], ink: idx >= 3 ? "#ffffff" : "#0b0b0b" };
-}
-
-function renderVitrine(listing) {
-  const section = document.getElementById("vitrine-section");
-  const withListing = (listing && listing.platforms || []).filter(p => p.total > 0);
-  if (!withListing.length) {
-    section.querySelectorAll(".tiles, .matrix-scroll, .subgrid, details").forEach(n => n.remove());
-    document.getElementById("vitrine-coverage").textContent =
-      "Nenhuma vitrine coletada nesta execucao - rode a coleta com navegador " +
-      "(SHELF_BROWSER_HEADED=1 para o Itau) para materializar as listagens.";
-    return;
-  }
-
-  // Tiles: vitrine por casa, catalogo como nota secundaria.
-  const tiles = document.getElementById("vitrine-tiles");
-  tiles.innerHTML = "";
-  withListing.forEach(p => {
-    const tile = document.createElement("div");
-    tile.className = "tile";
-    const label = document.createElement("div");
-    label.className = "label"; label.textContent = p.label;
-    const value = document.createElement("div");
-    value.className = "value"; value.textContent = p.total.toLocaleString("pt-BR");
-    const note = document.createElement("div");
-    note.className = "note";
-    const catalog = p.catalog_total || 0;
-    note.textContent = (catalog > p.total
-      ? `de ${catalog.toLocaleString("pt-BR")} no catalogo` : "vitrine = total coletado") +
-      (p.exclusive ? ` - ${p.exclusive} so nela` : "");
-    tile.append(label, value, note);
-    tiles.appendChild(tile);
-  });
-
-  // Matriz casa x classe ANBIMA (heatmap sequencial).
-  let matrix = listing.matrix || [];
-  const mount = document.getElementById("matrix-vitrine");
-  // Matriz so de "sem classificacao" nao e matriz - e a ausencia da base.
-  if (matrix.length === 1 && matrix[0].category === "Sem classificacao") {
-    matrix = [];
-  }
-  if (matrix.length) {
-    const max = Math.max(1, ...matrix.flatMap(r => Object.values(r.counts)));
-    const table = document.createElement("table");
-    table.className = "matrix";
-    const head = table.createTHead().insertRow();
-    const corner = document.createElement("th");
-    corner.className = "rowh"; corner.textContent = "Classe ANBIMA";
-    head.appendChild(corner);
-    withListing.forEach(p => {
-      const th = document.createElement("th");
-      th.textContent = p.label; head.appendChild(th);
-    });
-    const body = table.createTBody();
-    matrix.forEach(rowData => {
-      const row = body.insertRow();
-      const rowLabel = row.insertCell();
-      rowLabel.className = "rowlabel";
-      rowLabel.textContent = rowData.category;
-      rowLabel.title = rowData.category;
-      withListing.forEach(p => {
-        const cell = row.insertCell();
-        const value = rowData.counts[p.platform_id] || 0;
-        const span = document.createElement("span");
-        span.className = "cell";
-        if (value) {
-          const heat = heatColor(value, max);
-          span.style.background = heat.fill;
-          span.style.color = heat.ink;
-          span.textContent = value.toLocaleString("pt-BR");
-          span.title = `${p.label} - ${rowData.category}: ${value}`;
-        } else {
-          span.className = "cell zero";
-          span.textContent = "\u2013";
-        }
-        cell.appendChild(span);
-      });
-    });
-    mount.innerHTML = "";
-    mount.appendChild(table);
-
-    table2(document.getElementById("table-vitrine"),
-      ["Classe ANBIMA", ...withListing.map(p => p.label)],
-      matrix.map(r => [r.category, ...withListing.map(p => String(r.counts[p.platform_id] || 0))]));
-  } else {
-    mount.innerHTML = '<p class="empty">Sem classificacao ANBIMA disponivel - importe a base ' +
-      'de mercado (python -m shelf_monitor market) para normalizar a vitrine.</p>';
-  }
-
-  // Arquitetura aberta: propria vs terceiros (2 series fixas, gap de 2px).
-  const archMount = document.getElementById("chart-arch");
-  const archLegend = document.getElementById("legend-arch");
-  archLegend.innerHTML =
-    '<span><span class="swatch" style="background:var(--s1)"></span>Gestora da casa</span>' +
-    '<span><span class="swatch" style="background:var(--s2)"></span>Terceiros</span>' +
-    '<span><span class="swatch" style="background:var(--grid)"></span>Sem gestor identificado</span>';
-  stackedRows(archMount, withListing.map(p => ({
-    label: p.label,
-    parts: [
-      { value: p.own_product || 0, color: "var(--s1)", name: "gestora da casa" },
-      { value: p.third_party || 0, color: "var(--s2)", name: "terceiros" },
-      { value: Math.max(0, p.total - (p.own_product || 0) - (p.third_party || 0)),
-        color: "var(--grid)", name: "sem gestor identificado" },
-    ],
-  })));
-
-  // Custo e ticket: tabela compacta - poucos numeros precisos pedem tabela.
-  table2(document.getElementById("table-costs"),
-    ["Casa", "Taxa adm q1", "mediana", "q3", "Minimo mediano (R$)", "Cobertura CNPJ"],
-    withListing.map(p => {
-      const fee = p.fee_quartiles, min = p.min_quartiles;
-      const pct = v => v === undefined || v === null ? "\u2013" : v.toLocaleString("pt-BR",
-        { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
-      const money = v => v === undefined || v === null ? "\u2013"
-        : "R$ " + v.toLocaleString("pt-BR");
-      return [
-        p.label,
-        fee ? pct(fee.q1) : "\u2013", fee ? pct(fee.median) : "\u2013",
-        fee ? pct(fee.q3) : "\u2013",
-        min ? money(min.median) : "\u2013",
-        Math.round((p.cnpj_coverage || 0) * 100) + "%",
-      ];
-    }));
-
-  // Cobertura e casas sem vitrine - o rodape que um comite pergunta primeiro.
-  const parts = [];
-  const missing = (listing.platforms || []).filter(p => !p.total);
-  if (missing.length) {
-    parts.push("Sem vitrine alcancavel: " + missing.map(p => p.label).join(", ") + ".");
-  }
-  const identifiable = DATA.enrichment
-    ? Math.max(DATA.enrichment.with_cnpj || 0, DATA.enrichment.with_cvm_code || 0)
-    : 0;
-  if (identifiable) {
-    const e = DATA.enrichment;
-    parts.push(`Normalizacao ANBIMA: ${e.matched} de ${identifiable} fundos com CNPJ ` +
-      `ou codigo CVM casaram com o registro oficial ` +
-      `(${Math.round(100 * e.matched / identifiable)}%).`);
-    if (e.managers_from_cvm) {
-      parts.push(`${e.managers_from_cvm} fundos tiveram a gestora carimbada pelo ` +
-        `registro oficial da CVM.`);
-    }
-    if (e.matched_by_cvm_code) {
-      parts.push(`${e.matched_by_cvm_code} casaram pelo codigo CVM, sem CNPJ na fonte.`);
-    }
-    if (e.managers_inferred) {
-      parts.push(`${e.managers_inferred} gestoras inferidas pelo prefixo do nome ` +
-        `(marcadas como inferidas, nunca como oficiais).`);
-    }
-  } else {
-    parts.push("Normalizacao ANBIMA nao aplicada: base de mercado nao importada " +
-      "(python -m shelf_monitor market).");
-  }
-  if (listing.shared_all) {
-    parts.push(`${listing.shared_all} fundos aparecem em duas ou mais vitrines (por CNPJ).`);
-  }
-  document.getElementById("vitrine-coverage").textContent = parts.join(" ");
-}
-
-/* Barra horizontal empilhada: segmentos separados por gap de 2px da superficie,
-   rotulo do total na ponta; valores por segmento no tooltip e na legenda. */
-function stackedRows(mount, rows) {
-  if (!rows.length) {
-    mount.innerHTML = '<p class="empty">Sem dados coletados para este painel.</p>';
-    return;
-  }
-  const rowH = 30, barH = 15, padL = 118, padR = 56, padT = 6, padB = 10;
-  const plotW = 420;
-  const width = padL + plotW + padR;
-  const height = padT + rows.length * rowH + padB;
-  const max = Math.max(1, ...rows.map(r => r.parts.reduce((a, s) => a + s.value, 0)));
-
-  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height,
-    role: "img", "aria-label": "arquitetura aberta por casa" });
-
-  rows.forEach((row, i) => {
-    const y = padT + i * rowH;
-    svg.appendChild(el("text", { class: "axis-label", x: padL - 12, y: y + barH - 2,
-      "text-anchor": "end" }, row.label));
-    let x = padL;
-    const total = row.parts.reduce((a, s) => a + s.value, 0);
-    row.parts.forEach(part => {
-      if (!part.value) return;
-      const w = Math.max(1, (part.value / max) * plotW - 2);
-      const rect = el("rect", { class: "bar", x, y, width: w, height: barH, rx: 3,
-        fill: part.color });
-      rect.appendChild(el("title", {},
-        `${row.label} - ${part.name}: ${part.value} de ${total}`));
-      svg.appendChild(rect);
-      x += w + 2; // gap de 2px na cor da superficie
-    });
-    svg.appendChild(el("text", { class: "tick", x: x + 6, y: y + barH - 2 },
-      String(total)));
-  });
-  mount.innerHTML = "";
-  mount.appendChild(svg);
-}
-
-function table2(mount, columns, rows) {
-  const cols = columns.map((c, i) => ({ label: c, key: "c" + i, num: i > 0 }));
-  table(mount, cols, rows.map(r =>
-    Object.fromEntries(r.map((v, i) => ["c" + i, v]))));
-}
-
-renderVitrine(DATA.listing);
-
-/* --- Gaps de prateleira da XP ---------------------------------------------
-   Leitura XP-centrica dos mesmos dados da vitrine: o que os concorrentes
-   vitrinam e a vitrine da XP nao tem. Sem baseline utilizavel o bloco vira
-   uma frase de supressao - nunca um numero falso. */
-function renderGaps(gaps) {
-  const section = document.getElementById("gaps-section");
-  if (!gaps || !gaps.available) {
-    section.innerHTML =
-      `<h2>Gaps de prateleira da XP</h2>
-       <p class="card-sub">Fundos de varejo nas vitrines concorrentes e fora da vitrine
-       da XP (por CNPJ).</p>
-       <div class="note-box">Analise de gaps suprimida nesta execucao: ` +
-      `${escapeHtml((gaps && gaps.reason) || "dados insuficientes")}.</div>`;
-    return;
-  }
-
-  const money = v => v === undefined || v === null ? "–"
-    : "R$ " + v.toLocaleString("pt-BR");
-  const pct = v => v === undefined || v === null ? "–"
-    : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
-
-  const tiles = document.getElementById("gaps-tiles");
-  tiles.innerHTML = "";
-  [
-    ["Fundos de gap", gaps.total_gaps, "em vitrine concorrente, fora da vitrine XP"],
-    ["Em 2+ vitrines", gaps.multi_house_gaps, "gap confirmado por mais de uma casa"],
-    ["Vitrine da XP", gaps.baseline_listing_total, "a base de comparacao"],
-    ["Concorrentes no universo", gaps.competitors.length,
-     gaps.competitors.map(c => c.label).join(", ") || "nenhum"],
-  ].forEach(([label, value, note]) => {
-    const tile = document.createElement("div");
-    tile.className = "tile";
-    const l = document.createElement("div"); l.className = "label"; l.textContent = label;
-    const v = document.createElement("div"); v.className = "value";
-    v.textContent = Number(value).toLocaleString("pt-BR");
-    const n = document.createElement("div"); n.className = "note"; n.textContent = note;
-    tile.append(l, v, n);
-    tiles.appendChild(tile);
-  });
-
-  // Categorias em deficit: vitrine XP vs. vitrine de cada concorrente, mais a
-  // coluna de quantos gaps caem na categoria.
-  const mount = document.getElementById("matrix-gaps");
-  const categories = gaps.categories || [];
-  if (categories.length) {
-    const houses = [{ platform_id: gaps.baseline_id, label: gaps.baseline_label }]
-      .concat(gaps.competitors);
-    const max = Math.max(1, ...categories.flatMap(c =>
-      [c.xp || 0, ...Object.values(c.by_platform || {})]));
-    const tbl = document.createElement("table");
-    tbl.className = "matrix";
-    const head = tbl.createTHead().insertRow();
-    const corner = document.createElement("th");
-    corner.className = "rowh"; corner.textContent = "Categoria";
-    head.appendChild(corner);
-    houses.forEach(h => {
-      const th = document.createElement("th");
-      th.textContent = h.label; head.appendChild(th);
-    });
-    const gapTh = document.createElement("th");
-    gapTh.textContent = "Gaps"; head.appendChild(gapTh);
-    const body = tbl.createTBody();
-    categories.forEach(c => {
-      const row = body.insertRow();
-      const rowLabel = row.insertCell();
-      rowLabel.className = "rowlabel";
-      rowLabel.textContent = c.category; rowLabel.title = c.category;
-      houses.forEach(h => {
-        const cell = row.insertCell();
-        const value = h.platform_id === gaps.baseline_id
-          ? (c.xp || 0) : (c.by_platform || {})[h.platform_id] || 0;
-        const span = document.createElement("span");
-        if (value) {
-          const heat = heatColor(value, max);
-          span.className = "cell";
-          span.style.background = heat.fill; span.style.color = heat.ink;
-          span.textContent = value.toLocaleString("pt-BR");
-          span.title = `${h.label} - ${c.category}: ${value}`;
-        } else {
-          span.className = "cell zero"; span.textContent = "–";
-        }
-        cell.appendChild(span);
-      });
-      const gapCell = row.insertCell();
-      const gapSpan = document.createElement("span");
-      gapSpan.className = "cell";
-      gapSpan.textContent = (c.gap_count || 0).toLocaleString("pt-BR");
-      gapCell.appendChild(gapSpan);
-    });
-    mount.innerHTML = "";
-    mount.appendChild(tbl);
-  } else {
-    mount.innerHTML =
-      '<p class="empty">Nenhum gap por categoria nesta execucao.</p>';
-  }
-
-  // A lista nominal - o insumo de trabalho.
-  table(
-    document.getElementById("table-gaps"),
-    [{ key: "name", label: "Fundo" }, { key: "cnpj_display", label: "CNPJ" },
-     { key: "category", label: "Categoria" }, { key: "manager", label: "Gestora" },
-     { key: "houses_label", label: "Casas" },
-     { key: "min", label: "Menor minimo", num: true },
-     { key: "fee", label: "Menor taxa", num: true },
-     { key: "pl", label: "PL CVM", num: true },
-     { key: "mgr", label: "Gestora na XP" },
-     { key: "equiv", label: "Possivel equivalente XP" }],
-    (gaps.funds || []).map(f => ({
-      name: f.name, cnpj_display: f.cnpj_display, category: f.category,
-      manager: f.manager || "–", houses_label: f.houses_label,
-      min: money(f.min_initial), fee: pct(f.admin_fee_pct), pl: money(f.pl_cvm),
-      mgr: f.manager_on_xp === null ? "–" : (f.manager_on_xp ? "Sim" : "Nao"),
-      equiv: f.possible_xp_equivalent || "–",
-    }))
-  );
-
-  // Proveniencia - o rodape que evita a leitura errada.
-  const parts = ["Comparacao vitrine x vitrine: o catalogo Open Finance nao conta " +
-    "em nenhum dos lados."];
-  if (gaps.baseline_warning) parts.push(gaps.baseline_warning + ".");
-  const partial = gaps.competitors.filter(c => c.partial);
-  if (partial.length) {
-    parts.push("Coleta parcial (gaps podem estar subestimados): " +
-      partial.map(c => c.label).join(", ") + ".");
-  }
-  if (gaps.excluded && gaps.excluded.length) {
-    parts.push("Fora do universo: " +
-      gaps.excluded.map(e => `${e.label} (${e.reason})`).join("; ") + ".");
-  }
-  if (gaps.funds_truncated) {
-    parts.push(`Lista limitada aos ${gaps.funds.length} primeiros gaps; ` +
-      `os ${gaps.funds_truncated} restantes estao na planilha.`);
-  }
-  parts.push("Gestora na XP e Possivel equivalente XP sao sinais heuristicos - " +
-    "informam, nunca removem um fundo da lista.");
-  document.getElementById("gaps-coverage").textContent = parts.join(" ");
-}
-renderGaps(DATA.gaps);
-
-// --- captacao ---------------------------------------------------------------
-(function renderFlow(flow) {
-  const section = document.getElementById("flow-section");
-  if (!flow || !flow.available) { section.remove(); return; }
-
-  const mm = v => {
-    const n = v / 1e6;
-    const s = n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    return (n > 0 ? "+" : "") + s + " MM";
-  };
-  const int = v => (v > 0 ? "+" : "") + v.toLocaleString("pt-BR");
-
-  document.getElementById("flow-tiles").innerHTML = flow.casas.map(c => `
-    <div class="tile">
-      <div class="label">${c.label}</div>
-      <div class="value" style="color:${c.captacao_liquida > 0 ? "var(--good)" : "var(--critical)"}">
-        ${mm(c.captacao_liquida)}</div>
-      <div class="note">${c.com_informe} de ${c.vitrine} fundos com informe
-        &middot; so ela exibe: ${c.exclusivos}, ${mm(c.captacao_exclusivos)}</div>
-    </div>`).join("");
-
-  // Serie por casa: uma linha por casa, uma coluna por competencia.
-  const comps = flow.competencias || [];
-  if (comps.length) {
-    const head = '<tr><th class="rowh">Casa</th>' +
-      comps.map(c => `<th>${c.slice(4)}/${c.slice(0, 4)}</th>`).join("") + "</tr>";
-    const body = Object.entries(flow.serie_por_casa).map(([pid, serie]) => {
-      const byComp = Object.fromEntries(serie.map(m => [m.competencia, m]));
-      const casa = (flow.casas.find(c => c.platform_id === pid) || {}).label || pid;
-      const cells = comps.map(c => {
-        const m = byComp[c];
-        if (!m) return '<td><span class="cell zero">-</span></td>';
-        const cor = m.media_diaria > 0 ? "var(--good)" : "var(--critical)";
-        return `<td title="${m.dias} pregoes observados"><span class="cell" style="color:${cor}">${mm(m.media_diaria)}/dia</span></td>`;
-      }).join("");
-      return `<tr><th class="rowh">${casa}</th>${cells}</tr>`;
-    }).join("");
-    document.getElementById("flow-trend").innerHTML =
-      `<table class="matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`;
-  }
-
-  const lista = (titulo, fundos, sinal) => {
-    if (!fundos || !fundos.length) return "";
-    const itens = fundos.map(f => `
-      <li><strong style="color:${sinal}">${mm(f.captacao_liquida)}</strong>
-        ${f.nome} <span class="dim">${int(f.variacao_cotistas)} cotistas &middot;
-        ${f.vitrines.join(", ")}</span></li>`).join("");
-    return `<h4 style="font-size:12.5px;font-weight:600;margin:14px 0 4px">${titulo}</h4>
-      <ul class="flow-list">${itens}</ul>`;
-  };
-
-  const tend = Object.entries(flow.tendencias || {}).map(([k, n]) => {
-    const rotulo = (flow.tendencia_labels || {})[k];
-    return `<li><strong>${n}</strong> ${k.replace(/_/g, " ")}${rotulo ? ` <span class="dim">- ${rotulo}</span>` : ""}</li>`;
-  }).join("");
-
-  const g = flow.grade || {};
-  const grade = g.available ? `
-    <h4 style="font-size:12.5px;font-weight:600;margin:16px 0 4px">Oportunidade de grade</h4>
-    <p class="card-sub">${g.total} fundos captam varejo fora da vitrine da XP, mas
-      ${g.total_produto_do_concorrente} sao produto proprio da casa que os exibe e nao se
-      transferem. Restam <strong>${g.total_transferiveis} fundos, ${mm(g.captacao_transferivel)}</strong>
-      e ${int(g.cotistas_transferivel)} cotistas - ${g.total_operacionais} de gestora que a XP
-      ja distribui, ${g.total_comerciais} exigem abrir gestora.</p>
-    ${lista("Mais varejo: quem trouxe mais cotistas", g.mais_varejo, "var(--good)")}
-    ${lista("Na vitrine da XP e perdendo varejo", g.na_vitrine_perdendo, "var(--critical)")}` : "";
-
-  document.getElementById("flow-lists").innerHTML =
-    `<ul class="flow-list">${tend}</ul>` +
-    lista("Maiores captadores de varejo", flow.top_captacao, "var(--good)") +
-    lista("Maiores perdas de varejo", flow.top_resgate, "var(--critical)") +
-    lista("Acelerando", flow.acelerando, "var(--good)") +
-    lista("Viraram saida", flow.virou_saida, "var(--critical)") +
-    grade;
-
-  const fora = (flow.excluded || []).map(e => `${e.label} (${e.reason})`);
-  const estrut = flow.total_estruturais
-    ? `${flow.total_estruturais} fundos com movimento estrutural (fluxo maior que o proprio
-       patrimonio, ou fundo esvaziado) ficam fora de todas as somas: e dinheiro trocando de
-       veiculo, nao demanda. `
-    : "";
-  document.getElementById("flow-coverage").textContent =
-    `Periodo ${flow.periodo.de} a ${flow.periodo.ate}. ${estrut}` +
-    (fora.length ? `Fora da analise: ${fora.join("; ")}.` : "");
-})(DATA.flow);
-
-
-(function renderRestricted(block) {
-  const mount = document.getElementById("table-restricted");
-  const rows = (block && block.platforms || []).filter(p => p.total_snapshot > 0);
-  if (!rows.length || !block.total) {
-    mount.innerHTML = '<p class="empty">Nenhum fundo restrito/exclusivo identificado ' +
-      'nesta coleta. A deteccao depende da base CVM importada e das flags das casas.</p>';
-    return;
-  }
-  table2(mount,
-    ["Casa", "Restritos", "% do total coletado", "Na vitrine", "Principais motivos"],
-    rows.map(p => {
-      const reasons = Object.entries(p.by_reason || {})
-        .sort((a, b) => b[1] - a[1])
-        .map(([reason, count]) => `${reason} (${count})`).join("; ");
-      return [
-        p.label,
-        p.restricted.toLocaleString("pt-BR"),
-        `${Math.round(100 * p.restricted / p.total_snapshot)}%`,
-        String(p.on_listing || 0),
-        reasons || "–",
-      ];
-    }));
-})(DATA.restricted);
-
-renderLegend(document.getElementById("legend-classes"), usable);
-groupedBars(
-  document.getElementById("chart-classes"),
-  DATA.class_order,
-  usable.map(p => ({
-    id: p.platform_id, label: p.label,
-    values: DATA.class_order.map(c => p.by_class[c] || 0),
-  })),
-  { height: 250, ariaLabel: "Numero de fundos por classe de ativo em cada plataforma" }
-);
-table(
-  document.getElementById("table-classes"),
-  [{ key: "label", label: "Plataforma" },
-   ...DATA.class_order.map(c => ({ key: c, label: c, num: true })),
-   { key: "total_funds", label: "Total", num: true }],
-  usable.map(p => ({ label: p.label, total_funds: p.total_funds,
-    ...Object.fromEntries(DATA.class_order.map(c => [c, p.by_class[c] || 0])) }))
-);
-
-// --- Profundidade: gestoras representadas -----------------------------------
-horizontalBars(
-  document.getElementById("chart-managers"),
-  usable.map(p => ({
-    label: p.label, value: p.distinct_managers, color: platformColor[p.platform_id],
-  })).sort((a, b) => b.value - a.value),
-  { ariaLabel: "Gestoras distintas representadas por plataforma" }
-);
-// Quais gestoras concentram a prateleira - onde a casa realmente aposta.
-table(
-  document.getElementById("table-top-managers"),
-  [{ key: "platform", label: "Plataforma" }, { key: "manager", label: "Gestora" },
-   { key: "count", label: "Fundos", num: true }],
-  usable.flatMap(p =>
-    (p.top_managers || []).slice(0, 5).map(m => ({
-      platform: p.label, manager: m.name, count: m.count,
-    }))
-  )
-);
-
-// --- Faixas de aplicacao minima ---------------------------------------------
-const withMins = usable.filter(p => Object.keys(p.min_bands).length);
-renderLegend(document.getElementById("legend-bands"), withMins);
-groupedBars(
-  document.getElementById("chart-bands"),
-  DATA.band_order,
-  withMins.map(p => ({
-    id: p.platform_id, label: p.label,
-    values: DATA.band_order.map(b => p.min_bands[b] || 0),
-  })),
-  { height: 220, ariaLabel: "Distribuicao de aplicacao minima por plataforma" }
-);
-table(
-  document.getElementById("table-bands"),
-  [{ key: "label", label: "Plataforma" },
-   ...DATA.band_order.map(b => ({ key: b, label: b, num: true })),
-   { key: "lowest", label: "Menor minimo", num: true }],
-  withMins.map(p => ({
-    label: p.label,
-    lowest: p.lowest_min === null ? "-" : "R$ " + p.lowest_min.toLocaleString("pt-BR"),
-    ...Object.fromEntries(DATA.band_order.map(b => [b, p.min_bands[b] || 0])),
-  }))
-);
-
-// --- Exclusividade ----------------------------------------------------------
-horizontalBars(
-  document.getElementById("chart-exclusive"),
-  usable.map(p => ({
-    label: p.label, value: p.exclusive_count, color: platformColor[p.platform_id],
-  })).sort((a, b) => b.value - a.value),
-  { ariaLabel: "Fundos exclusivos de cada plataforma, por CNPJ" }
-);
-
-// --- Radar CVM --------------------------------------------------------------
-const cvm = DATA.cvm;
-if (cvm.available && cvm.houses && cvm.houses.length) {
-  // A legenda acompanha as casas do proprio grafico - uma casa sem prateleira
-  // coletada (Nu, por exemplo) ainda aparece aqui e precisa ser nomeada.
-  renderLegend(
-    document.getElementById("legend-cvm"),
-    cvm.houses.map(h => ({ platform_id: h.house, label: h.label }))
-  );
-  groupedBars(
-    document.getElementById("chart-cvm"),
-    ["Registrados na CVM", "Em fase pre-operacional"],
-    cvm.houses.map(h => ({
-      id: h.house, label: h.label,
-      values: [h.total, h.pre_operational],
-    })),
-    { height: 210, barWidth: 18, ariaLabel: "Fundos registrados na CVM por casa" }
-  );
-  table(
-    document.getElementById("table-cvm"),
-    [{ key: "label", label: "Casa" },
-     { key: "total", label: "Registrados", num: true },
-     { key: "pre_operational", label: "Pre-operacionais", num: true }],
-    cvm.houses
-  );
-  table(
-    document.getElementById("table-pre-op"),
-    [{ key: "name", label: "Fundo" }, { key: "house_label", label: "Casa" },
-     { key: "manager", label: "Gestor" }, { key: "registered_at", label: "Registro" }],
-    cvm.pre_operational_funds || []
-  );
-} else {
-  document.getElementById("cvm-section").innerHTML =
-    `<h2>Radar CVM</h2><p class="card-sub">Fundos registrados por gestoras ligadas as casas monitoradas.</p>
-     <div class="note-box">Extrato da CVM indisponivel nesta execucao: ` +
-    `${escapeHtml(cvm.error || "fonte nao coletada")}.</div>`;
-}
-
-// --- Saude da coleta --------------------------------------------------------
-table(
-  document.getElementById("table-sources"),
-  [{ key: "label", label: "Plataforma" },
-   { key: "statusPill", label: "Status", raw: true },
-   { key: "strategy", label: "Estrategia" }, { key: "total_funds", label: "Fundos", num: true },
-   { key: "coverage", label: "Com CNPJ", num: true }, { key: "detail", label: "Observacao" }],
-  DATA.platforms.map(p => ({
-    label: p.label,
-    statusPill: `<span class="pill ${p.status}">${p.status}</span>`,
-    strategy: p.strategy,
-    total_funds: p.total_funds,
-    coverage: p.total_funds ? Math.round(p.cnpj_coverage * 100) + "%" : "-",
-    detail: p.error || "-",
-  }))
-);
-"""
-
-
-def _stat_tiles(data: dict) -> str:
-    usable = [p for p in data["platforms"] if p["status"] != "unavailable" and p["total_funds"]]
-    total_funds = sum(p["total_funds"] for p in usable)
-    cvm = data.get("cvm", {})
-    pre_op = sum(h["pre_operational"] for h in cvm.get("houses", [])) if cvm.get("available") else 0
-    xp = next((p for p in data["platforms"] if p["platform_id"] == "xp"), None)
-
-    tiles = [
-        ("Fundos mapeados", f"{total_funds:,}".replace(",", "."),
-         f"{len(usable)} de {len(data['platforms'])} plataformas coletadas"),
-        ("Prateleira da XP", f"{xp['total_funds']:,}".replace(",", ".") if xp and xp["total_funds"] else "-",
-         "baseline de comparacao"),
-        ("Registrados na CVM", f"{cvm.get('total', 0):,}".replace(",", ".") if cvm.get("available") else "-",
-         "gestoras ligadas as casas monitoradas"),
-        ("Em fase pre-operacional", str(pre_op) if cvm.get("available") else "-",
-         "registrados e ainda nao lancados"),
+from shelf_monitor.report.digest import _juntar, _summary_sentence
+from shelf_monitor.report.performance import blocos_de_rentabilidade, janela_do_bloco
+from shelf_monitor.report.retail_flow import _reais
+from shelf_monitor.report.shared import rotulo_da_casa
+from shelf_monitor.report.shared.estilo import CORES_DAS_CASAS
+from shelf_monitor.report.shared.fontes import (
+    CVM_CADASTRO,
+    CVM_EXTRATO,
+    CVM_INFORME_DIARIO,
+    Fonte,
+    fontes_do_relatorio,
+)
+from shelf_monitor.texto import contagem, data_br, milhar, meses_br, periodo_br
+
+# A cor de cada casa (a de marca; a XP com a de destaque) vive em
+# `shared/estilo.py` e, para o navegador, nas variaveis CSS --casa-* de
+# `_STYLE`; um teste garante que as duas copias batem. O JS le as variaveis.
+
+# CSS e JS moram em `assets/` e nao em strings aqui.
+#
+# O JS tinha 984 linhas dentro de uma string Python: nenhum editor o destacava,
+# nenhum linter o via, e qualquer aspa ou barra invertida dependia de o literal
+# ser `r"""`. Como arquivo, ele e um arquivo - e o teste que verifica que o
+# dashboard nao quebra passa a poder ler o fonte dele.
+#
+# Sao embutidos no HTML (e nao referenciados por <link>/<src>) de proposito: o
+# dashboard e um arquivo unico que se abre por file:// sem servidor, e essa
+# propriedade ja e coberta por teste.
+_ASSETS = Path(__file__).parent / "assets"
+_STYLE = (_ASSETS / "dashboard.css").read_text(encoding="utf-8")
+# Os primitivos de grafico moram em `graficos.js`, comuns ao painel da
+# industria; a pagina embute os dois arquivos na mesma tag de script, e segue
+# com exatamente dois (o JSON e o codigo).
+_GRAFICOS = (_ASSETS / "graficos.js").read_text(encoding="utf-8")
+_SCRIPT = _GRAFICOS + "\n" + (_ASSETS / "dashboard.js").read_text(encoding="utf-8")
+# A marca da XP na barra preta do topo, na versao para fundo escuro - a mesma
+# do material executivo da XP de onde veio o padrao visual.
+_LOGO = (_ASSETS / "logo-xp.svg").read_text(encoding="utf-8").strip()
+
+# A Inter do padrao executivo vem do Google Fonts. Sem rede (file:// offline)
+# o navegador cai na pilha de --sans do CSS e a pagina segue inteira.
+_FONTES_WEB = "\n".join((
+    '<link rel="preconnect" href="https://fonts.googleapis.com">',
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800'
+    '&amp;display=swap" rel="stylesheet">',
+))
+
+# Celula sem numero no placar: a casa ficou fora do bloco, e o motivo esta no
+# painel dele. Traco, e nao zero - zero seria um numero.
+_SEM = "–"
+
+
+def _e(texto: object) -> str:
+    return html.escape(str(texto))
+
+
+# "-R$ 1,3 bi" quebrado no fim de uma linha ("-" numa, "R$ 1,3 bi" na outra, ou
+# "bi" sozinho) le como outro numero. O valor em reais, com o sinal, fica
+# inteiro na mesma linha - o hifen do sinal e ponto de quebra para o navegador.
+_REAIS = re.compile(r"[+-]?R\$ \d[\d.,]* (?:bi|mi|mil)\b")
+
+
+def _t(texto: object) -> str:
+    """Texto da visao executiva: escapado, com os valores em reais inquebraveis."""
+    return _REAIS.sub(lambda m: f'<span class="nowrap">{m.group(0)}</span>', _e(texto))
+
+
+# --- formatos da visao executiva ----------------------------------------------
+
+
+def _pct(valor: float | None) -> str:
+    """"13,27%" - retorno, que o bloco ja guarda em pontos percentuais."""
+    return _SEM if valor is None else f"{valor:.2f}%".replace(".", ",")
+
+
+def _pct_sinal(valor: float | None) -> str:
+    """"-0,41%" - fluxo sobre o PL de inicio, que tem direcao."""
+    return _SEM if valor is None else f"{valor:+.2f}%".replace(".", ",")
+
+
+def _indice(valor: float | None) -> str:
+    """"1,65x" - custo contra a mediana da categoria."""
+    return _SEM if valor is None else f"{valor:.2f}x".replace(".", ",")
+
+
+# --- o que a visao executiva le do payload ------------------------------------
+
+
+def _base(data: dict) -> tuple[str, str]:
+    """(id, rotulo) da casa contra a qual o painel le as demais - a XP em fundos."""
+    for bloco in (data.get("gaps") or {}, data.get("flow") or {}):
+        if bloco.get("baseline_id"):
+            pid = bloco["baseline_id"]
+            return pid, bloco.get("baseline_label") or rotulo_da_casa(pid)
+    pid = next((p.platform_id for p in PLATFORMS.values() if p.is_baseline), "xp")
+    return pid, rotulo_da_casa(pid)
+
+
+def _prazo_do_fluxo(flow: dict) -> tuple[str, str] | None:
+    """("3 meses", "de 01/07/2026 a 23/09/2026") da captacao, ou None sem o bloco."""
+    periodo = flow.get("periodo") or {}
+    if not (flow.get("available") and periodo.get("de") and periodo.get("ate")):
+        return None
+    meses = len(periodo.get("meses_lidos") or [])
+    return (meses_br(meses) if meses else "no período", periodo_br(periodo["de"], periodo["ate"]))
+
+
+def _rentabilidade(data: dict) -> tuple[dict, dict] | None:
+    """(bloco, janela) da janela mais longa disponivel - 12 meses antes de 3."""
+    blocos = blocos_de_rentabilidade(data.get("performance_12m"), data.get("performance"))
+    if not blocos:
+        return None
+    return blocos[0], janela_do_bloco(blocos[0])
+
+
+def _por_casa(bloco: dict | None) -> dict[str, dict]:
+    """As linhas por casa de um bloco disponivel, indexadas pelo id da casa."""
+    if not (bloco and bloco.get("available")):
+        return {}
+    return {c["platform_id"]: c for c in bloco.get("casas") or []}
+
+
+def _comparacao(base_valor, outras: list[dict], chave: str, formato, *, maior: bool) -> str:
+    """"Maior: BTG Pactual, +R$ 3,0 bi" - a melhor concorrente ao lado da base.
+
+    Quando a base lidera, diz isso e mostra a segunda: o numero sozinho nao
+    diz se e bom ou ruim.
+    """
+    validas = [o for o in outras if o.get(chave) is not None]
+    if base_valor is None or not validas:
+        return ""
+    melhor = (max if maior else min)(validas, key=lambda o: o[chave])
+    lidera = base_valor >= melhor[chave] if maior else base_valor <= melhor[chave]
+    rotulo = "maior" if maior else "menor"
+    if lidera:
+        return (
+            f"A {rotulo} entre {len(validas) + 1} casas; a seguir, "
+            f"{melhor['label']}: {formato(melhor[chave])}"
+        )
+    return f"{rotulo.capitalize()}: {melhor['label']}, {formato(melhor[chave])}"
+
+
+# --- manchetes -----------------------------------------------------------------
+
+
+def _kpi(alvo: str, rotulo: str, valor: str, nota: str, comparacao: str = "",
+         prazo: str = "", faixa: str = "") -> str:
+    """Um tile de manchete. O tile inteiro e o link para o painel do bloco.
+
+    `faixa` e o SVG de `_faixa`: onde a casa-base cai entre as casas, logo
+    abaixo do numero.
+    """
+    extra = ""
+    if comparacao:
+        extra += f'<span class="kpi-comp">{_t(comparacao)}</span>'
+    if prazo:
+        extra += f'<span class="kpi-prazo">{_t(prazo)}</span>'
+    return (
+        f'<a class="kpi" href="#{alvo}">'
+        f'<span class="kpi-label">{_t(rotulo)}</span>'
+        f'<span class="kpi-value">{_t(valor)}</span>{faixa}'
+        f'<span class="kpi-note">{_t(nota)}</span>{extra}</a>'
+    )
+
+
+def _var_da_casa(platform_id: str) -> str:
+    """A cor da casa como variavel CSS (a mesma de estilo.CORES_DAS_CASAS)."""
+    return f"var(--casa-{platform_id})" if platform_id in CORES_DAS_CASAS else "var(--casa-outra)"
+
+
+def _faixa(pontos: list[tuple[str, str, float]], formato, base_id: str) -> str:
+    """Um ponto por casa numa linha, da menor a maior: onde a base cai.
+
+    (id, rotulo, valor) por casa. A base sai maior e com anel; as pontas levam
+    o menor e o maior valor escritos. Menos de duas casas, ou todas iguais, nao
+    e faixa - sai vazio. SVG estatico, desenhado aqui: a visao executiva nao
+    depende de script.
+    """
+    validos = [(pid, rotulo, v) for pid, rotulo, v in pontos if v is not None]
+    if len(validos) < 2:
+        return ""
+    menor = min(v for _, _, v in validos)
+    maior = max(v for _, _, v in validos)
+    if maior == menor:
+        return ""
+    esq, dir_, y = 7.0, 193.0, 11.0
+
+    def x(v: float) -> float:
+        return esq + (v - menor) / (maior - menor) * (dir_ - esq)
+
+    # A base por ultimo, por cima das outras quando encostam.
+    ordem = sorted(validos, key=lambda p: p[0] == base_id)
+    pontos_svg = "".join(
+        f'<circle cx="{x(v):.1f}" cy="{y}" r="{6.5 if pid == base_id else 4.5}" '
+        f'fill="{_var_da_casa(pid)}" stroke="#ffffff" stroke-width="{2 if pid == base_id else 1.5}">'
+        f"<title>{_e(rotulo)}: {_e(formato(v))}</title></circle>"
+        for pid, rotulo, v in ordem
+    )
+    descricao = "; ".join(f"{rotulo} {formato(v)}" for _, rotulo, v in validos)
+    return (
+        '<span class="kpi-faixa">'
+        f'<svg viewBox="0 0 200 34" role="img" aria-label="{_e("Entre as casas: " + descricao)}">'
+        f'<line x1="{esq}" x2="{dir_}" y1="{y}" y2="{y}" stroke="var(--grid)" stroke-width="2" '
+        'stroke-linecap="round"/>'
+        f"{pontos_svg}"
+        f'<text x="{esq - 4}" y="31" font-size="10.5" fill="var(--muted)">{_e(formato(menor))}</text>'
+        f'<text x="{dir_ + 4}" y="31" font-size="10.5" fill="var(--muted)" text-anchor="end">'
+        f"{_e(formato(maior))}</text>"
+        "</svg></span>"
+    )
+
+
+def _tiles(*tiles: str) -> str:
+    """As manchetes na ordem dada; a que nao tem dado (string vazia) sai."""
+    return "\n".join(t for t in tiles if t)
+
+
+# Uma funcao por manchete, e nao um bloco so: o monitor de previdencia monta a
+# visao executiva dele com parte destas e com as proprias (ver
+# shelf_monitor.previdencia.dashboard). Cada uma devolve "" quando o bloco dela
+# nao tem o numero da casa-base.
+
+
+def _kpi_gaps(data: dict) -> str:
+    _, base = _base(data)
+    gaps = data.get("gaps") or {}
+    if gaps.get("available"):
+        funil = gaps.get("funil") or {}
+        if (gaps.get("carteira") or {}).get("available"):
+            return _kpi(
+                "gaps-section", "Fundos que faltam na XP", milhar(gaps.get("total_gaps", 0)),
+                f"reais, de {milhar(funil.get('aparentes', 0))} aparentes · "
+                f"{contagem(gaps.get('total_cobertos', 0), 'já coberto', 'já cobertos')} · "
+                f"{milhar(gaps.get('gaps_liquidez', 0))} em outra liquidez",
+            )
+        return _kpi(
+            "gaps-section", "Fundos que faltam na XP", milhar(gaps.get("total_gaps", 0)),
+            f"em vitrine concorrente, fora da {base} · "
+            f"{milhar(gaps.get('multi_house_gaps', 0))} em 2+ casas",
+        )
+    if not gaps.get("nao_se_aplica"):
+        # Previdencia: "fundos que faltam" por CNPJ e o veiculo de cada
+        # seguradora, nao oferta que falta - o tile sai, e o motivo mora no
+        # painel de gaps. Suprimido por falta de dado, o tile fica e diz por que.
+        return _kpi(
+            "gaps-section", "Fundos que faltam na XP", "-",
+            f"análise suprimida nesta coleta: {gaps.get('reason') or 'dados insuficientes'}",
+        )
+    return ""
+
+
+def _kpi_captacao(data: dict) -> str:
+    base_id, base = _base(data)
+    flow = data.get("flow") or {}
+    prazo = _prazo_do_fluxo(flow)
+    fluxo = _por_casa(flow)
+    if not (prazo and base_id in fluxo):
+        return ""
+    casa = fluxo[base_id]
+    sobre_pl = casa.get("sobre_pl")
+    return _kpi(
+        "flow-section", f"Captação líquida em {prazo[0]}", _reais(casa["captacao_liquida"]),
+        f"{base} · {_pct_sinal(sobre_pl)} do PL de início" if sobre_pl is not None else base,
+        _comparacao(casa["captacao_liquida"],
+                    [c for pid, c in fluxo.items() if pid != base_id],
+                    "captacao_liquida", _reais, maior=True),
+        prazo[1],
+        _faixa([(pid, c["label"], c.get("captacao_liquida")) for pid, c in fluxo.items()],
+               _reais, base_id),
+    )
+
+
+def _kpi_rentabilidade(data: dict) -> str:
+    base_id, base = _base(data)
+    rent = _rentabilidade(data)
+    retorno = _por_casa(rent[0]) if rent else {}
+    if not (rent and retorno.get(base_id, {}).get("por_pl") is not None):
+        return ""
+    janela = rent[1]
+    base_calculo = f", base na {janela['base']}" if janela.get("base") else ""
+    return _kpi(
+        "perf-section", f"Rentabilidade em {janela['rotulo']}",
+        _pct(retorno[base_id]["por_pl"]),
+        f"{base} · ponderada por PL",
+        _comparacao(retorno[base_id]["por_pl"],
+                    [c for pid, c in retorno.items() if pid != base_id],
+                    "por_pl", _pct, maior=True),
+        periodo_br(janela.get("de"), janela.get("ate")) + base_calculo,
+        _faixa([(pid, c["label"], c.get("por_pl")) for pid, c in retorno.items()],
+               _pct, base_id),
+    )
+
+
+def _kpi_custo(data: dict) -> str:
+    base_id, base = _base(data)
+    custo = _por_casa(data.get("custo"))
+    if custo.get(base_id, {}).get("indice_mediano") is None:
+        return ""
+    return _kpi(
+        "perf-section", "Custo relativo à categoria",
+        _indice(custo[base_id]["indice_mediano"]),
+        f"{base} · taxa de administração ÷ mediana da categoria",
+        _comparacao(custo[base_id]["indice_mediano"],
+                    [c for pid, c in custo.items() if pid != base_id],
+                    "indice_mediano", _indice, maior=False),
+        faixa=_faixa([(pid, c["label"], c.get("indice_mediano")) for pid, c in custo.items()],
+                     _indice, base_id),
+    )
+
+
+def _kpi_radar(data: dict) -> str:
+    base_id, base = _base(data)
+    cvm = data.get("cvm") or {}
+    if not cvm.get("available"):
+        return ""
+    casas = cvm.get("houses") or []
+    pre_op = sum(h.get("pre_operational", 0) for h in casas)
+    da_base = next((h for h in casas if h.get("house") == base_id), None)
+    return _kpi(
+        "cvm-section", "Fundos em fase pré-operacional", milhar(pre_op),
+        "registrados na CVM, ainda não lançados · todas as casas",
+        f"{base}: {milhar(da_base['pre_operational'])}" if da_base else "",
+        f"cadastro da CVM de {data_br(cvm.get('collected_at'))}"
+        if cvm.get("collected_at") else "",
+        _faixa([(h["house"], h.get("label") or rotulo_da_casa(h["house"]), h.get("pre_operational"))
+                for h in casas], milhar, base_id),
+    )
+
+
+def _kpis(data: dict) -> str:
+    """As manchetes: um numero por pergunta, todos da casa-base, com o prazo.
+
+    Os quatro tiles de antes eram "fundos em vitrine (soma das casas)",
+    "fundos que faltam na XP", "registrados na CVM" e "em fase
+    pre-operacional" - so o segundo dizia algo sobre a posicao da XP; os
+    outros descreviam o universo. Agora cada tile responde uma pergunta de
+    decisao (o que falta, quanto capta, quanto rende, quanto custa, o que vem
+    por ai), traz a melhor concorrente ao lado e leva ao painel do bloco.
+    """
+    return _tiles(
+        _kpi_gaps(data), _kpi_captacao(data), _kpi_rentabilidade(data),
+        _kpi_custo(data), _kpi_radar(data),
+    )
+
+
+# --- leituras ------------------------------------------------------------------
+
+
+def _desde(report: RunReport) -> str:
+    """"desde a coleta de 23/09/2026" - o prazo do movimento de vitrine."""
+    datas = sorted({
+        d.prev_date for d in report.shelf_diffs if d.prev_date and not d.is_first_run
+    })
+    if not datas:
+        return ""
+    if len(datas) == 1:
+        return f"desde a coleta de {data_br(datas[0])}"
+    return f"desde as coletas de {data_br(datas[0])} a {data_br(datas[-1])}"
+
+
+# (painel, topico, texto[, prazo]) de uma leitura; None quando o bloco nao tem o
+# que dizer. O prazo e opcional: as leituras da previdencia ainda o trazem na
+# frase.
+Leitura = tuple
+
+
+def _pontos(*partes: str) -> str:
+    """"a · b · c" - numeros lado a lado, sem conjuncao; parte vazia sai."""
+    return " · ".join(p for p in partes if p)
+
+
+def _leitura_gaps(report: RunReport, data: dict) -> Leitura | None:
+    """Gaps em numeros: o funil e, com a captacao, o que se transfere.
+
+    Ate 27/09/2026 era a frase inteira do funil (`frase_do_funil`), com cinco
+    oracoes; o funil agora e um grafico no painel, e aqui fica a conta.
+    """
+    _, base = _base(data)
+    flow = data.get("flow") or {}
+    prazo = _prazo_do_fluxo(flow)
+    gaps = data.get("gaps") or {}
+    if gaps.get("available"):
+        funil = gaps.get("funil") or {}
+        if (gaps.get("carteira") or {}).get("available") and funil.get("aparentes"):
+            texto = _pontos(
+                f"{milhar(funil.get('reais', 0))} reais de {milhar(funil['aparentes'])} aparentes",
+                f"{milhar(funil.get('cobertos', 0))} já cobertos" if funil.get("cobertos") else "",
+                f"{milhar(funil.get('outra_liquidez', 0))} em outra liquidez"
+                if funil.get("outra_liquidez") else "",
+            )
+        elif gaps.get("total_gaps"):
+            texto = _pontos(
+                f"{milhar(gaps['total_gaps'])} fora da vitrine da {base}",
+                f"{milhar(gaps.get('multi_house_gaps', 0))} em 2+ casas",
+            )
+        else:
+            texto = f"Nenhum: toda vitrine concorrente coletada está na {base}"
+        # A mesma conta da "oportunidade de grade" do digest: o que capta varejo
+        # fora da vitrine da base, sem o produto proprio do concorrente, que nao
+        # se transfere. Cruza CNPJ entre casas, entao some com a supressao.
+        grade = flow.get("grade") or {}
+        periodo = ""
+        if (prazo and grade.get("available") and grade.get("total_transferiveis")
+                and not report.suprime(BLOCO_CNPJ)):
+            texto = _pontos(
+                texto,
+                f"{milhar(grade['total_transferiveis'])} transferíveis captam "
+                f"{_reais(grade.get('captacao_transferivel') or 0.0)}",
+                f"{milhar(grade.get('total_operacionais') or 0)} de gestora que a {base} já distribui",
+            )
+            periodo = f"captação em {prazo[0]}, {prazo[1]}"
+        return ("gaps-section", "Gaps de prateleira", texto, periodo)
+    if gaps and not gaps.get("nao_se_aplica"):
+        return (
+            "gaps-section", "Gaps de prateleira",
+            f"Suprimida nesta coleta: {gaps.get('reason') or 'dados insuficientes'}",
+        )
+    return None
+
+
+def _diferenca_por_familia(flow: dict, base_id: str, outra_id: str) -> list[tuple[str, float]]:
+    """(familia, base - outra) das tres familias que mais explicam a diferenca."""
+    diferencas = []
+    for linha in flow.get("por_categoria") or []:
+        casas = linha.get("casas") or {}
+        a = (casas.get(base_id) or {}).get("captacao_liquida") or 0.0
+        b = (casas.get(outra_id) or {}).get("captacao_liquida") or 0.0
+        if a or b:
+            diferencas.append((linha.get("categoria") or "-", a - b))
+    return sorted(diferencas, key=lambda d: -abs(d[1]))[:3]
+
+
+def _leitura_captacao(data: dict) -> Leitura | None:
+    """A base contra a que mais capta entre as outras, e de onde vem a diferenca."""
+    base_id, base = _base(data)
+    flow = data.get("flow") or {}
+    prazo = _prazo_do_fluxo(flow)
+    fluxo = _por_casa(flow)
+    if not prazo:
+        return None
+    periodo = f"{prazo[0]}, {prazo[1]}"
+    outras = [c for pid, c in fluxo.items() if pid != base_id and c.get("captacao_liquida") is not None]
+    if base_id not in fluxo or not outras:
+        if flow.get("leitura"):
+            return ("flow-section", "Captação", flow["leitura"][0], periodo)
+        return None
+    rival = max(outras, key=lambda c: c["captacao_liquida"])
+    texto = (
+        f"{base} {_reais(fluxo[base_id]['captacao_liquida'])} vs. "
+        f"{rival['label']} {_reais(rival['captacao_liquida'])}"
+    )
+    familias = _diferenca_por_familia(flow, base_id, rival["platform_id"])
+    if familias:
+        texto += "; diferença por família: " + _pontos(
+            *(f"{nome} {_reais(valor)}" for nome, valor in familias)
+        )
+    return ("flow-section", "Captação", texto, periodo)
+
+
+def _leitura_rentabilidade(data: dict) -> Leitura | None:
+    base_id, base = _base(data)
+    rent = _rentabilidade(data)
+    if not rent:
+        return None
+    bloco, janela = rent
+    ranking = sorted(
+        (c for c in bloco.get("casas") or [] if c.get("por_pl") is not None),
+        key=lambda c: -c["por_pl"],
+    )
+    if not ranking:
+        return None
+    periodo = periodo_br(janela.get("de"), janela.get("ate"))
+    if janela.get("base"):
+        periodo += f", base na {janela['base']}"
+    casa = next((c for c in ranking if c["platform_id"] == base_id), None)
+    if casa is None:
+        texto = _pontos(*(f"{c['label']} {_pct(c['por_pl'])}" for c in ranking))
+    else:
+        posicao = ranking.index(casa) + 1
+        lider = ranking[0]
+        sem_cotistas = BLOCO_COTISTAS in (data.get("suprimidos") or {})
+        abaixo = (casa.get("alocacao_abaixo_da_mediana") or {}).get("share_pl")
+        texto = _pontos(
+            f"{base} {_pct(casa['por_pl'])} por PL ({posicao}ª de {len(ranking)})",
+            f"{lider['label']} {_pct(lider['por_pl'])}" if lider is not casa else "",
+            f"cotista médio {_pct(casa['por_cotista'])}"
+            if not sem_cotistas and casa.get("por_cotista") is not None else "",
+            f"{round(abaixo * 100)}% do PL abaixo da mediana" if abaixo is not None else "",
+        )
+    return ("perf-section", f"Rentabilidade em {janela['rotulo']}", texto, periodo)
+
+
+def _leitura_custo(data: dict) -> Leitura | None:
+    # O nivel absoluto do indice carrega a camada de distribuicao do varejo
+    # (ver custo.py): a leitura compara as casas entre si, nunca contra 1,00x.
+    base_id, base = _base(data)
+    custo = data.get("custo") or {}
+    ranking = sorted(
+        (c for c in custo.get("casas") or [] if c.get("indice_mediano") is not None),
+        key=lambda c: c["indice_mediano"],
+    ) if custo.get("available") else []
+    if not ranking:
+        return None
+    prazo = "taxa de administração ÷ mediana da categoria"
+    casa = next((c for c in ranking if c["platform_id"] == base_id), None)
+    if casa is None:
+        return ("perf-section", "Custo",
+                _pontos(*(f"{c['label']} {_indice(c['indice_mediano'])}" for c in ranking)), prazo)
+    barata = ranking[0]
+
+    def parcela(v: float | None) -> str:
+        return "-" if v is None else f"{round(v * 100)}%"
+
+    return (
+        "perf-section", "Custo",
+        _pontos(
+            f"{base} {_indice(casa['indice_mediano'])}",
+            f"mais barata: {barata['label']} {_indice(barata['indice_mediano'])}"
+            if barata is not casa else "a mais barata",
+            f"{parcela(casa.get('share_caro'))} dos fundos caros, "
+            f"{parcela(casa.get('share_barato'))} baratos",
+        ),
+        prazo,
+    )
+
+
+def _leitura_movimento(report: RunReport) -> Leitura:
+    """Entradas, saidas e alteracoes, com a data da coleta comparada no prazo.
+
+    Os casos que pedem explicacao (nada coletado, primeira coleta, nova linha
+    de base) seguem com a frase do digest: ali a conta sozinha engana.
+    """
+    from shelf_monitor.report.digest import _summary_counts
+
+    frase, alerta = _summary_sentence(report)
+    desde = _desde(report)
+    rebaseada = any(d.nova_linha_de_base for d in report.shelf_diffs)
+    if alerta or not desde or rebaseada:
+        frase = frase.replace("`", "")
+        if desde and not alerta:
+            frase = frase.replace("desde a última coleta", desde)
+        return (None, "Movimento na vitrine", frase, desde)
+    entradas, saidas, alteracoes, catalogo = _summary_counts(report)
+    return (
+        None, "Movimento na vitrine",
+        _pontos(
+            contagem(entradas, "entrada", "entradas"),
+            contagem(saidas, "saída", "saídas"),
+            contagem(alteracoes, "alteração", "alterações"),
+            f"{milhar(catalogo)} só no catálogo" if catalogo else "",
+        ),
+        desde,
+    )
+
+
+def _leituras(report: RunReport, data: dict) -> list[Leitura]:
+    """(painel, topico, texto, prazo) - as leituras da coleta, na ordem em que se decide.
+
+    Numero, nao frase: desde 27/09/2026 cada leitura e uma linha de tabela
+    (tema e prazo a esquerda, os numeros a direita, separados por " · "), e
+    so traz o que as manchetes e o placar nao mostram - de onde vem a
+    diferenca de captacao, o cotista medio, a parcela de fundos caros.
+    """
+    itens = (
+        _leitura_gaps(report, data), _leitura_captacao(data),
+        _leitura_rentabilidade(data), _leitura_custo(data), _leitura_movimento(report),
+    )
+    return [item for item in itens if item]
+
+
+def _html_leituras(itens: list[Leitura]) -> str:
+    """Uma linha de tabela por leitura: tema (link para o painel) e prazo, os numeros."""
+    linhas = []
+    for item in itens:
+        alvo, topico, frase = item[:3]
+        prazo = item[3] if len(item) > 3 else ""
+        cabeca = (
+            f'<a class="topico" href="#{alvo}">{_e(topico)}</a>' if alvo
+            else f'<span class="topico">{_e(topico)}</span>'
+        )
+        if prazo:
+            cabeca += f'<small class="prazo">{_t(prazo)}</small>'
+        linhas.append(f'<tr><th scope="row">{cabeca}</th><td>{_t(frase)}</td></tr>')
+    return "\n".join(linhas)
+
+
+# --- placar --------------------------------------------------------------------
+
+
+def _celula(valor: str, sub: str = "", *, melhor: bool = False, titulo: str = "",
+            barra: str = "") -> str:
+    classe = "num fora" if valor == _SEM else "num"
+    title = f' title="{_e(titulo)}"' if titulo else ""
+    principal = f'<strong class="melhor">{_e(valor)}</strong>' if melhor else _e(valor)
+    extra = f'<span class="sub-val">{_e(sub)}</span>' if sub else ""
+    return f'<td class="{classe}"{title}>{principal}{barra}{extra}</td>'
+
+
+def _mini(valor: float | None, maximo: float, platform_id: str, *, sinal: bool = False) -> str:
+    """Barra fina na celula do placar, na cor da casa: o tamanho do numero.
+
+    Com `sinal` (captacao) ela parte do meio - para a direita se entra
+    dinheiro, para a esquerda se sai. Sem numero ou sem escala, nada.
+    """
+    if valor is None or maximo <= 0:
+        return ""
+    cor = _var_da_casa(platform_id)
+    if sinal:
+        largura = min(50.0, abs(valor) / maximo * 50)
+        lado = "left:50%;right:auto" if valor >= 0 else "right:50%"
+        return (f'<span class="mini div" aria-hidden="true">'
+                f'<i style="{lado};width:{largura:.1f}%;background:{cor}"></i></span>')
+    if valor <= 0:
+        return ""
+    largura = min(100.0, valor / maximo * 100)
+    return (f'<span class="mini" aria-hidden="true">'
+            f'<i style="width:{largura:.1f}%;background:{cor}"></i></span>')
+
+
+def _placar(
+    report: RunReport,
+    data: dict,
+    *,
+    sub_vitrine: dict[str, str] | None = None,
+    cabeca_vitrine: str = "fundos",
+    casas_sem_vitrine: dict[str, str] | None = None,
+) -> str:
+    """O placar casa a casa: uma linha por casa, as colunas que decidem.
+
+    Vitrine, captacao, rentabilidade e custo lado a lado, a casa-base
+    destacada e a melhor casa de cada coluna em negrito. Casa que ficou fora
+    de um bloco aparece com traco - o motivo esta no painel do bloco -, nunca
+    some da tabela: sumir faria parecer que ela nao existe.
+
+    Os argumentos opcionais existem para a previdencia, e sem eles o placar e
+    o de fundos. `sub_vitrine` (id -> texto) troca a linha de baixo da celula
+    de vitrine, que em fundos e "N so nela", e `cabeca_vitrine` diz o que a
+    coluna traz. `casas_sem_vitrine`
+    (id -> motivo) sao as casas que o modulo SABE nao terem vitrine publica:
+    entram no placar mesmo sem snapshot (o `report` le so o ultimo snapshot
+    util, e elas nao tem nenhum) e saem como "sem vitrine publica", nao como
+    "coleta indisponivel" - nao houve falha de coleta.
+    """
+    base_id, _ = _base(data)
+    sem_vitrine = casas_sem_vitrine or {}
+    sem_cnpj = report.suprime(BLOCO_CNPJ)
+    flow = data.get("flow") or {}
+    prazo = _prazo_do_fluxo(flow)
+    fluxo = _por_casa(flow) if prazo else {}
+    rent = _rentabilidade(data)
+    retorno = _por_casa(rent[0]) if rent else {}
+    custo = _por_casa(data.get("custo"))
+
+    def lider(valores: dict[str, dict], chave: str, maior: bool = True) -> float | None:
+        numeros = [v[chave] for v in valores.values() if v.get(chave) is not None]
+        if len(numeros) < 2:
+            return None
+        return max(numeros) if maior else min(numeros)
+
+    top_fluxo = lider(fluxo, "captacao_liquida")
+    top_retorno = lider(retorno, "por_pl")
+    top_custo = lider(custo, "indice_mediano", maior=False)
+
+    # Barra fina so onde o tamanho informa: vitrine e captacao. Retorno e
+    # custo ficam sem: 13,1% contra 13,7% a partir do zero sao duas barras
+    # cheias iguais - verdade, mas nenhuma leitura; a posicao esta na faixa da
+    # manchete e no dumbbell do painel. Escala: o maior da coluna, em modulo.
+    teto_vitrine = float(max((p.get("listing_funds") or 0 for p in data.get("platforms") or []), default=0))
+    teto_fluxo = max((abs(v["captacao_liquida"]) for v in fluxo.values()
+                      if v.get("captacao_liquida") is not None), default=0.0)
+
+    cabeca = [
+        '<th scope="col">Casa</th>',
+        f'<th scope="col" class="num">Vitrine<small>{_e(cabeca_vitrine)}</small></th>',
     ]
-    return "\n".join(
-        f'<div class="tile"><div class="label">{html.escape(label)}</div>'
-        f'<div class="value">{html.escape(value)}</div>'
-        f'<div class="note">{html.escape(note)}</div></div>'
-        for label, value, note in tiles
+    if fluxo:
+        cabeca.append(f'<th scope="col" class="num">Captação líquida<small>{_e(prazo[0])}</small></th>')
+    if retorno:
+        cabeca.append(
+            f'<th scope="col" class="num">Rentabilidade<small>{_e(rent[1]["rotulo"])}, por PL</small></th>'
+        )
+    if custo:
+        cabeca.append('<th scope="col" class="num">Custo<small>índice vs. categoria</small></th>')
+
+    plataformas = list(data.get("platforms") or [])
+    vistas = {p["platform_id"] for p in plataformas}
+    plataformas += [
+        {"platform_id": pid, "label": rotulo_da_casa(pid)}
+        for pid in sem_vitrine if pid not in vistas
+    ]
+
+    linhas = []
+    for p in plataformas:
+        pid = p["platform_id"]
+        vitrine = p.get("listing_funds") or 0
+        if pid in sem_vitrine:
+            celulas = [_celula(_SEM, "sem vitrine pública", titulo=sem_vitrine[pid])]
+        elif p.get("status") == "unavailable":
+            celulas = [_celula(_SEM, "coleta indisponível", titulo=p.get("error") or "")]
+        elif vitrine:
+            if sub_vitrine is not None:
+                so_nela = sub_vitrine.get(pid, "")
+            else:
+                so_nela = "" if sem_cnpj else f"{milhar(p.get('exclusive_count') or 0)} só nela"
+            celulas = [_celula(milhar(vitrine), so_nela, barra=_mini(vitrine, teto_vitrine, pid))]
+        else:
+            celulas = [_celula(_SEM, "sem vitrine pública", titulo=p.get("listing_reason") or "")]
+        if fluxo:
+            c = fluxo.get(pid)
+            celulas.append(
+                _celula(_reais(c["captacao_liquida"]),
+                        "" if c.get("sobre_pl") is None else f"{_pct_sinal(c['sobre_pl'])} do PL",
+                        melhor=c["captacao_liquida"] == top_fluxo,
+                        barra=_mini(c["captacao_liquida"], teto_fluxo, pid, sinal=True))
+                if c else _celula(_SEM)
+            )
+        if retorno:
+            c = retorno.get(pid)
+            celulas.append(
+                _celula(_pct(c["por_pl"]), f"mediana {_pct(c.get('mediana'))}",
+                        melhor=c["por_pl"] == top_retorno)
+                if c and c.get("por_pl") is not None else _celula(_SEM)
+            )
+        if custo:
+            c = custo.get(pid)
+            celulas.append(
+                _celula(_indice(c["indice_mediano"]), melhor=c["indice_mediano"] == top_custo)
+                if c and c.get("indice_mediano") is not None else _celula(_SEM)
+            )
+        classe = ' class="base"' if pid == base_id else ""
+        linhas.append(
+            f'<tr{classe}><th scope="row">{_e(p["label"])}</th>{"".join(celulas)}</tr>'
+        )
+
+    notas = []
+    if fluxo:
+        notas.append(
+            f"Captação: {_e(prazo[1])}, fundos exibidos, mercado inteiro "
+            f"({_a(CVM_INFORME_DIARIO, 'informe diário da CVM')})."
+        )
+    if retorno:
+        janela = rent[1]
+        base_calculo = f", base na {janela['base']}" if janela.get("base") else ""
+        notas.append(
+            f"Rentabilidade: {_e(periodo_br(janela.get('de'), janela.get('ate')) + base_calculo)}; "
+            "embaixo, a mediana."
+        )
+    if custo:
+        notas.append(
+            f"Custo: taxa ÷ mediana da categoria, menor é mais barato ({_a(CVM_EXTRATO, 'extrato da CVM')})."
+        )
+    if top_fluxo is not None or top_retorno is not None or top_custo is not None:
+        notas.append("Negrito: a melhor da coluna.")
+    notas.append("Traço: fora do bloco (motivo no painel).")
+
+    return (
+        '<div class="placar-scroll"><table class="placar">'
+        f'<thead><tr>{"".join(cabeca)}</tr></thead>'
+        f'<tbody>{"".join(linhas)}</tbody></table></div>'
+        f'<p class="nota">{" ".join(notas)}</p>'
+    )
+
+
+# --- paineis sob demanda --------------------------------------------------------
+
+
+def _resumos(report: RunReport, data: dict, config: Config) -> dict[str, str]:
+    """A linha de cada painel recolhido: o que ele responde, com o numero-chave.
+
+    E o que o leitor ve sem abrir nada, entao tem de dizer se vale abrir.
+    """
+    _, base = _base(data)
+    sem_cnpj = report.suprime(BLOCO_CNPJ)
+    plataformas = data.get("platforms") or []
+    com_vitrine = [p for p in plataformas if p.get("status") != "unavailable" and p.get("listing_funds")]
+    r: dict[str, str] = {}
+
+    gaps = data.get("gaps") or {}
+    if gaps.get("nao_se_aplica"):
+        r["gaps"] = "Não se aplica a este monitor."
+    elif gaps.get("available"):
+        cobertos = gaps.get("total_cobertos") or 0
+        r["gaps"] = (
+            f"{contagem(gaps.get('total_gaps', 0), 'gap real', 'gaps reais')} na vitrine da {base}"
+            + (f" · {contagem(cobertos, 'já coberto', 'já cobertos')}, com a evidência." if cobertos else ".")
+        )
+    else:
+        r["gaps"] = f"Suprimido nesta coleta: {gaps.get('reason') or 'dados insuficientes'}."
+
+    prazo = _prazo_do_fluxo(data.get("flow") or {})
+    r["flow"] = (
+        f"{prazo[0].capitalize()}, {prazo[1]}: saldo por casa, família, tendência e fundos."
+        if prazo else "Indisponível nesta coleta."
+    )
+
+    janelas = [
+        janela_do_bloco(b)["rotulo"]
+        for b in blocos_de_rentabilidade(data.get("performance_12m"), data.get("performance"))
+    ]
+    # O resumo so promete o que o painel tem: custo ou mandato indisponivel
+    # (a previdencia, sem cobertura de taxa) sai da lista e e dito como tal.
+    tem = ["retorno por casa", "onde está o dinheiro"]
+    falta = []
+    for chave, oque in (("custo", "custo contra a categoria"), ("mandato", "mandato do regulamento")):
+        if (data.get(chave) or {}).get("available"):
+            tem.append(oque)
+        else:
+            falta.append(chave)
+    fim = "."
+    if falta:
+        fim = (
+            f"; {_juntar(falta)} {'indisponível' if len(falta) == 1 else 'indisponíveis'} "
+            "nesta coleta."
+        )
+    r["perf"] = (
+        f"{_juntar(janelas).capitalize()}: {_juntar(tem)}{fim}"
+        if janelas else "Indisponível nesta coleta."
+    )
+
+    r["vitrine"] = (
+        f"{len(com_vitrine)} de {contagem(len(plataformas), 'casa', 'casas')} com vitrine: "
+        "classes ANBIMA, arquitetura aberta, ticket."
+    )
+    r["classes"] = "Quantos fundos cada vitrine exibe em cada classe de ativo."
+    r["gestoras"] = (
+        "Gestoras distintas na vitrine: "
+        + _juntar([f"{p['label']} {milhar(p.get('distinct_managers') or 0)}" for p in com_vitrine])
+        + "."
+        if com_vitrine else "Sem vitrine coletada."
+    )
+
+    ticket = data.get("leitura_ticket")
+    if not ticket:
+        r["ticket"] = "Distribuição dos fundos por faixa de aplicação mínima."
+    else:
+        teto = f"R$ {milhar(int(ticket['teto']))}"
+        if ticket.get("sem_base"):
+            r["ticket"] = f"Sem base para comparar o ticket da {ticket['baseline_label']}."
+        elif ticket.get("baseline_varejo") == 0:
+            r["ticket"] = f"A vitrine da {ticket['baseline_label']} não tem fundo abaixo de {teto}."
+        else:
+            r["ticket"] = (
+                f"{ticket['baseline_label']}: {milhar(ticket['baseline_varejo'])} fundos "
+                f"abaixo de {teto}, contra {milhar(ticket['melhor_varejo'])} da "
+                f"{ticket['melhor_label']}."
+            )
+
+    r["exclusivos"] = (
+        "Não se aplica a este monitor." if sem_cnpj
+        else "Fundos de varejo que só uma casa exibe: "
+        + _juntar([f"{p['label']} {milhar(p.get('exclusive_count') or 0)}" for p in com_vitrine])
+        + "."
+        if com_vitrine else "Sem vitrine coletada."
+    )
+
+    restritos = data.get("restricted") or {}
+    total_restritos = restritos.get("total") or 0
+    r["restritos"] = (
+        f"{contagem(total_restritos, 'veículo', 'veículos')} fora do varejo e das comparações."
+    )
+
+    cvm = data.get("cvm") or {}
+    if cvm.get("available"):
+        pre_op = sum(h.get("pre_operational", 0) for h in cvm.get("houses") or [])
+        r["cvm"] = (
+            f"{contagem(cvm.get('total') or 0, 'fundo registrado', 'fundos registrados')} "
+            f"nas gestoras ligadas às casas; {milhar(pre_op)} em fase pré-operacional."
+        )
+        diff = cvm.get("diff") or {}
+        if diff and not diff.get("is_first_run") and diff.get("new_registrations"):
+            r["cvm"] = r["cvm"][:-1] + (
+                f"; {contagem(diff['new_registrations'], 'registro novo', 'registros novos')} "
+                "desde a coleta anterior."
+            )
+    else:
+        r["cvm"] = "Cadastro da CVM indisponível nesta coleta."
+
+    por_status: dict[str, int] = {}
+    for p in plataformas:
+        por_status[p.get("status")] = por_status.get(p.get("status"), 0) + 1
+    partes = [
+        f"{por_status.get('ok', 0)} de {contagem(len(plataformas), 'casa', 'casas')} "
+        "com coleta ok"
+    ]
+    if por_status.get("partial"):
+        partes.append(contagem(por_status["partial"], "parcial", "parciais"))
+    if por_status.get("unavailable"):
+        partes.append(contagem(por_status["unavailable"], "indisponível", "indisponíveis"))
+    sem_vitrine = [p["label"] for p in plataformas
+                   if p.get("status") != "unavailable" and not p.get("listing_funds")]
+    r["coleta"] = ", ".join(partes) + (
+        f"; sem vitrine pública: {_juntar(sem_vitrine)}." if sem_vitrine else "."
+    )
+
+    fontes = [f.nome for f in fontes_do_relatorio(report, config)]
+    r["fontes"] = (
+        f"{contagem(len(fontes), 'fonte', 'fontes')} com link para conferir cada número."
+        if fontes else ""
+    )
+    return r
+
+
+def _painel(ident: str, titulo: str, resumo: str, corpo: str) -> str:
+    """Bloco recolhido: o titulo e a linha de resumo a vista, o corpo sob demanda."""
+    return (
+        f'<section class="panel" id="{ident}">\n'
+        f"    <details>\n"
+        f'      <summary><h2>{titulo}</h2><span class="panel-lead">{_e(resumo)}</span></summary>\n'
+        f'      <div class="panel-body">\n{corpo}\n      </div>\n'
+        f"    </details>\n"
+        f"  </section>"
     )
 
 
@@ -977,159 +968,369 @@ def _embed_json(data: dict) -> str:
     return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
 
 
-def render_dashboard(config: Config, report: RunReport) -> Path:
-    data = build_dashboard_data(report)
-    generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
+def _como_ler(*itens: str) -> str:
+    """A metodologia do painel, recolhida no fim: uma nota curta por item.
 
-    document = f"""<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor de Prateleiras de Fundos</title>
-<style>{_STYLE}</style>
-</head>
-<body>
-<div class="wrap">
-  <header class="page">
-    <h1>Monitor de Prateleiras de Fundos</h1>
-    <p class="sub">Concorrentes da XP &middot; prateleiras publicas e radar de registros na CVM
-      &middot; gerado em {html.escape(generated)}</p>
-  </header>
+    Ate 27/09/2026 cada painel abria com um paragrafo de 4 a 7 linhas de
+    metodologia antes do primeiro numero. A ressalva continua aqui - a que
+    evita leitura errada nao se corta -, so deixou de ser o caminho obrigatorio.
+    """
+    notas = "".join(f"<li>{item}</li>" for item in itens if item)
+    if not notas:
+        return ""
+    return f'\n    <details class="como-ler"><summary>Como ler</summary><ul>{notas}</ul></details>'
 
-  <div class="tiles">{_stat_tiles(data)}</div>
 
-  <section class="card" id="vitrine-section">
-    <h2>Vitrine de varejo &mdash; o que o cliente ve</h2>
-    <p class="card-sub">Fundos presentes na listagem da propria casa (site, API do portal ou
-      area logada). O Open Finance nao entra aqui: ele e o catalogo regulatorio &mdash; tudo
-      que a casa administra &mdash; e serve de referencia, nao de prateleira.</p>
+# O cotista medio so existe onde a CVM conta cotistas que sao gente; a
+# previdencia (cotista = seguradora) troca pela nota da supressao.
+_PERF_COMO_LER = (
+    "Mediana: o fundo do meio da vitrine. Real médio: ponderado por PL. Cotista médio: "
+    "ponderado por cotistas. Gap = real médio − cotista médio: positivo, o dinheiro grande "
+    "está nos fundos bons e o varejo nos piores."
+)
+
+_EXPOSTOS = """
+
+    <h3>Fundos de muita gente rendendo abaixo da categoria <span class="perf-janela-rotulo"></span></h3>
+    <div class="matrix-scroll" id="perf-expostos"></div>"""
+
+_EXCLUSIVOS = """<p class="card-sub">Fundos de varejo (por CNPJ) na vitrine de uma casa só. Não é o
+      &ldquo;fundo exclusivo&rdquo; regulatório.</p>
+    <div class="chart-scroll" id="chart-exclusive"></div>"""
+
+_FLOW_COMO_LER_EXCLUSIVOS = (
+    "&ldquo;Só nesta vitrine&rdquo; é onde a atribuição a uma casa é inequívoca."
+)
+
+
+def _composicao_sub(sem_cnpj: str | None, sem_proprio: str | None) -> str:
+    """Nota do saldo: vazia quando os dois cortes valem; o motivo, quando um sai."""
+    if sem_proprio and not sem_cnpj:
+        return f'<p class="card-sub">Sem o corte próprio × terceiros: {html.escape(sem_proprio)}.</p>'
+    return ""
+
+
+def _a(fonte: Fonte, texto: str | None = None) -> str:
+    """Link para a pagina de consulta da fonte."""
+    return (
+        f'<a href="{html.escape(fonte.url)}" target="_blank" rel="noopener">'
+        f"{html.escape(texto or fonte.nome)}</a>"
+    )
+
+
+def _bloco_fontes(report: RunReport, config: Config, resumo: str) -> str:
+    """O painel de fontes: cada uma com link, o que fornece e o arquivo lido."""
+    linhas = []
+    for fonte in fontes_do_relatorio(report, config):
+        arquivos = (
+            f'<a href="{html.escape(fonte.url_dados)}" target="_blank" rel="noopener">'
+            f"{html.escape(fonte.url_dados)}</a>" if fonte.url_dados else "–"
+        )
+        linhas.append(
+            f"<tr><td>{_a(fonte)}</td><td>{html.escape(fonte.uso)}</td>"
+            f'<td class="dim">{arquivos}</td></tr>'
+        )
+    if not linhas:
+        return ""
+    return _painel(
+        "fontes-section", "Fontes", resumo,
+        '    <p class="card-sub">Só as fontes que entraram nesta execução.</p>\n'
+        '    <div class="table-scroll fontes"><table><thead><tr><th>Fonte</th><th>O que fornece</th>'
+        f'<th>Arquivos lidos</th></tr></thead><tbody>{"".join(linhas)}</tbody></table></div>',
+    )
+
+
+def _fragmentos(report: RunReport) -> dict[str, str]:
+    """Trechos do HTML fixo que um modulo pode trocar pelo motivo da supressao."""
+    sem_cotistas = report.suprime(BLOCO_COTISTAS)
+    sem_cnpj = report.suprime(BLOCO_CNPJ)
+    return {
+        "perf_como_ler": _PERF_COMO_LER if not sem_cotistas else (
+            "Mediana: o fundo do meio da vitrine. Real médio: ponderado por PL. "
+            f"Sem a leitura por cotistas: {html.escape(sem_cotistas)}."
+        ),
+        "expostos": "" if sem_cotistas else _EXPOSTOS,
+        "exclusivos": _EXCLUSIVOS if not sem_cnpj else (
+            f'<div class="note-box">Não se aplica a este monitor: '
+            f"{html.escape(sem_cnpj)}.</div>"
+        ),
+        "flow_como_ler_exclusivos": "" if sem_cnpj else _FLOW_COMO_LER_EXCLUSIVOS,
+        "composicao_sub": _composicao_sub(sem_cnpj, report.suprime(BLOCO_PRODUTO_PROPRIO)),
+    }
+
+
+# --- paineis ---------------------------------------------------------------------
+# Um painel por funcao. O monitor de previdencia reaproveita os que valem para
+# ele (captacao, rentabilidade, aplicacao minima, saude da coleta, fontes) e
+# escreve os proprios no lugar dos que nao valem (ver
+# shelf_monitor.previdencia.dashboard).
+#
+# Texto (docs/linguagem-visual.md, secao 5): uma linha de abertura por painel;
+# quem afirma e o titulo de cada figura; a metodologia mora em "Como ler".
+
+
+def _painel_gaps(resumo: dict[str, str]) -> str:
+    return _painel("gaps-section", "Gaps de prateleira da XP", resumo["gaps"], """
+    <p class="card-sub">Fundos de varejo na vitrine de um concorrente e fora da vitrine da XP, por CNPJ.</p>
+    <div class="tiles" id="gaps-tiles"></div>
+    <p class="card-sub" id="gaps-funil"></p>
+
+    <h3>Onde a vitrine da XP está rasa</h3>
+    <div class="matrix-scroll" id="matrix-gaps"></div>
+
+    <details><summary>Ver os fundos de gap (ordenados pelo esforço de fechar e pela captação)</summary><div id="table-gaps"></div></details>
+    <details><summary>Ver os gaps aparentes que a XP já cobre (com a evidência)</summary><div id="table-gaps-cobertos"></div></details>""" + _como_ler(
+        "Vitrine × vitrine: o catálogo Open Finance não conta em nenhum dos lados.",
+        "Coberto: a XP já tem o mesmo master (espelho) ou fundo da mesma gestora com carteira "
+        "equivalente, pela carteira mensal da CVM. Sai da conta e fica listado com a prova.",
+        "Esforço: inclusão operacional (gestora que a XP já distribui) ou comercial (abrir gestora).",
+    ) + """
+    <div class="coverage" id="gaps-coverage"></div>""")
+
+
+def _painel_captacao(
+    resumo: dict[str, str], trecho: dict[str, str], *, composicao: bool = True
+) -> str:
+    """O painel de captacao. `composicao=False` tira "De onde vem o saldo".
+
+    O saldo e separado por dois cortes, compartilhado x so nesta vitrine e
+    produto proprio x terceiros. Com os dois suprimidos (previdencia) ele fica so
+    com a captacao e o % do PL, que as manchetes e o placar ja mostram.
+    """
+    saldo = f"""
+
+    <h3>De onde vem o saldo</h3>{trecho["composicao_sub"]}
+    <div class="matrix-scroll" id="flow-composicao"></div>""" if composicao else ""
+    return _painel("flow-section", "Captação dos fundos de vitrine", resumo["flow"], f"""
+    <p class="card-sub">Captação líquida dos fundos que cada casa exibe
+      ({_a(CVM_INFORME_DIARIO, "informe diário da CVM")}).</p>
+    <p class="card-sub" id="flow-prazo"></p>
+    <div class="tiles" id="flow-tiles"></div>{saldo}
+
+    <h3>Por família de ativo</h3>
+    <div class="matrix-scroll" id="flow-familias"></div>
+
+    <h3>Tendência</h3>
+    <div class="matrix-scroll" id="flow-trend"></div>
+
+    <h3>Tendência dos fundos, por casa</h3>
+    <div class="matrix-scroll" id="flow-tendencia-casas"></div>
+
+    <details><summary>Quais fundos: maiores captações e resgates, o que a vitrine da XP
+      perde, o que acelera</summary>
+      <div id="flow-lists"></div>
+    </details>""" + _como_ler(
+        "Fluxo por fundo, nunca por distribuidor: um fundo em três vitrines entra inteiro nas "
+        "três somas. " + trecho["flow_como_ler_exclusivos"],
+        "Família: a última coluna conta cada fundo uma vez, mesmo exibido por várias casas.",
+        "Tendência em média por pregão: o mês corrente tem menos pregões que os cheios.",
+        "Ritmo: fundos com PL de ao menos R$ 1 mi no início. Captando = acelerando, estável, "
+        "desacelerando ou que virou entrada no último mês.",
+    ) + """
+    <div class="coverage" id="flow-coverage"></div>""")
+
+
+def _painel_rentabilidade(resumo: dict[str, str], trecho: dict[str, str]) -> str:
+    return _painel("perf-section", "Rentabilidade e custo da vitrine", resumo["perf"], f"""
+    <p class="card-sub">Retorno dos fundos que a casa exibe, com o peso que eles têm no mercado
+      ({_a(CVM_INFORME_DIARIO, "informe diário da CVM")}) - não o retorno dos clientes dela.</p>
+    <div class="janelas" id="perf-janelas" role="group" aria-label="Prazo da rentabilidade"></div>
+    <p class="card-sub" id="perf-nota"></p>
+    <div class="tiles" id="perf-tiles"></div>
+    <div class="legend" id="perf-legend"></div>
+    <div class="chart-scroll" id="perf-chart"></div>
+
+    <h3>Onde está o dinheiro em relação à mediana da categoria <span class="perf-janela-rotulo"></span></h3>
+    <div class="matrix-scroll" id="perf-massa"></div>{trecho["expostos"]}
+
+    <h3>Custo relativo à categoria</h3>
+    <div class="matrix-scroll" id="custo-bloco"></div>
+
+    <h3>Mandato autorizado pelo regulamento</h3>
+    <div class="matrix-scroll" id="mandato-bloco"></div>""" + _como_ler(
+        trecho["perf_como_ler"],
+        "A CVM publica cota, PL e cotistas por fundo, somando todos os distribuidores. "
+        "Cota ex-provento.",
+        "Onde está o dinheiro: índice = % do PL ÷ % dos fundos abaixo da mediana da própria "
+        "categoria. Abaixo de 1, o dinheiro evita os piores; metade de qualquer universo fica "
+        "abaixo da mediana por construção.",
+        "Custo em índice, não em taxa: a taxa bruta mede o mix (renda fixa ~0,2% ao ano, ações "
+        f"~2%). 1,00x = mediana da categoria ({_a(CVM_EXTRATO, 'extrato de informações da CVM')}).",
+        "Mandato: o que o regulamento autoriza, nunca o que a carteira carrega (isso exigiria a "
+        "carteira mensal). ▲ acima das concorrentes, ▼ abaixo.",
+    ) + """
+    <div class="coverage" id="perf-coverage"></div>""")
+
+
+def _painel_vitrine(resumo: dict[str, str]) -> str:
+    return _painel("vitrine-section", "Vitrine de varejo &mdash; o que o cliente vê", resumo["vitrine"], """
+    <p class="card-sub">Fundos na listagem da própria casa. Link de cada vitrine em
+      <a href="#fontes-section">Fontes</a>.</p>
     <div class="tiles" id="vitrine-tiles"></div>
 
-    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Matriz casa &times; classe ANBIMA</h3>
-    <p class="card-sub">Contagem de fundos da vitrine por classificacao ANBIMA oficial
-      (join por CNPJ com o registro CVM). Mais escuro = mais fundos.</p>
+    <h3>Matriz casa &times; classe ANBIMA</h3>
     <div class="matrix-scroll" id="matrix-vitrine"></div>
 
     <div class="subgrid" style="margin-top:22px">
       <div>
         <h3>Arquitetura aberta</h3>
-        <p class="card-sub">Produto de gestora da propria casa vs. de terceiros, na vitrine.</p>
         <div class="legend" id="legend-arch"></div>
         <div class="chart-scroll" id="chart-arch"></div>
       </div>
       <div>
-        <h3>Custo e ticket por casa</h3>
-        <p class="card-sub">Quartis da taxa de administracao e mediana do minimo &mdash;
-          quartis mostram a forma da prateleira; media esconderia.</p>
+        <h3>Ticket de entrada por casa</h3>
+        <p class="card-sub">Quartis da aplicação mínima.</p>
         <div id="table-costs"></div>
       </div>
     </div>
 
-    <details><summary>Ver a matriz como tabela</summary><div id="table-vitrine"></div></details>
-    <div class="coverage" id="vitrine-coverage"></div>
-  </section>
+    <details><summary>Ver a matriz como tabela</summary><div id="table-vitrine"></div></details>""" + _como_ler(
+        "Vitrine: site, API do portal ou área logada da casa. O Open Finance é o catálogo "
+        "regulatório (tudo que a casa administra): referência, não prateleira.",
+        "Classe ANBIMA pelo CNPJ no registro da CVM.",
+        "Taxa fora do ticket: quartil de taxa bruta mede o mix da prateleira, não o preço - "
+        "ver &ldquo;Custo relativo à categoria&rdquo;.",
+    ) + """
+    <div class="coverage" id="vitrine-coverage"></div>""")
 
-  <section class="card" id="gaps-section">
-    <h2>Gaps de prateleira da XP</h2>
-    <p class="card-sub">Fundos de varejo presentes na vitrine de ao menos um concorrente e
-      ausentes da vitrine da XP (por CNPJ). Comparacao vitrine &times; vitrine: o catalogo
-      Open Finance nao conta em nenhum dos lados.</p>
-    <div class="tiles" id="gaps-tiles"></div>
 
-    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Onde a vitrine da XP esta rasa</h3>
-    <p class="card-sub">Categorias com mais fundos de gap; cada celula conta a vitrine da casa
-      na categoria. Mais escuro = mais fundos.</p>
-    <div class="matrix-scroll" id="matrix-gaps"></div>
-
-    <details><summary>Ver os fundos de gap</summary><div id="table-gaps"></div></details>
-    <div class="coverage" id="gaps-coverage"></div>
-  </section>
-
-  <section class="card" id="flow-section">
-    <h2>Captacao dos fundos de vitrine</h2>
-    <p class="card-sub">Fluxo do informe diario da CVM para os fundos que cada casa exibe.
-      A CVM publica captacao por <strong>fundo</strong>, nunca por distribuidor: um fundo em
-      tres vitrines entra inteiro nas tres somas. A coluna &quot;so ela exibe&quot; e onde a
-      atribuicao a uma casa e inequivoca.</p>
-    <div class="tiles" id="flow-tiles"></div>
-
-    <h3 style="font-size:13.5px;font-weight:600;margin:18px 0 4px">Tendencia</h3>
-    <p class="card-sub">Media diaria de captacao liquida por competencia. A media diaria
-      existe porque o mes corrente fecha com menos pregoes que os meses cheios - comparar
-      totais brutos marcaria toda casa como desacelerando, por efeito de calendario.</p>
-    <div class="matrix-scroll" id="flow-trend"></div>
-
-    <details><summary>Fundos por tendencia, e quais sao</summary>
-      <div id="flow-lists"></div>
-    </details>
-    <div class="coverage" id="flow-coverage"></div>
-  </section>
-
-  <section class="card">
-    <h2>Amplitude por classe de ativo</h2>
-    <p class="card-sub">Quantos fundos cada casa oferta em cada classe - a leitura mais direta
-      de onde cada prateleira e forte.</p>
+def _painel_classes(resumo: dict[str, str]) -> str:
+    return _painel("classes-section", "Amplitude por classe de ativo", resumo["classes"], """
+    <p class="card-sub">Fundos que cada casa <strong>exibe</strong>, por classe; o catálogo não entra.</p>
     <div class="legend" id="legend-classes"></div>
     <div class="chart-scroll" id="chart-classes"></div>
-    <details><summary>Ver tabela</summary><div id="table-classes"></div></details>
-  </section>
+    <details><summary>Ver tabela</summary><div id="table-classes"></div></details>""")
 
-  <section class="card">
-    <h2>Profundidade: gestoras representadas</h2>
-    <p class="card-sub">Numero de gestoras distintas na prateleira. Amplitude sem profundidade
-      indica concentracao em poucas casas de gestao.</p>
+
+def _painel_gestoras(resumo: dict[str, str]) -> str:
+    return _painel("gestoras-section", "Profundidade: gestoras representadas", resumo["gestoras"], """
+    <p class="card-sub">Gestoras distintas na <strong>vitrine</strong>.</p>
     <div class="chart-scroll" id="chart-managers"></div>
     <details><summary>Ver as maiores gestoras de cada prateleira</summary>
-      <div id="table-top-managers"></div></details>
-  </section>
+      <div id="table-top-managers"></div></details>""" + _como_ler(
+        "Amplitude sem profundidade é concentração em poucas gestoras.",
+        "Contada no catálogo, a casa que administra muito fundo fechado apareceria com o dobro "
+        "de gestoras sem pôr uma só a mais na tela do cliente.",
+    ))
 
-  <section class="card">
-    <h2>Aplicacao minima</h2>
-    <p class="card-sub">Distribuicao dos fundos por faixa de investimento minimo - separa quem
-      mira varejo de quem mira alta renda.</p>
+
+def _painel_ticket(resumo: dict[str, str]) -> str:
+    return _painel("ticket-section", "Aplicação mínima", resumo["ticket"], """
+    <p class="card-sub" id="leitura-ticket"></p>
     <div class="legend" id="legend-bands"></div>
     <div class="chart-scroll" id="chart-bands"></div>
-    <details><summary>Ver tabela</summary><div id="table-bands"></div></details>
-  </section>
+    <details><summary>Ver tabela</summary><div id="table-bands"></div></details>""")
 
-  <section class="card">
-    <h2>Diferenciais de prateleira</h2>
-    <p class="card-sub">Fundos de varejo (por CNPJ) que so uma das casas coletadas oferta -
-      o conceito competitivo, nada a ver com "fundo exclusivo" regulatorio, que fica fora
-      desta analise. Considera somente casas com coleta bem-sucedida.</p>
-    <div class="chart-scroll" id="chart-exclusive"></div>
-  </section>
 
-  <section class="card">
-    <h2>Fundos exclusivos e restritos &mdash; auxiliar</h2>
-    <p class="card-sub">Veiculos fora do perfil de varejo (exclusivo no registro CVM,
-      publico profissional, marcados pela casa ou pelo nome). Ficam fora de toda analise
-      acima; aqui e o inventario deles.</p>
-    <div id="table-restricted"></div>
-  </section>
+def _painel_exclusivos(resumo: dict[str, str], trecho: dict[str, str]) -> str:
+    return _painel("exclusivos-section", "Fundos só nesta vitrine", resumo["exclusivos"], f"""
+    {trecho["exclusivos"]}""")
 
-  <section class="card" id="cvm-section">
-    <h2>Radar CVM &mdash; visao antecipada</h2>
-    <p class="card-sub">Fundos registrados na CVM por gestoras ligadas a cada casa. Um fundo em
-      fase pre-operacional foi registrado mas ainda nao lancado: e o sinal mais antecipado
-      da estrategia de produto da casa.</p>
+
+def _painel_restritos(resumo: dict[str, str]) -> str:
+    return _painel("restritos-section", "Fundos exclusivos e restritos &mdash; auxiliar", resumo["restritos"], """
+    <p class="card-sub">Fora do perfil de varejo (exclusivo na CVM, profissional, marcado pela casa
+      ou no nome) e fora de toda análise acima.</p>
+    <div id="table-restricted"></div>""")
+
+
+def _painel_cvm(resumo: dict[str, str]) -> str:
+    return _painel("cvm-section", "Radar CVM &mdash; visão antecipada", resumo["cvm"], f"""
+    <p class="card-sub">Registrados pelas gestoras ligadas a cada casa
+      ({_a(CVM_CADASTRO, "cadastro de fundos da CVM")}). Pré-operacional: registrado e ainda não lançado.</p>
     <div class="legend" id="legend-cvm"></div>
     <div class="chart-scroll" id="chart-cvm"></div>
     <details><summary>Ver tabela por casa</summary><div id="table-cvm"></div></details>
-    <details open><summary>Fundos em fase pre-operacional</summary><div id="table-pre-op"></div></details>
+    <details open><summary>Fundos em fase pré-operacional</summary><div id="table-pre-op"></div></details>""")
+
+
+def _painel_coleta(resumo: dict[str, str]) -> str:
+    return _painel("coleta-section", "Saúde da coleta", resumo["coleta"], """
+    <p class="card-sub">Vitrine pequena pode ser fonte bloqueada: confira o status antes de comparar.</p>
+    <div id="table-sources"></div>""")
+
+
+# --- a pagina ---------------------------------------------------------------------
+
+
+def _documento(
+    config: Config,
+    report: RunReport,
+    data: dict,
+    *,
+    manchetes: str,
+    leituras: list[Leitura],
+    placar: str,
+    grupos: list[tuple[str, list[str]]],
+) -> str:
+    """A pagina inteira: cabecalho, visao executiva e os grupos de paineis.
+
+    Comum aos dois monitores; cada um escolhe as manchetes, as leituras, o
+    placar e quais paineis entram em cada grupo. Painel vazio (o de fontes, sem
+    fonte nenhuma) sai, e grupo que fica sem painel tambem.
+    """
+    generated = report.generated_at.strftime("%d/%m/%Y %H:%M")
+    grupos_cheios = [(titulo, [p for p in paineis if p]) for titulo, paineis in grupos]
+    detalhes = "\n\n".join(
+        f'  <p class="grupo">{titulo}</p>\n  ' + "\n\n  ".join(paineis)
+        for titulo, paineis in grupos_cheios
+        if paineis
+    )
+    return f"""<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{html.escape(config.titulo_relatorio)}</title>
+{_FONTES_WEB}
+<style>{_STYLE}</style>
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="marca" aria-hidden="true">{_LOGO}</span>
+  <span class="topbar-t">{html.escape(config.rotulo_assunto)} &middot; <b>{html.escape(generated)}</b></span>
+</div></div>
+<div class="wrap">
+  <header class="page">
+    <div class="kicker">{html.escape(config.descricao_relatorio)}</div>
+    <h1>{html.escape(config.titulo_relatorio)}</h1>
+    <p class="sub">{html.escape(config.descricao_fontes[:1].upper() + config.descricao_fontes[1:])} &middot; gerado em {html.escape(generated)}</p>
+  </header>
+
+  <main>
+  <section class="exec" id="visao-executiva" aria-label="Visão executiva">
+    <div class="kpis">
+{manchetes}
+    </div>
+    <div class="exec-grid">
+      <section class="exec-card">
+        <h2>Principais leituras</h2>
+        <table class="leituras"><tbody>
+{_html_leituras(leituras)}
+        </tbody></table>
+      </section>
+      <section class="exec-card">
+        <h2>Casa a casa</h2>
+        {placar}
+      </section>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Saude da coleta</h2>
-    <p class="card-sub">Uma prateleira que aparece pequena pode ser fonte bloqueada, nao
-      prateleira enxuta. Confira o status antes de comparar numeros.</p>
-    <div id="table-sources"></div>
-  </section>
+  <div class="detalhes-head">
+    <div>
+      <h2>Detalhes sob demanda</h2>
+      <p>Cada bloco abre com um clique, com a metodologia, as tabelas e os fundos.</p>
+    </div>
+    <button type="button" class="abrir-tudo" id="abrir-tudo" hidden>Abrir todos</button>
+  </div>
+
+{detalhes}
+  </main>
 
   <footer>
-    Fontes publicas: sites das plataformas, API de Dados Abertos de Investimentos do Open
-    Finance Brasil e cadastro de fundos da CVM (dados.cvm.gov.br).
+    Gerado em {html.escape(generated)}. Cada fonte, com o link para consulta, está na
+    seção <a href="#fontes-section">Fontes</a>.
   </footer>
 </div>
 
@@ -1139,7 +1340,41 @@ def render_dashboard(config: Config, report: RunReport) -> Path:
 </html>
 """
 
+
+def _gravar(config: Config, documento: str) -> Path:
     config.reports_dir.mkdir(parents=True, exist_ok=True)
     path = config.reports_dir / "dashboard.html"
-    path.write_text(document, encoding="utf-8")
+    path.write_text(documento, encoding="utf-8")
     return path
+
+
+def render_dashboard(config: Config, report: RunReport) -> Path:
+    data = build_dashboard_data(report)
+    trecho = _fragmentos(report)
+    resumo = _resumos(report, data, config)
+    return _gravar(config, _documento(
+        config, report, data,
+        manchetes=_kpis(data),
+        leituras=_leituras(report, data),
+        placar=_placar(report, data),
+        grupos=[
+            ("Oportunidade e desempenho", [
+                _painel_gaps(resumo),
+                _painel_captacao(resumo, trecho),
+                _painel_rentabilidade(resumo, trecho),
+            ]),
+            ("Composição das prateleiras", [
+                _painel_vitrine(resumo),
+                _painel_classes(resumo),
+                _painel_gestoras(resumo),
+                _painel_ticket(resumo),
+                _painel_exclusivos(resumo, trecho),
+                _painel_restritos(resumo),
+            ]),
+            ("Radar e qualidade dos dados", [
+                _painel_cvm(resumo),
+                _painel_coleta(resumo),
+                _bloco_fontes(report, config, resumo["fontes"]),
+            ]),
+        ],
+    ))

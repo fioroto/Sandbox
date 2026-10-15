@@ -1,0 +1,200 @@
+{
+ "_fonte": "linhas reais de https://www.itau.com.br/investimentos/fundos/rentabilidade em 14/10/2026 (SHELF_BROWSER_DEBUG=1), 14 dos 477 fundos",
+ "itau_rentabilidade": [
+  [
+   [
+    "nome",
+    "risco",
+    "aplicação inicial",
+    "12 meses",
+    "no ano",
+    "no mês",
+    "taxa máxima do produto",
+    "resgate",
+    "+ detalhes"
+   ],
+   [
+    "Diferenciado Crédito Privado Renda Fixa",
+    "baixo",
+    "R$ 1,00",
+    "14,15%",
+    "10,71%",
+    "0,42% (até 13/10)",
+    "0,45%",
+    "crédito em conta em 1 dia útil",
+    "mais info"
+   ],
+   [
+    "Privilege DI",
+    "baixo",
+    "R$ 1,00",
+    "14,34%",
+    "10,88%",
+    "0,41% (até 13/10)",
+    "0,30%",
+    "crédito em conta no mesmo dia",
+    "mais info"
+   ],
+   [
+    "Itaú Legend Renda Fixa Longo Prazo",
+    "médio",
+    "R$ 1,00",
+    "12,34%",
+    "9,98%",
+    "0,63% (até 09/10)",
+    "0,90%",
+    "crédito em conta em 1 dia útil",
+    "mais info"
+   ],
+   [
+    "Itaú Artax Multimercado",
+    "alto",
+    "R$ 1,00",
+    "17,60%",
+    "13,23%",
+    "0,98% (até 09/10)",
+    "2,00%",
+    "crédito em conta em 22 dias úteis",
+    "mais info"
+   ],
+   [
+    "Real Investor Ações",
+    "alto",
+    "R$ 5.000,00",
+    "9,20%",
+    "16,64%",
+    "16,31% (até 09/10)",
+    "2,20%",
+    "conversão da cota em 27 dias corridos, com crédito em conta em 2 dias úteis",
+    "mais info"
+   ]
+  ],
+  [
+   [
+    "nome",
+    "risco",
+    "aplicação inicial",
+    "12 meses",
+    "no ano",
+    "no mês",
+    "taxa máxima do produto",
+    "resgate",
+    "+ detalhes"
+   ],
+   [
+    "Real Investor Multimercado",
+    "alto",
+    "R$ 5.000,00",
+    "1,76%",
+    "3,44%",
+    "4,66% (até 09/10)",
+    "1,90%",
+    "conversão da cota em 27 dias corridos, com crédito em conta em 3 dias úteis",
+    "mais info"
+   ],
+   [
+    "Absolute Hiker Renda Fixa Infra Seleção",
+    "alto",
+    "R$ 1,00",
+    "5,98%",
+    "4,81%",
+    "0,33% (até 09/10)",
+    "1,02%",
+    "conversão da cota em 30 dias corridos, com crédito em conta em 1 dia útil",
+    "mais info"
+   ],
+   [
+    "Absolute Hiker Renda Fixa Seleção Longo Prazo",
+    "médio",
+    "R$ 1.000,00",
+    "11,42%",
+    "9,57%",
+    "1,26% (até 09/10)",
+    "1,00%",
+    "crédito em conta em 4 dias úteis",
+    "mais info"
+   ],
+   [
+    "Itaú Index Ações Europa EUR",
+    "alto",
+    "R$ 1,00",
+    "8,32%",
+    "-6,16%",
+    "-6,27% (até 09/10)",
+    "0,80%",
+    "crédito em conta em 5 dias úteis",
+    "mais info"
+   ],
+   [
+    "Bocaina Infra 60 IPCA Infraestrutura Renda Fixa",
+    "alto",
+    "R$ 1,00",
+    "11,89%",
+    "13,65%",
+    "4,87% (até 09/10)",
+    "1,00%",
+    "conversão da cota em 60 dias corridos, com crédito em conta em 1 dia útil",
+    "mais info"
+   ]
+  ],
+  [
+   [
+    "nome",
+    "risco",
+    "aplicação inicial",
+    "12 meses",
+    "no ano",
+    "no mês",
+    "taxa máxima do produto",
+    "resgate",
+    "+ detalhes"
+   ],
+   [
+    "Itaú Ações Dunamis - Subclasse II",
+    "alto",
+    "R$ 1,00",
+    "0,00%",
+    "0,00%",
+    "0,00% (até 12/10)",
+    "2,00%",
+    "crédito em conta em 23 dias úteis",
+    "mais info"
+   ],
+   [
+    "Itaú Global Dinâmico Plus",
+    "alto",
+    "R$ 1,00",
+    "13,16%",
+    "11,62%",
+    "2,05% (até 09/10)",
+    "2,00%",
+    "crédito em conta em 16 dias úteis",
+    "mais info"
+   ],
+   [
+    "Kinea Urano Seleção Multimercado",
+    "alto",
+    "R$ 5.000,00",
+    "fundo com menos de 6 meses",
+    "fundo com menos de 6 meses",
+    "fundo com menos de 6 meses",
+    "2,00%",
+    "conversão da cota em 60 dias corridos, com crédito em conta em 1 dia útil",
+    "mais info"
+   ],
+   [
+    "Essential FIDC Subclasse I",
+    "alto",
+    "R$ 2,00",
+    "fundo com menos de 6 meses",
+    "fundo com menos de 6 meses",
+    "fundo com menos de 6 meses",
+    "0,46%",
+    "crédito em conta em 5 dias úteis",
+    "mais info"
+   ]
+  ]
+ ],
+ "itau_total": "14",
+ "itau_tentativas": 1
+}

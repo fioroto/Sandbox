@@ -14,11 +14,9 @@ from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.market.models import (
-    ClassFees,
     MarketClass,
     MarketDatabase,
     MarketFund,
-    MarketSubclass,
     Origin,
 )
 from shelf_monitor.market.fees import resolve_admin_fee
@@ -107,15 +105,27 @@ _FEE_HEADERS = {
     "performance_fee": "taxa_performance",
     "performance_fee_benchmark": "parametro_performance",
     "has_performance_fee": "tem_taxa_performance",
-    "entry_fee": "taxa_entrada",
-    "exit_fee": "taxa_saida",
+    "has_entry_fee": "tem_taxa_entrada",
+    "entry_fee_pct": "taxa_entrada_pct",
+    "entry_fee_amount": "taxa_entrada_reais",
+    "has_exit_fee": "tem_taxa_saida",
+    "exit_fee_pct": "taxa_saida_pct",
+    "exit_fee_amount": "taxa_saida_reais",
+    "custody_fee_max": "taxa_custodia_max",
     "min_initial": "aplicacao_inicial_minima",
-    "min_balance": "saldo_minimo",
     "redemption_quotation_days": "dias_cotizacao_resgate",
     "redemption_payment_days": "dias_pagamento_resgate",
     "target_audience": "publico_alvo",
     "investment_policy": "politica_investimento",
     "long_term_taxation": "tributacao_longo_prazo",
+    "credit_private": "credito_privado_autorizado",
+    "credit_private_max": "credito_privado_max_pct",
+    "foreign": "exterior_autorizado",
+    "foreign_max": "exterior_max_pct",
+    "derivatives": "derivativos_autorizado",
+    "leverage": "alavancagem_autorizada",
+    "leverage_factor": "alavancagem_fator",
+    "mirror_fund": "fundo_espelho",
 }
 
 
@@ -141,6 +151,39 @@ def _write_table(path: Path, headers: dict[str, str], rows: list) -> int:
         for row in rows:
             writer.writerow([_cell(getattr(row, name)) for name in headers])
     return len(rows)
+
+
+def _fee_columns(fees) -> dict:
+    """Colunas de custo e mandato de uma classe, para o consolidado.
+
+    Existe como helper porque as duas pernas de `_consolidated_rows` (classe
+    RCVM 175 e fundo legado) precisam das mesmas colunas, e manter dois blocos
+    iguais a mao foi como `codigo_cvm` acabou numa perna so.
+
+    Mandato e o que o regulamento AUTORIZA, nunca o que a carteira carrega:
+    medir exposicao realizada exigiria a CDA, que nao esta no escopo.
+    """
+    return {
+        "tem_taxa_entrada": _cell(fees.has_entry_fee if fees else None),
+        "taxa_entrada_pct": _cell(fees.entry_fee_pct if fees else None),
+        "taxa_entrada_reais": _cell(fees.entry_fee_amount if fees else None),
+        "tem_taxa_saida": _cell(fees.has_exit_fee if fees else None),
+        "taxa_saida_pct": _cell(fees.exit_fee_pct if fees else None),
+        "taxa_saida_reais": _cell(fees.exit_fee_amount if fees else None),
+        "taxa_custodia_max": _cell(fees.custody_fee_max if fees else None),
+        "parametro_performance": _cell(
+            fees.performance_fee_benchmark if fees else None
+        ),
+        "taxa_data_base": _cell(fees.reference_date if fees else None),
+        "credito_privado_autorizado": _cell(fees.credit_private if fees else None),
+        "credito_privado_max_pct": _cell(fees.credit_private_max if fees else None),
+        "exterior_autorizado": _cell(fees.foreign if fees else None),
+        "exterior_max_pct": _cell(fees.foreign_max if fees else None),
+        "derivativos_autorizado": _cell(fees.derivatives if fees else None),
+        "alavancagem_autorizada": _cell(fees.leverage if fees else None),
+        "alavancagem_fator": _cell(fees.leverage_factor if fees else None),
+        "fundo_espelho": _cell(fees.mirror_fund if fees else None),
+    }
 
 
 def _consolidated_rows(database: MarketDatabase) -> list[dict]:
@@ -198,6 +241,7 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "dias_pagamento_resgate": _cell(
                     fees.redemption_payment_days if fees else None
                 ),
+                **_fee_columns(fees),
                 "data_registro": _cell(item.registered_at or (fund.registered_at if fund else None)),
             }
         )
@@ -220,11 +264,11 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "situacao": fund.situation or "",
                 "classificacao_cvm": extra.get("cvm_classification") or "",
                 "classificacao_anbima": extra.get("anbima_classification") or "",
-                "indicador_desempenho": "",
-                "publico_alvo": "",
+                "indicador_desempenho": extra.get("benchmark") or "",
+                "publico_alvo": extra.get("target_audience") or "",
                 "exclusivo": extra.get("exclusive") or "",
                 "forma_condominio": extra.get("condominium") or "",
-                "tributacao_longo_prazo": "",
+                "tributacao_longo_prazo": extra.get("long_term_taxation") or "",
                 "classe_esg": "",
                 "patrimonio_liquido": _cell(fund.net_worth),
                 "data_patrimonio_liquido": _cell(fund.net_worth_at),
@@ -257,6 +301,7 @@ def _consolidated_rows(database: MarketDatabase) -> list[dict]:
                 "dias_pagamento_resgate": _cell(
                     fees.redemption_payment_days if fees else None
                 ),
+                **_fee_columns(fees),
                 "data_registro": _cell(fund.registered_at),
             }
         )

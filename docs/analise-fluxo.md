@@ -1,5 +1,8 @@
 # Analise do fluxo do monitor de prateleiras
 
+> Reconferida em 2026-09-23: o estado atual de cada achado abaixo, os gaps novos e
+> o plano de correcao estao em `docs/auditoria-fluxos.md`.
+
 Diagnostico do fluxo ponta a ponta do `shelf_monitor`, feito contra o codigo e os
 snapshots reais em `data/`, com as melhorias priorizadas pelo que cada uma faz
 pelos dois objetivos do projeto:

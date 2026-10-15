@@ -1,0 +1,1610 @@
+{
+  "schema_version": 1,
+  "platform": "itau",
+  "collected_at": "2026-09-23T22:42:56.877862",
+  "strategy": "html-scrape",
+  "strategies": [
+    "html-scrape"
+  ],
+  "source_counts": {
+    "html-scrape": 41
+  },
+  "status": "ok",
+  "source_urls": [
+    "https://ww15.itau.com.br/privatebank/hotsite/catalogofundos2/tabela_rentabilidade/default.aspx"
+  ],
+  "error": null,
+  "fund_count": 41,
+  "funds": [
+    {
+      "platform": "itau",
+      "name": "Canvas Enduro Prev PVT MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 434,
+        "cota": 14.017792,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.76,
+          "mes_anterior": 0.86,
+          "ano": 6.37,
+          "12m": 9.67,
+          "24m": 15.95,
+          "36m": 19.76
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Flexprev CP Ativo II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": null,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 405,
+        "cota": 31.031388,
+        "data_cota": "10/09",
+        "rentabilidade": {
+          "mes": 0.34,
+          "mes_anterior": 1.04,
+          "ano": 9.19,
+          "12m": 13.82,
+          "24m": 27.71,
+          "36m": 41.92
+        },
+        "pl_medio_12m": 211800000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Flexprev Private DI",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Pós-Fixados",
+      "min_initial": null,
+      "admin_fee_pct": 1.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Pós-Fixados",
+        "numero_catalogo": 393,
+        "cota": 45.407981,
+        "data_cota": "10/09",
+        "rentabilidade": {
+          "mes": 0.34,
+          "mes_anterior": 1.03,
+          "ano": 9.18,
+          "12m": 13.79,
+          "24m": 27.44,
+          "36m": 40.67
+        },
+        "pl_medio_12m": 424200000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Itaú Prev Verde MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 428,
+        "cota": 2.358424,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.01,
+          "mes_anterior": 2.18,
+          "ano": 7.56,
+          "12m": 11.9,
+          "24m": 25.63,
+          "36m": 29.99
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Itau Private Prev Kinea Rf",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Pós-Fixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.8,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Pós-Fixados",
+        "numero_catalogo": 396,
+        "cota": 22.813224,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.35,
+          "mes_anterior": 1.02,
+          "ano": 8.94,
+          "12m": 13.55,
+          "24m": 28.28,
+          "36m": 41.26
+        },
+        "nomes_alternativos": [
+          "Itaú Personnalité VGBL Kinea RF"
+        ]
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Itau Private Prev Kinea XTR",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 429,
+        "cota": 23.973946,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.91,
+          "mes_anterior": 1.36,
+          "ano": 8.32,
+          "12m": 13.65,
+          "24m": 27.74,
+          "36m": 41.12
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Kinea Prev Credito Privado",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Pós-Fixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Pós-Fixados",
+        "numero_catalogo": 397,
+        "cota": 21.432872,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.31,
+          "mes_anterior": 1.08,
+          "ano": 9.37,
+          "12m": 14.33,
+          "24m": 29.41,
+          "36m": 46.6
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Kinea XTR II Prev PVT MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 1.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 433
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Platinum III",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Prefixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Prefixados",
+        "numero_catalogo": 400,
+        "cota": 35.899427,
+        "data_cota": "10/09",
+        "rentabilidade": {
+          "mes": 0.44,
+          "mes_anterior": 1.16,
+          "ano": 8.81,
+          "12m": 13.08,
+          "24m": 26.57,
+          "36m": 39.0
+        },
+        "pl_medio_12m": 4320800000.0,
+        "nome_registro": "Itaú Flexprev Platinum III Renda Fixa"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Juro Real Target 2026 II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 416,
+        "cota": 22.597116,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.3,
+          "mes_anterior": 1.12,
+          "ano": 10.55,
+          "12m": 14.29,
+          "24m": 24.58,
+          "36m": 33.94
+        },
+        "pl_medio_12m": 265200000.0,
+        "nome_registro": "Itaú Flexprev Private Juro Real Target 2026 II RF"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Juro Real Target 2030 II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 417,
+        "cota": 20.567297,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.66,
+          "mes_anterior": 1.43,
+          "ano": 8.84,
+          "12m": 12.2,
+          "24m": 18.95,
+          "36m": 25.73
+        },
+        "pl_medio_12m": 1321700000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Juro Real Target 2035 II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 415,
+        "cota": 20.57147,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.12,
+          "mes_anterior": 1.59,
+          "ano": 7.29,
+          "12m": 10.18,
+          "24m": 13.78,
+          "36m": 18.31
+        },
+        "pl_medio_12m": 997700000.0,
+        "nome_registro": "Itaú Flexprev Private Juro Real Target 2035 II RF"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Juro Real Target II 2024",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 414,
+        "cota": 19.484527,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.37,
+          "mes_anterior": 1.77,
+          "ano": 5.9,
+          "12m": 8.61,
+          "24m": 9.58,
+          "36m": 12.39
+        },
+        "pl_medio_12m": 436500000.0,
+        "nomes_alternativos": [
+          "Private Prev IMA B5+ II"
+        ],
+        "nome_registro": "Itaú Private Prev IMAB5 II Renda Fixa"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Kinea Multimercado",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 1.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 426,
+        "cota": 31.330483,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.41,
+          "mes_anterior": 1.07,
+          "ano": 8.68,
+          "12m": 13.37,
+          "24m": 26.73,
+          "36m": 39.56
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev RF",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": 0.8,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 402,
+        "cota": 42.831539,
+        "data_cota": "10/09",
+        "rentabilidade": {
+          "mes": 0.44,
+          "mes_anterior": 1.14,
+          "ano": 8.66,
+          "12m": 12.85,
+          "24m": 26.06,
+          "36m": 38.13
+        },
+        "pl_medio_12m": 2676800000.0,
+        "nome_registro": "Itaú Flexprev Excellence RF FIC"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Absolute MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 435
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Active Fix",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Pós-Fixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Pós-Fixados",
+        "numero_catalogo": 395,
+        "cota": 20.872,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.3,
+          "mes_anterior": 1.07,
+          "ano": 8.97,
+          "12m": 13.67,
+          "24m": 28.02,
+          "36m": 44.96
+        },
+        "pl_medio_12m": 12269500000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Adam MM VGBL",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 430,
+        "cota": 22.531009,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": -0.68,
+          "mes_anterior": 0.69,
+          "ano": 12.8,
+          "12m": 17.23,
+          "24m": 35.59,
+          "36m": 50.63
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Ativo RF",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": 1.25,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 403,
+        "cota": 45.684465,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.67,
+          "mes_anterior": 1.18,
+          "ano": 8.24,
+          "12m": 12.19,
+          "24m": 23.34,
+          "36m": 33.46
+        },
+        "pl_medio_12m": 48200000.0,
+        "nome_registro": "Itaú Private Prev IMA ex-C Renda Fixa FICFI"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Dinamico Crédito Privado",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": 1.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 404,
+        "cota": 37.064594,
+        "data_cota": "10/09",
+        "rentabilidade": {
+          "mes": 0.33,
+          "mes_anterior": 1.02,
+          "ano": 9.05,
+          "12m": 13.61,
+          "24m": 27.25,
+          "36m": 41.16
+        },
+        "pl_medio_12m": 1086000000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Dunamis Ações",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "acoes",
+      "raw_category": "Ações",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Ações",
+        "numero_catalogo": 436,
+        "cota": 20.92025,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 4.38,
+          "mes_anterior": -0.08,
+          "ano": 8.2,
+          "12m": 27.51,
+          "24m": 16.45,
+          "36m": 43.42
+        },
+        "pl_medio_12m": 36400000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev High Yield",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Pós-Fixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Pós-Fixados",
+        "numero_catalogo": 394,
+        "cota": 20.67018,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.29,
+          "mes_anterior": 1.07,
+          "ano": 9.19,
+          "12m": 13.96,
+          "24m": 28.19,
+          "36m": 45.17
+        },
+        "pl_medio_12m": 14677500000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Ibov Passivo",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "acoes",
+      "raw_category": "Ações",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Ações",
+        "numero_catalogo": 437,
+        "cota": 21.617684,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 4.62,
+          "mes_anterior": -0.25,
+          "ano": 15.3,
+          "12m": 25.56,
+          "24m": 30.96,
+          "36m": 53.88
+        },
+        "pl_medio_12m": 117800000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev IMA-B II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 413,
+        "cota": 28.692923,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.12,
+          "mes_anterior": 1.54,
+          "ano": 7.56,
+          "12m": 10.39,
+          "24m": 14.88,
+          "36m": 20.34
+        },
+        "pl_medio_12m": 529700000.00000006,
+        "nome_registro": "Itaú Flexprev IMA-B II Renda Fixa"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev IMP 3",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 1.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 424,
+        "cota": 17.960863,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.02,
+          "mes_anterior": 1.19,
+          "ano": 8.85,
+          "12m": 12.96,
+          "24m": 21.01,
+          "36m": 29.85
+        },
+        "pl_medio_12m": 632000000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev IMP 3 II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 0.8,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 423,
+        "cota": 18.15432,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.02,
+          "mes_anterior": 1.21,
+          "ano": 8.99,
+          "12m": 13.14,
+          "24m": 21.49,
+          "36m": 30.5
+        },
+        "pl_medio_12m": 294300000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Multigestor",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 0.75,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 422,
+        "cota": 18.83017,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.64,
+          "mes_anterior": 1.13,
+          "ano": 7.32,
+          "12m": 11.23,
+          "24m": 23.4,
+          "36m": 33.65
+        },
+        "pl_medio_12m": 245300000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev NTN-B 2024",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": null,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 406,
+        "cota": 35.751729,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.28,
+          "mes_anterior": 1.02,
+          "ano": 8.97,
+          "12m": 13.54,
+          "24m": 27.04,
+          "36m": 40.75
+        },
+        "pl_medio_12m": 8900000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev NTN-B 2030",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": null,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 408,
+        "cota": 32.335024,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.13,
+          "mes_anterior": 1.09,
+          "ano": 8.18,
+          "12m": 10.73,
+          "24m": 16.05,
+          "36m": 20.94
+        },
+        "pl_medio_12m": 1323500000.0
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev NTNB Ultra 2023",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 412,
+        "cota": 24.807361,
+        "data_cota": "20/11",
+        "rentabilidade": {
+          "mes": 0.21,
+          "mes_anterior": 0.66,
+          "ano": 9.7,
+          "12m": 11.27,
+          "24m": 24.59,
+          "36m": 30.4
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev NTNB Ultra 2024",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Inflação",
+      "min_initial": null,
+      "admin_fee_pct": 0.5,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Inflação",
+        "numero_catalogo": 410,
+        "cota": 10.0,
+        "data_cota": "9/04",
+        "rentabilidade": {
+          "mes": -65.49,
+          "mes_anterior": 0.26,
+          "ano": -65.21,
+          "12m": 7.19,
+          "24m": 17.16,
+          "36m": 27.59
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Perfil 2",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 0.8,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 419,
+        "cota": 32.525502,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.56,
+          "mes_anterior": 1.14,
+          "ano": 9.28,
+          "12m": 13.68,
+          "24m": 24.49,
+          "36m": 37.19
+        },
+        "pl_medio_12m": 480000000.0,
+        "nome_registro": "Itaú Private Prev Perfil 2 MM Crédito Privado"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev PERFIL 2 II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 421,
+        "cota": 21.745664,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.57,
+          "mes_anterior": 1.16,
+          "ano": 9.43,
+          "12m": 13.93,
+          "24m": 25.01,
+          "36m": 37.91
+        },
+        "pl_medio_12m": 482900000.0,
+        "nome_registro": "Itaú Private Prev Perfil 2 II Multimercado CP"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Perfil 3",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 1.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": true,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 420,
+        "cota": 31.151215,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.98,
+          "mes_anterior": 1.17,
+          "ano": 9.09,
+          "12m": 13.46,
+          "24m": 21.55,
+          "36m": 32.14
+        },
+        "pl_medio_12m": 46900000.0,
+        "nome_registro": "Itaú Private Prev Perfil 3 MM Crédito Privado"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Pré Fixado Ultra",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Prefixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Prefixados",
+        "numero_catalogo": 399,
+        "cota": 23.689862,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.27,
+          "mes_anterior": 0.75,
+          "ano": 6.78,
+          "12m": 9.79,
+          "24m": 20.08,
+          "36m": 27.1
+        },
+        "pl_medio_12m": 342500000.0,
+        "nome_registro": "ITAU FLEXPREV PRE FIXADO ULTRA RENDA FIXA FICFI"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Premium II",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Prefixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Prefixados",
+        "numero_catalogo": 398,
+        "cota": 24.805051,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.31,
+          "mes_anterior": 1.07,
+          "ano": 9.09,
+          "12m": 13.79,
+          "24m": 27.7,
+          "36m": 43.04
+        },
+        "pl_medio_12m": 157000000.0,
+        "nome_registro": "Itaú Private Prev Premium II Crédito Privado RF FI"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev SPX Lancer MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 431,
+        "cota": 19.483947,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.21,
+          "mes_anterior": 1.58,
+          "ano": 4.86,
+          "12m": 9.3,
+          "24m": 23.39,
+          "36m": 32.54
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "PRIVATE PREV TRUXT ACOES",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 3.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 432,
+        "cota": 18.743527,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 4.98,
+          "mes_anterior": 0.71,
+          "ano": 6.74,
+          "12m": 6.97,
+          "24m": 5.86,
+          "36m": 17.88
+        }
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Ultra NTN-B 2030",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "PREVIDÊNCIA - Renda Fixa",
+      "min_initial": null,
+      "admin_fee_pct": null,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "PREVIDÊNCIA - Renda Fixa",
+        "numero_catalogo": 407,
+        "cota": 32.54125,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 1.13,
+          "mes_anterior": 1.09,
+          "ano": 8.15,
+          "12m": 10.68,
+          "24m": 15.96,
+          "36m": 20.81
+        },
+        "pl_medio_12m": 78900000.0,
+        "nomes_alternativos": [
+          "Private Prev NTNB Ultra 2030"
+        ]
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Rf Vision Plus",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "renda_fixa",
+      "raw_category": "Juros Prefixados",
+      "min_initial": null,
+      "admin_fee_pct": 0.6,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Juros Prefixados",
+        "numero_catalogo": 401,
+        "cota": 20.720489,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.39,
+          "mes_anterior": 1.06,
+          "ano": 8.29,
+          "12m": 12.54,
+          "24m": 25.36,
+          "36m": 37.15
+        },
+        "pl_medio_12m": 1697300000.0,
+        "nome_registro": "Itaú Flexprev Renda Fixa Vision Plus"
+      }
+    },
+    {
+      "platform": "itau",
+      "name": "Private Prev Vision Plus MM",
+      "cnpj": null,
+      "isin": null,
+      "cvm_code": null,
+      "manager_name": null,
+      "manager_cnpj": null,
+      "admin_name": null,
+      "asset_class": "multimercado",
+      "raw_category": "Multimercados",
+      "min_initial": null,
+      "admin_fee_pct": 2.0,
+      "performance_fee": null,
+      "redemption_quotation_days": null,
+      "redemption_payment_days": null,
+      "grace_days": null,
+      "taxation": null,
+      "closed_for_investment": false,
+      "detail_url": null,
+      "sources": [
+        "html-scrape"
+      ],
+      "extra": {
+        "secao": "Multimercados",
+        "numero_catalogo": 425,
+        "cota": 185.977719,
+        "data_cota": "9/09",
+        "rentabilidade": {
+          "mes": 0.33,
+          "mes_anterior": 1.02,
+          "ano": 2.76,
+          "12m": 6.22,
+          "24m": 18.13,
+          "36m": 24.22
+        },
+        "nomes_alternativos": [
+          "IBIUNA PREV MM"
+        ]
+      }
+    }
+  ]
+}

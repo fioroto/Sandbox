@@ -24,6 +24,13 @@ _PUNCT_RE = re.compile(r"[^A-Z0-9\s]")
 _SPACE_RE = re.compile(r"\s+")
 _DIGITS_RE = re.compile(r"\D")
 _NON_ALNUM_RE = re.compile(r"[^A-Z0-9]")
+# CNPJ alfanumerico (IN RFB 2.229/2024, emitido desde 07/2026): 12 posicoes de
+# letra ou digito e os 2 digitos verificadores, sempre numericos. A mascara e a
+# mesma do numerico - "12.ABC.345/01DE-35".
+_CNPJ_ALFANUMERICO_RE = re.compile(r"[0-9A-Z]{12}[0-9]{2}")
+_MASCARA_CNPJ_RE = re.compile(
+    r"(?<![0-9A-Z])[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}/[0-9A-Z]{4}-[0-9]{2}(?![0-9A-Z])"
+)
 
 
 def strip_accents(text: str) -> str:
@@ -35,16 +42,54 @@ def strip_accents(text: str) -> str:
 
 
 def normalize_cnpj(raw: str | None) -> str | None:
-    """Reduz um CNPJ a 14 digitos. Devolve None se nao houver 14 digitos."""
+    """Reduz um CNPJ aos seus 14 caracteres. Devolve None se nao houver CNPJ.
+
+    O numerico vira 14 digitos. O alfanumerico (emitido desde 07/2026) vira 14
+    letras e digitos em caixa alta: tirar as letras, como se fazia antes,
+    encolhia o CNPJ e o `zfill` abaixo o completava com zeros - outro fundo, ou
+    nenhum. Medido em 28/09/2026: nenhum ainda no cadastro nem no informe, mas o
+    lancamento de classe e onde ele aparece primeiro.
+    """
     if not raw:
         return None
-    digits = _DIGITS_RE.sub("", str(raw))
+    texto = str(raw)
+    digits = _DIGITS_RE.sub("", texto)
     if len(digits) == 14:
         return digits
+    alfanumerico = _cnpj_alfanumerico(texto)
+    if alfanumerico:
+        return alfanumerico
     # Alguns feeds omitem zeros a esquerda ao serializar como numero.
     if 0 < len(digits) < 14:
         return digits.zfill(14)
     return None
+
+
+def _cnpj_alfanumerico(texto: str) -> str | None:
+    """O CNPJ alfanumerico do texto, ou None. So olha texto que tem letra."""
+    maiusculo = strip_accents(texto).upper()
+    if not any("A" <= ch <= "Z" for ch in maiusculo):
+        return None
+    limpo = _NON_ALNUM_RE.sub("", maiusculo)
+    if len(limpo) == 14 and _CNPJ_ALFANUMERICO_RE.fullmatch(limpo):
+        return limpo
+    # CNPJ com mascara no meio de outro texto ("CNPJ 12.ABC.345/01DE-35").
+    achado = _MASCARA_CNPJ_RE.search(maiusculo)
+    return _NON_ALNUM_RE.sub("", achado.group(0)) if achado else None
+
+
+def parece_cnpj(raw: str | None) -> bool:
+    """O texto e um CNPJ inteiro (numerico com 14 digitos, ou alfanumerico).
+
+    Para consulta livre ("SPX" ou um CNPJ?): `normalize_cnpj` completa com zeros
+    um numero curto, entao "12345" viraria CNPJ sem esta checagem.
+    """
+    if not raw:
+        return False
+    texto = str(raw)
+    if sum(ch.isdigit() for ch in texto) == 14:
+        return True
+    return _cnpj_alfanumerico(texto) is not None
 
 
 def cnpj_root(cnpj: str | None) -> str | None:

@@ -1,0 +1,129 @@
+{
+ "captacao": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "collect": [
+  "--data-dir",
+  "--first-source-only",
+  "--help",
+  "--platform"
+ ],
+ "custo": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "cvm": [
+  "--data-dir",
+  "--help",
+  "--local-zip"
+ ],
+ "diagnose": [
+  "--browser",
+  "--data-dir",
+  "--help",
+  "--platform"
+ ],
+ "diff": [
+  "--data-dir",
+  "--help",
+  "--platform"
+ ],
+ "doctor": [
+  "--data-dir",
+  "--help"
+ ],
+ "export": [
+  "--collect",
+  "--data-dir",
+  "--first-source-only",
+  "--help",
+  "--no-carteira",
+  "--output",
+  "--platform",
+  "--skip-cvm",
+  "--with-rentabilidade"
+ ],
+ "familias": [
+  "--data-dir",
+  "--help",
+  "--json"
+ ],
+ "industria": [
+  "--ciclo",
+  "--competencia",
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--meses",
+  "--offline"
+ ],
+ "insights": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "mandato": [
+  "--data-dir",
+  "--help",
+  "--json",
+  "--platform"
+ ],
+ "market": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--local-dir",
+  "--skip-fees"
+ ],
+ "performance": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "rentabilidade": [
+  "--data-dir",
+  "--force",
+  "--help",
+  "--json",
+  "--months",
+  "--platform"
+ ],
+ "report": [
+  "--data-dir",
+  "--help",
+  "--no-carteira",
+  "--platform",
+  "--send-email",
+  "--with-rentabilidade"
+ ],
+ "run": [
+  "--data-dir",
+  "--first-source-only",
+  "--git-commit",
+  "--help",
+  "--no-carteira",
+  "--no-market",
+  "--platform",
+  "--send-email",
+  "--skip-cvm",
+  "--with-rentabilidade"
+ ],
+ "watchlist-discover": [
+  "--data-dir",
+  "--help",
+  "--limit",
+  "--local-zip"
+ ]
+}

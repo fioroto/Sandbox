@@ -34,6 +34,15 @@ _NAME_RE = re.compile(
 )
 
 
+def nome_indica_restricao(nome: str | None) -> bool:
+    """O nome denuncia veiculo fora de distribuicao (exclusivo, reservado...).
+
+    Publico porque o monitor da industria aplica a mesma regra ao cadastro
+    inteiro da CVM - uma regra, um lugar.
+    """
+    return bool(_NAME_RE.search(normalize_text(nome)))
+
+
 def restriction_reason(fund: FundOffer) -> str | None:
     """Por que este fundo NAO pertence a analise de varejo; None = pertence.
 
@@ -46,19 +55,29 @@ def restriction_reason(fund: FundOffer) -> str | None:
 
     audience = normalize_text(str(fund.extra.get(KEY_PUBLICO) or ""))
     if "PROFISSIONAL" in audience:
-        return "publico-alvo profissional (registro CVM)"
+        return "público-alvo profissional (registro CVM)"
 
     if fund.extra.get(KEY_RESTRITO_CASA):
-        return "marcado restrito/exclusivo pela propria casa"
+        return "marcado restrito/exclusivo pela própria casa"
 
     house_audience = normalize_text(str(fund.extra.get("publico") or ""))
     if "PROFISSIONAL" in house_audience:
-        return "publico-alvo profissional (segundo a casa)"
+        return "público-alvo profissional (segundo a casa)"
 
-    if _NAME_RE.search(normalize_text(fund.name)):
+    if nome_indica_restricao(fund.name):
         return "nome indica exclusivo/reservado/restrito"
 
     return None
+
+
+def na_vitrine(fund: FundOffer) -> bool:
+    """O cliente ve esse fundo na tela da casa: varejo, e vindo do canal dela.
+
+    A vitrine de toda comparacao - movimento, tamanho, nova linha de base. Mora
+    aqui, junto de `restriction_reason`, porque o diff (que nao conhece a camada
+    de relatorio) precisa contar a mesma vitrine que o digest publica.
+    """
+    return fund.on_listing and restriction_reason(fund) is None
 
 
 def split_by_profile(funds: list[FundOffer]) -> tuple[list[FundOffer], list[tuple[FundOffer, str]]]:

@@ -25,7 +25,7 @@ def build_collector(
     if platform_id not in COLLECTORS:
         raise KeyError(
             f"plataforma desconhecida: {platform_id} "
-            f"(disponiveis: {', '.join(sorted(COLLECTORS))})"
+            f"(disponíveis: {', '.join(sorted(COLLECTORS))})"
         )
     return COLLECTORS[platform_id](
         config, config.platform(platform_id), stop_at_first_source=stop_at_first_source

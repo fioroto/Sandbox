@@ -12,3 +12,16 @@ data/sessions/
 
 # shelf_monitor: base geral do mercado (centenas de MB de CSV)
 data/market/
+
+# shelf_monitor: artefatos do Excel, nao entregaveis.
+# "~$nome.xlsx" e o arquivo de trava que o Excel cria enquanto a pasta esta
+# aberta e apaga ao fechar; "nome-2.xlsx" e a copia que _salvar grava quando a
+# pasta alvo esta presa. Os dois apareciam no `git add` do diretorio de
+# relatorios que o `run --git-commit` faz.
+~$*.xlsx
+data/reports/*-[0-9].xlsx
+
+# shelf_monitor: lista distribuivel (fundos que a XP distribui ou pode
+# distribuir) - dado comercial interno. O modelo com o cabecalho
+# (data/distribuivel/modelo.csv) segue versionado.
+data/distribuivel/entrada/

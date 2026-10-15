@@ -16,6 +16,10 @@ from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
+try:  # `discover -s tests` poe tests/ no sys.path; `-m unittest tests.X` nao.
+    from fixtures_comuns import temp_config
+except ImportError:  # pragma: no cover - depende de como a suite foi invocada
+    from tests.fixtures_comuns import temp_config
 from shelf_monitor.market import import_market, run_import
 from shelf_monitor.market.fees import parse_fees, resolve_admin_fee
 from shelf_monitor.market.models import FeeUnit, Origin
@@ -24,11 +28,6 @@ from shelf_monitor.market.parse import parse_date, unknown_columns
 FIXTURES = Path(__file__).parent / "fixtures" / "market"
 
 
-def temp_config() -> tuple[Config, tempfile.TemporaryDirectory]:
-    tmp = tempfile.TemporaryDirectory()
-    config = Config(data_dir=tmp.name)
-    config.ensure_dirs()
-    return config, tmp
 
 
 class TestDateParsing(unittest.TestCase):
@@ -116,8 +115,75 @@ class TestFeesFromExtrato(unittest.TestCase):
         fee = self.fees["42345678000194"]
         self.assertEqual(fee.min_initial, 5000.0)
         self.assertEqual(fee.redemption_payment_days, 3)
+        self.assertEqual(fee.redemption_quotation_days, 1)
         self.assertEqual(fee.performance_fee, 20.0)
         self.assertEqual(fee.performance_fee_benchmark, "IPCA + 5%")
+        self.assertEqual(fee.custody_fee_max, 0.05)
+
+    def test_entry_and_exit_fees_keep_both_units(self):
+        """A fonte discrimina reais e percentual em colunas separadas."""
+        fee = self.fees["42345678000194"]
+        self.assertEqual(fee.has_entry_fee, "S")
+        self.assertEqual(fee.entry_fee_pct, 2.5)
+        self.assertEqual(fee.entry_fee_amount, 0.0)
+        self.assertEqual(fee.has_exit_fee, "S")
+        self.assertEqual(fee.exit_fee_pct, 5.0)
+
+    def test_not_charging_differs_from_not_informing(self):
+        """O flag S/N vem em 100% das linhas; o valor, so quando o flag e S.
+
+        Sem guardar o flag, "nao cobra" e "nao informou" ficariam iguais - e no
+        arquivo real so 0,1% das classes cobram ingresso, entao o valor ausente
+        e a regra, nao a excecao.
+        """
+        fee = self.fees["12345678000191"]
+        self.assertEqual(fee.has_entry_fee, "N")
+        self.assertIsNone(fee.entry_fee_pct)
+        self.assertIsNone(fee.entry_fee_amount)
+
+    def test_mandate_is_read_from_the_extrato(self):
+        """Mandato declarado: o que o regulamento autoriza, nao o que carrega."""
+        fee = self.fees["42345678000194"]
+        self.assertEqual(fee.credit_private, "S")
+        self.assertEqual(fee.credit_private_max, 50.0)
+        self.assertEqual(fee.foreign, "S")
+        self.assertEqual(fee.foreign_max, 20.0)
+        self.assertEqual(fee.derivatives, "S")
+        self.assertEqual(fee.leverage, "S")
+        self.assertEqual(fee.leverage_factor, 100.0)
+        self.assertEqual(fee.mirror_fund, "S")
+
+    def test_blank_flag_is_none_not_no(self):
+        """Coluna vazia nao vira "N" - a fonte deixa FUNDO_ESPELHO em branco em
+        57% das linhas, e chamar isso de "nao e espelho" inventaria o dado."""
+        self.assertIsNone(self.fees["62345678000196"].mirror_fund)
+
+    def test_no_column_the_parser_reads_is_silently_absent(self):
+        """A guarda que faltava quando o mapa de colunas estava errado.
+
+        `_get` devolve None para nome ausente e `unknown_columns` so registra o
+        caminho inverso, entao um nome errado sai vazio para sempre sem avisar.
+        Foi o que aconteceu ate 2026-09-20 com taxa de ingresso, taxa de saida
+        e dias de cotizacao: 0,0% de preenchimento nas 38.547 linhas reais,
+        contra 100% em toda coluna de nome certo. Este teste falha se algum
+        campo que a fixture preenche voltar a sair None.
+        """
+        fee = self.fees["42345678000194"]
+        obrigatorios = [
+            "admin_fee", "performance_fee", "performance_fee_benchmark",
+            "has_entry_fee", "entry_fee_pct", "entry_fee_amount",
+            "has_exit_fee", "exit_fee_pct", "exit_fee_amount",
+            "custody_fee_max", "min_initial",
+            "redemption_quotation_days", "redemption_payment_days",
+            # Sem "long_term_taxation": o extrato real nao tem coluna de
+            # tributacao (conferido no metadado e no arquivo em 28/09/2026); o
+            # `TRIB_LPRAZO` da fixture e do cad_fi, e era lido aqui por engano.
+            "target_audience", "investment_policy",
+            "credit_private", "credit_private_max", "foreign", "foreign_max",
+            "derivatives", "leverage", "leverage_factor", "mirror_fund",
+        ]
+        vazios = [nome for nome in obrigatorios if getattr(fee, nome) is None]
+        self.assertEqual(vazios, [], f"colunas lidas com nome errado: {vazios}")
 
     def test_without_a_date_column_the_last_delivery_wins(self):
         """Se a CVM renomear DT_COMPTC, travar na primeira linha congelaria a
@@ -309,6 +375,59 @@ class TestExport(unittest.TestCase):
         raw = self.paths["mercado"].read_bytes()
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
 
+    def test_as_duas_pernas_do_consolidado_tem_as_mesmas_colunas(self):
+        """O bug que `_fee_columns` foi extraido para impedir, agora travado.
+
+        `_consolidated_rows` monta dois dicts de ~30 chaves - um para a classe
+        RCVM 175, outro para o fundo legado - e a docstring de `_fee_columns`
+        registra que mante-los iguais a mao foi como `codigo_cvm` acabou numa
+        perna so. A extracao cobriu 17 das chaves; as outras continuam
+        escritas duas vezes, entao o invariante precisa de teste.
+
+        Uma coluna que existe numa perna e nao na outra sai vazia para metade
+        do mercado, e o DictWriter nao reclama: ele escreve o cabecalho da
+        primeira linha e preenche o resto com "".
+        """
+        # Sobre os dicts, ANTES da escrita. Pelo CSV este teste nao prova
+        # nada: o DictWriter usa o cabecalho da primeira linha e preenche a
+        # chave que falta com "", e o DictReader devolve todas as chaves do
+        # cabecalho para todas as linhas. A divergencia some no round-trip -
+        # que e exatamente por que ela passou despercebida da primeira vez.
+        from shelf_monitor.market.export import _consolidated_rows
+
+        linhas = _consolidated_rows(self.db)
+        por_origem: dict[str, list[dict]] = {}
+        for linha in linhas:
+            por_origem.setdefault(linha["origem"], []).append(linha)
+        self.assertGreaterEqual(
+            len(por_origem), 2, "a fixture precisa cobrir as duas origens"
+        )
+
+        conjuntos = {
+            origem: set(grupo[0]) for origem, grupo in por_origem.items()
+        }
+        origens = sorted(conjuntos)
+        for outra in origens[1:]:
+            faltando = conjuntos[origens[0]] ^ conjuntos[outra]
+            self.assertEqual(
+                set(), faltando,
+                f"colunas só em uma das pernas ({origens[0]} vs {outra}): {faltando}",
+            )
+
+    def test_toda_linha_da_hierarquia_declara_seu_nivel(self):
+        """`nivel` e o que permite consumir a tabela sem um union.
+
+        Os tres valores sao um contrato publico (estao na tabela do README):
+        `subclasse` quando a classe tem subclasses, `classe` quando ela e a
+        propria unidade, `fundo_legado` para o nao adaptado. Linha sem nivel
+        obriga quem le a adivinhar o grao.
+        """
+        linhas = self._read("hierarquia")
+        self.assertTrue(linhas)
+        niveis = {linha["nivel"] for linha in linhas}
+        self.assertTrue(niveis <= {"subclasse", "classe", "fundo_legado"}, niveis)
+        self.assertNotIn("", niveis, "linha sem nível declarado")
+
     def test_rerun_is_idempotent(self):
         before = self.paths["mercado"].read_bytes()
         run_import(self.config, local_dir=FIXTURES)
@@ -342,7 +461,7 @@ class TestStreaming(unittest.TestCase):
                         f"{index:012d}{index % 90:02d}",
                         f"202{delivery % 5 + 1}-08-25",
                         "1.50",
-                        "Politica de investimento com um texto razoavelmente longo",
+                        "Política de investimento com um texto razoavelmente longo",
                     ])
         return path.stat().st_size / (1024 * 1024)
 

@@ -1,0 +1,1054 @@
+{
+ "performance": {
+  "available": true,
+  "periodo": {
+   "de": "2026-07-01",
+   "ate": "2026-09-22",
+   "meses_lidos": [
+    "202607",
+    "202608",
+    "202609"
+   ],
+   "meses_ausentes": [],
+   "pregoes": 60
+  },
+  "participantes": [
+   "xp",
+   "btg"
+  ],
+  "excluded": [
+   {
+    "platform_id": "itau",
+    "label": "Itau Private",
+    "reason": "sem CNPJ na vitrine nao ha como buscar a serie de cota no informe diario (CNPJ em apenas 0% da vitrine - nao da para cruzar os fundos dela com as outras casas)"
+   }
+  ],
+  "universo": {
+   "fundos_com_serie": 24106,
+   "categorias_com_referencia": 52,
+   "categorias_vistas": 69,
+   "amostra_minima": 20
+  },
+  "casas": [
+   {
+    "platform_id": "xp",
+    "label": "XP Investimentos",
+    "vitrine": 218,
+    "com_serie": 208,
+    "cobertura": 0.954,
+    "mediana": 3.0407,
+    "por_pl": 3.3707,
+    "por_cotista": 3.5022,
+    "gap": -0.1315,
+    "pl_total": 77636663792.54,
+    "cotistas_total": 209,
+    "alocacao_abaixo_da_mediana": {
+     "fundos": 124,
+     "de": 203,
+     "share_fundos": 0.6108,
+     "pl": 55559681233.45,
+     "cotistas": 124,
+     "share_pl": 0.7387,
+     "share_cotistas": 0.6078,
+     "indice_pl": 1.209,
+     "indice_cotistas": 0.995
+    }
+   },
+   {
+    "platform_id": "btg",
+    "label": "BTG Pactual",
+    "vitrine": 226,
+    "com_serie": 219,
+    "cobertura": 0.969,
+    "mediana": 3.0318,
+    "por_pl": 3.2721,
+    "por_cotista": 3.3373,
+    "gap": -0.0652,
+    "pl_total": 52740751259.52,
+    "cotistas_total": 219,
+    "alocacao_abaixo_da_mediana": {
+     "fundos": 131,
+     "de": 213,
+     "share_fundos": 0.615,
+     "pl": 40029378324.45,
+     "cotistas": 131,
+     "share_pl": 0.7824,
+     "share_cotistas": 0.615,
+     "indice_pl": 1.272,
+     "indice_cotistas": 1.0
+    }
+   }
+  ],
+  "por_categoria": [
+   {
+    "platform_id": "btg",
+    "label": "BTG Pactual",
+    "categoria": "Previd\u00eancia Multimercado Livre",
+    "fundos": 126,
+    "mediana": 2.9394,
+    "por_pl": 3.375,
+    "por_cotista": 3.3619,
+    "gap": 0.0131,
+    "referencia": 3.1679,
+    "pl": 20667724857.42,
+    "cotistas": 126
+   },
+   {
+    "platform_id": "btg",
+    "label": "BTG Pactual",
+    "categoria": "Previd\u00eancia RF Dura\u00e7\u00e3o Livre Cr\u00e9dito Liv",
+    "fundos": 40,
+    "mediana": 3.0461,
+    "por_pl": 3.1027,
+    "por_cotista": 3.1249,
+    "gap": -0.0222,
+    "referencia": 3.0714,
+    "pl": 12295161999.26,
+    "cotistas": 40
+   },
+   {
+    "platform_id": "btg",
+    "label": "BTG Pactual",
+    "categoria": "Previd\u00eancia A\u00e7\u00f5es Ativo",
+    "fundos": 15,
+    "mediana": 4.7888,
+    "por_pl": 3.1043,
+    "por_cotista": 3.7587,
+    "gap": -0.6543,
+    "referencia": 5.7692,
+    "pl": 375661393.37,
+    "cotistas": 15
+   }
+  ],
+  "onde_esta_a_gente": {
+   "xp": [
+    {
+     "cnpj": "61941773000167",
+     "nome": "Daycoval Classic Xp Seg Prev Fif Rf Cp Rl",
+     "categoria": "Renda Fixa Simples",
+     "vitrines": [
+      "xp"
+     ],
+     "retorno": 3.2993,
+     "mediana_categoria": 2.9648,
+     "excesso": 0.3345,
+     "pl": 18936611.08,
+     "cotistas": 2,
+     "variacao_cotistas": 1,
+     "captacao_liquida": 14376174.87,
+     "ticket_medio": 9468305.54,
+     "dias": 58
+    },
+    {
+     "cnpj": "41802040000134",
+     "nome": "Verde Am Mundi Multimercado Globais Xp Seguros Fic Fim Rl",
+     "categoria": "Previd\u00eancia Multimercado Livre",
+     "vitrines": [
+      "xp"
+     ],
+     "retorno": 0.4849,
+     "mediana_categoria": 3.1679,
+     "excesso": -2.683,
+     "pl": 41841771.23,
+     "cotistas": 1,
+     "variacao_cotistas": 0,
+     "captacao_liquida": -5695670.15,
+     "ticket_medio": 41841771.23,
+     "dias": 58
+    },
+    {
+     "cnpj": "47020776000137",
+     "nome": "Ita\u00fa Optimus RF XP Seg Prev FIC FIM RL",
+     "categoria": "Previd\u00eancia RF Dura\u00e7\u00e3o Livre Cr\u00e9dito Liv",
+     "vitrines": [
+      "xp"
+     ],
+     "retorno": 2.7261,
+     "mediana_categoria": 3.0714,
+     "excesso": -0.3453,
+     "pl": 105019372.68,
+     "cotistas": 1,
+     "variacao_cotistas": 0,
+     "captacao_liquida": -4570029.15,
+     "ticket_medio": 105019372.68,
+     "dias": 58
+    }
+   ],
+   "btg": [
+    {
+     "cnpj": "57132572000141",
+     "nome": "Vinci Compass Prev FIE I D8 FIRF CrPr RL",
+     "categoria": "Renda Fixa Dura\u00e7\u00e3o Livre Cr\u00e9dito Livre",
+     "vitrines": [
+      "btg"
+     ],
+     "retorno": 3.3635,
+     "mediana_categoria": 3.043,
+     "excesso": 0.3205,
+     "pl": 5340093.23,
+     "cotistas": 1,
+     "variacao_cotistas": 0,
+     "captacao_liquida": 191804.62,
+     "ticket_medio": 5340093.23,
+     "dias": 58
+    },
+    {
+     "cnpj": "44025612000104",
+     "nome": "BTG Pactual Hedge Sigma Prev FIE FICFIM RL",
+     "categoria": "Previd\u00eancia Multimercado Livre",
+     "vitrines": [
+      "btg"
+     ],
+     "retorno": 2.783,
+     "mediana_categoria": 3.1679,
+     "excesso": -0.3848,
+     "pl": 117791825.89,
+     "cotistas": 1,
+     "variacao_cotistas": 0,
+     "captacao_liquida": -14871858.27,
+     "ticket_medio": 117791825.89,
+     "dias": 58
+    },
+    {
+     "cnpj": "35020129000146",
+     "nome": "Kadima Long Short Prev FICFIM RL",
+     "categoria": "Previd\u00eancia Multimercado Livre",
+     "vitrines": [
+      "btg"
+     ],
+     "retorno": 2.6965,
+     "mediana_categoria": 3.1679,
+     "excesso": -0.4714,
+     "pl": 10157275.49,
+     "cotistas": 1,
+     "variacao_cotistas": 0,
+     "captacao_liquida": -721669.87,
+     "ticket_medio": 10157275.49,
+     "dias": 58
+    }
+   ]
+  }
+ },
+ "retail_flow": {
+  "available": true,
+  "competencias": [
+   "202607",
+   "202608",
+   "202609"
+  ],
+  "serie_por_casa": {
+   "btg": [
+    {
+     "competencia": "202607",
+     "captacao_liquida": 341842157.85,
+     "variacao_cotistas": 1,
+     "pl_fim": 51031113083.21,
+     "dias": 23,
+     "media_diaria": 14862702.52
+    },
+    {
+     "competencia": "202608",
+     "captacao_liquida": 278119282.17,
+     "variacao_cotistas": 0,
+     "pl_fim": 51921716648.35,
+     "dias": 21,
+     "media_diaria": 13243775.34
+    },
+    {
+     "competencia": "202609",
+     "captacao_liquida": 338689377.77,
+     "variacao_cotistas": 0,
+     "pl_fim": 52779573583.1,
+     "dias": 14,
+     "media_diaria": 24192098.41
+    }
+   ],
+   "xp": [
+    {
+     "competencia": "202607",
+     "captacao_liquida": 79679623.84,
+     "variacao_cotistas": 0,
+     "pl_fim": 76129004333.76,
+     "dias": 23,
+     "media_diaria": 3464331.47
+    },
+    {
+     "competencia": "202608",
+     "captacao_liquida": -72239223.53,
+     "variacao_cotistas": 1,
+     "pl_fim": 76963036937.33,
+     "dias": 21,
+     "media_diaria": -3439963.03
+    },
+    {
+     "competencia": "202609",
+     "captacao_liquida": -30450560.63,
+     "variacao_cotistas": 0,
+     "pl_fim": 77697407211.4,
+     "dias": 14,
+     "media_diaria": -2175040.04
+    }
+   ]
+  },
+  "tendencias": {
+   "saida_persistente": 196,
+   "virou_entrada": 62,
+   "acelerando": 58,
+   "desacelerando": 50,
+   "virou_saida": 32,
+   "estavel": 30,
+   "sem_serie": 3
+  },
+  "tendencia_labels": {
+   "acelerando": "captando mais por dia que nos meses anteriores",
+   "desacelerando": "ainda captando, mas menos por dia que antes",
+   "virou_entrada": "estava perdendo dinheiro e passou a captar",
+   "virou_saida": "estava captando e passou a perder dinheiro",
+   "saida_persistente": "perdendo dinheiro no ultimo mes e na media anterior",
+   "estavel": "sem mudanca material no ritmo",
+   "sem_serie": "competencias de menos para falar em tendencia"
+  },
+  "acelerando": [
+   {
+    "cnpj": "29078039000103",
+    "nome": "BTG Pactual Tesouro Selic Prev FIRF Ref. DI RL",
+    "categoria": "Renda Fixa",
+    "gestora": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 976542399.11,
+    "resgates": 588343759.5,
+    "captacao_liquida": 388198639.61,
+    "pl_inicio": 6436728595.94,
+    "pl_fim": 7021701541.92,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.03,
+    "captacao_sobre_pl": 6.03,
+    "exclusivo": true,
+    "tendencia": "acelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 42777484.39,
+      "variacao_cotistas": 0,
+      "pl_fim": 6553731550.23,
+      "dias": 23,
+      "media_diaria": 1859890.63
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 166490475.59,
+      "variacao_cotistas": 0,
+      "pl_fim": 6793501960.93,
+      "dias": 21,
+      "media_diaria": 7928117.89
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 178930679.63,
+      "variacao_cotistas": 0,
+      "pl_fim": 7021701541.92,
+      "dias": 14,
+      "media_diaria": 12780762.83
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "53497497000161",
+    "nome": "Artesanal Prev FIM RL",
+    "categoria": "Multimercados",
+    "gestora": "ARTESANAL INVESTIMENTOS LTDA",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 309395591.8,
+    "resgates": 60779100.11,
+    "captacao_liquida": 248616491.69,
+    "pl_inicio": 1088227373.64,
+    "pl_fim": 1368538817.14,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.02,
+    "captacao_sobre_pl": 22.85,
+    "exclusivo": true,
+    "tendencia": "acelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 90599059.46,
+      "variacao_cotistas": 0,
+      "pl_fim": 1187332461.27,
+      "dias": 23,
+      "media_diaria": 3939089.54
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 86576569.23,
+      "variacao_cotistas": 0,
+      "pl_fim": 1287797947.85,
+      "dias": 21,
+      "media_diaria": 4122693.77
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 71440863.0,
+      "variacao_cotistas": 0,
+      "pl_fim": 1368538817.14,
+      "dias": 14,
+      "media_diaria": 5102918.79
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "52986170000190",
+    "nome": "Bradesco Ultra Xp Seg Prev Ficfirf",
+    "categoria": "Renda Fixa",
+    "gestora": "XP VIDA E PREVID\u00caNCIA S.A.",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 146097551.33,
+    "resgates": 34303360.53,
+    "captacao_liquida": 111794190.8,
+    "pl_inicio": 686773202.01,
+    "pl_fim": 819716211.27,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.04,
+    "captacao_sobre_pl": 16.28,
+    "exclusivo": true,
+    "tendencia": "acelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 32273708.23,
+      "variacao_cotistas": 0,
+      "pl_fim": 726407292.1,
+      "dias": 23,
+      "media_diaria": 1403204.71
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 46859486.52,
+      "variacao_cotistas": 0,
+      "pl_fim": 781379329.12,
+      "dias": 21,
+      "media_diaria": 2231404.12
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 32660996.05,
+      "variacao_cotistas": 0,
+      "pl_fim": 819716211.27,
+      "dias": 14,
+      "media_diaria": 2332928.29
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   }
+  ],
+  "virou_saida": [
+   {
+    "cnpj": "51154059000175",
+    "nome": "Vinland Credito P Prev T1 FICFIM CrPr RL",
+    "categoria": "Multimercados",
+    "gestora": "VINLAND CAPITAL MANAGEMENT CR\u00c9DITO PRIVADO GESTORA DE RECURSOS LTDA.",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 10278685.62,
+    "resgates": 14547351.44,
+    "captacao_liquida": -4268665.82,
+    "pl_inicio": 171729524.57,
+    "pl_fim": 172230860.82,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 2.64,
+    "captacao_sobre_pl": -2.49,
+    "exclusivo": true,
+    "tendencia": "virou_saida",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 33958.65,
+      "variacao_cotistas": 0,
+      "pl_fim": 173975126.7,
+      "dias": 23,
+      "media_diaria": 1476.46
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 2234752.63,
+      "variacao_cotistas": 0,
+      "pl_fim": 177926952.13,
+      "dias": 21,
+      "media_diaria": 106416.79
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": -6537377.1,
+      "variacao_cotistas": 0,
+      "pl_fim": 172230860.82,
+      "dias": 14,
+      "media_diaria": -466955.51
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "40780979000182",
+    "nome": "Occam Liquidez Prev Xp Seg Fic Fim",
+    "categoria": "Multimercados",
+    "gestora": "XP VIDA E PREVID\u00caNCIA S.A.",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 62833.79,
+    "resgates": 1097619.54,
+    "captacao_liquida": -1034785.75,
+    "pl_inicio": 4804640.17,
+    "pl_fim": 3869378.41,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 2.24,
+    "captacao_sobre_pl": -21.54,
+    "exclusivo": true,
+    "tendencia": "virou_saida",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 1920.74,
+      "variacao_cotistas": 0,
+      "pl_fim": 4840777.2,
+      "dias": 23,
+      "media_diaria": 83.51
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 59515.7,
+      "variacao_cotistas": 0,
+      "pl_fim": 4932321.32,
+      "dias": 21,
+      "media_diaria": 2834.08
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": -1096222.19,
+      "variacao_cotistas": 0,
+      "pl_fim": 3869378.41,
+      "dias": 14,
+      "media_diaria": -78301.58
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "55753965000147",
+    "nome": "Tenax RFA Prev FIE I FICFIRF CrPr RL",
+    "categoria": "Renda Fixa",
+    "gestora": "TENAX CAPITAL LTDA.",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 185452.11,
+    "resgates": 1163509.09,
+    "captacao_liquida": -978056.98,
+    "pl_inicio": 4327479.59,
+    "pl_fim": 3492805.78,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.31,
+    "captacao_sobre_pl": -22.6,
+    "exclusivo": true,
+    "tendencia": "virou_saida",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 0.0,
+      "variacao_cotistas": 0,
+      "pl_fim": 4372621.9,
+      "dias": 23,
+      "media_diaria": 0.0
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 183780.16,
+      "variacao_cotistas": 0,
+      "pl_fim": 4623159.56,
+      "dias": 21,
+      "media_diaria": 8751.44
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": -1161837.14,
+      "variacao_cotistas": 0,
+      "pl_fim": 3492805.78,
+      "dias": 14,
+      "media_diaria": -82988.37
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   }
+  ],
+  "periodo": {
+   "meses_lidos": [
+    "202607",
+    "202608",
+    "202609"
+   ],
+   "meses_ausentes": [],
+   "de": "2026-07-01",
+   "ate": "2026-09-21"
+  },
+  "fundos_analisados": 439,
+  "baseline_id": "xp",
+  "casas": [
+   {
+    "platform_id": "btg",
+    "label": "BTG Pactual",
+    "vitrine": 226,
+    "com_informe": 226,
+    "cobertura": 1.0,
+    "captacao_bruta": 4865531836.92,
+    "resgates": 3906881019.13,
+    "captacao_liquida": 958650817.79,
+    "pl_fim": 52786524477.97,
+    "exclusivos": 221,
+    "captacao_exclusivos": 959292067.59,
+    "estruturais": 4,
+    "captacao_estrutural": -3218926.07
+   },
+   {
+    "platform_id": "xp",
+    "label": "XP Investimentos",
+    "vitrine": 218,
+    "com_informe": 214,
+    "cobertura": 0.982,
+    "captacao_bruta": 5627346003.9,
+    "resgates": 5650356164.22,
+    "captacao_liquida": -23010160.32,
+    "pl_fim": 77712821957.09,
+    "exclusivos": 212,
+    "captacao_exclusivos": -22368910.52,
+    "estruturais": 1,
+    "captacao_estrutural": -43793401.05
+   }
+  ],
+  "fundos": [
+   {
+    "cnpj": "41801819000135",
+    "nome": "BTG Pactual Cred Corp Plus Prev FIE FICFIM CrPr RL",
+    "categoria": "Renda Fixa",
+    "gestora": "BTG PACTUAL ASSET MANAGEMENT S/A DTVM",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 809403036.28,
+    "resgates": 47380786.18,
+    "captacao_liquida": 762022250.1,
+    "pl_inicio": 402925928.51,
+    "pl_fim": 1185656842.9,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.09,
+    "captacao_sobre_pl": 189.12,
+    "exclusivo": true,
+    "tendencia": "desacelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 411149644.19,
+      "variacao_cotistas": 0,
+      "pl_fim": 814980381.18,
+      "dias": 23,
+      "media_diaria": 17876071.49
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 241175323.52,
+      "variacao_cotistas": 0,
+      "pl_fim": 1066478056.91,
+      "dias": 21,
+      "media_diaria": 11484539.22
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 109697282.39,
+      "variacao_cotistas": 0,
+      "pl_fim": 1185656842.9,
+      "dias": 14,
+      "media_diaria": 7835520.17
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "58543779000171",
+    "nome": "Mag Cash Xp Seg Prev Ficfirf Rl",
+    "categoria": "Renda Fixa",
+    "gestora": "MONGERAL AEGON INVESTIMENTOS LTDA",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 534494594.53,
+    "resgates": 65247597.81,
+    "captacao_liquida": 469246996.72,
+    "pl_inicio": 1062373555.37,
+    "pl_fim": 1567142940.16,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 3.09,
+    "captacao_sobre_pl": 44.17,
+    "exclusivo": true,
+    "tendencia": "estavel",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 188997600.43,
+      "variacao_cotistas": 0,
+      "pl_fim": 1261113782.71,
+      "dias": 23,
+      "media_diaria": 8217286.98
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 163771025.24,
+      "variacao_cotistas": 0,
+      "pl_fim": 1439735671.28,
+      "dias": 21,
+      "media_diaria": 7798620.25
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 116478371.05,
+      "variacao_cotistas": 0,
+      "pl_fim": 1567142940.16,
+      "dias": 14,
+      "media_diaria": 8319883.65
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "33784231000192",
+    "nome": "Trend P\u00f3s-Fixado XP Seg Prev FIC FIRF",
+    "categoria": "Renda Fixa",
+    "gestora": "XP VISTA ASSET MANAGEMENT LTDA.",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 929081670.43,
+    "resgates": 525233767.48,
+    "captacao_liquida": 403847902.95,
+    "pl_inicio": 6596703326.12,
+    "pl_fim": 7191647437.62,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 2.97,
+    "captacao_sobre_pl": 6.12,
+    "exclusivo": true,
+    "tendencia": "desacelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 185501781.13,
+      "variacao_cotistas": 0,
+      "pl_fim": 6848289070.36,
+      "dias": 23,
+      "media_diaria": 8065294.83
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 145954693.66,
+      "variacao_cotistas": 0,
+      "pl_fim": 7069673258.75,
+      "dias": 21,
+      "media_diaria": 6950223.51
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 72391428.16,
+      "variacao_cotistas": 0,
+      "pl_fim": 7191647437.62,
+      "dias": 14,
+      "media_diaria": 5170816.3
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   }
+  ],
+  "top_captacao": [
+   {
+    "cnpj": "61941773000167",
+    "nome": "Daycoval Classic Xp Seg Prev Fif Rf Cp Rl",
+    "categoria": "Renda Fixa",
+    "gestora": "DAYCOVAL ASSET MANAGEMENT ADMINISTRACAO DE RECURSOS LTDA",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 16780171.99,
+    "resgates": 2403997.12,
+    "captacao_liquida": 14376174.87,
+    "pl_inicio": 4116852.21,
+    "pl_fim": 18936611.08,
+    "variacao_cotistas": 1,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 2,
+    "rentabilidade": 3.3,
+    "captacao_sobre_pl": 349.2,
+    "exclusivo": true,
+    "tendencia": "desacelerando",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 12870910.8,
+      "variacao_cotistas": 0,
+      "pl_fim": 17085234.98,
+      "dias": 23,
+      "media_diaria": 559604.82
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": 867849.29,
+      "variacao_cotistas": 1,
+      "pl_fim": 18162921.4,
+      "dias": 21,
+      "media_diaria": 41326.16
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": 637414.78,
+      "variacao_cotistas": 0,
+      "pl_fim": 18936611.08,
+      "dias": 14,
+      "media_diaria": 45529.63
+     }
+    ],
+    "estrutural": false,
+    "varejo_entrada": true,
+    "varejo_saida": false,
+    "ticket_por_cotista": 14376174.87,
+    "dias": 58
+   }
+  ],
+  "top_resgate": [],
+  "estruturais": [
+   {
+    "cnpj": "24714864000133",
+    "nome": "Trend B26 Prev XP Seg FIC FIRF RL",
+    "categoria": "Renda Fixa",
+    "gestora": "XP VIDA E PREVID\u00caNCIA S.A.",
+    "vitrines": [
+     "xp"
+    ],
+    "captacao_bruta": 276213.97,
+    "resgates": 44069615.02,
+    "captacao_liquida": -43793401.05,
+    "pl_inicio": 58474055.41,
+    "pl_fim": 15414745.69,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": 2.65,
+    "captacao_sobre_pl": -74.89,
+    "exclusivo": true,
+    "tendencia": "saida_persistente",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": -27341881.14,
+      "variacao_cotistas": 0,
+      "pl_fim": 31496396.33,
+      "dias": 23,
+      "media_diaria": -1188777.44
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": -14149793.94,
+      "variacao_cotistas": 0,
+      "pl_fim": 17605546.43,
+      "dias": 21,
+      "media_diaria": -673799.71
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": -2301725.97,
+      "variacao_cotistas": 0,
+      "pl_fim": 15414745.69,
+      "dias": 14,
+      "media_diaria": -164409.0
+     }
+    ],
+    "estrutural": true,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "33520932000114",
+    "nome": "Atlas ONE Icatu 70 Prev FIM RL",
+    "categoria": "Multimercados",
+    "gestora": "ATLAS ONE INVESTIMENTOS GEST\u00c3O DE RECURSOS LTDA.",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 460968.78,
+    "resgates": 3994676.79,
+    "captacao_liquida": -3533708.01,
+    "pl_inicio": 6139963.34,
+    "pl_fim": 2329943.55,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": -3.52,
+    "captacao_sobre_pl": -57.55,
+    "exclusivo": true,
+    "tendencia": "saida_persistente",
+    "meses": [
+     {
+      "competencia": "202607",
+      "captacao_liquida": 85372.18,
+      "variacao_cotistas": 0,
+      "pl_fim": 6292466.31,
+      "dias": 23,
+      "media_diaria": 3711.83
+     },
+     {
+      "competencia": "202608",
+      "captacao_liquida": -98843.75,
+      "variacao_cotistas": 0,
+      "pl_fim": 5647361.84,
+      "dias": 21,
+      "media_diaria": -4706.85
+     },
+     {
+      "competencia": "202609",
+      "captacao_liquida": -3520236.44,
+      "variacao_cotistas": 0,
+      "pl_fim": 2329943.55,
+      "dias": 14,
+      "media_diaria": -251445.46
+     }
+    ],
+    "estrutural": true,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 58
+   },
+   {
+    "cnpj": "67671091000168",
+    "nome": "Finacap BP Prev 70 FIF MM",
+    "categoria": "Multimercados",
+    "gestora": "FINACAP INVESTIMENTOS LTDA",
+    "vitrines": [
+     "btg"
+    ],
+    "captacao_bruta": 3118789.89,
+    "resgates": 0.0,
+    "captacao_liquida": 3118789.89,
+    "pl_inicio": 3000000.0,
+    "pl_fim": 3103992.68,
+    "variacao_cotistas": 0,
+    "cotistas_inicio": 1,
+    "cotistas_fim": 1,
+    "rentabilidade": -0.51,
+    "captacao_sobre_pl": 103.96,
+    "exclusivo": true,
+    "tendencia": "sem_serie",
+    "meses": [
+     {
+      "competencia": "202609",
+      "captacao_liquida": 3118789.89,
+      "variacao_cotistas": 0,
+      "pl_fim": 3103992.68,
+      "dias": 12,
+      "media_diaria": 259899.16
+     }
+    ],
+    "estrutural": true,
+    "varejo_entrada": false,
+    "varejo_saida": false,
+    "ticket_por_cotista": null,
+    "dias": 12
+   }
+  ],
+  "total_estruturais": 5,
+  "captacao_varejo_total": 886622557.47,
+  "excluded": [
+   {
+    "platform_id": "itau",
+    "label": "Itau Private",
+    "reason": "CNPJ em apenas 0% da vitrine - nao da para cruzar os fundos dela com as outras casas"
+   }
+  ]
+ },
+ "grade_opportunities": {
+  "available": false,
+  "reason": "nenhum fundo transferivel fora da vitrine da XP com captacao de varejo no periodo",
+  "total": 0,
+  "total_transferiveis": 0,
+  "total_produto_do_concorrente": 0,
+  "total_gestora_desconhecida": 0,
+  "total_operacionais": 0,
+  "total_comerciais": 0,
+  "captacao_somada": 0,
+  "captacao_transferivel": 0,
+  "cotistas_transferivel": 0,
+  "operacionais": [],
+  "comerciais": [],
+  "mais_varejo": [],
+  "produto_do_concorrente": [],
+  "na_vitrine_perdendo": []
+ }
+}

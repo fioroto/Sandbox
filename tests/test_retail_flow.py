@@ -96,6 +96,21 @@ class TestReadDailyFlows(unittest.TestCase):
         self.assertEqual(lidos[0].captacao, 50.0)
         self.assertEqual(lidos[0].dia, date(2026, 8, 3))
 
+    def test_cnpj_sem_zero_a_esquerda_ainda_casa_com_a_vitrine(self):
+        """O alvo vem de `FundOffer.cnpj`, que tem 14 digitos.
+
+        Um informe que serializa o CNPJ como numero perde o zero a esquerda.
+        Comparando so sem pontuacao, "1234567000191" nunca casava com
+        "01234567000191": o fundo sumia do filtro em silencio e reaparecia como
+        cobertura baixa da casa, indistinguivel de quem nao entregou informe.
+        """
+        path = _informe(self.dir, "202608", [
+            _linha("1234567000191", "2026-08-03", 1000.0, 50.0, 10.0, 100),
+        ])
+        lidos = read_daily_flows(path, {"01234567000191"})
+        self.assertEqual(len(lidos), 1)
+        self.assertEqual(lidos[0].cnpj, "01234567000191")
+
     def test_zip_ausente_ou_invalido_devolve_vazio(self):
         self.assertEqual(read_daily_flows(None, {"x"}), [])
         self.assertEqual(read_daily_flows(self.dir / "nao-existe.zip", {"x"}), [])
@@ -265,7 +280,41 @@ class TestGradeOpportunities(unittest.TestCase):
             [snapshot("btg", vitrine("btg", 40, "G"))], []
         )
         self.assertFalse(resultado["available"])
-        self.assertIn("indisponivel", resultado["reason"])
+        self.assertIn("indisponível", resultado["reason"])
+
+
+class TestGestoraDesconhecida(unittest.TestCase):
+    def test_fundo_sem_gestor_nao_e_dado_como_verificado(self):
+        """`is_own_product` e tri-estado: None e "nao sei", nao "nao e".
+
+        Um `any()` direto colapsava None em False, e o fundo entrava na lista de
+        transferiveis como se tivesse sido checado - a soma publicada ("restam N
+        fundos, +R$ X MM") afirmava sobre fundo que ninguem verificou. Ele
+        continua na lista, porque o monitor informa e nao remove, mas sai
+        contado a parte.
+        """
+        from shelf_monitor.report.retail_flow import GradeOpportunity
+
+        verificado = GradeOpportunity(
+            fluxo=None, gestora_ja_distribuida=False, produto_do_concorrente=False
+        )
+        indefinido = GradeOpportunity(
+            fluxo=None, gestora_ja_distribuida=False, produto_do_concorrente=None
+        )
+        proprio = GradeOpportunity(
+            fluxo=None, gestora_ja_distribuida=False, produto_do_concorrente=True
+        )
+
+        self.assertFalse(verificado.gestora_desconhecida)
+        self.assertTrue(indefinido.gestora_desconhecida)
+        self.assertFalse(proprio.gestora_desconhecida)
+
+        # O filtro de transferiveis tem de testar `is not True`: com `not x`, o
+        # proprio entrava junto do indefinido.
+        todos = [verificado, indefinido, proprio]
+        transferiveis = [o for o in todos if o.produto_do_concorrente is not True]
+        self.assertEqual(len(transferiveis), 2)
+        self.assertNotIn(proprio, transferiveis)
 
 
 class TestTrend(unittest.TestCase):
@@ -345,6 +394,41 @@ class TestMonthlySeries(unittest.TestCase):
         series = monthly_by_platform(registros, presenca, estruturais={"99999999000199"})
         julho = next(m for m in series["btg"] if m.competencia == "202607")
         self.assertEqual(julho.captacao_liquida, 130.0)
+
+    def test_serie_por_casa_deduplica_a_retificacao_da_cvm(self):
+        """O mesmo (CNPJ, subclasse, dia) aparece duas vezes no arquivo do mes.
+
+        `agrupar_por_classe` ja trata isso e e por onde passa o total da casa em
+        `PlatformFlow`. A serie mensal somava as linhas cruas, entao contava a
+        retificacao de novo: os dois numeros do mesmo bloco nao fechavam.
+        """
+        registros = [
+            DailyFlow("11111111000111", date(2026, 7, 1), 100.0, 0.0, 1000.0, 10.0, 500),
+            # Retificacao do mesmo dia: vence esta, nao soma.
+            DailyFlow("11111111000111", date(2026, 7, 1), 100.0, 0.0, 1000.0, 10.0, 500),
+        ]
+        series = monthly_by_platform(
+            registros, {"11111111000111": ["xp"]}, estruturais=set()
+        )
+        julho = series["xp"][0]
+        self.assertEqual(julho.captacao_liquida, 100.0)
+        self.assertEqual(julho.dias, 1)
+
+    def test_serie_por_casa_soma_o_pl_das_subclasses(self):
+        """Uma linha e uma subclasse; o PL da casa e a soma delas.
+
+        Pegar `max(..., key=dia)` entre as linhas do CNPJ devolvia UMA subclasse
+        arbitraria entre as empatadas no ultimo dia: o PL saia subestimado e
+        dependia da ordem de leitura do arquivo.
+        """
+        registros = [
+            DailyFlow("11111111000111", date(2026, 7, 1), 0.0, 0.0, 600.0, 10.0, 300, "A"),
+            DailyFlow("11111111000111", date(2026, 7, 1), 0.0, 0.0, 400.0, 10.0, 200, "B"),
+        ]
+        series = monthly_by_platform(
+            registros, {"11111111000111": ["xp"]}, estruturais=set()
+        )
+        self.assertEqual(series["xp"][0].pl_fim, 1000.0)
 
     def test_fundo_em_duas_vitrines_entra_nas_duas_series(self):
         """A CVM publica fluxo por fundo: a soma de cada casa o inclui inteiro."""

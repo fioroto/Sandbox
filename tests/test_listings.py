@@ -29,7 +29,7 @@ from shelf_monitor.models import AssetClass, CollectorStrategy, SnapshotStatus
 TABELA_RENTABILIDADE = """
 <html><body>
 <table>
-  <thead><tr><th>Fundo</th><th>Classe</th><th>Aplicacao</th><th>Taxa</th><th>12 meses</th></tr></thead>
+  <thead><tr><th>Fundo</th><th>Classe</th><th>Aplicação</th><th>Taxa</th><th>12 meses</th></tr></thead>
   <tbody>
     <tr>
       <td>Itau Renda Fixa Referenciado DI FIC</td><td>Renda Fixa</td>
@@ -40,7 +40,7 @@ TABELA_RENTABILIDADE = """
       <td>R$ 5.000,00</td><td>1,90%</td><td>13,20%</td>
     </tr>
     <tr>
-      <td>Itau Acoes Dividendos FIA</td><td>Acoes</td>
+      <td>Itau Ações Dividendos FIA</td><td>Ações</td>
       <td>R$ 500,00</td><td>2,00%</td><td>-4,10%</td>
     </tr>
   </tbody>
@@ -56,19 +56,19 @@ CARTOES = """
   <div class="fund-card">
     <h3 class="fund-card__name">BTG Pactual Digital Renda Fixa FI</h3>
     <span class="fund-card__category">Renda Fixa</span>
-    <p>Aplicacao minima R$ 500,00</p>
+    <p>Aplicação mínima R$ 500,00</p>
     <a href="/fundos-de-investimento/btg-rf">Ver detalhes</a>
   </div>
   <div class="fund-card">
     <h3 class="fund-card__name">BTG Pactual Absoluto Institucional FIC FIA</h3>
-    <span class="fund-card__category">Acoes</span>
-    <p>Aplicacao minima R$ 25.000,00</p>
+    <span class="fund-card__category">Ações</span>
+    <p>Aplicação mínima R$ 25.000,00</p>
     <a href="/fundos-de-investimento/btg-absoluto">Ver detalhes</a>
   </div>
   <div class="fund-card">
-    <h3 class="fund-card__name">BTG Pactual Cambial Dolar FIC FIM</h3>
+    <h3 class="fund-card__name">BTG Pactual Cambial Dólar FIC FIM</h3>
     <span class="fund-card__category">Cambial</span>
-    <p>Aplicacao minima R$ 1.000,00</p>
+    <p>Aplicação mínima R$ 1.000,00</p>
     <a href="/fundos-de-investimento/btg-cambial">Ver detalhes</a>
   </div>
 </div>
@@ -94,7 +94,7 @@ CNPJ_SOLTO = """
 # Uma mencao isolada num rodape nao e prateleira.
 RODAPE = """
 <html><body>
-<main><h1>Fundos de investimento</h1><p>Conheca nossas opcoes.</p></main>
+<main><h1>Fundos de investimento</h1><p>Conheca nossas opções.</p></main>
 <footer>
   <p>Inter Conservador Renda Fixa FI - CNPJ: 12.345.678/0001-90</p>
 </footer>
@@ -180,7 +180,7 @@ class TestDomExtraction(unittest.TestCase):
         self.assertEqual(len(offers), 3, names)
 
         absoluto = next(o for o in offers if "Absoluto" in o.name)
-        self.assertEqual(absoluto.raw_category, "Acoes")
+        self.assertEqual(absoluto.raw_category, "Ações")
         self.assertEqual(absoluto.min_initial, 25000.0)
         self.assertEqual(
             absoluto.detail_url,
@@ -218,15 +218,15 @@ CARTOES_COM_CNPJ = """
 <div class="shelf">
   <div class="fund-card">
     <h3 class="fund-card__name">BTG Pactual Digital Renda Fixa FI</h3>
-    <p>CNPJ: 11.111.111/0001-11 - aplicacao minima R$ 500,00</p>
+    <p>CNPJ: 11.111.111/0001-11 - aplicação mínima R$ 500,00</p>
   </div>
   <div class="fund-card">
     <h3 class="fund-card__name">BTG Pactual Absoluto FIC FIA</h3>
-    <p>CNPJ: 22.222.222/0001-22 - aplicacao minima R$ 25.000,00</p>
+    <p>CNPJ: 22.222.222/0001-22 - aplicação mínima R$ 25.000,00</p>
   </div>
   <div class="fund-card">
-    <h3 class="fund-card__name">BTG Pactual Cambial Dolar FIC FIM</h3>
-    <p>CNPJ: 33.333.333/0001-33 - aplicacao minima R$ 1.000,00</p>
+    <h3 class="fund-card__name">BTG Pactual Cambial Dólar FIC FIM</h3>
+    <p>CNPJ: 33.333.333/0001-33 - aplicação mínima R$ 1.000,00</p>
   </div>
 </div>
 </body></html>
@@ -237,7 +237,7 @@ MASTER_E_FEEDER = """
 <html><body><table><tbody>
   <tr><td>Kinea Chronos Master FIM</td><td>Multimercado</td><td>11.111.111/0001-11</td></tr>
   <tr><td>Kinea Chronos FIC FIM</td><td>Multimercado</td><td>22.222.222/0001-22</td></tr>
-  <tr><td>Kinea Atlas Master FIA</td><td>Acoes</td><td>33.333.333/0001-33</td></tr>
+  <tr><td>Kinea Atlas Master FIA</td><td>Ações</td><td>33.333.333/0001-33</td></tr>
 </tbody></table></body></html>
 """
 
@@ -705,7 +705,7 @@ class TestInterCollector(unittest.TestCase):
 
         self.assertEqual(len(snapshot.funds), 10)
         self.assertEqual(snapshot.status, SnapshotStatus.PARTIAL)
-        self.assertIn("paginas de fundo falharam", snapshot.error)
+        self.assertIn("páginas de fundo falharam", snapshot.error)
 
     def test_single_page_failure_does_not_downgrade(self):
         """Uma falha isolada e ruido de rede, nao prateleira incompleta."""
@@ -836,14 +836,19 @@ class TestItauRentabilidade(unittest.TestCase):
         self.assertEqual(len(offers), 2)
 
     def test_synthetic_payload_reaches_the_mapper(self):
-        from shelf_monitor.collectors.itau import _map_rentability_payload
+        import tempfile
+        from pathlib import Path
 
-        offers = _map_rentability_payload(
-            "https://www.itau.com.br/x (tabela)", {"itau_rentabilidade": [ITAU_PAGE_1]}
-        )
-        self.assertEqual(len(offers), 2)
-        # Payload que nao e a tabela segue para o extrator generico.
-        self.assertIsNone(_map_rentability_payload("https://x", {"data": []}))
+        from shelf_monitor.collectors.itau import LeituraDaTabela
+
+        with tempfile.TemporaryDirectory() as sem_base:
+            leitura = LeituraDaTabela(Path(sem_base))
+            offers = leitura.mapear(
+                "https://www.itau.com.br/x (tabela)", {"itau_rentabilidade": [ITAU_PAGE_1]}
+            )
+            self.assertEqual(len(offers), 2)
+            # Payload que nao e a tabela segue para o extrator generico.
+            self.assertIsNone(leitura.mapear("https://x", {"data": []}))
 
 
 class TestMergeReconciliation(unittest.TestCase):
@@ -1219,7 +1224,7 @@ class TestListingBlock(unittest.TestCase):
                      ["open-finance", "api-json"], manager="BTG PACTUAL ASSET"),
                 fund("btg", "BTG Vitrine B", "22222222000122",
                      ["api-json"], manager="KAPITALO GESTAO"),
-                fund("btg", "BTG So Catalogo", "33333333000133", ["open-finance"]),
+                fund("btg", "BTG Só Catálogo", "33333333000133", ["open-finance"]),
             ],
         )
         itau = ShelfSnapshot(
@@ -1297,20 +1302,20 @@ class TestGapBlock(unittest.TestCase):
                        extra={"classificacao_anbima": "Multimercado Macro"}),
             self._fund("xp", "Compartilhado RF", "20000000000202",
                        ["playwright", "open-finance"],
-                       extra={"classificacao_anbima": "Renda Fixa Duracao Baixa"}),
-            self._fund("xp", "XP So Catalogo", "30000000000303",
+                       extra={"classificacao_anbima": "Renda Fixa Duração Baixa"}),
+            self._fund("xp", "XP Só Catálogo", "30000000000303",
                        ["open-finance"]),
         ])
 
     def _btg(self):
         return self._snap("btg", [
             self._fund("btg", "Compartilhado RF", "20000000000202", ["api-json"],
-                       extra={"classificacao_anbima": "Renda Fixa Duracao Baixa"}),
+                       extra={"classificacao_anbima": "Renda Fixa Duração Baixa"}),
             self._fund("btg", "Kapitalo Zeta FIC FIM", "40000000000404",
                        ["api-json"], manager="KAPITALO GESTAO",
                        extra={"classificacao_anbima": "Multimercado Macro"},
                        min_initial=5000.0, fee=2.0),
-            self._fund("btg", "XP So Catalogo", "30000000000303", ["api-json"]),
+            self._fund("btg", "XP Só Catálogo", "30000000000303", ["api-json"]),
             self._fund("btg", "BTG Restrito", "50000000000505", ["api-json"],
                        extra={"exclusivo_cvm": "S"}),
             self._fund("btg", "BTG Sem CNPJ", None, ["api-json"]),
@@ -1338,7 +1343,7 @@ class TestGapBlock(unittest.TestCase):
         kapitalo = block["funds"][0]
         self.assertEqual(kapitalo["cnpj"], "40000000000404")
         self.assertEqual(kapitalo["houses_count"], 2)
-        self.assertEqual(kapitalo["houses_label"], "BTG Pactual, Itau (Ion)")
+        self.assertEqual(kapitalo["houses_label"], "BTG Pactual, Itaú")
         # Melhores condicoes entre as casas que vitrinam.
         self.assertEqual(kapitalo["min_initial"], 1000.0)
         self.assertEqual(kapitalo["admin_fee_pct"], 1.5)
@@ -1355,7 +1360,7 @@ class TestGapBlock(unittest.TestCase):
         from shelf_monitor.report.aggregate import build_gap_block
 
         xp = self._snap("xp", [
-            self._fund("xp", "XP So Catalogo", "30000000000303",
+            self._fund("xp", "XP Só Catálogo", "30000000000303",
                        ["open-finance"]),
         ])
         block = build_gap_block([xp, self._btg()])
@@ -1373,7 +1378,7 @@ class TestGapBlock(unittest.TestCase):
                         error="timeout")
         unavailable = build_gap_block([xp, self._btg()])
         self.assertFalse(unavailable["available"])
-        self.assertIn("indisponivel", unavailable["reason"])
+        self.assertIn("indisponível", unavailable["reason"])
 
     def test_partial_xp_keeps_block_with_warning(self):
         from shelf_monitor.models import SnapshotStatus
@@ -1381,7 +1386,7 @@ class TestGapBlock(unittest.TestCase):
 
         xp = self._xp()
         xp.status = SnapshotStatus.PARTIAL
-        xp.error = "playwright caiu na pagina 3"
+        xp.error = "playwright caiu na página 3"
         block = build_gap_block([xp, self._btg()])
         self.assertTrue(block["available"])
         self.assertIn("superestimados", block["baseline_warning"])
@@ -1484,9 +1489,9 @@ class TestDeck(unittest.TestCase):
             config = Config(data_dir=tmp)
             path = render_deck(config, self._report())
             deck = Presentation(path)
-            # capa, numeros, arquitetura, custo, movimentos, metodologia
+            # capa, numeros, arquitetura, custo, movimentos, metodologia, fontes
             # (sem matriz - nao ha base ANBIMA; sem radar - nao ha CVM)
-            self.assertEqual(len(deck.slides), 6)
+            self.assertEqual(len(deck.slides), 7)
 
     def test_deck_survives_an_empty_run(self):
         import tempfile
@@ -1511,7 +1516,7 @@ class TestDeck(unittest.TestCase):
         from shelf_monitor.report.deck import render_deck
 
         report = self._report()
-        xp_fund = FundOffer(platform="xp", name="XP Unico FIC FIM",
+        xp_fund = FundOffer(platform="xp", name="XP Único FIC FIM",
                             cnpj="99000000000199")
         xp_fund.sources = ["playwright"]
         report.snapshots.insert(0, ShelfSnapshot(
@@ -1524,8 +1529,8 @@ class TestDeck(unittest.TestCase):
             config = Config(data_dir=tmp)
             path = render_deck(config, report)
             # capa, numeros, gaps (os 6 fundos BTG estao fora da vitrine XP),
-            # arquitetura, custo, movimentos, metodologia
-            self.assertEqual(len(Presentation(path).slides), 7)
+            # arquitetura, custo, movimentos, metodologia, fontes
+            self.assertEqual(len(Presentation(path).slides), 8)
 
 
 class TestFundEnvelopeJoin(TestEnrichment):
@@ -1590,7 +1595,40 @@ class TestCategoryFallback(unittest.TestCase):
         self.assertEqual(anbima_category(heuristic), "Multimercado")
 
         nothing = FundOffer(platform="x", name="D")
-        self.assertEqual(anbima_category(nothing), "Sem classificacao")
+        self.assertEqual(anbima_category(nothing), "Sem classificação")
+
+
+class TestPlanilhaComArquivoPreso(unittest.TestCase):
+    """O Excel trava o arquivo aberto para escrita.
+
+    Uma execucao de dezenas de minutos nao pode terminar sem planilha porque
+    alguem estava com a anterior aberta - aconteceu em 2026-09-20, com o `run`
+    completo devolvendo "Permission denied" no ultimo passo.
+    """
+
+    def test_cai_para_um_nome_vizinho_quando_o_alvo_esta_travado(self):
+        import tempfile
+        from pathlib import Path as _Path
+        from openpyxl import Workbook
+
+        from shelf_monitor.report.spreadsheet import _salvar
+
+        with tempfile.TemporaryDirectory() as tmp:
+            alvo = _Path(tmp) / "prateleiras-2026-09-20.xlsx"
+            original = Workbook.save
+
+            def travado(self, caminho):
+                if _Path(caminho).name == alvo.name:
+                    raise PermissionError(13, "Permission denied")
+                return original(self, caminho)
+
+            Workbook.save = travado
+            try:
+                destino = _salvar(Workbook(), alvo)
+            finally:
+                Workbook.save = original
+
+        self.assertEqual(destino.name, "prateleiras-2026-09-20-2.xlsx")
 
 
 class TestRetailProfile(unittest.TestCase):
@@ -1606,9 +1644,9 @@ class TestRetailProfile(unittest.TestCase):
         self.assertIn("registro CVM", restriction_reason(self._fund(exclusivo_cvm="S")))
         self.assertIn("profissional", restriction_reason(
             self._fund(publico_alvo_cvm="Investidor Profissional")))
-        self.assertIn("propria casa", restriction_reason(self._fund(restrito_casa=True)))
+        self.assertIn("própria casa", restriction_reason(self._fund(restrito_casa=True)))
         self.assertIn("nome", restriction_reason(
-            self._fund(name="Familia Silva Exclusivo FIC FIM")))
+            self._fund(name="Família Silva Exclusivo FIC FIM")))
 
     def test_retail_funds_pass_untouched(self):
         from shelf_monitor.profile import restriction_reason
@@ -1634,7 +1672,7 @@ class TestRetailProfile(unittest.TestCase):
         retail = FundOffer(platform="btg", name="BTG Varejo FIC FIM", cnpj="11111111000111")
         retail.sources = ["api-json"]
         restricted = FundOffer(
-            platform="btg", name="BTG Cliente Unico FIC FIM", cnpj="22222222000122",
+            platform="btg", name="BTG Cliente Único FIC FIM", cnpj="22222222000122",
             extra={"exclusivo_cvm": "S"},
         )
         restricted.sources = ["api-json"]
@@ -1646,7 +1684,9 @@ class TestRetailProfile(unittest.TestCase):
         report = RunReport(generated_at=datetime(2026, 8, 31), snapshots=[snapshot])
 
         summary = summarize_platform(snapshot, set())
-        self.assertEqual(summary.total_funds, 1, "restrito nao conta na analise")
+        self.assertEqual(summary.listing_funds, 1, "restrito não conta na análise")
+        self.assertEqual(summary.catalog_funds, 1, "catálogo de varejo também exclui o restrito")
+        self.assertEqual(summary.collected_funds, 2, "a coleta trouxe os dois")
 
         listing = build_listing_block(report)
         btg = next(p for p in listing["platforms"] if p["platform_id"] == "btg")
@@ -1657,7 +1697,7 @@ class TestRetailProfile(unittest.TestCase):
         entry = aux["platforms"][0]
         self.assertEqual(entry["restricted"], 1)
         self.assertIn("exclusivo no registro CVM", entry["by_reason"])
-        self.assertEqual(entry["sample"][0]["name"], "BTG Cliente Unico FIC FIM")
+        self.assertEqual(entry["sample"][0]["name"], "BTG Cliente Único FIC FIM")
 
 
 class TestManagerInference(unittest.TestCase):
@@ -1677,7 +1717,7 @@ class TestManagerInference(unittest.TestCase):
         from shelf_monitor.models import FundOffer
 
         index = build_brand_index(self.MANAGERS)
-        fund = FundOffer(platform="itau", name="Bahia AM Muta Selecao Multimercado")
+        fund = FundOffer(platform="itau", name="Bahia AM Muta Seleção Multimercado")
         self.assertTrue(infer_manager(fund, index))
         self.assertEqual(fund.manager_name, "BAHIA AM RENDA VARIAVEL LTDA")
         self.assertIn("gestor_inferido", fund.extra)
@@ -1728,8 +1768,8 @@ class TestFuzzyReconciliation(unittest.TestCase):
 
     def test_typo_level_difference_merges(self):
         merged = self._merge(
-            "Itau Global Dinamico Renda Fixa Longo Prazo",
-            "Itau Global Dinamico Renda Fixa Longo Praz",  # truncado pela tabela
+            "Itau Global Dinâmico Renda Fixa Longo Prazo",
+            "Itau Global Dinâmico Renda Fixa Longo Praz",  # truncado pela tabela
         )
         self.assertEqual(len(merged), 1, [(o.name, o.cnpj) for o in merged])
         self.assertEqual(merged[0].cnpj, "11111111000111")
@@ -1740,12 +1780,12 @@ class TestFuzzyReconciliation(unittest.TestCase):
             "Kinea Chronos Master Multimercado",
             "Kinea Chronos Multimercado",
         )
-        self.assertEqual(len(merged), 2, "MASTER e token distintivo - nao funde")
+        self.assertEqual(len(merged), 2, "MASTER e token distintivo - não funde")
 
     def test_numbered_siblings_never_merge(self):
         merged = self._merge(
-            "A1 D30 Renda Fixa Credito Privado",
-            "A1 D60 Renda Fixa Credito Privado",
+            "A1 D30 Renda Fixa Crédito Privado",
+            "A1 D60 Renda Fixa Crédito Privado",
         )
         self.assertEqual(len(merged), 2)
 

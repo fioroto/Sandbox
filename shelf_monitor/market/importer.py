@@ -14,6 +14,7 @@ from shelf_monitor.market.datasets import CAD_FI, EXTRATO, REGISTRO, Dataset
 from shelf_monitor.market.export import write_database
 from shelf_monitor.market.fees import parse_fees
 from shelf_monitor.market.fetch import CacheReason, fetch, read_member
+from shelf_monitor.market.historico import gravar_retrato
 from shelf_monitor.market.parse import (
     legacy_class_fields,
     parse_classes,
@@ -105,7 +106,7 @@ def import_market(
             fund.legacy_fields = extra.get(fund.cnpj, {})
             database.funds.append(fund)
             added += 1
-        database.notes.append(f"cad_fi: {added} fundos nao adaptados adicionados")
+        database.notes.append(f"cad_fi: {added} fundos não adaptados adicionados")
 
     # --- taxas ---------------------------------------------------------------
     if not skip_fees:
@@ -121,7 +122,7 @@ def import_market(
         # seria marcado como nao adaptado - uma foto errada do mercado, pior do
         # que a base da execucao anterior.
         database.notes.append(
-            "cadastro principal indisponivel - a base anterior foi preservada"
+            "cadastro principal indisponível - a base anterior foi preservada"
         )
         database.incomplete = True
 
@@ -134,8 +135,18 @@ def run_import(
     force: bool = False,
     skip_fees: bool = False,
 ) -> tuple[MarketDatabase, dict[str, Path]]:
-    """Importa e grava. Devolve (base, caminhos escritos)."""
+    """Importa e grava. Devolve (base, caminhos escritos).
+
+    Toda importacao completa tambem grava o retrato do cadastro no historico
+    (`market/historico.py`): a CVM nao guarda historico de classe, e o mes sem
+    retrato nao se recupera. Falha ao gravar o retrato nao derruba a base.
+    """
     database = import_market(config, local_dir, force, skip_fees)
     if database.incomplete:
         return database, {}
-    return database, write_database(config, database)
+    written = write_database(config, database)
+    try:
+        written["historico"] = gravar_retrato(config, database)
+    except OSError as exc:
+        database.notes.append(f"histórico do cadastro não gravado: {exc}")
+    return database, written

@@ -35,8 +35,8 @@ class CacheReason(str, Enum):
     """
 
     DOWNLOADED = "baixado"
-    NOT_MODIFIED = "sem mudanca na origem"
-    SOURCE_DOWN = "origem indisponivel"
+    NOT_MODIFIED = "sem mudança na origem"
+    SOURCE_DOWN = "origem indisponível"
 
 
 @dataclass
@@ -98,10 +98,10 @@ def _validate(dataset: Dataset, path: Path) -> str | None:
     """Devolve o motivo da recusa, ou None se o arquivo parece integro."""
     if dataset.members:
         if not zipfile.is_zipfile(path):
-            return "nao e um zip valido"
+            return "não é um zip válido"
         return None
     if not _looks_like_csv(path):
-        return "nao parece um CSV (possivel pagina de erro ou bloqueio)"
+        return "não parece um CSV (possível página de erro ou bloqueio)"
     return None
 
 
@@ -149,7 +149,7 @@ def fetch(config: Config, dataset: Dataset, force: bool = False) -> FetchResult:
             # 304 sem arquivo local: gravar o corpo vazio criaria um arquivo de
             # zero byte permanente, porque o cache seguiria valido.
             raise SourceUnavailable(
-                f"{dataset.url}: HTTP 304 mas o arquivo local nao existe "
+                f"{dataset.url}: HTTP 304 mas o arquivo local não existe "
                 "(cache inconsistente - use --force)"
             )
 
@@ -190,7 +190,7 @@ def fetch(config: Config, dataset: Dataset, force: bool = False) -> FetchResult:
             if dest.exists():
                 return FetchResult(
                     dataset, dest, True, dest.stat().st_size, CacheReason.SOURCE_DOWN,
-                    detail=f"resposta invalida ({problem}); mantido o arquivo anterior",
+                    detail=f"resposta inválida ({problem}); mantido o arquivo anterior",
                 )
             raise SourceUnavailable(f"{dataset.filename} {problem}")
 

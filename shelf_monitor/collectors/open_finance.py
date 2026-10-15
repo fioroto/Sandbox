@@ -105,7 +105,7 @@ class OpenFinanceFunds:
 
         data = get_json(self.session, self.config.directory_url, self.config)
         if not isinstance(data, list):
-            raise SourceUnavailable("diretorio Open Finance nao retornou uma lista")
+            raise SourceUnavailable("diretório Open Finance não retornou uma lista")
 
         self.config.cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps(data), encoding="utf-8")
@@ -120,7 +120,7 @@ class OpenFinanceFunds:
         brands = [b for b in brands if b]
         if not brands:
             raise SourceUnavailable(
-                f"{self.platform.platform_id} nao tem marca Open Finance configurada"
+                f"{self.platform.platform_id} não tem marca Open Finance configurada"
             )
 
         participants = self._load_directory()
@@ -147,7 +147,7 @@ class OpenFinanceFunds:
 
         raise SourceUnavailable(
             f"nenhum endpoint opendata-investments encontrado para "
-            f"{self.platform.platform_id} no diretorio Open Finance"
+            f"{self.platform.platform_id} no diretório Open Finance"
         )
 
     # --- coleta ---------------------------------------------------------------
@@ -206,7 +206,7 @@ class OpenFinanceFunds:
             # prateleira - e o diff do dia seguinte leria isso como churn.
             self.truncated = True
             self.warnings.append(
-                f"paginacao truncada em {_MAX_PAGES} paginas de {total_pages} "
+                f"páginação truncada em {_MAX_PAGES} páginas de {total_pages} "
                 f"(page-size efetivo {self.effective_page_size}); "
                 f"{len(offers)} de {self.total_records or '?'} fundos coletados"
             )
@@ -218,7 +218,7 @@ class OpenFinanceFunds:
             # prateleira coletada nao e a inteira.
             self.truncated = True
             self.warnings.append(
-                f"paginacao terminou na pagina {self.pages_read} de {total_pages} "
+                f"páginação terminou na página {self.pages_read} de {total_pages} "
                 f"anunciadas; {len(offers)} de {self.total_records or '?'} "
                 "fundos coletados"
             )

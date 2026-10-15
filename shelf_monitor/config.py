@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shelf_monitor.models import CollectorStrategy
+from shelf_monitor.models import LISTING_SOURCES, CollectorStrategy
 
 load_dotenv()
 
@@ -48,6 +48,15 @@ class PlatformConfig:
     def is_baseline(self) -> bool:
         return self.platform_id == "xp"
 
+    @property
+    def declara_vitrine(self) -> bool:
+        """A casa tem fonte de vitrine configurada - coleta sem vitrine e parcial.
+
+        O Nu so declara Open Finance (nao ha vitrine deslogada), e para ele
+        catalogo sozinho e a coleta completa.
+        """
+        return any(s.value in LISTING_SOURCES for s in self.strategies)
+
 
 # XP entra como baseline de comparacao, nao como concorrente.
 PLATFORMS: dict[str, PlatformConfig] = {
@@ -57,7 +66,7 @@ PLATFORMS: dict[str, PlatformConfig] = {
         strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
         shelf_url="https://www.xpi.com.br/investimentos/fundos-de-investimento/lista/",
         open_finance_brands=["XP INVESTIMENTOS", "XP "],
-        notes="Baseline. Lista e SPA; Playwright intercepta o XHR da listagem.",
+        notes="Baseline. Lista é SPA; Playwright intercepta o XHR da listagem.",
     ),
     "btg": PlatformConfig(
         platform_id="btg",
@@ -70,23 +79,25 @@ PLATFORMS: dict[str, PlatformConfig] = {
         shelf_url="https://investimentos.btgpactual.com/fundos-de-investimento/produtos",
         open_finance_brands=["BTG PACTUAL"],
         notes=(
-            "A pagina /produtos e alimentada pela API publica funds/list/v2 "
+            "A página /produtos é alimentada pela API pública funds/list/v2 "
             "(~693 fundos na prateleira comercial, medido em 2026-08-31). "
             "Open Finance publica ~9.950 - tudo que a casa administra."
         ),
     ),
     "itau": PlatformConfig(
         platform_id="itau",
-        label="Itau (Ion)",
+        label="Itaú",
         strategies=[CollectorStrategy.OPEN_FINANCE, CollectorStrategy.PLAYWRIGHT],
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
-            "Lista de rentabilidade paginada em ~10 fundos (45 paginas, 459 "
-            "fundos em 2026-09-19). Akamai barra HTTP simples e o headless shell "
-            "do Playwright, mas nao o Chromium completo em --headless=new - que e "
-            "o que o coletor usa desde 2026-09-19, sem exigir janela. A tabela "
-            "nao traz CNPJ - o merge reconcilia com o Open Finance pelo slug."
+            "Prateleira de varejo íon; o rótulo é só \"Itaú\" desde 2026-10-15. "
+            "Lista de rentabilidade paginada em ~10 fundos (48 páginas, 477 "
+            "fundos em 2026-10-14). Akamai barra HTTP simples e o headless shell "
+            "do Playwright, mas não o Chromium completo em --headless=new - que é "
+            "o que o coletor usa desde 2026-09-19, sem exigir janela. Nem a "
+            "tabela nem o XHR (cifrado) trazem CNPJ: ele vem pelo nome, contra o "
+            "catálogo Open Finance e o cadastro da CVM (shelf_monitor.cnpj_por_nome)."
         ),
     ),
     "nu": PlatformConfig(
@@ -97,7 +108,7 @@ PLATFORMS: dict[str, PlatformConfig] = {
         open_finance_brands=["NU ", "NUBANK", "NU INVEST"],
         notes=(
             "App NuInvest encerrado; sem prateleira web deslogada. Se o Open Finance "
-            "nao responder, fica UNAVAILABLE - e o caso de uso do coletor autenticado."
+            "não responder, fica UNAVAILABLE - é o caso de uso do coletor autenticado."
         ),
     ),
     "inter": PlatformConfig(
@@ -106,7 +117,7 @@ PLATFORMS: dict[str, PlatformConfig] = {
         strategies=[CollectorStrategy.HTML_SCRAPE, CollectorStrategy.OPEN_FINANCE],
         shelf_url="https://inter.co/pra-voce/investimentos/fundos-de-investimento/",
         open_finance_brands=["INTER"],
-        notes="Paginas estaticas por fundo, descobertas via sitemap.xml.",
+        notes="Páginas estáticas por fundo, descobertas via sitemap.xml.",
     ),
 }
 
@@ -123,18 +134,25 @@ class Watch:
 # cnpj_roots comeca vazio de proposito: `watchlist-discover` levanta os CNPJs
 # reais do CSV da CVM e eles sao adicionados aqui - a partir dai o match por raiz
 # de CNPJ e a via principal e o regex vira rede de seguranca para gestoras novas.
+#
+# Empiricus (BTG) e o Itau Unibanco S.A. como gestor entraram em 14/10/2026,
+# alinhados ao grupo gestor de `data/industria/grupos_gestores.csv`: o extrato
+# de 28/09 deixava de fora 28 e 13 classes deles, e o radar do digest passou a
+# ser "o que as gestoras do grupo registraram".
 WATCHLIST: dict[str, Watch] = {
     "btg": Watch(
         name_patterns=[
             r"BTG PACTUAL (ASSET|GESTORA|WM|GESTAO)",
             r"BTG PACTUAL SERVICOS FINANCEIROS",
             r"\bBTG PACTUAL\b",
+            r"^EMPIRICUS ASSET",
         ]
     ),
     "itau": Watch(
         name_patterns=[
             r"ITAU UNIBANCO ASSET",
             r"\bITAU ASSET\b",
+            r"^ITAU UNIBANCO S A\b",
             r"^KINEA\b",
             r"ITAU DTVM",
             r"INTRAG",
@@ -159,6 +177,19 @@ WATCHLIST: dict[str, Watch] = {
 # marcado como suspeito e as saidas nao viram churn no relatorio.
 SUSPECT_SHRINK_RATIO = 0.5
 
+# O espelho do de cima, para a VITRINE: se ela cresce esta razao ou mais (ou
+# aparece onde nao havia), o que mudou foi a cobertura da coleta, nao a
+# prateleira - e o diff vira nova linha de base, sem entradas. Medido em
+# 2026-09-19: o conserto do navegador levou as vitrines de XP, BTG e Itau de 0
+# a 668, 649 e 458 fundos, e o digest publicou "828 fundos entraram".
+SUSPECT_GROWTH_RATIO = 2.0
+# ...desde que o salto tambem seja grande em fundos: vitrine pequena dobrando
+# (3 -> 6) e movimento plausivel. O maior crescimento real medido entre duas
+# coletas com vitrine foi do Inter, 399 -> 466 (+67, +17%) de 31/08 a 13/09;
+# os ganhos de cobertura foram todos de 0 para centenas. Vitrine que aparece
+# onde nao havia nenhuma e nova linha de base em qualquer tamanho.
+SUSPECT_GROWTH_MIN_FUNDS = 50
+
 # Similaridade minima para considerar que um fundo foi renomeado (e nao trocado).
 FUZZY_RENAME_THRESHOLD = 0.92
 
@@ -166,6 +197,33 @@ FUZZY_RENAME_THRESHOLD = 0.92
 @dataclass
 class Config:
     """Configuracao de execucao, via env (.env) com override por CLI."""
+
+    # Identidade das superficies - titulo, capa, prefixo de arquivo, assunto do
+    # e-mail e mensagem de commit. Eram literais nos renderers; viraram atributo
+    # para o modulo de previdencia (shelf_monitor.previdencia) trocar na
+    # subclasse dele. Os valores aqui sao exatamente os literais de antes.
+    titulo_relatorio = "Monitor de Prateleiras de Fundos"
+    descricao_relatorio = "Concorrentes da XP"
+    descricao_fontes = "prateleiras públicas e radar de registros na CVM"
+    capa_deck = "Prateleiras de fundos"
+    titulo_planilha = "Prateleiras de fundos - resumo"
+    prefixo_arquivo = "prateleiras"
+    rotulo_assunto = "Monitor de fundos"
+    mensagem_commit = "data: snapshot do monitor de prateleiras"
+    # Blocos analiticos sem sentido no dominio do modulo: (chave, motivo), com
+    # as chaves de models (BLOCO_COTISTAS, BLOCO_CNPJ). No monitor de fundos,
+    # nenhum; a previdencia declara os dela.
+    blocos_suprimidos: tuple[tuple[str, str], ...] = ()
+    # As casas do digest semanal, a base primeiro. Decidido em 14/10/2026 com
+    # a area: os concorrentes que importam acompanhar sao BTG e Itau. O resto
+    # da execucao (coleta, dashboard, planilha e deck) segue com todas as casas
+    # de PLATFORMS; so o digest e o assunto do e-mail recortam.
+    casas_do_digest: tuple[str, ...] = ("xp", "btg", "itau")
+    # Casas que nunca saem das analises por falha de coleta: sem vitrine
+    # utilizavel no dia, entra a ultima valida, com a data dita
+    # (`shelf_monitor.reserva`). Pedido em 14/10/2026: o Itau em todas as
+    # analises.
+    vitrine_de_reserva: tuple[str, ...] = ("itau",)
 
     def __init__(
         self,
@@ -262,37 +320,45 @@ class Config:
         return self.data_dir / "reports"
 
     @property
-    def etf_dir(self) -> Path:
-        """Metadados de ETF mantidos a mao ou por uma coleta futura - pequeno,
-        versionado (ao contrario de market/, que e so tabela derivada). Hoje so
-        `tickers.csv` (override do codigo de negociacao por CNPJ, que o cadastro
-        da CVM nao traz).
+    def etf_captacao_csv(self) -> Path:
+        """A captacao mensal de ETF que a camada ao lado do monitor da industria le.
+
+        Gravada pelo etf-monitor (repositorio a parte desde 07/10/2026) em
+        `data/reports/etf_captacao_mensal.csv` dele: `SHELF_ETF_CAPTACAO_CSV`
+        aponta o arquivo; sem a variavel, vale o de `data/reports/` daqui.
         """
-        return self.data_dir / "etf"
+        apontado = os.getenv("SHELF_ETF_CAPTACAO_CSV", "").strip()
+        return Path(apontado) if apontado else self.reports_dir / "etf_captacao_mensal.csv"
 
     @property
-    def etf_tickers_path(self) -> Path:
-        return self.etf_dir / "tickers.csv"
+    def distribuivel_dir(self) -> Path:
+        """Onde a pessoa solta os CSVs dos fundos que a XP distribui ou pode
+        distribuir - gitignored: dado comercial interno."""
+        return self.data_dir / "distribuivel" / "entrada"
 
     @property
-    def etf_fnet_dir(self) -> Path:
-        """Informes diarios de ETF extraidos do Fundos.NET - um CSV por dia, versionado."""
-        return self.etf_dir / "fnet"
+    def distribuivel_modelo_path(self) -> Path:
+        """O CSV so com o cabecalho da lista distribuivel - versionado."""
+        return self.data_dir / "distribuivel" / "modelo.csv"
 
     @property
-    def etf_b3_dir(self) -> Path:
-        """Cadastro de ETFs listados na B3 - um JSON por dia, versionado."""
-        return self.etf_dir / "b3"
+    def historico_dir(self) -> Path:
+        """Dado primario que a CVM nao guarda - o retrato mensal do cadastro e
+        os blocos publicados do monitor da industria. Versionado: nao se refaz
+        depois."""
+        return self.data_dir / "historico"
 
     @property
-    def etf_cotahist_dir(self) -> Path:
-        """Cotacoes diarias dos ETFs (COTAHIST filtrado) - um CSV por dia, versionado."""
-        return self.etf_dir / "cotahist"
+    def industria_dir(self) -> Path:
+        """Curadoria do monitor da industria (taxonomia, grupos de gestora,
+        marcas de distribuidor, overrides) - versionada, editada a mao."""
+        return self.data_dir / "industria"
 
     @property
-    def etf_sources_debug_dir(self) -> Path:
-        """Evidencia bruta da sondagem das fontes de ETF - gitignored."""
-        return self.debug_dir / "etf-sources"
+    def industria_cache_dir(self) -> Path:
+        """Perfis mensais compactos e o retrato do universo do ultimo ciclo -
+        gitignored (fica em data/cache)."""
+        return self.cache_dir / "industria"
 
     def platform_snapshots_dir(self, platform_id: str) -> Path:
         return self.snapshots_dir / platform_id
@@ -301,7 +367,6 @@ class Config:
         for path in (
             self.snapshots_dir,
             self.cvm_raw_dir,
-            self.etf_dir,
             self.cvm_extract_dir,
             self.cache_dir,
             self.reports_dir,

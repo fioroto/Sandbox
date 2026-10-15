@@ -1,0 +1,31 @@
+padrao;grupo;tipo;observacao
+^BB |BANCO DO BRASIL|^BB$;Banco do Brasil;banco;gestoras e DTVM do conglomerado BB
+ITAU|INTRAG|^KINEA;Itaú Unibanco;banco;
+^CAIXA (ECONOMICA|DISTRIBUIDORA|ASSET|VIDA|GESTAO|CAPITALIZACAO|SEGURADORA);Caixa;banco;não pega Caixa de Previdência (fundos de pensão)
+BRADESCO|^BRAM |^AGORA;Bradesco;banco;
+SANTANDER;Santander;banco;
+BTG PACTUAL|^EMPIRICUS|^VITREO;BTG Pactual;banco;
+SAFRA;Safra;banco;
+^XP |XP INVESTIMENTOS;XP;plataforma;
+^GENIAL|^PLURAL;Genial;plataforma;
+^NU ASSET|^NU INVEST|NUBANK;Nubank;plataforma;
+^INTER (ASSET|DTVM|GESTAO|DISTRIBUIDORA)|^BANCO INTER;Inter;plataforma;
+^WARREN;Warren;plataforma;
+^ORAMA;Órama;plataforma;
+SICREDI;Sicredi;cooperativa;
+SICOOB|BANCOOB;Sicoob;cooperativa;
+^UNICRED;Unicred;cooperativa;
+BNP PARIBAS;BNP Paribas;estrangeira;
+FRANKLIN TEMPLETON;Franklin Templeton;estrangeira;
+^UBS;UBS BB;estrangeira;
+GOLDMAN SACHS;Goldman Sachs;estrangeira;
+^PIMCO;PIMCO;estrangeira;
+JP ?MORGAN;JPMorgan;estrangeira;
+BLACKROCK;BlackRock;estrangeira;
+SCHRODER;Schroders;estrangeira;
+^PORTO SEGURO;Porto;seguradora;
+SUL ?AMERICA;SulAmérica;seguradora;
+^MAPFRE;Mapfre;seguradora;
+^ICATU;Icatu;seguradora;
+^MONGERAL|^MAG ;MAG;seguradora;
+^BRASILPREV;Brasilprev;seguradora;

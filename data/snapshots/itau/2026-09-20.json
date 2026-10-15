@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "platform": "itau",
-  "collected_at": "2026-09-20T08:44:11.231107",
+  "collected_at": "2026-09-20T15:58:47.409034",
   "strategy": "open-finance",
   "strategies": [
     "open-finance",

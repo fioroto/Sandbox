@@ -9,6 +9,7 @@ Rode com: python -m unittest discover -s tests -v
 """
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -22,6 +23,11 @@ from shelf_monitor.models import (
     FundOffer,
     ShelfSnapshot,
     SnapshotStatus,
+)
+from shelf_monitor.classify import (
+    CATEGORIA_ESTRUTURADO,
+    KEY_CATEGORIA,
+    KEY_VIA,
 )
 from shelf_monitor.report.competitive import (
     _UNCLASSIFIED,
@@ -58,7 +64,12 @@ def offer(
         sources=sources or [CollectorStrategy.PLAYWRIGHT.value],
     )
     if anbima:
+        # Estado pos-enriquecimento: o cadastro carimbou as duas chaves. Sem
+        # KEY_CATEGORIA o fundo fica fora do eixo comparavel, que e o que
+        # acontece - de proposito - com rotulo publicado so pela casa.
         fund.extra[KEY_ANBIMA] = anbima
+        fund.extra[KEY_CATEGORIA] = anbima
+        fund.extra[KEY_VIA] = "cnpj"
     return fund
 
 
@@ -123,41 +134,103 @@ class TestVitrineSnapshots(unittest.TestCase):
     def test_vitrine_curta_demais_nao_sustenta_posicionamento(self):
         usaveis, fora = vitrine_snapshots([snapshot("xp", vitrine("xp", 5))])
         self.assertEqual(usaveis, {})
-        self.assertIn("abaixo do minimo", fora[0]["reason"])
+        self.assertIn("abaixo do mínimo", fora[0]["reason"])
 
     def test_coleta_indisponivel_sai_com_motivo(self):
         usaveis, fora = vitrine_snapshots([
             snapshot("xp", [], status=SnapshotStatus.UNAVAILABLE)
         ])
         self.assertEqual(usaveis, {})
-        self.assertIn("indisponivel", fora[0]["reason"])
+        self.assertIn("indisponível", fora[0]["reason"])
 
 
 class TestCategoryAxes(unittest.TestCase):
-    def test_eixo_grosso_vem_da_classe_de_ativo(self):
+    """Os dois eixos sao duas granularidades da MESMA taxonomia oficial.
+
+    Ate 2026-09-20 eles eram taxonomias diferentes: o grosso vinha da heuristica
+    `AssetClass` e o fino da ANBIMA. Misturar as duas foi o que fez o Itau
+    aparecer com 17x o share das concorrentes em "Renda Fixa" - nao era aposta
+    de prateleira, era o balde grosso que so ele usava, porque so ele nao casava
+    com o cadastro. Com o resolver por nome (shelf_monitor.classify) a cobertura
+    dele foi a 100% e os dois eixos passaram a sair da mesma fonte.
+    """
+
+    def test_eixo_grosso_e_o_nivel_1_da_categoria_oficial(self):
         self.assertEqual(
-            coarse_category(offer("xp", "F", asset_class=AssetClass.ACOES)), "Acoes"
+            coarse_category(offer("xp", "F", anbima="Ações Livre")), "Ações"
         )
         self.assertEqual(
-            coarse_category(offer("xp", "F", asset_class=AssetClass.OUTROS)),
-            _UNCLASSIFIED,
+            coarse_category(offer("xp", "F", anbima="Renda Fixa Simples")),
+            "Renda Fixa",
         )
 
-    def test_eixo_fino_nao_usa_o_fallback_da_cvm(self):
-        """O eixo fino e ANBIMA ou nada.
+    def test_heuristica_nao_entra_em_nenhum_dos_eixos(self):
+        """`AssetClass` e inferida do nome, nao lida do cadastro.
 
-        Aceitar o fallback grosso da CVM foi o que fez o Itau (3% de cobertura
-        ANBIMA) aparecer com 17x o share das concorrentes em "Renda Fixa": ele
-        era o unico a usar aquele balde.
+        Deixa-la entrar no eixo comparavel e o bug original: a casa que nao casa
+        com o cadastro ganha um balde so dela e aparece super-indexada nele.
         """
+        so_heuristica = offer("itau", "F", asset_class=AssetClass.ACOES)
+        self.assertEqual(coarse_category(so_heuristica), _UNCLASSIFIED)
+        self.assertEqual(fine_category(so_heuristica), _UNCLASSIFIED)
+
+    def test_eixo_fino_traz_a_categoria_oficial_inteira(self):
         com_anbima = offer("xp", "F", anbima="Renda Fixa Simples")
-        sem_anbima = offer("itau", "F", asset_class=AssetClass.RENDA_FIXA)
         self.assertEqual(fine_category(com_anbima), "Renda Fixa Simples")
-        self.assertEqual(fine_category(sem_anbima), _UNCLASSIFIED)
+
+    def test_categoria_resolvida_por_nome_vale_nos_dois_eixos(self):
+        """O resolver por nome produz categoria oficial em conteudo.
+
+        A diferenca e a procedencia, que fica em `categoria_via` - nao a
+        validade. Uma casa que nao publica CNPJ entra na comparacao pelo mesmo
+        rotulo que as outras.
+        """
+        fund = offer("itau", "ABSOLUTE ALPHA GLOBAL")
+        fund.extra[KEY_CATEGORIA] = "Multimercados Livre"
+        fund.extra[KEY_VIA] = "nome"
+        self.assertEqual(fine_category(fund), "Multimercados Livre")
+        self.assertEqual(coarse_category(fund), "Multimercados")
+
+    def test_rotulo_publicado_pela_casa_nao_entra_no_eixo(self):
+        """Os coletores escrevem em KEY_ANBIMA o rotulo da propria plataforma.
+
+        Medido em 2026-09-20: com o rotulo da casa valendo como oficial, o BTG
+        aparecia apostando em "Direitos Creditorios" que "so ele tem" - o balde
+        era dele (`anbimaRating`, collectors/btg.py:95), nao do cadastro, e
+        nenhuma concorrente usava. E o mesmo erro do eixo grosso heuristico,
+        por outra porta.
+        """
+        so_da_casa = FundOffer(platform="btg", name="F", sources=["api-json"])
+        so_da_casa.extra[KEY_ANBIMA] = "Direitos Creditórios"
+        self.assertEqual(coarse_category(so_da_casa), _UNCLASSIFIED)
+        self.assertEqual(fine_category(so_da_casa), _UNCLASSIFIED)
+
+    def test_resolvido_so_no_nivel_1_fica_fora_do_eixo_fino(self):
+        """Nivel 1 vale no eixo grosso e nao no fino.
+
+        Medido em 2026-09-20: promovendo a resolucao de nivel 1 ao eixo fino, o
+        Itau aparecia com "RENDA FIXA 22,20x" e "MULTIMERCADO so ela" - baldes
+        grossos dentro da comparacao fina, que so ele tinha porque so nele havia
+        fundo resolvido nesse nivel.
+        """
+        fund = offer("itau", "ITAU GLOBAL DINAMICO")
+        fund.extra[KEY_CATEGORIA] = "Multimercados"
+        fund.extra[KEY_VIA] = "nome-rotulo-n1"
+        self.assertEqual(coarse_category(fund), "Multimercados")
+        self.assertEqual(fine_category(fund), _UNCLASSIFIED)
+
+    def test_estruturado_tem_balde_proprio(self):
+        """FIDC e FII nao tem classificacao ANBIMA nem CVM no cadastro - 0%
+        medido. Nao e lacuna de join: e produto que a taxonomia nao cobre."""
+        fund = offer("itau", "ESSENTIAL FIDC SUBCLASSE I")
+        fund.extra[KEY_CATEGORIA] = CATEGORIA_ESTRUTURADO
+        fund.extra[KEY_VIA] = "estruturado"
+        self.assertEqual(coarse_category(fund), "Estruturado")
+        self.assertEqual(fine_category(fund), _UNCLASSIFIED)
 
     def test_casa_sem_cobertura_anbima_fica_fora_do_eixo_fino(self):
         xp = vitrine("xp", 40, anbima="Renda Fixa Simples")
-        btg = vitrine("btg", 40, anbima="Renda Fixa Duracao Livre")
+        btg = vitrine("btg", 40, anbima="Renda Fixa Duração Livre")
         itau = vitrine("itau", 40)  # sem ANBIMA nenhuma
         pos = build_positioning([
             snapshot("xp", xp), snapshot("btg", btg), snapshot("itau", itau)
@@ -166,7 +239,7 @@ class TestCategoryAxes(unittest.TestCase):
         self.assertTrue(por_casa["xp"]["fine_over"] or por_casa["xp"]["fine_under"])
         self.assertEqual(por_casa["itau"]["fine_over"], [])
         self.assertEqual(por_casa["itau"]["fine_under"], [])
-        self.assertEqual(por_casa["itau"]["anbima_cov"], 0.0)
+        self.assertEqual(por_casa["itau"]["classificacao_cov"], 0.0)
 
     def test_sem_classificacao_nao_entra_como_aposta(self):
         """"A casa X tem 2,8x mais Sem classificacao" e fato sobre o join com a
@@ -186,11 +259,11 @@ class TestPositioningIndex(unittest.TestCase):
     def test_indice_compara_contra_as_demais_e_nao_contra_o_total(self):
         """Contra o total, a propria casa entraria no denominador e todo indice
         seria puxado para 1 - quanto maior a casa, mais achatado o sinal."""
-        xp = vitrine("xp", 40, asset_class=AssetClass.ACOES)
-        btg = vitrine("btg", 40, asset_class=AssetClass.RENDA_FIXA)
+        xp = vitrine("xp", 40, anbima="Ações Livre")
+        btg = vitrine("btg", 40, anbima="Renda Fixa Simples")
         pos = build_positioning([snapshot("xp", xp), snapshot("btg", btg)])
         por_casa = {p["platform_id"]: p for p in pos["positions"]}
-        acoes = next(b for b in por_casa["xp"]["over_index"] if b["category"] == "Acoes")
+        acoes = next(b for b in por_casa["xp"]["over_index"] if b["category"] == "Ações")
         # 100% na XP contra 0% no par: exclusivo, nao 2x.
         self.assertEqual(acoes["peer_share"], 0.0)
         self.assertEqual(acoes["index"], float("inf"))
@@ -215,8 +288,10 @@ class TestVitrineOnlyValues(unittest.TestCase):
         """Nao se afirma "ticket mais alto" com minimo de fontes diferentes.
 
         A XP entra com minimo vindo do Open Finance (mediana alta) e o par com
-        minimo da propria vitrine (mediana baixa). A decisao correta e que a XP
-        nao exibe o ticket - nao que ela cobra mais.
+        minimo da propria vitrine (mediana baixa). O que falta e o minimo da
+        vitrine da XP NA COLETA - nao que ela cobre mais, e tampouco que ela nao
+        exiba: em 2026-09-19 esta decisao recomendou a XP "exibir o ticket na
+        listagem", e a lista da XP ja exibia; o coletor e que nao lia o campo.
         """
         xp = [
             offer("xp", f"XP {i}", cnpj=f"{i:014d}", minimo=50_000.0,
@@ -232,8 +307,11 @@ class TestVitrineOnlyValues(unittest.TestCase):
         ]
         dec = build_xp_decisions([snapshot("xp", xp), snapshot("btg", btg)])
         titulos = [d["titulo"] for d in dec["decisoes"]]
-        self.assertTrue(any("nao exibe aplicacao minima" in t for t in titulos))
+        self.assertTrue(any("Sem o ticket da vitrine da XP na coleta" in t for t in titulos))
         self.assertFalse(any("Ticket de entrada acima" in t for t in titulos))
+        self.assertFalse(any("não exibe" in t for t in titulos))
+        decisao = next(d for d in dec["decisoes"] if "Sem o ticket" in d["titulo"])
+        self.assertIn("Monitor, não produto", decisao["acao"])
 
 
 class TestIdentityGuard(unittest.TestCase):
@@ -277,8 +355,8 @@ class TestIdentityGuard(unittest.TestCase):
             snapshot("inter", inter), snapshot("itau", itau),
         ])
         consenso = next(d for d in dec["decisoes"] if "consenso" in d["titulo"])
-        self.assertIn("2 das 2 concorrentes cruzaveis", consenso["evidencia"])
-        self.assertIn("Itau", consenso["evidencia"])
+        self.assertIn("2 das 2 concorrentes cruzáveis", consenso["evidencia"])
+        self.assertIn("Itaú", consenso["evidencia"])
         # O fixture nao publica CNPJ nenhum; nos dados reais o Itau esta em 6%.
         self.assertIn("0% da vitrine", consenso["evidencia"])
 
@@ -335,7 +413,61 @@ class TestMomentum(unittest.TestCase):
         mom = build_momentum(self.config, [hoje])
         self.assertEqual(mom["movimentos"], [])
         self.assertEqual(len(mom["sem_base"]), 1)
-        self.assertIn("nao tinha vitrine", mom["sem_base"][0]["reason"])
+        self.assertIn("não tinha vitrine", mom["sem_base"][0]["reason"])
+
+    def test_momentum_e_deterministico_entre_processos(self):
+        """Duas leituras dos mesmos snapshots tem de dar o mesmo JSON.
+
+        `entradas` e `saidas` saiam da diferenca de `dict.keys()`, que e um
+        set: a ordem de iteracao depende do hash de str, que Python randomiza
+        POR PROCESSO. Os cinco `exemplos_entrada` mudavam a cada execucao e,
+        no empate (varias categorias com saldo -1, o caso comum), mudavam
+        tambem quais categorias sobreviviam ao corte de seis.
+
+        O teste roda em subprocessos com PYTHONHASHSEED diferente de proposito:
+        dentro de um processo so a ordem do set e estavel, entao tres chamadas
+        seguidas concordariam mesmo com o bug presente - foi o que a primeira
+        versao deste teste fez, e ela passava nos dois lados.
+        """
+        import json
+        import subprocess
+        import sys
+
+        antes = snapshot("inter", vitrine("inter", 40), dia=date(2026, 9, 13))
+        save_shelf_snapshot(self.config, antes)
+        funds = vitrine("inter", 40)[:30]
+        for i in range(8):
+            funds.append(offer(
+                "inter", f"INTER NOVO {i}", cnpj=f"9999999999{i:04d}",
+                asset_class=AssetClass.ACOES,
+            ))
+        depois = snapshot("inter", funds, dia=date(2026, 9, 19))
+        save_shelf_snapshot(self.config, depois)
+
+        programa = (
+            "import json, sys;"
+            "from shelf_monitor.config import Config;"
+            "from shelf_monitor.report.competitive import build_momentum;"
+            "from shelf_monitor.storage import latest_shelf_snapshot;"
+            f"c = Config(data_dir={self.tmp.name!r});"
+            "s = latest_shelf_snapshot(c, 'inter');"
+            "m = build_momentum(c, [s]);"
+            "print(json.dumps(m['movimentos'], sort_keys=True, default=str))"
+        )
+        saidas = []
+        for semente in ("0", "1", "2"):
+            env = {**os.environ, "PYTHONHASHSEED": semente}
+            r = subprocess.run(
+                [sys.executable, "-c", programa],
+                capture_output=True, text=True, env=env, timeout=120,
+                cwd=str(Path(__file__).resolve().parent.parent),
+            )
+            self.assertEqual(r.returncode, 0, r.stderr[-500:])
+            saidas.append(json.loads(r.stdout))
+
+        self.assertEqual(saidas[0], saidas[1])
+        self.assertEqual(saidas[1], saidas[2])
+        self.assertTrue(saidas[0][0]["exemplos_entrada"], "fixture sem entradas")
 
     def test_duas_vitrines_comparaveis_produzem_entradas_e_saidas(self):
         antes = snapshot("inter", vitrine("inter", 40), dia=date(2026, 9, 13))
@@ -352,7 +484,7 @@ class TestMomentum(unittest.TestCase):
         movimento = mom["movimentos"][0]
         self.assertEqual(movimento["entradas"], 1)
         self.assertEqual(movimento["saidas"], 2)
-        self.assertEqual(movimento["saldo_por_categoria"].get("Acoes"), 1)
+        self.assertEqual(movimento["saldo_por_categoria"].get("Ações"), 1)
 
 
 class TestXpDecisions(unittest.TestCase):
@@ -381,7 +513,7 @@ class TestXpDecisions(unittest.TestCase):
         ])
         consenso = next(d for d in dec["decisoes"] if "consenso" in d["titulo"])
         self.assertIn("2 fundos", consenso["tamanho"])
-        self.assertIn("1 cuja gestora a XP ja distribui", consenso["acao"])
+        self.assertIn("1 cuja gestora a XP já distribui", consenso["acao"])
 
     def test_sem_vitrine_do_baseline_o_bloco_e_suprimido_com_motivo(self):
         """Sem a vitrine da XP tudo pareceria gap."""
@@ -390,7 +522,7 @@ class TestXpDecisions(unittest.TestCase):
             snapshot("btg", vitrine("btg", 40)),
         ])
         self.assertFalse(dec["available"])
-        self.assertIn("indisponivel", dec["reason"])
+        self.assertIn("indisponível", dec["reason"])
 
     def test_exclusivos_do_baseline_saem_como_ativo_a_defender(self):
         xp = vitrine("xp", 40)

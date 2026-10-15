@@ -63,7 +63,7 @@ class PlatformCollector(BaseCollector):
 
         if not groups:
             raise SourceUnavailable(
-                " | ".join(errors) or "nenhuma estrategia configurada"
+                " | ".join(errors) or "nenhuma estratégia configurada"
             )
 
         merged = merge_offers(groups)
@@ -77,7 +77,7 @@ class PlatformCollector(BaseCollector):
         # mas saber que uma das vias caiu explica um numero abaixo do esperado.
         # Concatena para nao apagar a nota que o coletor concreto ja gravou.
         if errors:
-            reason = "fontes indisponiveis -> " + " | ".join(errors)
+            reason = "fontes indisponíveis -> " + " | ".join(errors)
             self.partial_reason = (
                 f"{self.partial_reason} | {reason}" if self.partial_reason else reason
             )
@@ -95,7 +95,7 @@ class PlatformCollector(BaseCollector):
             return self._collect_web()
         if strategy == CollectorStrategy.PLAYWRIGHT:
             return self._collect_playwright()
-        raise NotImplementedError(f"estrategia {strategy.value} nao suportada aqui")
+        raise NotImplementedError(f"estratégia {strategy.value} não suportada aqui")
 
     def _collect_open_finance(self) -> list[FundOffer]:
         client = OpenFinanceFunds(self.config, self.platform, self.session)
@@ -108,7 +108,7 @@ class PlatformCollector(BaseCollector):
     def _collect_web(self) -> list[FundOffer]:
         """Scraping HTML/API interna. Subclasses implementam."""
         raise NotImplementedError(
-            f"coletor web nao implementado para {self.platform_id}"
+            f"coletor web não implementado para {self.platform_id}"
         )
 
     def _collect_playwright(self) -> list[FundOffer]:
@@ -122,7 +122,7 @@ class PlatformCollector(BaseCollector):
 
         if not self.platform.shelf_url:
             raise SourceUnavailable(
-                f"shelf_url nao configurada para {self.platform_id}"
+                f"shelf_url não configurada para {self.platform_id}"
             )
 
         offers, urls = collect_via_browser(

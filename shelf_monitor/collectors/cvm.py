@@ -100,7 +100,7 @@ def _decode_rows(raw: bytes) -> list[dict]:
         if rows and len(rows[0]) > 1:
             return rows
     if last_error:
-        raise SourceUnavailable(f"nao foi possivel decodificar o CSV: {last_error}")
+        raise SourceUnavailable(f"não foi possível decodificar o CSV: {last_error}")
     raise SourceUnavailable("CSV da CVM vazio ou com separador inesperado")
 
 
@@ -185,7 +185,7 @@ class CvmCollector:
                 # o lixo em vez de baixar de novo.
                 path.unlink(missing_ok=True)
             raise SourceUnavailable(
-                f"{path.name} nao e um zip valido (download corrompido ou "
+                f"{path.name} não é um zip válido (download corrompido ou "
                 "resposta de bloqueio)"
             )
 
@@ -197,7 +197,7 @@ class CvmCollector:
             )
             if not fundo_name:
                 raise SourceUnavailable(
-                    f"registro_fundo.csv ausente no zip (contem: {list(names.values())})"
+                    f"registro_fundo.csv ausente no zip (contém: {list(names.values())})"
                 )
             fundo_rows = _decode_rows(archive.read(fundo_name))
 
