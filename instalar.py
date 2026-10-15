@@ -8,11 +8,15 @@ editor usa. O que ele faz:
   nele - so instala se faltar algum. O azure-devops fica de fora: e do
   sprint_metrics, nao do monitor, e tem caminhos de arquivo longos o bastante
   para estourar o limite do Windows em pasta funda (medido em 15/10/2026);
-- quando a rede bloqueia o repositorio publico (PyPI) - o pip responde "Could
-  not find a version that satisfies the requirement (from versions: none)",
-  sem outra mensagem -, explica o bloqueio em vez de mostrar o erro tecnico, e
-  pede o endereco do repositorio interno de pacotes, se a TI tiver passado um.
-  Com ele a instalacao e refeita e o endereco fica gravado para o usuario
+- instala primeiro da pasta `pacotes/windows-py<versao>` do repositorio, sem
+  internet: a rede da empresa bloqueia o repositorio publico (PyPI), e o pip
+  responde "Could not find a version that satisfies the requirement (from
+  versions: none)", sem outra mensagem. A pasta do Python 3.14 foi incluida em
+  15/10/2026 (ver pacotes/README.md);
+- sem a pasta da versao em uso, ou se ela nao bastar, tenta a rede. Bloqueada,
+  explica o bloqueio em vez de mostrar o erro tecnico e pede o endereco do
+  repositorio interno de pacotes, se a TI tiver passado um. Com ele a
+  instalacao e refeita e o endereco fica gravado para o usuario
   (`pip config --user`): as proximas instalacoes ja o usam;
 - o navegador do Playwright (Chromium) vem de outro endereco, que a mesma rede
   pode barrar. Sem ele, o rodar_monitor.py usa o Microsoft Edge da maquina
@@ -29,6 +33,8 @@ from urllib.parse import urlsplit
 PASTA = Path(__file__).resolve().parent
 REQUISITOS = PASTA / "requirements.txt"
 EDGE = ("Microsoft", "Edge", "Application", "msedge.exe")
+# Os pacotes ja baixados para a versao do Python em uso (pacotes/README.md).
+PACOTES_LOCAIS = PASTA / "pacotes" / f"windows-py{sys.version_info[0]}{sys.version_info[1]}"
 # Pacotes do requirements.txt que o monitor nao usa.
 SO_DO_SPRINT_METRICS = {"azure-devops"}
 
@@ -60,6 +66,18 @@ def pacotes_faltando(requisitos: dict[str, str]) -> list[str]:
         except metadata.PackageNotFoundError:
             faltam.append(nome)
     return faltam
+
+
+def instalar_dos_pacotes_locais(pacotes: list[str]) -> bool:
+    """Instala da pasta pacotes/ do repositorio, sem internet; False sem ela."""
+    if os.name != "nt" or not PACOTES_LOCAIS.is_dir():
+        return False
+    pasta = PACOTES_LOCAIS.relative_to(PASTA)
+    print(f"Instalando da pasta {pasta}, sem internet.", flush=True)
+    if python("-m", "pip", "install", "--no-index", "--find-links", str(PACOTES_LOCAIS), *pacotes):
+        print(f"\nA pasta {pasta} nao bastou; tentando pela rede.", flush=True)
+        return False
+    return True
 
 
 def edge_instalado() -> bool:
@@ -113,9 +131,10 @@ def main() -> int:
         print("Todos os pacotes do monitor ja estao instalados neste Python.")
     else:
         print("Faltam:", ", ".join(faltam), flush=True)
-        if python("-m", "pip", "install", *pacotes):
-            if not instalar_pelo_repositorio_interno(faltam, pacotes):
-                return 1
+        if not instalar_dos_pacotes_locais(pacotes):
+            if python("-m", "pip", "install", *pacotes):
+                if not instalar_pelo_repositorio_interno(faltam, pacotes):
+                    return 1
 
     if python("-m", "playwright", "install", "chromium"):
         if edge_instalado():
