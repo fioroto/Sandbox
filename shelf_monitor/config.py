@@ -91,11 +91,12 @@ PLATFORMS: dict[str, PlatformConfig] = {
         shelf_url="https://www.itau.com.br/investimentos/fundos/rentabilidade",
         open_finance_brands=["ITAU"],
         notes=(
-            "Lista de rentabilidade paginada em ~10 fundos (45 páginas, 459 "
-            "fundos em 2026-09-19). Akamai barra HTTP simples e o headless shell "
+            "Lista de rentabilidade paginada em ~10 fundos (48 páginas, 477 "
+            "fundos em 2026-10-14). Akamai barra HTTP simples e o headless shell "
             "do Playwright, mas não o Chromium completo em --headless=new - que é "
-            "o que o coletor usa desde 2026-09-19, sem exigir janela. A tabela "
-            "não traz CNPJ - o merge reconcilia com o Open Finance pelo slug."
+            "o que o coletor usa desde 2026-09-19, sem exigir janela. Nem a "
+            "tabela nem o XHR (cifrado) trazem CNPJ: ele vem pelo nome, contra o "
+            "catálogo Open Finance e o cadastro da CVM (shelf_monitor.cnpj_por_nome)."
         ),
     ),
     "nu": PlatformConfig(
@@ -132,18 +133,25 @@ class Watch:
 # cnpj_roots comeca vazio de proposito: `watchlist-discover` levanta os CNPJs
 # reais do CSV da CVM e eles sao adicionados aqui - a partir dai o match por raiz
 # de CNPJ e a via principal e o regex vira rede de seguranca para gestoras novas.
+#
+# Empiricus (BTG) e o Itau Unibanco S.A. como gestor entraram em 14/10/2026,
+# alinhados ao grupo gestor de `data/industria/grupos_gestores.csv`: o extrato
+# de 28/09 deixava de fora 28 e 13 classes deles, e o radar do digest passou a
+# ser "o que as gestoras do grupo registraram".
 WATCHLIST: dict[str, Watch] = {
     "btg": Watch(
         name_patterns=[
             r"BTG PACTUAL (ASSET|GESTORA|WM|GESTAO)",
             r"BTG PACTUAL SERVICOS FINANCEIROS",
             r"\bBTG PACTUAL\b",
+            r"^EMPIRICUS ASSET",
         ]
     ),
     "itau": Watch(
         name_patterns=[
             r"ITAU UNIBANCO ASSET",
             r"\bITAU ASSET\b",
+            r"^ITAU UNIBANCO S A\b",
             r"^KINEA\b",
             r"ITAU DTVM",
             r"INTRAG",
@@ -205,6 +213,16 @@ class Config:
     # as chaves de models (BLOCO_COTISTAS, BLOCO_CNPJ). No monitor de fundos,
     # nenhum; a previdencia declara os dela.
     blocos_suprimidos: tuple[tuple[str, str], ...] = ()
+    # As casas do digest semanal, a base primeiro. Decidido em 14/10/2026 com
+    # a area: os concorrentes que importam acompanhar sao BTG e Itau. O resto
+    # da execucao (coleta, dashboard, planilha e deck) segue com todas as casas
+    # de PLATFORMS; so o digest e o assunto do e-mail recortam.
+    casas_do_digest: tuple[str, ...] = ("xp", "btg", "itau")
+    # Casas que nunca saem das analises por falha de coleta: sem vitrine
+    # utilizavel no dia, entra a ultima valida, com a data dita
+    # (`shelf_monitor.reserva`). Pedido em 14/10/2026: o Itau em todas as
+    # analises.
+    vitrine_de_reserva: tuple[str, ...] = ("itau",)
 
     def __init__(
         self,

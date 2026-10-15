@@ -1370,13 +1370,18 @@ def ranquear_gaps(
 
     Nao remove nada: um gap sem informe diario continua na lista, dizendo que
     nao tem serie. O monitor informa e nao filtra.
+
+    A captacao vem da lista INTEIRA de fundos do bloco (`fundos`). Ate
+    14/10/2026 ela vinha so dos rankings (15 maiores captacoes e resgates) e da
+    grade, e a maioria dos gaps saia com "-" mesmo tendo informe.
     """
     if not gap_funds:
         return gap_funds
 
     fluxo, oportunidades = retail_flow or {}, grade or {}
     fluxo_por_cnpj: dict[str, dict] = {}
-    for bloco in (fluxo.get("top_captacao") or [],
+    for bloco in (fluxo.get("fundos") or [],
+                  fluxo.get("top_captacao") or [],
                   fluxo.get("top_resgate") or [],
                   oportunidades.get("mais_varejo") or [],
                   oportunidades.get("operacionais") or [],
@@ -1388,33 +1393,38 @@ def ranquear_gaps(
 
     enriquecidos = []
     for fundo in gap_funds:
-        fluxo = fluxo_por_cnpj.get(fundo.get("cnpj"))
+        fluxo = fluxo_por_cnpj.get(fundo.get("cnpj")) or {}
         esforco = _esforco_do_gap(fundo)
         enriquecidos.append({
             **fundo,
-            "captacao_liquida": (fluxo or {}).get("captacao_liquida"),
-            "variacao_cotistas": (fluxo or {}).get("variacao_cotistas"),
+            "captacao_liquida": fluxo.get("captacao_liquida"),
+            "variacao_cotistas": fluxo.get("variacao_cotistas"),
+            "ticket_por_cotista": fluxo.get("ticket_por_cotista"),
+            "captacao_semana": fluxo.get("captacao_semana"),
+            "ritmo_semanal": fluxo.get("ritmo_semanal"),
             "esforco": esforco,
         })
+    return sorted(enriquecidos, key=chave_do_gap)
 
-    def chave(f: dict) -> tuple:
-        # Esforco ANTES de captacao: a lista existe para decidir o que incluir,
-        # entao o topo tem de ser o que da para incluir. Ordenada so por
-        # captacao, ela abria com sete produtos do proprio BTG - a maior
-        # captacao do periodo e tambem o que a XP nao pode distribuir - e o
-        # leitor tinha de varrer a lista atras do primeiro item acionavel.
-        # Dentro de cada faixa de esforco vale a captacao, que e quanto o gap
-        # esta custando agora.
-        captacao = f.get("captacao_liquida")
-        return (
-            _ORDEM_ESFORCO.get(f["esforco"], 9),
-            0 if captacao is not None else 1,
-            -(captacao or 0.0),
-            -(f.get("houses_count") or 0),
-            -(f.get("pl_cvm") or 0.0),
-        )
 
-    return sorted(enriquecidos, key=chave)
+def chave_do_gap(f: dict) -> tuple:
+    """A ordem da lista de gaps: esforco, depois captacao em 3 meses.
+
+    Esforco ANTES de captacao: a lista existe para decidir o que incluir,
+    entao o topo tem de ser o que da para incluir. Ordenada so por captacao,
+    ela abria com sete produtos do proprio BTG - a maior captacao do periodo e
+    tambem o que a XP nao pode distribuir - e o leitor tinha de varrer a lista
+    atras do primeiro item acionavel. Dentro de cada faixa de esforco vale a
+    captacao, que e quanto o gap esta custando agora.
+    """
+    captacao = f.get("captacao_liquida")
+    return (
+        _ORDEM_ESFORCO.get(f["esforco"], 9),
+        0 if captacao is not None else 1,
+        -(captacao or 0.0),
+        -(f.get("houses_count") or 0),
+        -(f.get("pl_cvm") or 0.0),
+    )
 
 
 def _diff_summary(diff: ShelfDiff, report: RunReport) -> dict:

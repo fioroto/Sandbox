@@ -43,7 +43,7 @@ from shelf_monitor.config import (
     PLATFORMS,
     Config,
 )
-from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf
+from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf, radar_sem_cancelados
 from shelf_monitor.distribuivel import carregar as carregar_distribuivel
 from shelf_monitor.enrich import enrich_snapshots
 from shelf_monitor.familias import MapaDeFamilias
@@ -92,13 +92,14 @@ from shelf_monitor.report.shared import (
     rotulo_da_casa,
 )
 from shelf_monitor.report.spreadsheet import render_spreadsheet
+from shelf_monitor.reserva import com_vitrine_de_reserva
 from shelf_monitor.storage import (
     latest_cvm_snapshot,
     latest_shelf_snapshot,
     save_cvm_snapshot,
     save_shelf_snapshot,
 )
-from shelf_monitor.texto import contagem
+from shelf_monitor.texto import contagem, data_br
 
 console = Console()
 
@@ -284,21 +285,30 @@ def build_report(
     `com_carteira=False` (`--no-carteira`) pula o mapa de familias: o bloco
     de gaps volta a comparar CNPJ contra CNPJ, com o aviso.
     """
+    # A casa sem vitrine utilizavel no dia entra nas analises com a ultima
+    # valida (`reserva`): o Itau nao pode sumir de nenhuma analise por falha de
+    # coleta. O diff, mais abaixo, continua sobre o que a coleta trouxe.
+    analise, substituidos = com_vitrine_de_reserva(config, snapshots)
+    for snapshot in analise:
+        if snapshot.reserva:
+            console.print(f"[yellow]{rotulo_da_casa(snapshot.platform)}:[/] {snapshot.reserva}")
     report = RunReport(
-        generated_at=datetime.now(), snapshots=snapshots,
+        generated_at=datetime.now(), snapshots=analise,
         suprimidos=dict(config.blocos_suprimidos),
     )
 
     # Normaliza contra a base oficial antes de qualquer renderer: e o que faz
     # "classe ANBIMA" significar a mesma coisa nas cinco casas.
-    stats = enrich_snapshots(config, snapshots, classificador=classificador)
+    stats = enrich_snapshots(config, analise, classificador=classificador)
     if stats is None:
         warn_market_missing()
     else:
         report.enrichment = stats.to_dict()
         report.enrichment_stats = stats
+    if substituidos:
+        enrich_snapshots(config, substituidos, classificador=classificador)
     if pos_enriquecimento is not None:
-        pos_enriquecimento(snapshots)
+        pos_enriquecimento(analise + substituidos)
     attach_familias(config, report, com_carteira=com_carteira)
 
     for snapshot in snapshots:
@@ -308,9 +318,12 @@ def build_report(
         report.shelf_diffs.append(diff_shelf(snapshot, previous))
 
     if cvm_snapshot:
-        report.cvm_snapshot = cvm_snapshot
         previous_cvm = latest_cvm_snapshot(config, before=cvm_snapshot.snapshot_date)
-        report.cvm_diff = diff_cvm(cvm_snapshot, previous_cvm)
+        # O diff olha o extrato inteiro; os relatorios, so o que nao foi
+        # cancelado (`radar_sem_cancelados`).
+        report.cvm_snapshot, report.cvm_diff = radar_sem_cancelados(
+            cvm_snapshot, diff_cvm(cvm_snapshot, previous_cvm)
+        )
 
     attach_retail_flow(config, report)
     # A serie mensal montada para os 12 meses serve a rentabilidade por fundo
@@ -655,7 +668,9 @@ def render_outputs(
         console.print(f"  planilha:        {spreadsheet_path}")
     else:
         console.print(f"  planilha:        [yellow]{spreadsheet_note}[/]")
-    console.print(f"  assunto sugerido: {build_subject(report, config.rotulo_assunto)}")
+    console.print(
+        f"  assunto sugerido: {build_subject(report, config.rotulo_assunto, config)}"
+    )
 
     if send_email:
         try:
@@ -676,8 +691,11 @@ def run_outcome(
     entra na linha mas nao derruba a execucao, que ainda entrega a prateleira.
     """
     total = len(report.snapshots)
+    # A vitrine de reserva (`reserva`) mantem a casa nas analises, mas a coleta
+    # do dia falhou: nao conta como coletada.
     collected = sum(
-        1 for s in report.snapshots if s.status != SnapshotStatus.UNAVAILABLE
+        1 for s in report.snapshots
+        if s.status != SnapshotStatus.UNAVAILABLE and not s.reserva
     )
 
     if not cvm_requested:
@@ -711,6 +729,14 @@ def print_summary(report: RunReport) -> None:
     # do assunto do e-mail - o diff inteiro inclui o catalogo Open Finance.
     rebases: list[str] = []
     for snapshot in report.snapshots:
+        if snapshot.reserva:
+            # A coleta do dia falhou: a vitrine e a de reserva, e o movimento
+            # nao foi medido.
+            table.add_row(
+                rotulo_da_casa(snapshot.platform), str(len(snapshot.funds)),
+                f"[yellow]reserva de {data_br(snapshot.snapshot_date)}[/]", "-", "-", "-",
+            )
+            continue
         diff = report.diff_for(snapshot.platform)
         counted = diff and not diff.is_first_run
         casa = movimentos_de_vitrine(diff, snapshot) if counted else None

@@ -595,7 +595,7 @@ def _cvm_radar(prs, data: dict):
 
     houses = cvm.get("houses") or []
     _table(slide, 0.6, 1.6, 7.5,
-           ["Casa", "Registrados", "Pré-operacionais"],
+           ["Casa", "Ativos", "Pré-operacionais"],
            [[h["label"], _fmt(h["total"]), _fmt(h["pre_operational"])] for h in houses],
            col_widths=[2.5, 1.5, 1.5])
 

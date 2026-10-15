@@ -163,9 +163,10 @@ class TestNovaLinhaDeBase(unittest.TestCase):
             shelf_diffs=[diff_shelf(xp_agora, xp_antes), diff_shelf(btg_agora, btg_antes)],
         )
         markdown = render_markdown(report)
-        self.assertIn("2 fundos entraram", markdown)
-        self.assertIn("XP Investimentos virou nova linha de base", markdown)
-        self.assertIn("fica fora da contagem", markdown)
+        # A casa rebaseada nao tem movimento; a outra tem o dela.
+        self.assertIn("Nova linha de base", markdown)
+        self.assertIn("2 entradas, 0 saídas na vitrine", markdown)
+        self.assertNotIn("80 entradas", markdown)
         subject = build_subject(report)
         self.assertIn("2 entradas", subject)
         self.assertIn("nova linha de base: XP Investimentos", subject)
@@ -206,33 +207,31 @@ class TestUmaDefinicaoDeMovimento(unittest.TestCase):
 
     def test_digest_e_assunto(self):
         self.assertEqual(_summary_counts(self.report), (1, 1, 1, 3))
-        # Vitrine de varejo 2 (o Exclusivo e restrito), catalogo de varejo 4.
-        self.assertIn("| BTG Pactual | 2 | 4 | ok | 1 | 1 | 1 |", render_markdown(self.report))
+        # Vitrine de varejo 2 (o Exclusivo e restrito). O digest v2 (14/10/2026)
+        # so conta entrada e saida; a alteracao fica no dashboard e na planilha.
+        markdown = render_markdown(self.report)
+        self.assertIn("1 entrada, 1 saída na vitrine - 2 fundos na vitrine.", markdown)
+        self.assertIn("1 fundo entrou e 1 saiu das vitrines de BTG Pactual", markdown)
         subject = build_subject(self.report)
         self.assertIn("1 entrada / 1 saída", subject)
-        self.assertIn("1 alteração", subject)
+        self.assertNotIn("alteração", subject)
 
     def test_linha_da_casa_concorda_com_o_numero(self):
         # Em 2026-09-24 o digest publicou "1 entradas", "1 saídas" e "1 alterações".
         from shelf_monitor.report.digest import render_html
 
-        esperado = "1 entrada, 1 saída, 1 alteração na vitrine"
-        self.assertIn(esperado, render_markdown(self.report))
+        markdown = render_markdown(self.report)
+        self.assertIn("1 entrada, 1 saída na vitrine", markdown)
         # No e-mail a linha da casa virou tabela (secao 5 da linguagem visual):
-        # um movimento por linha, com o fundo, e as contagens que restam em
-        # texto continuam concordando com o numero.
+        # um movimento por linha, com o fundo. So entrada e saida (14/10/2026):
+        # sem alteracao de condicao nem o que mudou so no catalogo.
         html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", render_html(self.report)))
         self.assertIn("Entrou BTG Novo Ações FIC FIA", html)
         self.assertIn("Saiu BTG Beta FIC FIM", html)
-        self.assertIn("Alterou BTG Alfa FIC FIM", html)
-        self.assertIn("1 alteração de condições", html)
-        self.assertIn("Só no catálogo Open Finance, fora da vitrine: BTG Pactual 3", html)
-        for errado in ("1 entradas", "1 saídas", "1 alterações"):
-            self.assertNotIn(errado, html)
-        self.assertIn("Mais 3 mudanças só no catálogo", render_markdown(self.report))
-        self.assertIn(
-            "1 fundo entrou, 1 saiu e 1 teve condições alteradas", render_markdown(self.report)
-        )
+        for fora in ("Alterou", "alteraç", "Só no catálogo", "1 entradas", "1 saídas"):
+            self.assertNotIn(fora, html)
+        for fora in ("Mudanças de condições", "só no catálogo", "teve condições alteradas"):
+            self.assertNotIn(fora, markdown)
 
     def test_payload_do_dashboard(self):
         [resumo] = build_dashboard_data(self.report)["diff_summary"]

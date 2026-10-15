@@ -355,7 +355,8 @@ class TestDigest(unittest.TestCase):
                 self.assertNotIn(proibido, html)
 
     def test_casca_de_e_mail(self):
-        from shelf_monitor.report.digest import render_html, _summary_sentence
+        from shelf_monitor.report.digest import _frase_principal, render_html
+        from shelf_monitor.report.digest_visao import montar_visao
 
         report = _relatorio()
         html = render_html(report)
@@ -363,39 +364,29 @@ class TestDigest(unittest.TestCase):
         self.assertIn('<meta name="supported-color-schemes" content="light">', html)
         self.assertIn('max-width:640px', html)
         self.assertIn('<!--[if mso]><table role="presentation" width="640"', html)
-        # A previa escondida e a frase de abertura.
+        # A previa escondida e a frase de abertura, sem o negrito do markdown.
         previa = re.search(r'<div style="display:none;[^"]*">([^<]*)', html).group(1)
-        self.assertTrue(previa.startswith(_summary_sentence(report)[0][:40]))
+        frase = _frase_principal(montar_visao(report))[0].replace("**", "")
+        self.assertTrue(previa.startswith(frase[:40]))
         self.assertIn("<title>Monitor de Prateleiras de Fundos</title>", html)
-
-    def test_figura_da_captacao_com_a_cor_da_base_e_titulo_que_afirma(self):
-        from shelf_monitor.report.digest import _html_flow_section
-
-        html = _html_flow_section(_relatorio())
-        self.assertIn(MARCA_DA_FIGURA, html)
-        self.assertIn(f'bgcolor="{cor_da_casa("xp")}"', html)
-        self.assertIn(f'bgcolor="{cor_da_casa("btg")}"', html)
-        # O titulo diz quem lidera, e onde a casa-base fica.
-        self.assertIn("BTG Pactual lidera a captação; XP Investimentos fica em 2º", html)
-        # E o prazo em data brasileira no subtitulo.
-        self.assertIn("R$ milhões (MM) · 3 meses, de 01/07/2026 a 21/09/2026", html)
 
     def test_sem_bloco_nao_ha_figura(self):
         from shelf_monitor.report.digest import (
-            _html_flow_section,
             _html_performance_section,
+            _html_ritmo,
             render_html,
         )
+        from shelf_monitor.report.digest_visao import montar_visao
 
         vazio = _relatorio(com_blocos=False)
-        self.assertEqual(_html_flow_section(vazio), "")
+        self.assertEqual(_html_ritmo(montar_visao(vazio)), "")
         self.assertEqual(_html_performance_section(vazio), "")
-        html = render_html(vazio)
-        # So a figura do sumario (tamanho da vitrine) - nenhuma moldura vazia. A
-        # categoria unica dos gaps nao vira grafico de uma barra.
-        self.assertEqual(html.count(MARCA_DA_FIGURA), 1)
-        # 3 fundos em cada vitrine: empate, e nao "a maior vitrine".
-        self.assertIn("XP Investimentos e BTG Pactual empatam na maior vitrine: 3 fundos", html)
+        # Sem captacao, radar nem rentabilidade, nenhuma figura - e nenhuma
+        # moldura vazia. Os gaps saem em tabela, pelo esforco.
+        for edicao in ("semanal", "mensal"):
+            html = render_html(vazio, None, edicao)
+            self.assertEqual(html.count(MARCA_DA_FIGURA), 0)
+            self.assertIn("a captação deles não foi medida", html)
 
     def test_cada_secao_com_dado_ganha_figura(self):
         from shelf_monitor.report.digest import _html_performance_section
@@ -407,37 +398,39 @@ class TestDigest(unittest.TestCase):
         self.assertIn("1 quadrado = 1%", html)
 
     def test_previdencia_nao_ganha_figura_de_gap_nem_de_cotista(self):
-        from shelf_monitor.report.digest import _html_gaps_section, _gaps_ranqueados, render_html
+        from shelf_monitor.report.digest import _html_oportunidade, render_html
+        from shelf_monitor.report.digest_visao import montar_visao
 
         report = _relatorio(dict(ConfigPrevidencia.blocos_suprimidos))
-        gaps = _html_gaps_section(_gaps_ranqueados(report))
+        gaps = _html_oportunidade(montar_visao(report))
         self.assertNotIn(MARCA_DA_FIGURA, gaps)
+        self.assertIn("Não se aplica a este monitor", gaps)
         # As mesmas proibicoes de test_supressao, agora tambem sobre os titulos
-        # e rodapes das figuras.
-        texto = _texto(render_html(report))
+        # e rodapes das figuras - na edicao mensal, que tem a rentabilidade.
+        texto = _texto(render_html(report, None, "mensal"))
         for proibido in ("Ponderada por cotistas", "ponderada por cotistas",
                          "PL menos cotistas", "muita gente", " cotistas -",
                          "Só nesta vitrine", "só ela exibe", "inclusão operacional",
                          "faltam na XP", "Produto próprio"):
             self.assertNotIn(proibido, texto)
 
-    def test_captacao_tem_as_tres_figuras_e_o_ritmo_e_a_propria_tabela(self):
-        from shelf_monitor.report.digest import _html_flow_section
+    def test_o_ritmo_e_o_mapa_de_calor_e_a_propria_tabela(self):
+        from shelf_monitor.report.digest import _html_ritmo
+        from shelf_monitor.report.digest_visao import montar_visao
         from test_captacao import _relatorio as relatorio_de_captacao
 
-        report = relatorio_de_captacao()
-        html = _html_flow_section(report)
-        self.assertEqual(html.count(MARCA_DA_FIGURA), 3)
-        self.assertIn("XP Investimentos: saída diminui em set/2026", html)
+        visao = montar_visao(relatorio_de_captacao())
+        html = _html_ritmo(visao)
+        self.assertEqual(html.count(MARCA_DA_FIGURA), 1)
         self.assertIn("dos fundos em saída persistente", html)
         # O mapa de calor substitui a tabela de ritmo, com as mesmas celulas; a
         # contagem de fundos desce para baixo do nome da casa.
         self.assertNotIn(">Fundos</th>", html)
         self.assertIn(" fundos</span>", html)
         # Sem a figura (orcamento), a tabela volta.
-        sem_ritmo = _html_flow_section(report, frozenset({"ritmo"}))
+        sem_ritmo = _html_ritmo(visao, frozenset({"ritmo"}))
         self.assertIn(">Fundos</th>", sem_ritmo)
-        self.assertEqual(sem_ritmo.count(MARCA_DA_FIGURA), 2)
+        self.assertEqual(sem_ritmo.count(MARCA_DA_FIGURA), 0)
 
     def test_cor_de_saldo_e_uma_so_e_vem_com_sinal(self):
         from shelf_monitor.report.digest import _cor_do_valor
@@ -472,11 +465,12 @@ class TestOrcamentoDoEmail(unittest.TestCase):
 
         from shelf_monitor.report import digest
 
+        # Na edicao mensal, que tem a rentabilidade e as figuras dela.
         report = _relatorio()
-        inteiro = digest.render_html(report)
+        inteiro = digest.render_html(report, None, "mensal")
         figuras = inteiro.count(MARCA_DA_FIGURA)
         with mock.patch.object(digest, "_ORCAMENTO_DO_EMAIL", len(inteiro.encode()) - 1):
-            cortado = digest.render_html(report)
+            cortado = digest.render_html(report, None, "mensal")
         # A primeira a sair e a grade de pontos do PL abaixo da mediana.
         self.assertEqual(cortado.count(MARCA_DA_FIGURA), figuras - 1)
         self.assertNotIn("1 quadrado = 1%", cortado)
@@ -485,7 +479,7 @@ class TestOrcamentoDoEmail(unittest.TestCase):
         self.assertIn("Fundos abaixo", cortado)
 
         with mock.patch.object(digest, "_ORCAMENTO_DO_EMAIL", 1):
-            sem_nenhuma = digest.render_html(report)
+            sem_nenhuma = digest.render_html(report, None, "mensal")
         self.assertEqual(sem_nenhuma.count(MARCA_DA_FIGURA), 0)
         self.assertIn("gráficos ficaram de fora", sem_nenhuma)
 
@@ -495,30 +489,30 @@ class TestMenosTexto(unittest.TestCase):
     frase que narra o grafico sai. O markdown (parte em texto) nao muda."""
 
     def test_nenhuma_lista_em_frase_no_e_mail(self):
-        from shelf_monitor.report.digest import _html_flow_section, render_html
+        from shelf_monitor.report.digest import _html_ritmo, render_html
+        from shelf_monitor.report.digest_visao import montar_visao
         from test_captacao import _relatorio as relatorio_de_captacao
 
-        for html in (render_html(_relatorio()), _html_flow_section(relatorio_de_captacao())):
+        captacao = _html_ritmo(montar_visao(relatorio_de_captacao()))
+        for html in (render_html(_relatorio()), captacao):
             self.assertNotIn("<li", html)
             self.assertNotIn("<ul", html)
 
-    def test_captacao_sem_a_leitura_e_com_as_listas_em_tabela(self):
-        from shelf_monitor.report.digest import _html_flow_section, _mm, _md_flow_section
+    def test_listas_de_captacao_em_tabela_com_a_semana_e_os_3_meses(self):
+        from shelf_monitor.report.digest import _html_ritmo, _mm
+        from shelf_monitor.report.digest_visao import montar_visao
         from test_captacao import _relatorio as relatorio_de_captacao
 
-        report = relatorio_de_captacao()
-        md = "\n".join(_md_flow_section(report))
-        html = _html_flow_section(report)
+        visao = montar_visao(relatorio_de_captacao())
+        html = _html_ritmo(visao)
         texto = _texto(html)
-        # A leitura em frases segue no markdown e sai do e-mail.
-        self.assertRegex(md, r"[+-]R\$ [\d.,]+ (?:mi|bi)")
-        self.assertNotRegex(texto, r"[+-]R\$ [\d.,]+ (?:mi|bi)")
-        # Cada lista vira tabela: Fundo | Captacao 2 meses | Cotistas | Casas, com
-        # o prazo no cabecalho e o nome curto da casa.
-        self.assertIn(">Captação 2 meses</th>", html)
-        self.assertIn(">Cotistas</th>", html)
-        fundo = report.retail_flow["top_captacao"][0]
-        self.assertIn(f"{fundo['nome']} {_mm(fundo['captacao_liquida'])}", texto)
+        # Cada lista vira tabela: Fundo | Semana | 3 meses | Cotistas | Casas,
+        # com o nome curto da casa.
+        for coluna in ("Semana", "3 meses", "Cotistas", "Casas"):
+            self.assertIn(f">{coluna}</th>", html)
+        fundo = visao.report.retail_flow["top_captacao"][0]
+        self.assertIn(fundo["nome"], texto)
+        self.assertIn(_mm(fundo["captacao_liquida"]), texto)
         self.assertIn("XP, BTG", texto)
 
     def test_rentabilidade_em_colunas_de_numero(self):
@@ -608,7 +602,7 @@ class TestPadraoXP(unittest.TestCase):
             TINTA,
         )
 
-        html = render_html(_relatorio())
+        html = render_html(_relatorio(), None, "mensal")
         # A faixa preta do topo com o rotulo do monitor.
         self.assertIn(f'<tr><td bgcolor="{TINTA}"', html)
         self.assertIn(">Monitor de fundos</td>", html)
@@ -619,8 +613,8 @@ class TestPadraoXP(unittest.TestCase):
         self.assertIn(f"border:1px solid {CONTORNO_XP}", html)
         self.assertNotIn(f"color:{cor_da_casa('xp')}", html.replace("background:", "fundo:"))
         # Os titulos de secao testados continuam la, como retranca.
-        for titulo in ("Sumário", "Gaps de prateleira da XP", "Captação dos fundos de vitrine",
-                       "Rentabilidade da vitrine", "Vitrines"):
+        for titulo in ("Oportunidade de grade e gaps", "Ritmo de captação",
+                       "Vitrines: entradas e saídas", "Rentabilidade e custo · edição mensal"):
             self.assertIn(f"{titulo}</h2>", html)
 
     def test_chamada_amarela_no_bloco_que_nao_se_aplica(self):

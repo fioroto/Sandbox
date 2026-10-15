@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "platform": "itau",
+  "collected_at": "2026-10-14T22:49:36.276967",
+  "strategy": "html-scrape",
+  "strategies": [],
+  "source_counts": {},
+  "status": "unavailable",
+  "source_urls": [
+    "https://ww15.itau.com.br/privatebank/hotsite/catalogofundos2/tabela_rentabilidade/default.aspx"
+  ],
+  "error": "catálogo do Private Bank fora do ar: a página responde \"Pagina indisponivel no momento Exception has been thrown by the target of an invocation.\" (erro no servidor do Itaú, não mudança de layout)",
+  "fund_count": 0,
+  "funds": []
+}

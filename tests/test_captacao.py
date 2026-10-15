@@ -12,7 +12,9 @@ em Renda Fixa e Multimercados. Os testes travam:
 - as frases da leitura, iguais em toda superficie;
 - as listas com rotulo de casa, ticket por cotista novo e o que a XP perde;
 - na previdencia, listas por dinheiro (o cotista e a seguradora) e sem os cortes
-  suprimidos.
+  suprimidos;
+- no digest (v2, 14/10/2026), so o ritmo e as maiores captacoes e resgates: a
+  captacao por casa ficou no dashboard e na planilha.
 
 O informe diario e substituido por registros sinteticos (`ler_filtrado`), com
 numeros redondos calculados a mao.
@@ -116,10 +118,12 @@ class _ConfigSemCotistas(Config):
 def _captacao(config: Config | None = None) -> tuple[list[ShelfSnapshot], dict]:
     snapshots, registros = _cenario()
 
-    def ler(config, yyyymm, alvo, force=False):
+    def ler(config, yyyymm, alvo, **_):
         return [r for r in registros if r.dia.strftime("%Y%m") == yyyymm and r.cnpj in alvo]
 
     with mock.patch("shelf_monitor.report.retail_flow.ler_filtrado", side_effect=ler), \
+            mock.patch("shelf_monitor.report.retail_flow.ler_filtrado_sem_guardar",
+                       side_effect=ler), \
             mock.patch("shelf_monitor.report.retail_flow.months_back",
                        return_value=["202608", "202609"]):
         flow = build_retail_flow(config or Config(), snapshots)
@@ -253,36 +257,36 @@ class TestLeitura(unittest.TestCase):
 
 class TestSuperficies(unittest.TestCase):
     def test_digest_md_e_html_publicam_os_mesmos_numeros(self):
-        from shelf_monitor.report.digest import _html_flow_section, _md_flow_section, _mm
+        from shelf_monitor.report.digest import _html_ritmo, _md_ritmo
+        from shelf_monitor.report.digest_visao import montar_visao
 
-        report = _relatorio()
-        md = "\n".join(_md_flow_section(report))
-        html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _html_flow_section(report)))
-        for valor in re.findall(r"[+-][\d.]+,\d MM|[+-]\d+,\d\d%", md):
+        visao = montar_visao(_relatorio())
+        md = "\n".join(_md_ritmo(visao))
+        html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _html_ritmo(visao)))
+        valores = re.findall(r"[+-][\d.]+,\d MM", md)
+        self.assertTrue(valores)
+        for valor in valores:
             self.assertIn(valor, html)
-        # A leitura em frases ("-R$ 450 mi") sai do e-mail, que tem o grafico e a
-        # tabela de composicao (secao 5 da linguagem visual). O saldo de cada
-        # casa que ela narrava continua la, em MM.
-        self.assertRegex(md, r"[+-]R\$ [\d.,]+ (?:mi|bi)")
-        for casa in report.retail_flow["casas"]:
-            self.assertIn(_mm(casa["captacao_liquida"]), html)
-        # Rotulo da casa, nunca o id; ticket por cotista novo nas listas.
-        self.assertIn("XP Investimentos", md)
+        # Casa pelo nome curto, nunca o id; ticket por cotista novo nas listas.
+        self.assertIn("XP, BTG", md)
         self.assertNotRegex(md, r" - (xp|btg)(,|$)")
         self.assertIn("por cotista novo", md)
-        self.assertIn("Na vitrine da XP Investimentos, perdendo dinheiro e cotistas", md)
-        self.assertIn("| Renda Fixa |", md)
+        # A captacao por casa e as listas que sairam do semanal (14/10/2026)
+        # continuam no dashboard e na planilha, nao no digest.
+        self.assertNotIn("Na vitrine da XP Investimentos, perdendo", md)
+        self.assertNotIn("| Renda Fixa |", md)
+        self.assertNotIn("Só nesta vitrine", html)
 
     def test_digest_da_previdencia(self):
         from shelf_monitor.previdencia.config import ConfigPrevidencia
-        from shelf_monitor.report.digest import _md_flow_section
+        from shelf_monitor.report.digest import _md_ritmo
+        from shelf_monitor.report.digest_visao import montar_visao
 
-        md = "\n".join(_md_flow_section(_relatorio(dict(ConfigPrevidencia.blocos_suprimidos))))
-        for proibido in ("Compartilhados", "Só nesta vitrine", "Produto próprio",
-                         "cotistas", "só a própria casa"):
+        relatorio = _relatorio(dict(ConfigPrevidencia.blocos_suprimidos))
+        md = "\n".join(_md_ritmo(montar_visao(relatorio)))
+        for proibido in ("Compartilhados", "Só nesta vitrine", "Produto próprio", "cotistas"):
             self.assertNotIn(proibido, md)
-        self.assertIn("Sem o corte produto próprio x terceiros", md)
-        self.assertIn("% do PL", md)
+        self.assertIn("Maiores captações - fundos ganhando dinheiro", md)
 
     def test_payload_do_dashboard(self):
         from shelf_monitor.report.aggregate import build_dashboard_data

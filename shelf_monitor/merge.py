@@ -15,6 +15,7 @@ scraping le o que a pagina resolveu exibir.
 """
 from __future__ import annotations
 
+from shelf_monitor.cnpj_por_nome import KEY_CNPJ_PENDENTE
 from shelf_monitor.models import (
     KEY_MINIMO_VITRINE,
     LISTING_SOURCES,
@@ -159,6 +160,16 @@ def _reconcile_unidentified(merged: dict[str, FundOffer]) -> None:
 
     for identity in [i for i, o in merged.items() if not o.cnpj]:
         offer = merged[identity]
+        if KEY_CNPJ_PENDENTE in offer.extra:
+            # O resolvedor por nome (shelf_monitor.cnpj_por_nome) ja examinou
+            # este fundo e nao achou CNPJ inequivoco - empate, conflito ou
+            # nenhum candidato. Casar aqui pelo slug desfaria a decisao com uma
+            # regra mais frouxa: o slug junta "Real Investor Ações" e "Real
+            # Investor Multimercado", e o fuzzy escolhe sem olhar o empate.
+            offer.extra.setdefault(
+                "reconciliacao", "não reconciliado (sem CNPJ correspondente)"
+            )
+            continue
         slug = name_slug(offer.name)
 
         target_identity = by_slug.get(slug)

@@ -678,6 +678,8 @@ def _add_gaps_sheets(
         ("gestora", "Gestora (veículo)", 34), ("estrategia", "Gestora da estratégia", 34),
         ("n_casas", "Nº casas", 10), ("casas", "Casas", 30),
         ("captacao", "Captação no mercado (R$)", 22),
+        ("semana", "Captação na semana (R$)", 20),
+        ("ritmo", "Ritmo na semana", 16),
         ("cotistas", "Cotistas ganhos no mercado", 24),
         ("esforco", "Esforço de fechar", 26),
         ("veredito", "Veredito", 26), ("familia", "Família (master)", 44),
@@ -717,6 +719,8 @@ def _add_gaps_sheets(
             "n_casas": fund["houses_count"],
             "casas": fund["houses_label"],
             "captacao": fund.get("captacao_liquida"),
+            "semana": fund.get("captacao_semana"),
+            "ritmo": nome_da_tendencia(fund.get("ritmo_semanal")),
             "cotistas": fund.get("variacao_cotistas"),
             "esforco": fund.get("esforco") or "",
             "veredito": veredito.get("rotulo") or "não verificado (sem carteira)",
@@ -737,7 +741,7 @@ def _add_gaps_sheets(
             cell.font = _BODY_FONT
             cell.border = _BORDER
         for chave, formato in (
-            ("n_casas", _INT), ("captacao", _MONEY), ("cotistas", _INT),
+            ("n_casas", _INT), ("captacao", _MONEY), ("semana", _MONEY), ("cotistas", _INT),
             ("dmais", _INT), ("minimo", _MONEY), ("taxa", _PCT), ("pl", _MONEY),
         ):
             sheet.cell(row=row, column=coluna[chave]).number_format = formato
@@ -1545,11 +1549,12 @@ def _salvar(workbook: Workbook, path: Path) -> Path:
 _FLOW_HEADERS = [
     "Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "Produto próprio de", "Exclusivo",
     "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
+    "Captação na semana (R$)",
     "PL início (R$)", "PL fim (R$)", "Captação líquida / PL início (%)",
     "Cotistas início", "Cotistas fim", "Variação cotistas",
     "Entrada por cotista ganho (R$)",
     "Rentabilidade no período, base no 1o pregão (%)",
-    "Pregões observados", "Tendência", "Movimento estrutural",
+    "Pregões observados", "Tendência", "Ritmo na semana", "Movimento estrutural",
 ]
 
 # Formato por cabecalho, e nao por posicao: um modulo pode omitir colunas
@@ -1557,6 +1562,7 @@ _FLOW_HEADERS = [
 # de uma escorregue para a vizinha.
 _FLOW_MONEY = {
     "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
+    "Captação na semana (R$)",
     "PL início (R$)", "PL fim (R$)", "Entrada por cotista ganho (R$)",
 }
 _FLOW_PCT = {
@@ -1586,6 +1592,8 @@ def _flow_row(fundo: dict) -> list:
         fundo["captacao_bruta"],
         fundo["resgates"],
         fundo["captacao_liquida"],
+        # A semana de referencia do digest (`recorte_semanal` do bloco).
+        fundo.get("captacao_semana"),
         fundo["pl_inicio"],
         fundo["pl_fim"],
         # _PCT concatena o "%" ao valor: a planilha guarda pontos percentuais
@@ -1598,6 +1606,7 @@ def _flow_row(fundo: dict) -> list:
         fundo.get("rentabilidade"),
         fundo.get("dias"),
         nome_da_tendencia(fundo.get("tendencia")),
+        nome_da_tendencia(fundo.get("ritmo_semanal")),
         "sim" if fundo.get("estrutural") else "",
     ]
 
@@ -1990,7 +1999,10 @@ def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
         ws.cell(row=linha, column=3, value=rotulos.get(chave, "")).font = _NOTE_FONT
         linha += 1
 
+    # As tres listas que sairam do digest em 14/10/2026 continuam aqui.
+    base = _platform_label(flow.get("baseline_id") or "xp")
     for titulo, chave in (
+        (f"Na vitrine da {base}, perdendo dinheiro e cotistas", "baseline_perdendo"),
         ("Acelerando - captando mais por dia que antes", "acelerando"),
         ("Viraram saída - captavam e passaram a perder", "virou_saida"),
     ):

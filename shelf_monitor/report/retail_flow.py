@@ -19,6 +19,13 @@ Cobertura medida em 2026-09-20 contra `inf_diario_fi_202608`: XP 573 de 622
 CNPJs de vitrine (92%), BTG 617 de 649 (95%), Inter 368 de 463 (79%). O Itau fica
 fora - a lista de rentabilidade dele publica CNPJ em 27 de 458 fundos, e sem CNPJ
 nao ha como buscar o informe. O Nu tambem: nao tem vitrine deslogada.
+
+**Duas janelas.** A de 3 meses (competencias M-2 a M) e a visao de medio prazo
+de sempre. A semanal - pedida em 14/10/2026, porque o digest e semanal - e a
+semana de referencia de `shared/semanas.py` contra as 12 anteriores, por dia
+util: a captacao da semana e o ritmo dela (acelerando, desacelerando...), pela
+mesma regra e a mesma faixa do ritmo mensal. As duas terminam no ultimo dia
+completo do informe: o dia que ainda esta chegando fica fora de todas as somas.
 """
 from __future__ import annotations
 
@@ -46,8 +53,9 @@ from shelf_monitor.report.competitive import (
     identifiable_vitrines,
     vitrine_snapshots,
 )
-from shelf_monitor.report.shared.informe import ler_filtrado
+from shelf_monitor.report.shared.informe import ler_filtrado, ler_filtrado_sem_guardar
 from shelf_monitor.report.shared.limiares import MIN_COBERTURA_VITRINE
+from shelf_monitor.report.shared.semanas import RecorteSemanal, Semana, recorte_semanal
 from shelf_monitor.texto import periodo_br
 
 
@@ -313,6 +321,10 @@ class FundFlow:
     # Casas em cuja vitrine o fundo e produto da gestora da propria casa
     # (`aggregate.is_own_product`), preenchido por build_retail_flow.
     proprio_de: list[str] = field(default_factory=list)
+    # Serie semanal (`SemanaDoFundo`), alinhada as semanas do recorte - a de
+    # referencia por ultimo. Preenchida por build_retail_flow. Fica fora do
+    # `to_dict`: o JSON e a planilha levam so a semana e o ritmo dela.
+    semanas: list = field(default_factory=list)
 
     @property
     def captacao_liquida(self) -> float:
@@ -345,6 +357,16 @@ class FundFlow:
     @property
     def tendencia(self) -> str:
         return classify_trend(self.meses)
+
+    @property
+    def captacao_semana(self) -> float | None:
+        """Captacao liquida da semana de referencia; None sem informe nela."""
+        semana = self.semanas[-1] if self.semanas else None
+        return semana.captacao_liquida if semana and semana.dias else None
+
+    @property
+    def ritmo_semanal(self) -> str:
+        return ritmo_da_semana(self.semanas)
 
     @property
     def estrutural(self) -> bool:
@@ -430,6 +452,10 @@ class FundFlow:
             ),
             "exclusivo": self.exclusivo,
             "tendencia": self.tendencia,
+            "captacao_semana": (
+                None if self.captacao_semana is None else round(self.captacao_semana, 2)
+            ),
+            "ritmo_semanal": self.ritmo_semanal,
             "meses": [m.to_dict() for m in self.meses],
             "estrutural": self.estrutural,
             "proprio_de": self.proprio_de,
@@ -569,6 +595,48 @@ def months_back(quantidade: int, referencia: date | None = None) -> list[str]:
     return list(reversed(meses))
 
 
+# Quantos meses antes da janela a serie semanal recua, no maximo, atras da base
+# de 12 semanas: com o informe atrasado, a semana de referencia recua junto.
+_MAX_MESES_ANTES_DA_JANELA = 2
+
+
+def _mes_anterior(yyyymm: str) -> str:
+    ano, mes = int(yyyymm[:4]), int(yyyymm[4:])
+    return f"{ano - 1:04d}12" if mes == 1 else f"{ano:04d}{mes - 1:02d}"
+
+
+def contagem_por_dia(registros: list[DailyFlow]) -> dict[date, int]:
+    """Quantos fundos reportaram em cada dia - o insumo da regra do dia completo."""
+    por_dia: dict[date, set[str]] = {}
+    for registro in registros:
+        por_dia.setdefault(registro.dia, set()).add(registro.cnpj)
+    return {dia: len(cnpjs) for dia, cnpjs in por_dia.items()}
+
+
+def _recorte_da_janela(
+    config: Config, primeiro_mes: str, alvo: set[str], registros: list[DailyFlow]
+) -> tuple[list[DailyFlow], RecorteSemanal | None]:
+    """Os registros dos meses antes da janela, e o recorte semanal sobre tudo.
+
+    Le o mes anterior a janela e, se a comparacao de 12 semanas ainda comecar
+    antes dele (informe atrasado, ou a execucao nos primeiros dias do mes), mais
+    um. Sem guardar no cache do processo: so a serie semanal os usa.
+    """
+    anteriores: list[DailyFlow] = []
+    recorte = recorte_semanal(contagem_por_dia(registros))
+    mes = primeiro_mes
+    for _ in range(_MAX_MESES_ANTES_DA_JANELA):
+        if recorte is None:
+            break
+        inicio_lido = date(int(mes[:4]), int(mes[4:]), 1)
+        if recorte.inicio_da_comparacao >= inicio_lido:
+            break
+        mes = _mes_anterior(mes)
+        anteriores = ler_filtrado_sem_guardar(config, mes, alvo) + anteriores
+        recorte = recorte_semanal(contagem_por_dia(anteriores + registros))
+    return anteriores, recorte
+
+
 def build_retail_flow(
     config: Config,
     snapshots: list[ShelfSnapshot],
@@ -613,11 +681,15 @@ def build_retail_flow(
     for yyyymm in periodos:
         # O mes corrente muda todo dia: baixar de novo e o que mantem a leitura
         # com os pregoes mais recentes em vez do arquivo que sobrou no cache.
-        # O `force` vale para a PRIMEIRA leitura da competencia nesta execucao;
-        # `performance` e `rentabilidade`, que vem depois, reaproveitam.
+        # O anterior e revalidado: a CVM ainda o regrava, e a semana de
+        # referencia pode cruzar a virada do mes. O `force` vale para a
+        # PRIMEIRA leitura da competencia nesta execucao; `performance` e
+        # `rentabilidade`, que vem depois, reaproveitam.
         corrente = yyyymm == periodos[-1]
+        anterior = len(periodos) > 1 and yyyymm == periodos[-2]
         lidos = ler_filtrado(
-            config, yyyymm, alvo, force=force_download or corrente
+            config, yyyymm, alvo, force=force_download or corrente,
+            revalidar=anterior,
         )
         if lidos:
             registros.extend(lidos)
@@ -635,8 +707,29 @@ def build_retail_flow(
             "excluded": fora + sem_cnpj,
         }
 
+    # A semana de referencia e as 12 anteriores pedem o mes antes da janela
+    # (as vezes dois): lidos sem guardar no cache do processo, porque so a
+    # serie semanal os usa.
+    anteriores, recorte = _recorte_da_janela(config, periodos[0], alvo, registros)
+    if recorte is not None:
+        # O dia que ainda esta chegando (e o feriado com linha avulsa) sai de
+        # todas as somas: a janela de 3 meses termina no ultimo dia completo,
+        # como a semana.
+        validos = set(recorte.dias.completos)
+        aparados = [r for r in registros if r.dia in validos]
+        if aparados:
+            registros = aparados
+            anteriores = [r for r in anteriores if r.dia in validos]
+        else:
+            recorte = None
+
     fluxos = consolidate(registros, catalogo, presenca)
     por_cnpj = {f.cnpj: f for f in fluxos}
+    semanas = recorte.todas() if recorte is not None else []
+    if semanas:
+        por_semana = weekly_by_fund(anteriores + registros, semanas)
+        for fluxo in fluxos:
+            fluxo.semanas = por_semana.get(fluxo.cnpj, [])
 
     # Produto proprio e relativo a casa: o fundo da XP Asset e proprio na
     # vitrine da XP e de terceiros na do BTG. Tri-estado, como `is_own_product`.
@@ -779,7 +872,14 @@ def build_retail_flow(
             "meses_ausentes": meses_ausentes,
             "de": min(r.dia for r in registros).isoformat(),
             "ate": max(r.dia for r in registros).isoformat(),
+            # Os dias do fim do informe que ainda estavam chegando: fora das somas.
+            "dias_incompletos": recorte.incompletos_dict() if recorte else [],
         },
+        # A semana de referencia, a comparacao (12 semanas) e o que ficou de
+        # fora - o formato de `shared.semanas.RecorteSemanal.to_dict`. None sem
+        # dia completo no informe.
+        "recorte_semanal": recorte.to_dict() if recorte else None,
+        "_recorte": recorte,
         "fundos_analisados": len(fluxos),
         "baseline_id": baseline_id,
         "casas": [c.to_dict() for c in casas],
@@ -1220,8 +1320,15 @@ def classify_trend(meses: list[MonthlyFlow]) -> str:
         return "sem_serie"
 
     base = sum(m.captacao_liquida for m in anteriores) / dias_anteriores
-    agora = ultimo.media_diaria
+    return classificar_ritmo(ultimo.media_diaria, base)
 
+
+def classificar_ritmo(agora: float, base: float) -> str:
+    """O ritmo de `agora` contra `base`, as duas em captacao por dia.
+
+    A regra do ritmo mensal (o ultimo mes contra os anteriores) e do semanal
+    (a semana de referencia contra as 12 anteriores): mesma ordem, mesma faixa.
+    """
     if base <= 0 and agora > 0:
         return "virou_entrada"
     if base > 0 and agora < 0:
@@ -1235,6 +1342,96 @@ def classify_trend(meses: list[MonthlyFlow]) -> str:
     if agora < base * (1 - _TREND_BAND):
         return "desacelerando"
     return "estavel"
+
+
+# --- semana ---------------------------------------------------------------------
+
+# A base do ritmo semanal pede ao menos isto de semanas com informe: com menos,
+# "a media das anteriores" e uma ou duas semanas, e o rotulo seria ruido.
+_MIN_SEMANAS_DE_BASE = 4
+
+
+@dataclass
+class SemanaDoFundo:
+    """Fluxo de um fundo numa semana do recorte, com os dias observados."""
+
+    segunda: date
+    captacao_liquida: float = 0.0
+    dias: int = 0
+
+    @property
+    def media_diaria(self) -> float:
+        """Captacao por dia observado - a semana com feriado nao parece fraca."""
+        return self.captacao_liquida / self.dias if self.dias else 0.0
+
+
+def weekly_by_fund(
+    registros: list[DailyFlow], semanas: list[Semana]
+) -> dict[str, list[SemanaDoFundo]]:
+    """Quebra o fluxo de cada fundo pelas semanas do recorte, alinhado a elas.
+
+    Cada semana passa por `agrupar_por_classe`, pelo mesmo motivo da serie
+    mensal: e a consolidacao por classe que deduplica a retificacao da CVM e
+    soma as subclasses. So contam os dias completos de cada semana; semana sem
+    linha do fundo sai zerada, com 0 dias.
+    """
+    semana_do_dia = {dia: semana.segunda for semana in semanas for dia in semana.dias}
+    por_fundo: dict[str, dict[date, list[DailyFlow]]] = {}
+    for registro in registros:
+        segunda = semana_do_dia.get(registro.dia)
+        if segunda is not None:
+            por_fundo.setdefault(registro.cnpj, {}).setdefault(segunda, []).append(registro)
+
+    saida: dict[str, list[SemanaDoFundo]] = {}
+    for cnpj, por_semana in por_fundo.items():
+        serie: list[SemanaDoFundo] = []
+        for semana in semanas:
+            linhas = por_semana.get(semana.segunda)
+            if not linhas:
+                serie.append(SemanaDoFundo(semana.segunda))
+                continue
+            classe = agrupar_por_classe(linhas)[cnpj]
+            serie.append(SemanaDoFundo(
+                semana.segunda, classe.captacao_bruta - classe.resgates, classe.dias,
+            ))
+        saida[cnpj] = serie
+    return saida
+
+
+def ritmo_da_semana(semanas: list[SemanaDoFundo]) -> str:
+    """A captacao por dia da semana de referencia contra a das anteriores."""
+    if not semanas:
+        return "sem_serie"
+    atual = semanas[-1]
+    anteriores = [s for s in semanas[:-1] if s.dias]
+    dias_da_base = sum(s.dias for s in anteriores)
+    if not atual.dias or len(anteriores) < _MIN_SEMANAS_DE_BASE or not dias_da_base:
+        return "sem_serie"
+    base = sum(s.captacao_liquida for s in anteriores) / dias_da_base
+    return classificar_ritmo(atual.media_diaria, base)
+
+
+def serie_semanal(fluxos: list[FundFlow], semanas: list[Semana]) -> list[dict]:
+    """A captacao somada dos fundos em cada semana do recorte, e por dia util.
+
+    Por dia util da semana (os dias completos dela), nao por dia observado de
+    cada fundo: e a soma de um conjunto, e a semana com feriado tem menos dias.
+    """
+    saida = []
+    for i, semana in enumerate(semanas):
+        total = sum(
+            f.semanas[i].captacao_liquida for f in fluxos if len(f.semanas) > i
+        )
+        dias = len(semana.dias)
+        saida.append({
+            "segunda": semana.segunda.isoformat(),
+            "de": semana.de.isoformat(),
+            "ate": semana.ate.isoformat(),
+            "dias": dias,
+            "captacao_liquida": round(total, 2),
+            "media_diaria": round(total / dias, 2) if dias else None,
+        })
+    return saida
 
 
 def monthly_by_fund(registros: list[DailyFlow]) -> dict[str, list[MonthlyFlow]]:

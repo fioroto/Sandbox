@@ -19,30 +19,27 @@ dia, e os ultimos dias chegam com parte dos fundos: em 28/09/2026 a sexta
 tipico sai, e o flash diz qual e com quanto. A semana do flash e a do ultimo
 dia completo, mesmo parcial, desde que tenha ao menos 3 dias - a comparacao
 e por dia util; com menos, vale a semana anterior. Esperar a sexta chegar
-atrasava o flash de segunda-feira em dez dias.
+atrasava o flash de segunda-feira em dez dias. A regra mora em
+`report/shared/semanas.py`, a mesma da captacao semanal do digest.
 """
 from __future__ import annotations
 
 import json
 import re
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from shelf_monitor.config import Config
 from shelf_monitor.industria.agregados import dimensoes
 from shelf_monitor.industria.base import competencia_anterior
 from shelf_monitor.industria.universo import UNIVERSO
-from shelf_monitor.report.shared.numeros import mediana, reais_com_sinal
+from shelf_monitor.report.shared.numeros import reais_com_sinal
+from shelf_monitor.report.shared.semanas import prazos_da_semana, recorte_semanal
 from shelf_monitor.texto import competencia_br, data_br, periodo_br
 
 ARQUIVO_DO_RETRATO = "universo.json"
 IDADE_MAXIMA_DO_RETRATO_DIAS = 45
-SEMANAS_DE_COMPARACAO = 12
-# Dia com menos que isto dos produtos de um dia tipico ainda esta chegando.
-MIN_COBERTURA_DO_DIA = 0.90
-# Semana em curso com menos dias completos que isto cede a vez a anterior.
-MIN_DIAS_NA_SEMANA = 3
 MAIORES = 5
 INTERVALO_DO_FLASH_DIAS = 7
 
@@ -115,18 +112,23 @@ def ultimo_flash(config: Config) -> date | None:
 # --- a captacao diaria -------------------------------------------------------------
 
 
-def _ler_mes(config: Config, mes: str, alvo: set[str], *, baixar: bool, corrente: bool) -> list:
+def _ler_mes(
+    config: Config, mes: str, alvo: set[str], *, baixar: bool, corrente: bool,
+    anterior: bool = False,
+) -> list:
     """Registros do informe diario da competencia, so dos CNPJs do universo.
 
-    O mes corrente e baixado de novo (muda todo dia); os fechados vem do disco,
-    onde os outros monitores ja os deixaram, e so sao baixados se faltarem.
+    O mes corrente e baixado de novo (muda todo dia); o anterior e revalidado
+    (a CVM ainda o regrava, e a semana pode cruzar a virada do mes); os mais
+    antigos vem do disco, onde os outros monitores ja os deixaram, e so sao
+    baixados se faltarem.
     """
     from shelf_monitor.market.informe_diario import fetch_inf_diario_month
     from shelf_monitor.report.retail_flow import read_daily_flows
 
     local = config.market_raw_dir / f"inf_diario_fi_{mes}.zip"
     if baixar:
-        caminho = fetch_inf_diario_month(config, mes, force=corrente)
+        caminho = fetch_inf_diario_month(config, mes, force=corrente, revalidar=anterior)
     else:
         caminho = local if local.is_file() else None
     return read_daily_flows(caminho, alvo) if caminho else []
@@ -136,8 +138,9 @@ def _indisponivel(motivo: str, **extra) -> dict:
     return {"available": False, "reason": motivo, **extra}
 
 
-def _segunda(dia: date) -> date:
-    return dia - timedelta(days=dia.weekday())
+def _mes_seguinte(mes: str) -> str:
+    ano, numero = int(mes[:4]), int(mes[4:])
+    return f"{ano + 1:04d}01" if numero == 12 else f"{ano:04d}{numero + 1:02d}"
 
 
 def montar_flash(
@@ -179,7 +182,10 @@ def montar_flash(
     mes_de_hoje = f"{hoje.year:04d}{hoje.month:02d}"
     if leitor is None:
         def leitor(mes: str) -> list:
-            return _ler_mes(config, mes, alvo, baixar=baixar, corrente=mes == mes_de_hoje)
+            return _ler_mes(
+                config, mes, alvo, baixar=baixar, corrente=mes == mes_de_hoje,
+                anterior=mes == competencia_anterior(mes_de_hoje),
+            )
 
     # dia -> {(cnpj, subclasse): captacao liquida declarada}. A mesma linha
     # repetida no arquivo (1% das linhas em 20/09/2026) vale a ultima.
@@ -197,42 +203,34 @@ def montar_flash(
 
     carregar(mes_de_hoje)
     carregar(competencia_anterior(mes_de_hoje))
-    dias = sorted(d for d in diario if d <= hoje)
-    if not dias:
+
+    def recortar():
+        return recorte_semanal({d: len(v) for d, v in diario.items() if d <= hoje})
+
+    if not any(d <= hoje for d in diario):
         return _indisponivel("sem informe diário da CVM do mês corrente nem do anterior", retrato=sobre_o_retrato)
-
-    # Dia completo: ao menos 90% dos produtos de um dia tipico (a mediana dos
-    # dias lidos, sem os cinco ultimos, que sao os que ainda estao chegando).
-    contagem = {d: len(diario[d]) for d in dias}
-    tipico = mediana([contagem[d] for d in (dias[:-5] or dias)]) or 0
-    incompletos = []
-    while dias and contagem[dias[-1]] < MIN_COBERTURA_DO_DIA * tipico:
-        dia = dias.pop()
-        incompletos.append({"dia": dia.isoformat(), "cobertura": round(contagem[dia] / tipico, 3)})
-    incompletos.reverse()
-    if not dias:
+    recorte = recortar()
+    if recorte is None:
         return _indisponivel("nenhum dia completo no informe diário recente", retrato=sobre_o_retrato)
-    ultimo = dias[-1]
 
-    # A semana do flash e a do ultimo dia completo, se ja tem 3 dias completos;
-    # senao, a anterior.
-    segunda = _segunda(ultimo)
-    if sum(1 for d in dias if segunda <= d <= ultimo) < MIN_DIAS_NA_SEMANA:
-        segunda -= timedelta(days=7)
-    sexta = segunda + timedelta(days=4)
-    inicio = segunda - timedelta(weeks=SEMANAS_DE_COMPARACAO)
+    # A comparacao recua 12 semanas: le os meses que faltam e recorta de novo.
+    inicio = recorte.inicio_da_comparacao
     mes = f"{inicio.year:04d}{inicio.month:02d}"
+    faltava = False
     while mes < mes_de_hoje:
+        faltava = faltava or mes not in lidos
         carregar(mes)
-        ano, numero = int(mes[:4]), int(mes[4:])
-        mes = f"{ano + 1:04d}01" if numero == 12 else f"{ano:04d}{numero + 1:02d}"
-
-    dias_da_semana = sorted(d for d in diario if segunda <= d <= sexta and d <= ultimo)
-    dias_de_comparacao = sorted(d for d in diario if inicio <= d < segunda)
-    if not dias_da_semana:
+        mes = _mes_seguinte(mes)
+    if faltava:
+        recorte = recortar() or recorte
+    semana = recorte.semana
+    if not semana.dias:
         return _indisponivel(
-            f"nenhum dia completo na semana {periodo_br(segunda, sexta)}", retrato=sobre_o_retrato,
+            f"nenhum dia completo na semana {periodo_br(semana.segunda, semana.sexta)}",
+            retrato=sobre_o_retrato,
         )
+    dias_da_semana = list(semana.dias)
+    dias_de_comparacao = list(recorte.comparacao)
 
     def investidor(chave: tuple[str, str], bruto: float) -> float:
         return bruto * (1.0 - float(produtos[chave].get("fatia_fundos") or 0.0))
@@ -285,19 +283,14 @@ def montar_flash(
 
     flash = {
         "available": True,
-        "semana": {"de": dias_da_semana[0].isoformat(), "ate": dias_da_semana[-1].isoformat(),
-                   "segunda": segunda.isoformat(), "sexta": sexta.isoformat(), "dias": n_semana},
-        "comparacao": {
-            "de": dias_de_comparacao[0].isoformat() if dias_de_comparacao else None,
-            "ate": dias_de_comparacao[-1].isoformat() if dias_de_comparacao else None,
-            "semanas": SEMANAS_DE_COMPARACAO, "dias": n_comparacao,
-        },
+        "semana": semana.to_dict(),
+        "comparacao": recorte.comparacao_dict(),
         "total": total,
         "por_n1": por_n1,
         "maiores_entradas": entradas,
         "maiores_saidas": saidas,
-        "ultimo_dia_completo": ultimo.isoformat(),
-        "dias_incompletos": incompletos,
+        "ultimo_dia_completo": recorte.ultimo_completo.isoformat(),
+        "dias_incompletos": recorte.incompletos_dict(),
         "retrato": sobre_o_retrato,
         "cobertura": {"produtos_no_retrato": len(produtos), "produtos_com_informe_na_semana": len(com_informe)},
     }
@@ -307,13 +300,8 @@ def montar_flash(
 
 
 def prazos_do_flash(flash: dict) -> list[str]:
-    semana, comparacao, retrato = flash["semana"], flash["comparacao"], flash["retrato"]
-    linhas = [f"semana: {periodo_br(semana['de'], semana['ate'])} ({semana['dias']} dias úteis com informe)"]
-    if comparacao["de"]:
-        linhas.append(
-            f"comparação: {comparacao['semanas']} semanas anteriores, "
-            f"{periodo_br(comparacao['de'], comparacao['ate'])} ({comparacao['dias']} dias úteis)"
-        )
+    retrato = flash["retrato"]
+    linhas = prazos_da_semana(flash["semana"], flash["comparacao"])
     linhas.append(
         f"universo e fatia de fundos: ciclo mensal de {competencia_br(retrato['competencia'])} "
         f"(informe até {data_br(retrato['data_base'])})"

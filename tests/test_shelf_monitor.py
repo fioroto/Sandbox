@@ -756,7 +756,8 @@ class TestMailer(unittest.TestCase):
             self._report([diff_shelf(current, previous)], snapshots=[current])
         )
         self.assertIn("1 entrada / 1 saída", subject)
-        self.assertIn("1 alteração", subject)
+        # Alteracao de condicao saiu do digest (e do assunto) em 14/10/2026.
+        self.assertNotIn("alteração", subject)
 
     def test_subject_counts_the_window_not_the_catalog(self):
         """O assunto conta o que o corpo do digest lista: so a vitrine."""
@@ -780,7 +781,8 @@ class TestMailer(unittest.TestCase):
         self.assertIn("sem mudanças", subject)
 
     def test_subject_distinguishes_total_source_failure(self):
-        broken = snapshot_for("nu", [], self.now, status=SnapshotStatus.UNAVAILABLE)
+        # Uma casa do digest (o Nu saiu dele em 14/10/2026).
+        broken = snapshot_for("btg", [], self.now, status=SnapshotStatus.UNAVAILABLE)
         subject = build_subject(
             self._report([diff_shelf(broken, None)], snapshots=[broken])
         )
@@ -806,7 +808,7 @@ class TestMailer(unittest.TestCase):
         stable = render_markdown(
             self._report([diff_shelf(stable_curr, stable_prev)], snapshots=[stable_curr])
         )
-        self.assertIn("Nenhuma mudança", stable)
+        self.assertIn("Nenhum fundo entrou nem saiu", stable)
 
     def test_send_is_a_noop_without_smtp_config(self):
         snapshot = snapshot_for("btg", [offer("btg", "Fundo A", "11111111000191")], self.now)
@@ -995,11 +997,21 @@ class TestReports(unittest.TestCase):
         self.assertNotIn('src="dashboard.js"', content)
 
     def test_digest_reports_change_and_unavailable_source(self):
-        markdown = render_markdown(self._com_vitrine())
-        self.assertIn("aplicação mínima", markdown)
+        relatorio = self._com_vitrine()
+        markdown = render_markdown(relatorio)
         self.assertIn("Fundo Descontinuado", markdown)
-        self.assertIn("Fontes indisponíveis", markdown)
         self.assertIn("pré-operacional", markdown.lower())
+        # Alteracao de condicao e casa fora do digest (o Nu) sairam em 14/10/2026.
+        self.assertNotIn("aplicação mínima", markdown)
+        self.assertNotIn("Nu (Nubank)", markdown)
+        # Fonte indisponivel de uma casa do digest continua dita.
+        itau = snapshot_for("itau", [], datetime.now(), status=SnapshotStatus.UNAVAILABLE)
+        itau.error = "página da vitrine fora do ar"
+        relatorio.snapshots.append(itau)
+        relatorio.shelf_diffs.append(diff_shelf(itau, None))
+        markdown = render_markdown(relatorio)
+        self.assertIn("Fontes indisponíveis", markdown)
+        self.assertIn("página da vitrine fora do ar", markdown)
 
     def test_digest_separates_the_window_from_the_catalog(self):
         """Fundo que entrou so no Open Finance nao vira "entrou na vitrine".
@@ -1034,9 +1046,8 @@ class TestReports(unittest.TestCase):
 
         self.assertIn("BTG Ações Novo FIC FIA", markdown)
         self.assertNotIn("BTG Carteira Fechada FIC FIM", markdown)
-        self.assertIn("só no catálogo Open Finance", markdown)
-        # A tabela de sumario conta 1 entrada de vitrine, nao as 2 do diff.
-        self.assertIn("| BTG Pactual | 2 | 3 | ok | 1 | 0 | 0 |", markdown)
+        # A linha da casa conta 1 entrada de vitrine, nao as 2 do diff.
+        self.assertIn("1 entrada, 0 saídas na vitrine - 2 fundos na vitrine.", markdown)
 
     def test_external_names_cannot_inject_markup(self):
         """Nome de fundo vem da fonte externa: nao pode virar markup executavel."""
@@ -1152,7 +1163,7 @@ class TestReports(unittest.TestCase):
         # HTML monta o sumario sem um cabecalho proprio, e isso e escolha de
         # formatacao, nao divergencia de conteudo. O que tem de bater sao os
         # blocos nomeados que os dois declaram publicar.
-        for bloco in ("Gaps de prateleira da XP", "Radar CVM"):
+        for bloco in ("Oportunidade de grade e gaps", "Radar CVM"):
             if bloco in markdown:
                 self.assertIn(
                     bloco, visivel, f"bloco '{bloco}' só existe no markdown"
@@ -1284,12 +1295,13 @@ class TestReports(unittest.TestCase):
 
     def test_digest_gap_section_and_suppression(self):
         markdown = render_markdown(self._listing_report())
-        self.assertIn("Gaps de prateleira da XP", markdown)
+        self.assertIn("Oportunidade de grade e gaps", markdown)
         self.assertIn("Kapitalo Zeta FIC FIM", markdown)
-        self.assertIn("vitrine x vitrine", markdown)
+        # Sem a carteira da CVM, o gap e CNPJ contra CNPJ - e a nota diz.
+        self.assertIn("CNPJ contra CNPJ", markdown)
 
         suppressed = render_markdown(self.report)
-        self.assertIn("Gaps de prateleira da XP", suppressed)
+        self.assertIn("Oportunidade de grade e gaps", suppressed)
         self.assertIn("suprimida", suppressed)
         self.assertNotIn("Kapitalo", suppressed)
 

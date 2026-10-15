@@ -34,7 +34,7 @@ Saidas de cada execucao:
 |---|---|
 | `data/reports/prateleiras-<data>.xlsx` | Planilha com todos os fundos (via `export`) |
 | `data/reports/dashboard.html` | Dashboard comparativo: visao executiva no topo, cada bloco num painel aberto sob demanda, tema claro (abre no navegador, sem dependencia externa) |
-| `data/reports/digest-<data>.md` | Digest de mudancas para leitura no repo |
+| `data/reports/digest-<data>.md` | Digest semanal (oportunidade de grade, ritmo, radar e vitrines) para leitura no repo |
 | `data/reports/digest-<data>.html` | Mesmo digest com CSS inline, pronto para e-mail |
 | `data/snapshots/<casa>/<data>.json` | Foto da prateleira (versionada no git) |
 | `data/cvm/extract/<data>.json` | Extrato da CVM filtrado pela watchlist (versionado) |
@@ -89,11 +89,46 @@ e nenhum JS, entao pode ser colado num e-mail, enviado por um conector ou aberto
 direto. Para envio automatico, configure `SMTP_HOST`, `SMTP_FROM` e `SMTP_TO` no
 `.env` e rode com `--send-email`; sem essas variaveis a flag apenas avisa e segue.
 
+**O digest e semanal e curto (v2, 14/10/2026).** So XP, BTG e Itau
+(`Config.casas_do_digest`; dashboard, planilha e deck seguem com todas as casas), e
+nesta ordem:
+
+| Secao | O que traz |
+|---|---|
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (fora da vitrine da XP e da lista da casa, sem espelho nem equivalente pela carteira) que captam varejo em 3 meses, sem o produto proprio do concorrente; numeros em destaque, a evolucao semanal da captacao deles e os 10 primeiros pelo esforco de trazer |
+| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
+| Radar CVM | o que as gestoras dos grupos BTG e Itau registraram - sem a XP e sem fundo cancelado (14/10/2026: so os ativos contam e a passagem para cancelado nao vira movimento, em todas as superficies; o extrato gravado segue inteiro), e dito que e a gestora, nao a vitrine |
+| Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
+| Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
+
+A **semana** e a do ultimo dia completo do informe diario (ao menos 3 dias; senao a
+anterior), contra a media por dia util das 12 semanas anteriores - a regra mora em
+`report/shared/semanas.py`, a mesma do flash da industria. O dia que ainda esta
+chegando sai de todas as somas, e a janela de 3 meses termina no mesmo dia. O ritmo
+da semana (acelerando, desacelerando, virou saida...) usa a regra e a faixa de 25% do
+ritmo mensal. Todo fundo que a XP tem sai com o servico da lista da casa
+(`XP · Distribuição` ou `XP · FaaS`).
+
+**O Itau em todas as analises** (pedido de 14/10/2026). A oportunidade sai por
+concorrente: o resumo de cada um (gaps reais, quantos captam, captacao na semana e
+em 3 meses), os 5 primeiros de cada um e a evolucao semanal com uma miniatura por
+casa - numa lista unica o BTG, de vitrine maior, ocupava o topo inteiro. E a coleta
+que falha nao tira a casa das analises: para as casas de `Config.vitrine_de_reserva`
+(hoje, o Itau), um dia sem vitrine utilizavel - coleta indisponivel, so o catalogo
+Open Finance, menos de 30 fundos ou CNPJ em menos de metade da vitrine - entra com a
+ultima vitrine utilizavel de ate 30 dias (`shelf_monitor/reserva.py`), e toda
+superficie diz de que dia ela e. O arquivo gravado e o diff continuam os da coleta do
+dia (o digest nao inventa entrada nem saida), e a linha final da execucao conta a
+casa como nao coletada. Vitrine guardada sem CNPJ ganha uma identificacao na hora do
+relatorio quando o modulo sabe fazer isso (`identificar_vitrine`): o Itau Private,
+com a pagina fora do ar desde 28/09/2026, volta as analises de previdencia pela
+vitrine de 25/09, com o CNPJ pela cota do dia (37 dos 41 planos), marcada com a data.
+
 O assunto ja carrega a novidade, para ser lido sem abrir:
-`[Monitor de fundos] 29/08 - 2 fundos em operação, 5 entradas / 1 saída`.
-Entradas, saidas e alteracoes sao da vitrine de varejo - a mesma conta do corpo do
-digest, do console, do deck e do dashboard. O dia em que a coleta passa a ver uma
-vitrine sai como `nova linha de base: XP Investimentos`, nunca como entradas.
+`[Monitor de fundos] 14/10 - 46 fundos para a grade (+220,0 MM na semana), 2 entradas / 1 saída, 1 fundo em operação`.
+Entradas e saidas sao da vitrine de varejo das casas do digest - a mesma conta do
+corpo do digest. O dia em que a coleta passa a ver uma vitrine sai como
+`nova linha de base: XP Investimentos`, nunca como entradas.
 
 ### Fontes com link e texto das saidas
 
@@ -184,12 +219,15 @@ rodada de evidencia. A tabela e paginada em ~10 fundos por pagina (45 paginas na
 medicao); o coletor clica "proxima" ate o fim e mapeia as colunas **pelo cabecalho**
 (nome, risco, aplicacao inicial, taxa maxima, resgate), nunca por posicao - as
 colunas de retorno ficam de fora por desenho, para rentabilidade nao virar "taxa".
-A tabela nao traz CNPJ, entao o merge reconcilia cada fundo com o gemeo do Open
-Finance pelo slug exato do nome (FIC/FIRF e afins descartados); o que nao casar
-permanece como registro proprio do site. Ha ainda um XHR de ~1,5 MB do gateway
-`apicd.cloud.itau.com.br` que deve carregar o dataset inteiro - a captura agora
-guarda o corpo dele (era o caso que revelou o bug abaixo) e, se parsear, os campos
-entram por cima.
+A tabela nao traz CNPJ, e o XHR de ~1,6 MB do gateway `apicd.cloud.itau.com.br`
+(`charon`) que carrega o dataset vem cifrado - base64, nao JSON (debug de
+2026-10-14). O CNPJ vem pelo nome (`shelf_monitor/cnpj_por_nome.py`): nome
+normalizado contra o catalogo Open Finance da mesma coleta e o cadastro da CVM,
+com empate sem casar - 403 dos 477 fundos (84,5%) em 2026-10-14, contra 27 de 459
+(6%) pelo slug do merge. A coleta de 2026-09-28 nao achou fundo nenhum porque a
+tabela nao carregou; desde 2026-10-14 o coletor espera a primeira linha, recarrega
+a pagina uma vez e confere as linhas lidas contra o "exibindo 10 de 477
+resultados" da pagina.
 
 **XP - bloqueio de CDN no proprio documento.** 403 ate para o Chromium, com pagina
 de bloqueio propria que indica o e-mail `bloqueio-cdn@xpi.com.br` para pedir
@@ -382,6 +420,20 @@ A XP desenha 50 cards, mas a API que a pagina chama devolve os 223; ela exige a
 chave do Azure APIM, entao o coletor le a resposta que a propria pagina recebe.
 O Itau e o Private Bank, nao a prateleira íon - sai rotulado "Itaú Private".
 
+**Itau Private: CNPJ pela cota, e a pagina fora do ar.** A pagina nao publica
+CNPJ, mas publica a cota de cada plano com a data; a mesma cota, no mesmo dia,
+numa classe previdenciaria do informe diario e o veiculo
+(`previdencia/cota.py`). O que a cota nao identifica tenta o nome, restrito a
+classes previdenciarias e com as exclusivas incluidas - todo FIE e exclusivo no
+cadastro. Medido na vitrine de 25/09/2026: 37 dos 41 planos pela cota, sem erro;
+pelo nome sozinho seriam 17, e com os nomes alternativos da pagina 18, um deles
+errado (o "IBIUNA PREVIDÊNCIA" generico no lugar do veiculo do Itau). Desde
+28/09/2026 a pagina responde "Pagina indisponivel no momento" (erro no servidor
+do Itau, conferido no navegador em 14/10): a coleta sai UNAVAILABLE com esse
+motivo, e com `SHELF_BROWSER_DEBUG=1` grava a resposta em
+`data/cache/debug/itau-previdencia/`. A Tabela de Previdencia do itau.com.br
+(íon, Uniclass, Personnalité) tambem estava vazia em 14/10.
+
 ### O que o pipeline de fundos erraria aqui
 
 Cinco adaptacoes, cada uma para um erro medido antes de ser corrigido. Todas
@@ -454,8 +506,12 @@ e o DOM que o JS desenha, identico).
   parte da vitrine: comparavel em 90 de 226 no BTG (39,8%) e 78 de 218 na XP,
   contra o piso de 40%. As duas casas publicam a taxa na vitrine; usa-la como
   reserva mudaria a metodologia do indicador e e decisao pendente.
-- **Itau sem CNPJ.** Fica fora de captacao, custo, mandato e gaps, com o motivo
-  no relatorio. A categoria vem do resolvedor por nome.
+- **Itau com CNPJ pelo nome, nao todo.** Desde 2026-10-14 o CNPJ vem do nome
+  normalizado (403 dos 477 fundos, 84,5%), o que poe a vitrine acima do piso de
+  50% dos gaps. Os 74 restantes: 39 empates - 37 deles o par FIC/master de
+  mesmo nome, que a regra deixa sem casar - e 35 sem candidato. Escolher a
+  classe de cotas no par FIC/master levaria a 440 de 477 (92,2%), e e decisao
+  pendente.
 - **Arquitetura aberta ainda sai no deck e no `insights`.** O corte produto
   proprio x terceiros foi suprimido na captacao e no dashboard (que mostra a
   seguradora dos planos no lugar), mas o slide do deck e a coluna "Casa propria"
@@ -646,7 +702,7 @@ avisava, e prateleira inteira saia sem gestora em silencio.
 | Dashboard (`dashboard.html`) | `report` / `run` | ler e explorar - visao executiva no topo (manchetes com prazo, leituras e placar casa a casa) e, sob demanda, gaps da vitrine XP, captacao, rentabilidade e custo, matriz casa x classe ANBIMA, arquitetura aberta, ticket, exclusivos e radar CVM |
 | Deck executivo (`prateleiras-<data>.pptx`) | `report` / `run` | decidir - ate 9 slides para forum/comite (incl. gaps XP), gerados a cada coleta |
 | Planilha (`prateleiras-<data>.xlsx`) | `export` | trabalhar - abas Vitrine varejo (tabela-dinamica-ready), Gaps XP, Gaps cobertos, Gaps por categoria, Familias, Movimentos e Metodologia |
-| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo do dia por e-mail, com a secao de gaps XP no topo |
+| Digest (`digest-<data>.md/.html`) | `report` / `run` | acompanhar - o resumo semanal por e-mail, so XP, BTG e Itau, com a oportunidade de grade e os gaps reais no topo (rentabilidade e custo na edicao mensal) |
 
 O dashboard abre na visao executiva: as manchetes da XP (o que falta na vitrine,
 quanto capta, quanto rende, quanto custa, o que vem por ai no radar CVM), cada
@@ -798,7 +854,10 @@ A vitrine publica nao e tudo que a XP distribui. CSVs soltos em
 
 - separador `;` ou `,`, UTF-8 com ou sem BOM, ou Latin-1; colunas por nome:
   `cnpj` (ou `codigo_cvm`), `situacao` (`distribui` ou `pode_distribuir`; vazio
-  vale `distribui`), e opcionais `nome`, `gestora`, `data_referencia`, `observacao`;
+  vale `distribui`), `servico` (`Distribuição` ou `FaaS` - o digest escreve ao lado
+  de todo fundo da casa; valor desconhecido mantem o fundo, sem servico, com aviso),
+  e opcionais `nome`, `gestora`, `data_referencia`, `observacao`. A lista minima e
+  `cnpj;nome;servico`;
 - CNPJ da classe, CNPJ do fundo (vale para todas as classes dele, com aviso) ou
   codigo CVM, resolvidos contra o cadastro; arquivos unidos, repetido fica com
   `distribui`;
@@ -820,11 +879,10 @@ master/feeder/espelho (a proveniencia fica em `reconciliacao`); (2) inferencia p
 marca no prefixo do nome ("Bahia AM Muta..." -> Bahia AM), contra um indice de
 marcas construido das gestoras da base CVM - so marcas inequivocas entram ("ITAU"
 fica de fora porque aponta para Itau Asset, Itau DTVM e Intrag), e o dado sai
-marcado `gestor_inferido`, nunca como oficial; (3) o XHR de ~1,5 MB do gateway do
-Itau, capturado pelo `diagnose --browser`, que deve trazer o dataset completo -
-parser pendente de evidencia parseavel. O campo `cvm_code` da oferta ja existe e o
-extrator generico de JSON o captura, entao quando esse parser chegar o caminho ate
-o registro ja esta pronto.
+marcado `gestor_inferido`, nunca como oficial. O XHR do gateway do Itau nao e via:
+vem cifrado. Desde 2026-10-14 o coletor do Itau resolve o CNPJ pelo nome
+(`shelf_monitor/cnpj_por_nome.py`) antes do merge, e o fundo resolvido entra pela
+via (0) como qualquer outro.
 
 ## Qualidade da prateleira: rentabilidade, custo e mandato
 

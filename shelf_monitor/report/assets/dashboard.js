@@ -1314,14 +1314,14 @@ if (!document.getElementById("cvm-section")) {
   })).sort((a, b) => b.value - a.value);
   figura(mount, {
     titulo: `${linhas[0].label} tem mais fundos em fase pré-operacional: ${inteiro(linhas[0].value)}`,
-    sub: `Registrados e ainda não lançados; ao lado, o total registrado. Cadastro de ${dataBR(cvm.collected_at)}.`,
+    sub: `Registrados e ainda não lançados; ao lado, o total ativo (sem os cancelados). Cadastro de ${dataBR(cvm.collected_at)}.`,
     fonte: "Fonte: cadastro de fundos da CVM.",
   });
   barrasH(mount, linhas, { aria: "Fundos em fase pré-operacional por casa" });
   table(
     document.getElementById("table-cvm"),
     [{ key: "label", label: "Casa" },
-     { key: "total", label: "Registrados", num: true },
+     { key: "total", label: "Ativos", num: true },
      { key: "pre_operational", label: "Pré-operacionais", num: true }],
     cvm.houses
   );

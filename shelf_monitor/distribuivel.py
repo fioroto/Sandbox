@@ -14,8 +14,10 @@ dado comercial interno). O modelo com o cabecalho mora em
   UTF-8 com ou sem BOM, ou Latin-1;
 - colunas por nome, sem diferenciar maiuscula nem acento: `cnpj` (ou
   `codigo_cvm`) e obrigatorio; `situacao` e `distribui` ou `pode_distribuir`
-  (vazio vale `distribui`); `nome`, `gestora`, `data_referencia` e
-  `observacao` sao opcionais;
+  (vazio vale `distribui`); `servico` e o servico que a XP presta ao fundo,
+  `Distribuição` ou `FaaS` (Fund as a Service) - o digest o escreve ao lado de
+  todo fundo da casa; `nome`, `gestora`, `data_referencia` e `observacao` sao
+  opcionais;
 - o fundo e resolvido pela mesma regra do enriquecimento: CNPJ da classe,
   CNPJ do fundo (que vale para todas as classes dele) ou codigo CVM;
 - arquivos sao unidos; fundo repetido fica com `distribui`;
@@ -46,7 +48,27 @@ _SITUACOES = {
     "CAPACIDADE DE DISTRIBUIR": PODE_DISTRIBUIR,
 }
 
-CABECALHO_MODELO = ("cnpj", "nome", "situacao", "gestora", "data_referencia", "observacao")
+# O servico que a XP presta ao fundo da lista (pedido em 14/10/2026): o digest
+# marca cada fundo da casa com ele.
+SERVICO_DISTRIBUICAO = "distribuicao"
+SERVICO_FAAS = "faas"
+ROTULOS_SERVICO = {SERVICO_DISTRIBUICAO: "Distribuição", SERVICO_FAAS: "FaaS"}
+
+CABECALHO_MODELO = (
+    "cnpj", "nome", "situacao", "servico", "gestora", "data_referencia", "observacao",
+)
+
+
+def _servico(texto: str | None) -> tuple[str | None, bool]:
+    """(servico, reconhecido). Vazio e reconhecido, sem servico."""
+    normalizado = normalize_text(texto)
+    if not normalizado:
+        return None, True
+    if "FAAS" in normalizado or "FUND AS A SERVICE" in normalizado:
+        return SERVICO_FAAS, True
+    if normalizado.startswith("DISTRIBU"):
+        return SERVICO_DISTRIBUICAO, True
+    return None, False
 
 # Resolve (cnpj, codigo_cvm) -> CNPJs de classe. None quando nao ha base para
 # validar (sem mercado.csv): o CNPJ entra como veio, com aviso.
@@ -87,6 +109,9 @@ class BaseDistribuivel:
 
     pasta: Path
     situacao: dict[str, str] = field(default_factory=dict)
+    # CNPJ de classe -> servico (SERVICO_DISTRIBUICAO ou SERVICO_FAAS), quando
+    # a lista traz a coluna.
+    servico: dict[str, str] = field(default_factory=dict)
     arquivos: list[ArquivoLido] = field(default_factory=list)
     invalidas: list[LinhaInvalida] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
@@ -106,6 +131,13 @@ class BaseDistribuivel:
     def situacao_de(self, cnpj: str | None) -> str | None:
         return self.situacao.get(cnpj) if cnpj else None
 
+    def servico_de(self, cnpj: str | None) -> str | None:
+        return self.servico.get(cnpj) if cnpj else None
+
+    def rotulo_do_servico(self, cnpj: str | None) -> str | None:
+        """"Distribuição" ou "FaaS"; None fora da lista ou sem a coluna."""
+        return ROTULOS_SERVICO.get(self.servico_de(cnpj) or "")
+
     def motivo_da_supressao(self) -> str | None:
         if not self.arquivos:
             # O caminho a partir de data/, que e o que a pessoa procura.
@@ -123,6 +155,10 @@ class BaseDistribuivel:
             "pode_distribuir": sum(
                 1 for s in self.situacao.values() if s == PODE_DISTRIBUIR
             ),
+            "servicos": {
+                chave: sum(1 for s in self.servico.values() if s == chave)
+                for chave in ROTULOS_SERVICO
+            },
             "data_referencia": (
                 self.data_referencia.isoformat() if self.data_referencia else None
             ),
@@ -162,10 +198,24 @@ class BaseDistribuivel:
                         f"{caminho.name}, linha {numero}: CNPJ de fundo com "
                         f"{len(classes)} classes - vale para todas"
                     )
+                servico, reconhecido = _servico(linha.get("servico"))
+                if not reconhecido:
+                    base.avisos.append(
+                        f"{caminho.name}, linha {numero}: serviço desconhecido "
+                        f"'{linha.get('servico')}' (use Distribuição ou FaaS) - "
+                        "fundo mantido, sem serviço"
+                    )
                 for cnpj in classes:
                     atual = base.situacao.get(cnpj)
                     if atual != DISTRIBUI:
                         base.situacao[cnpj] = situacao
+                    if servico:
+                        anterior = base.servico.setdefault(cnpj, servico)
+                        if anterior != servico:
+                            base.avisos.append(
+                                f"{caminho.name}, linha {numero}: o fundo já veio "
+                                f"como {ROTULOS_SERVICO[anterior]} - vale o primeiro"
+                            )
                 referencia = parse_date(linha.get("data_referencia"))
                 if referencia:
                     datas.append(referencia)

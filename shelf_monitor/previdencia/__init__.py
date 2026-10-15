@@ -46,5 +46,8 @@ Limites conhecidos (numeros em `shelf_monitor/README.md`):
   gestoras em comum). O bloco de gestoras e o que compara de verdade;
 - o custo tem referencia, mas a taxa do proprio fundo no extrato da CVM falta
   ou esta velha em boa parte da vitrine, e a cobertura fica abaixo do piso;
-- o Itau Private nao publica CNPJ e fica fora dos blocos que dependem dele.
+- o Itau Private nao publica CNPJ: ele vem da cota do dia no informe diario
+  e, no que ela nao identifica, do nome (`previdencia/cota.py`). Desde
+  28/09/2026 a pagina do catalogo esta fora do ar no servidor do Itau, e a
+  coleta sai UNAVAILABLE com esse motivo.
 """

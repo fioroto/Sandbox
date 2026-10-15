@@ -40,19 +40,25 @@ def limpar() -> None:
 
 
 def caminho_da_competencia(
-    config: Config, yyyymm: str, *, force: bool = False
+    config: Config, yyyymm: str, *, force: bool = False, revalidar: bool = False
 ) -> Path | None:
-    """O zip da competencia, baixado no maximo uma vez por execucao."""
+    """O zip da competencia, baixado no maximo uma vez por execucao.
+
+    `revalidar` e o GET condicional de `fetch_inf_diario_month`: para o mes
+    fechado que a CVM ainda regrava.
+    """
     if yyyymm in _CAMINHOS:
         return _CAMINHOS[yyyymm]
     from shelf_monitor.market.informe_diario import fetch_inf_diario_month
 
-    caminho = fetch_inf_diario_month(config, yyyymm, force=force)
+    caminho = fetch_inf_diario_month(config, yyyymm, force=force, revalidar=revalidar)
     _CAMINHOS[yyyymm] = caminho
     return caminho
 
 
-def ler_competencia(config: Config, yyyymm: str, *, force: bool = False) -> list:
+def ler_competencia(
+    config: Config, yyyymm: str, *, force: bool = False, revalidar: bool = False
+) -> list:
     """Todos os registros da competencia, parseados no maximo uma vez.
 
     Devolve a lista COMPLETA, sem filtro de CNPJ: quem quer um recorte filtra
@@ -66,7 +72,7 @@ def ler_competencia(config: Config, yyyymm: str, *, force: bool = False) -> list
 
     from shelf_monitor.report.retail_flow import read_daily_flows
 
-    caminho = caminho_da_competencia(config, yyyymm, force=force)
+    caminho = caminho_da_competencia(config, yyyymm, force=force, revalidar=revalidar)
     registros = read_daily_flows(caminho, None) if caminho else []
     _REGISTROS[yyyymm] = registros
     return registros
@@ -88,11 +94,32 @@ def ler_sem_guardar(config: Config, yyyymm: str) -> list:
     return read_daily_flows(caminho, None) if caminho else []
 
 
+def ler_filtrado_sem_guardar(config: Config, yyyymm: str, alvo: set[str]) -> list:
+    """O recorte de CNPJ de uma competencia, sem guardar a competencia inteira.
+
+    Para quem precisa de poucos fundos de um mes que nenhum outro bloco le - o
+    mes antes da janela de 3 meses, so para a base da serie semanal. Filtrar na
+    leitura evita parsear os ~300 mil registros do mes para guardar mil. Se
+    outro modulo ja leu a competencia nesta execucao, reaproveita.
+    """
+    if yyyymm in _REGISTROS:
+        return [r for r in _REGISTROS[yyyymm] if r.cnpj in alvo]
+    from shelf_monitor.report.retail_flow import read_daily_flows
+
+    caminho = caminho_da_competencia(config, yyyymm)
+    return read_daily_flows(caminho, alvo) if caminho else []
+
+
 def ler_filtrado(
-    config: Config, yyyymm: str, alvo: set[str] | None, *, force: bool = False
+    config: Config,
+    yyyymm: str,
+    alvo: set[str] | None,
+    *,
+    force: bool = False,
+    revalidar: bool = False,
 ) -> list:
     """`ler_competencia` com o recorte de CNPJ aplicado em memoria."""
-    registros = ler_competencia(config, yyyymm, force=force)
+    registros = ler_competencia(config, yyyymm, force=force, revalidar=revalidar)
     if alvo is None:
         return registros
     return [r for r in registros if r.cnpj in alvo]

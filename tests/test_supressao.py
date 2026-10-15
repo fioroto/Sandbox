@@ -87,22 +87,26 @@ def _texto(html: str) -> str:
 
 class TestDigest(unittest.TestCase):
     def test_previdencia_nao_publica_cotistas_nem_cnpj(self):
+        # Na edicao mensal, que traz a rentabilidade (e os cotistas, nos fundos).
         report = _relatorio(PREVIDENCIA)
-        for superficie in (render_markdown(report), _texto(render_html(report))):
+        for superficie in (
+            render_markdown(report, None, "mensal"),
+            _texto(render_html(report, None, "mensal")),
+        ):
             for proibido in _COTISTAS + _CNPJ:
                 self.assertNotIn(proibido, superficie)
             self.assertIn("Não se aplica a este monitor", superficie)
             self.assertIn("Sem ponderação por cotistas", superficie)
             # O que continua valendo: a ponderada por PL e o fluxo por fundo.
             self.assertIn("Ponderada por PL", superficie)
-            self.assertIn("Captação dos fundos de vitrine", superficie)
+            self.assertIn("Ritmo de captação", superficie)
 
     def test_fundos_segue_publicando_tudo(self):
-        markdown = render_markdown(_relatorio({}))
+        markdown = render_markdown(_relatorio({}), None, "mensal")
         self.assertIn("Ponderada por cotistas", markdown)
         self.assertIn("PL menos cotistas", markdown)
-        self.assertIn("Só nesta vitrine", markdown)
-        self.assertIn("fundos de varejo estão em vitrines concorrentes", markdown)
+        self.assertIn("Oportunidade de grade e gaps", markdown)
+        self.assertIn("nas vitrines de BTG Pactual", markdown)
         self.assertNotIn("Não se aplica", markdown)
 
 

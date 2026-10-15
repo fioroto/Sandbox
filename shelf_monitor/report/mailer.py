@@ -12,51 +12,67 @@ from email.message import EmailMessage
 
 from shelf_monitor.config import Config
 from shelf_monitor.models import RunReport, SnapshotStatus
-from shelf_monitor.report.digest import render_html, render_markdown
+from shelf_monitor.report.digest import _mm, render_html, render_markdown
+from shelf_monitor.report.digest_visao import EDICAO_SEMANAL, montar_visao
 from shelf_monitor.report.shared import movimentos_do_run, rotulo_da_casa
 from shelf_monitor.texto import contagem
 
 
-def build_subject(report: RunReport, rotulo: str = Config.rotulo_assunto) -> str:
+def build_subject(
+    report: RunReport, rotulo: str = Config.rotulo_assunto, config: Config | None = None
+) -> str:
     """Assunto que ja conta a novidade - o e-mail e lido pela linha de assunto.
+
+    Abre com a mensagem principal do digest - quantos gaps reais captam e
+    quanto na semana - e segue com o que entrou e saiu das vitrines e o que as
+    gestoras dos concorrentes lancaram na CVM, tudo so das casas do digest
+    (`Config.casas_do_digest`). Alteracao de condicao nao conta mais: saiu do
+    digest em 14/10/2026.
 
     `rotulo` identifica o monitor na caixa de entrada; o de previdencia passa o
     dele (`ConfigPrevidencia.rotulo_assunto`).
     """
     date_label = report.generated_at.strftime("%d/%m")
+    visao = montar_visao(report, config, EDICAO_SEMANAL)
+    recortado = visao.report
 
-    launches = len(report.cvm_diff.launches) if report.cvm_diff else 0
+    launches = len(recortado.cvm_diff.launches) if recortado.cvm_diff else 0
     # Na primeira execucao new_registrations traz todos os pre-operacionais que
     # ja existiam: isso e baseline, nao novidade, e nao pode virar manchete.
     new_registrations = (
-        len(report.cvm_diff.new_registrations)
-        if report.cvm_diff and not report.cvm_diff.is_first_run
+        len(recortado.cvm_diff.new_registrations)
+        if recortado.cvm_diff and not recortado.cvm_diff.is_first_run
         else 0
     )
     # Movimento de vitrine, a mesma conta do corpo do digest: o assunto contava
     # o diff inteiro (catalogo Open Finance e restritos) e prometia mais do que
     # o e-mail mostrava - 236 contra 174 no BTG de 13 para 19/09.
-    movimentos = movimentos_do_run(report)
+    movimentos = movimentos_do_run(recortado)
     added = len(movimentos.entradas)
     removed = len(movimentos.saidas)
-    changed = len(movimentos.alteracoes)
     rebaseadas = [
-        rotulo_da_casa(d.platform) for d in report.shelf_diffs if d.nova_linha_de_base
+        rotulo_da_casa(d.platform) for d in recortado.shelf_diffs if d.nova_linha_de_base
     ]
 
     highlights: list[str] = []
+    oportunidade = visao.oportunidade
+    if oportunidade.get("com_fluxo") and oportunidade.get("total_transferiveis"):
+        grade = contagem(
+            oportunidade["total_transferiveis"], "fundo para a grade", "fundos para a grade"
+        )
+        if oportunidade.get("captacao_semana") is not None:
+            grade += f" ({_mm(oportunidade['captacao_semana'])} na semana)"
+        highlights.append(grade)
+    if added or removed:
+        highlights.append(
+            f"{contagem(added, 'entrada', 'entradas')} / {contagem(removed, 'saída', 'saídas')}"
+        )
     if launches:
         highlights.append(contagem(launches, "fundo em operação", "fundos em operação"))
     if new_registrations:
         highlights.append(
             contagem(new_registrations, "novo registro na CVM", "novos registros na CVM")
         )
-    if added or removed:
-        highlights.append(
-            f"{contagem(added, 'entrada', 'entradas')} / {contagem(removed, 'saída', 'saídas')}"
-        )
-    if changed:
-        highlights.append(contagem(changed, "alteração", "alterações"))
     if rebaseadas:
         # Sem isto o dia em que a coleta passa a ver a vitrine sai como "sem
         # mudancas". Antes da nova linha de base, saia como entrada: em 19/09 o
@@ -64,10 +80,9 @@ def build_subject(report: RunReport, rotulo: str = Config.rotulo_assunto) -> str
         highlights.append("nova linha de base: " + ", ".join(rebaseadas))
 
     if not highlights:
-        unavailable = sum(
-            1 for s in report.snapshots if s.status == SnapshotStatus.UNAVAILABLE
-        )
-        if unavailable == len(report.snapshots) and report.snapshots:
+        snapshots = recortado.snapshots
+        unavailable = sum(1 for s in snapshots if s.status == SnapshotStatus.UNAVAILABLE)
+        if unavailable == len(snapshots) and snapshots:
             return f"[{rotulo}] {date_label} - nenhuma fonte acessível"
         return f"[{rotulo}] {date_label} - sem mudanças na vitrine"
 
@@ -83,7 +98,7 @@ def send_digest(config: Config, report: RunReport) -> str:
         )
 
     message = EmailMessage()
-    message["Subject"] = build_subject(report, config.rotulo_assunto)
+    message["Subject"] = build_subject(report, config.rotulo_assunto, config)
     message["From"] = config.smtp_from
     message["To"] = config.smtp_to
     message.set_content(render_markdown(report, config))

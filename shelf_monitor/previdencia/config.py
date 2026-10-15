@@ -65,7 +65,9 @@ PLATAFORMAS: dict[str, PlatformConfig] = {
         shelf_url=URL_ITAU,
         notes=(
             "Catálogo do Private Bank, não a prateleira de varejo (íon). HTML "
-            "servido pronto, sem CNPJ; só o bloco de previdência entra."
+            "servido pronto, sem CNPJ: ele vem da cota do dia no informe diário "
+            "e, no resto, do nome. Só o bloco de previdência entra. Fora do ar "
+            "no servidor do Itaú desde 2026-09-28."
         ),
     ),
     "nu": PlatformConfig(
@@ -166,3 +168,18 @@ class ConfigPrevidencia(Config):
     def platform(self, platform_id: str) -> PlatformConfig:
         """Copia, pelo mesmo motivo do Config de fundos: nao vazar estado."""
         return replace(PLATAFORMAS[platform_id])
+
+    def identificar_vitrine(self, snapshot) -> str | None:
+        """Identifica o CNPJ de uma vitrine guardada sem ele, na hora do relatorio.
+
+        O gancho da vitrine de reserva (`shelf_monitor.reserva`): o Itau Private
+        guardado antes de 14/10/2026 nao tem CNPJ, mas tem a cota e a data de
+        cada plano - e a pagina esta fora do ar desde 28/09/2026. Identificada,
+        a vitrine de 25/09 volta as analises, marcada com a data dela. So o
+        Itau tem o que identificar; as outras casas publicam o CNPJ.
+        """
+        if snapshot.platform != "itau":
+            return None
+        from shelf_monitor.previdencia.coletores.itau import identificar_cnpj
+
+        return identificar_cnpj(self, snapshot.funds, snapshot.snapshot_date)

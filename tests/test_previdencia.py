@@ -767,7 +767,9 @@ class TestGanchosCompartilhados(unittest.TestCase):
 
         report = self._report()
         self.assertTrue(render_markdown(report).startswith("# Monitor de Prateleiras de Fundos"))
-        self.assertIn("Concorrentes da XP - execução de", render_markdown(report))
+        self.assertIn(
+            "Concorrentes da XP: BTG Pactual e Itaú (íon) - execução de", render_markdown(report)
+        )
         self.assertIn("<title>Monitor de Prateleiras de Fundos</title>", render_html(report))
 
         previdencia = ConfigPrevidencia()

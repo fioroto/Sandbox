@@ -239,7 +239,9 @@ class TestSuperficies(_ComConfig):
     def test_digest_traz_as_duas_janelas_com_o_prazo(self):
         from shelf_monitor.report.digest import render_html, render_markdown
 
-        md = render_markdown(self._report())
+        # A rentabilidade so sai na edicao mensal do digest (14/10/2026).
+        self.assertNotIn("**Em 12 meses**", render_markdown(self._report()))
+        md = render_markdown(self._report(), None, "mensal")
         self.assertIn("Prazos: **12 meses**, de 30/09/2025 a 23/09/2026", md)
         self.assertIn("**Em 12 meses** (de 30/09/2025 a 23/09/2026)", md)
         self.assertIn("**Em 3 meses** (de 28/06/2026 a 23/09/2026)", md)
@@ -248,7 +250,7 @@ class TestSuperficies(_ComConfig):
         self.assertIn("rendendo abaixo da categoria em 12 meses", md)
         # Virgula decimal: 10% e -5pp da XP contra a mediana de 15%.
         self.assertIn("10,00% contra 15,00% da categoria (-5,00pp)", md)
-        html = render_html(self._report())
+        html = render_html(self._report(), None, "mensal")
         self.assertIn("Em 12 meses", html)
         self.assertIn("de 30/09/2025 a 23/09/2026", html)
 

@@ -243,6 +243,10 @@ class ShelfSnapshot:
     # real de cada fonte para aquela casa.
     source_counts: dict[str, int] = field(default_factory=dict)
     schema_version: int = SNAPSHOT_SCHEMA_VERSION
+    # So no relatorio, nunca gravado: a coleta do dia nao trouxe vitrine
+    # utilizavel e as analises usam esta, a ultima valida. O texto diz de que
+    # dia e por que (`shelf_monitor.reserva`).
+    reserva: str | None = None
 
     @property
     def snapshot_date(self) -> date:
@@ -311,6 +315,13 @@ class CvmFund:
         if not self.situation:
             return False
         return "PRE-OPERACIONAL" in strip_accents(self.situation).upper()
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Cancelado na CVM - fica fora do radar dos relatorios (14/10/2026)."""
+        from shelf_monitor.normalize import strip_accents
+
+        return "CANCELAD" in strip_accents(self.situation or "").upper()
 
     def to_dict(self) -> dict:
         return {
@@ -470,6 +481,13 @@ class CvmSituationChange:
         old = strip_accents(self.old_situation or "").upper()
         new = strip_accents(self.new_situation or "").upper()
         return "PRE-OPERACIONAL" in old and "FUNCIONAMENTO NORMAL" in new
+
+    @property
+    def is_cancellation(self) -> bool:
+        """O fundo passou a cancelado."""
+        from shelf_monitor.normalize import strip_accents
+
+        return "CANCELAD" in strip_accents(self.new_situation or "").upper()
 
     def to_dict(self) -> dict:
         return {

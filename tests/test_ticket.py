@@ -21,13 +21,11 @@ from shelf_monitor.models import (
     KEY_MINIMO_VITRINE,
     CollectorStrategy,
     FundOffer,
-    RunReport,
     ShelfSnapshot,
     SnapshotStatus,
 )
 from shelf_monitor.report.aggregate import leitura_do_ticket, summarize_platform
 from shelf_monitor.report.competitive import build_positioning, vitrine_only_values
-from shelf_monitor.report.digest import _frase_do_ticket
 from shelf_monitor.report.shared import MIN_AMOSTRA_TICKET
 
 OF = CollectorStrategy.OPEN_FINANCE.value
@@ -126,20 +124,12 @@ class TestFaixasEVeredito(unittest.TestCase):
             summarize_platform(_snapshot("xp", self._xp_como_em_2026_09_21()), set()).to_dict(),
             summarize_platform(_snapshot("btg", self._btg_barato()), set()).to_dict(),
         ]
+        # O ticket saiu do digest em 14/10/2026; a leitura segue no dashboard e
+        # no deck, e e ela que nao pode concluir sem amostra.
         leitura = leitura_do_ticket(resumos)
         self.assertTrue(leitura["sem_base"])
         self.assertIsNone(leitura["baseline_varejo"])
         self.assertEqual(leitura["amostra_minima"], MIN_AMOSTRA_TICKET)
-
-        report = RunReport(
-            generated_at=datetime(2026, 9, 23),
-            snapshots=[_snapshot("xp", self._xp_como_em_2026_09_21()),
-                       _snapshot("btg", self._btg_barato())],
-        )
-        frase = _frase_do_ticket(report)
-        self.assertTrue(frase.startswith("Sem base para comparar o ticket"))
-        self.assertNotIn("não tem nenhum fundo", frase)
-        self.assertNotIn("porta de entrada", frase)
 
     def test_com_amostra_o_veredito_forte_continua_possivel(self):
         caros = [

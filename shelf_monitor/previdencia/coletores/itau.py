@@ -40,22 +40,57 @@ Tres detalhes do HTML que o parser trata:
 Fora da tabela principal ha 8 tabelas soltas com a mesma numeracao (438 em
 diante): sao indicadores - IGPM, Poupanca, CDI -, nao fundos. Nao entram.
 
-Nao ha CNPJ na pagina: o Itau fica fora dos blocos que dependem de identidade
-(`competitive._MIN_CNPJ_COVERAGE`), como ja fica no modulo de fundos.
+Fora do ar desde 28/09/2026
+---------------------------
+
+A pagina responde HTTP 200 com "Pagina indisponivel no momento / Exception has
+been thrown by the target of an invocation" - erro no servidor do Itau, nao
+layout novo nem bloqueio: o navegador recebe o mesmo, e o `catalogo.aspx` do
+hotsite cai na pagina de erro do ASP.NET. Medido em 14/10/2026. A Tabela de
+Previdencia do itau.com.br (ion, Uniclass e Personnalite) tambem estava vazia
+nesse dia: o gateway devolve 452 bytes no lugar do dataset. O coletor diz isso
+com todas as letras, em vez de "tabela nao encontrada", e com
+SHELF_BROWSER_DEBUG=1 grava a resposta em data/cache/debug/itau-previdencia/.
+
+CNPJ
+----
+
+A pagina nao publica CNPJ, mas publica a cota de cada plano com a data dela - e
+a cota do dia identifica o veiculo no informe diario da CVM
+(`shelf_monitor.previdencia.cota`). O que a cota nao identifica tenta o nome,
+pelo resolvedor do modulo de fundos (`shelf_monitor.cnpj_por_nome`) restrito a
+classes previdenciarias - exclusivas incluidas, porque todo FIE e exclusivo no
+cadastro. Na vitrine de 25/09/2026: 37 dos 41 planos pela cota, nenhum erro.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from datetime import date
 
 from bs4 import BeautifulSoup
 
+from shelf_monitor.cnpj_por_nome import ResolvedorPorNome, ResumoPorNome
 from shelf_monitor.collectors.platform import PlatformCollector
 from shelf_monitor.http import SourceUnavailable, get
 from shelf_monitor.models import AssetClass, CollectorStrategy, FundOffer
 from shelf_monitor.normalize import classify_asset_class, normalize_text, parse_number
+from shelf_monitor.previdencia.cota import (
+    ResumoPelaCota,
+    carregar_indice,
+    dias_das_cotas,
+    identificar_pela_cota,
+)
 from shelf_monitor.previdencia.eixo import KEY_NOME_REGISTRO
+from shelf_monitor.texto import contagem
+
+# Marcas da casa que o nome do plano omite: "Private Prev RF" e, no cadastro,
+# "ITAÚ FLEXPREV EXCELLENCE ... RF".
+_MARCAS = ("ITAU", "FLEXPREV")
+# Pasta da evidencia, ao lado da do modulo de fundos (data/cache/debug/itau/).
+_PASTA_DEBUG = "itau-previdencia"
 
 _NUMERO_RE = re.compile(r"\((\d+)\)\s*$")
 _MARCA_PREVIDENCIA = re.compile(r"\b(PREV\w*|FLEXPREV|PGBL|VGBL|FIE|FIFE)\b")
@@ -253,11 +288,26 @@ def _oferta(linha: _Linha, nome_registro: str | None) -> FundOffer:
     )
 
 
+def pagina_fora_do_ar(soup) -> str | None:
+    """O aviso de "pagina indisponivel" do servidor, se for o que veio; senao None."""
+    texto = _texto(soup)
+    if "INDISPONIVEL" not in normalize_text(texto):
+        return None
+    painel = soup.find(id="pnlConteudo")
+    return _texto(painel) if painel is not None else texto[:200]
+
+
 def parse_catalogo(html: str) -> tuple[list[FundOffer], list[str]]:
     """(fundos da vitrine de previdencia, avisos) a partir do HTML ja decodificado."""
     soup = BeautifulSoup(html, "lxml")
     tabela = _tabela_principal(soup)
     if tabela is None:
+        aviso = pagina_fora_do_ar(soup)
+        if aviso:
+            raise SourceUnavailable(
+                f"catálogo do Private Bank fora do ar: a página responde \"{aviso[:160]}\" "
+                "(erro no servidor do Itaú, não mudança de layout)"
+            )
         raise SourceUnavailable("tabela de rentabilidade não encontrada na página")
 
     linhas, achou_bloco = _ler_tabela(tabela)
@@ -293,6 +343,11 @@ def parse_catalogo(html: str) -> tuple[list[FundOffer], list[str]]:
 class ItauPrivateCollector(PlatformCollector):
     """HTTP simples na tabela; o navegador so se o HTTP for barrado."""
 
+    def __init__(self, config, platform, stop_at_first_source: bool = False):
+        super().__init__(config, platform, stop_at_first_source=stop_at_first_source)
+        # O dia da coleta: e dele que sai o ano da cota ("9/09" -> 2026-09-09).
+        self.hoje: date = date.today()
+
     def _collect_impl(self) -> list[FundOffer]:
         """Uma fonte so, e sem `merge_offers`.
 
@@ -322,6 +377,7 @@ class ItauPrivateCollector(PlatformCollector):
         try:
             resposta = get(self.session, url, self.config, accept="text/html")
             html = decodificar(resposta.content, resposta.encoding)
+            self._guardar_resposta(resposta, html)
         except SourceUnavailable as erro:
             html = self._pelo_navegador(url, erro)
         self.source_urls.append(url)
@@ -330,10 +386,45 @@ class ItauPrivateCollector(PlatformCollector):
         self.warnings.extend(avisos)
         if not ofertas:
             raise SourceUnavailable(f"{url}: nenhum fundo de previdência na tabela")
+        self._identificar(ofertas)
         return ofertas
 
+    def _identificar(self, ofertas: list[FundOffer]) -> None:
+        """CNPJ pela cota do dia e, no que ela nao identificar, pelo nome."""
+        self._observar(identificar_cnpj(self.config, ofertas, self.hoje))
+
+    def _observar(self, nota: str) -> None:
+        self.partial_reason = f"{self.partial_reason} | {nota}" if self.partial_reason else nota
+
+    def _guardar_resposta(self, resposta, html: str) -> None:
+        """Com SHELF_BROWSER_DEBUG=1, a pagina e o cabecalho da resposta HTTP.
+
+        Sem `Set-Cookie`: sao tokens de sessao do anti-bot, nao evidencia.
+        """
+        if not self.config.browser_debug:
+            return
+        pasta = self.config.debug_dir / _PASTA_DEBUG
+        pasta.mkdir(parents=True, exist_ok=True)
+        (pasta / "pagina-http.html").write_text(html, encoding="utf-8")
+        cabecalho = {
+            nome: valor for nome, valor in (resposta.headers or {}).items()
+            if nome.lower() != "set-cookie"
+        }
+        (pasta / "resposta-http.json").write_text(
+            json.dumps(
+                {
+                    "url": resposta.url,
+                    "status": resposta.status_code,
+                    "bytes": len(resposta.content),
+                    "cabecalho": cabecalho,
+                },
+                ensure_ascii=False, indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
+
     def _pelo_navegador(self, url: str, erro_http: SourceUnavailable) -> str:
-        from shelf_monitor.collectors.browser import render_page
+        from shelf_monitor.collectors.browser import dump_capture, render_page
 
         captura = render_page(
             url,
@@ -342,6 +433,50 @@ class ItauPrivateCollector(PlatformCollector):
             headed=self.config.browser_headed,
             channel=self.config.browser_channel,
         )
+        if self.config.browser_debug:
+            dump_capture(self.config.debug_dir, _PASTA_DEBUG, captura)
         # O navegador decodifica pelo cabecalho, como `decodificar` faz.
         self.partial_reason = f"tabela lida pelo navegador ({erro_http})"
         return captura.html
+
+
+def identificar_cnpj(config, ofertas: list[FundOffer], hoje: date) -> str:
+    """CNPJ pela cota do dia e, no que ela nao identificar, pelo nome; devolve a nota.
+
+    Preenche as ofertas no lugar. `hoje` e o dia da coleta: e dele que sai o ano
+    da cota ("9/09"). Serve a coleta e a vitrine de reserva - a vitrine guardada
+    antes de 14/10/2026, sem CNPJ, e identificada na hora do relatorio
+    (`ConfigPrevidencia.identificar_vitrine`).
+    """
+    resolvedor = ResolvedorPorNome.carregar(
+        config.market_dir, [], marcas=_MARCAS,
+        incluir_exclusivos=True, so_previdencia=True,
+    )
+    if resolvedor.sem_cadastro:
+        return "sem CNPJ: base de mercado ausente (rode `python -m shelf_monitor market`)"
+    indice = carregar_indice(config, dias_das_cotas(ofertas, hoje))
+    pela_cota = identificar_pela_cota(ofertas, indice, resolvedor, hoje)
+    pelo_nome = resolvedor.resolver(
+        ofertas, nomes=lambda o: [o.extra.get(KEY_NOME_REGISTRO), o.name]
+    )
+    return _nota_de_cnpj(len(ofertas), pela_cota, pelo_nome)
+
+
+def _nota_de_cnpj(total: int, pela_cota: ResumoPelaCota, pelo_nome: ResumoPorNome) -> str:
+    """Uma linha para a observacao do snapshot: quantos com CNPJ, por qual via."""
+    com_cnpj = pela_cota.identificados + pelo_nome.resolvidos
+    texto = (
+        f"CNPJ em {com_cnpj} de {contagem(total, 'fundo', 'fundos')} da vitrine "
+        f"({pela_cota.identificados} pela cota do dia no informe diário, "
+        f"{pelo_nome.resolvidos} pelo nome)"
+    )
+    if pelo_nome.pendentes:
+        partes = [
+            contagem(len(pelo_nome.empates), "empate", "empates"),
+            f"{len(pelo_nome.sem_candidato)} sem candidato",
+            contagem(len(pelo_nome.conflitos), "conflito", "conflitos"),
+        ]
+        texto += f"; sem CNPJ: {', '.join(partes)}"
+    if pela_cota.sem_informe:
+        texto += f"; {pela_cota.sem_informe} com o dia da cota ainda fora do informe"
+    return texto

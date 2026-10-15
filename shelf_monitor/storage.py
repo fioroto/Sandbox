@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
@@ -94,6 +95,22 @@ def latest_shelf_snapshot(
             fallback = snapshot
 
     return None if trusted_only else fallback
+
+
+def shelf_snapshots_before(
+    config: Config, platform_id: str, before: date
+) -> Iterator[ShelfSnapshot]:
+    """Os snapshots da casa anteriores a `before`, do mais novo ao mais velho.
+
+    Lidos um a um, sob demanda: quem procura o ultimo que serve para alguma
+    coisa (a vitrine de reserva) para no primeiro.
+    """
+    candidates = [
+        p for p in _dated_files(config.platform_snapshots_dir(platform_id))
+        if _parse_date(p) < before
+    ]
+    for path in reversed(candidates):
+        yield load_shelf_snapshot(path)
 
 
 def shelf_snapshot_dates(config: Config, platform_id: str) -> list[date]:

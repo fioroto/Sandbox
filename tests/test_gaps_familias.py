@@ -443,39 +443,35 @@ class TestSuperficies(_ComPasta):
             familias=self.mapa, distribuivel=self.lista(),
         )
 
-    def test_digest_md_e_html_publicam_o_mesmo_funil_e_os_mesmos_cobertos(self):
+    def test_digest_abre_com_os_gaps_reais_sem_o_funil_nem_os_cobertos(self):
+        """Digest v2 (14/10/2026): so os gaps reais das casas do digest. O funil,
+        os ja cobertos e o Inter ficam no dashboard e na planilha."""
+        import html as html_mod
+
         from shelf_monitor.report.digest import render_html, render_markdown
 
         relatorio = self._relatorio()
-        markdown = render_markdown(relatorio, self.config)
-        html = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", render_html(relatorio, self.config)))
-        import html as html_mod
-        html = html_mod.unescape(html)
-        bloco = build_gap_block(
-            relatorio.snapshots, familias=self.mapa, distribuivel=relatorio.distribuivel
-        )
-        frase = frase_do_funil(bloco)
-        self.assertIn(frase, markdown)
-        # No e-mail o funil e o grafico, sem a frase que o narrava (secao 5 da
-        # linguagem visual): os mesmos numeros, no titulo e em cada segmento.
-        funil = bloco["funil"]
-        self.assertIn(
-            f"{funil['reais']} dos {funil['aparentes']} gaps aparentes são reais", html
-        )
-        for rotulo, chave in (
-            ("Já cobertos", "cobertos"), ("Outra liquidez", "outra_liquidez"),
-            ("Reais: estratégia", "estrategia"), ("Reais: gestora", "gestora"),
-            ("Reais: sem carteira", "sem_dado"),
-        ):
-            if funil.get(chave):
-                self.assertIn(f"{rotulo} {funil[chave]}", html)
-        self.assertIn("Já cobertos", markdown)
-        self.assertIn("Já cobertos", html)
+        markdown = render_markdown(relatorio, self.config, "semanal")
+        html = html_mod.unescape(re.sub(
+            r"\s+", " ", re.sub(r"<[^>]+>", " ", render_html(relatorio, self.config, "semanal"))
+        ))
+        # O feeder de marca propria do BTG sobre master da SPX e gap real e
+        # transferivel; o produto proprio do BTG e o espelho coberto nao entram.
+        self.assertIn(mascara(THUNDERBOLT), markdown)
+        self.assertNotIn(mascara(BTG_SELIC), markdown)
+        self.assertNotIn(mascara(ALFA_ACCESS), markdown)
+        # O Inter saiu do digest, com os gaps so dele.
+        self.assertNotIn(mascara(SPARTA_INTER), markdown)
+        self.assertNotIn("Banco Inter", markdown)
+        for texto in (markdown, html):
+            self.assertNotIn("Já cobertos", texto)
+            self.assertNotIn("gaps aparentes", texto)
         cnpjs_md = set(re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", markdown))
         cnpjs_html = set(re.findall(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", html))
-        self.assertIn(mascara(ALFA_ACCESS), cnpjs_md)
         self.assertEqual(set(), cnpjs_md - cnpjs_html)
-        self.assertIn("carteira mensal da CVM (CDA) de ago/2026", markdown)
+        self.assertIn("pela carteira mensal da CVM (CDA de ago/2026)", markdown)
+        # Sem informe diario, a lista sai pelo esforco e diz por que.
+        self.assertIn("a captação deles não foi medida", markdown)
 
     def test_dashboard_leva_o_funil_os_cobertos_e_as_notas(self):
         dados = build_dashboard_data(self._relatorio())["gaps"]

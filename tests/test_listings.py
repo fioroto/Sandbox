@@ -836,14 +836,19 @@ class TestItauRentabilidade(unittest.TestCase):
         self.assertEqual(len(offers), 2)
 
     def test_synthetic_payload_reaches_the_mapper(self):
-        from shelf_monitor.collectors.itau import _map_rentability_payload
+        import tempfile
+        from pathlib import Path
 
-        offers = _map_rentability_payload(
-            "https://www.itau.com.br/x (tabela)", {"itau_rentabilidade": [ITAU_PAGE_1]}
-        )
-        self.assertEqual(len(offers), 2)
-        # Payload que nao e a tabela segue para o extrator generico.
-        self.assertIsNone(_map_rentability_payload("https://x", {"data": []}))
+        from shelf_monitor.collectors.itau import LeituraDaTabela
+
+        with tempfile.TemporaryDirectory() as sem_base:
+            leitura = LeituraDaTabela(Path(sem_base))
+            offers = leitura.mapear(
+                "https://www.itau.com.br/x (tabela)", {"itau_rentabilidade": [ITAU_PAGE_1]}
+            )
+            self.assertEqual(len(offers), 2)
+            # Payload que nao e a tabela segue para o extrator generico.
+            self.assertIsNone(leitura.mapear("https://x", {"data": []}))
 
 
 class TestMergeReconciliation(unittest.TestCase):
