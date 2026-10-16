@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from shelf_monitor.caixa import nota_caixa, oferta_caixa
 from shelf_monitor.classify import KEY_CATEGORIA
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.distribuivel import PODE_DISTRIBUIR, BaseDistribuivel
@@ -548,6 +549,7 @@ def _gap_categories(
     competitor_snaps: list[ShelfSnapshot],
     funds: list[dict],
     cobertos: Counter | None = None,
+    fora: set[str] | None = None,
 ) -> list[dict]:
     """Cobertura por categoria: vitrine do baseline contra cada concorrente.
 
@@ -559,16 +561,20 @@ def _gap_categories(
     vez de recebida pronta: era uma variavel que as duas etapas partilhavam
     dentro do corpo de 251 linhas, e passa-la adiante manteria o acoplamento
     que a extracao veio desfazer. `cobertos` conta, por categoria, os gaps
-    aparentes que a base cobre por espelho ou equivalente.
+    aparentes que a base cobre por espelho ou equivalente. `fora` sao os CNPJs
+    que nao entram em lado nenhum da conta (os fundos caixa/simples).
     """
     cobertos = cobertos or Counter()
+    fora = fora or set()
     gap_categories: Counter = Counter(f["category"] for f in funds)
     # Cobertura por categoria: vitrine XP vs. vitrine de cada concorrente.
     baseline_by_category: Counter = Counter(
-        anbima_category(f) for f in baseline_listing
+        anbima_category(f) for f in baseline_listing if f.cnpj not in fora
     )
     competitor_by_category: dict[str, Counter] = {
-        s.platform: Counter(anbima_category(f) for f in _listing_funds(s))
+        s.platform: Counter(
+            anbima_category(f) for f in _listing_funds(s) if f.cnpj not in fora
+        )
         for s in competitor_snaps
     }
 
@@ -878,6 +884,9 @@ def notas_da_cobertura(gap_block: dict) -> list[str]:
         notas.append(frase + ".")
     elif gap_block.get("distribuivel") is not None and lente.get("reason"):
         notas.append(f"Lista distribuível: {lente['reason']}.")
+    caixa = nota_caixa(gap_block.get("caixa_fora"))
+    if caixa:
+        notas.append(f"Gaps: {caixa}.")
     return notas
 
 
@@ -1013,6 +1022,15 @@ def build_gap_block(
     funds = _gap_funds(
         competitor_snaps, base_cnpjs, baseline_managers, baseline_slugs
     )
+    # Fundo caixa/simples nao e gap (pedido de 16/10/2026): produto padrao de
+    # caixa, que toda casa tem (ver shelf_monitor.caixa). Sai contado.
+    caixa = {
+        f.cnpj
+        for f in baseline_listing + [o for s in competitor_snaps for o in _listing_funds(s)]
+        if f.cnpj and oferta_caixa(f)
+    }
+    caixa_fora = sum(1 for f in funds if f["cnpj"] in caixa)
+    funds = [f for f in funds if f["cnpj"] not in caixa]
 
     base_primaria = familias.preparar_base(base_cnpjs) if familias else None
     base_lista = (
@@ -1056,7 +1074,7 @@ def build_gap_block(
     reais = [f for f in acao if (f["veredito"] or {}).get("tipo") != OUTRA_LIQUIDEZ]
     categories = _gap_categories(
         baseline_listing, competitor_snaps, reais,
-        cobertos=Counter(f["category"] for f in cobertos),
+        cobertos=Counter(f["category"] for f in cobertos), fora=caixa,
     )
     funil = _funil([f["veredito"] for f in funds])
 
@@ -1076,7 +1094,8 @@ def build_gap_block(
     }
     if primaria == "vitrine" and lista_ok:
         universo = sorted({
-            f.cnpj for s in competitor_snaps for f in _listing_funds(s) if f.cnpj
+            f.cnpj for s in competitor_snaps for f in _listing_funds(s)
+            if f.cnpj and f.cnpj not in caixa
         })
         lentes["distribuivel"]["funil"] = _funil([
             _veredito_contra(c, lista_cnpjs, familias, base_lista)
@@ -1100,6 +1119,8 @@ def build_gap_block(
         # antes; com ele, o funil diz quantos a carteira resolveu.
         "total_gaps": len(reais),
         "gaps_aparentes": len(funds),
+        # Gaps aparentes tirados por serem fundo caixa/simples.
+        "caixa_fora": caixa_fora,
         "gaps_liquidez": len(acao) - len(reais),
         "total_cobertos": len(cobertos),
         "multi_house_gaps": sum(1 for f in reais if f["houses_count"] >= 2),

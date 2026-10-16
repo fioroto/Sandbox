@@ -38,6 +38,7 @@ import re
 from datetime import date
 from pathlib import Path
 
+from shelf_monitor.caixa import nota_caixa
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import (
     BLOCO_COTISTAS,
@@ -526,6 +527,9 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             if carteira.get("available") else
             "A lista completa dos gaps está na planilha, aba Gaps XP."
         )
+    caixa = nota_caixa(visao.gaps.get("caixa_fora"))
+    if caixa:
+        notas.append(f"Gaps: {caixa}.")
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and op.get("linhas"):
         notas.append(prazo)
@@ -943,6 +947,9 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
             "fora das listas: é dinheiro trocando de veículo, não demanda._",
             "",
         ]
+    caixa = nota_caixa(flow.get("caixa_fora"))
+    if caixa:
+        lines += [f"_{caixa}._", ""]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
@@ -1062,6 +1069,9 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             "estrutural (fluxo maior que o PL, ou fundo esvaziado) fora das listas: troca "
             "de veículo, não demanda."
         )
+    caixa = nota_caixa(flow.get("caixa_fora"))
+    if caixa:
+        notas.append(f"{caixa}.")
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
@@ -1713,12 +1723,25 @@ def _md_performance_section(report: RunReport) -> list[str]:
             )
         lines.append("")
 
+    caixa = _nota_caixa_do_mensal(principal, custo)
+    if caixa:
+        lines += [f"_{caixa}._", ""]
     fora = _excluidos(blocos)
     for excluido in fora:
         lines.append(f"> Fora: {excluido['label']} - {excluido['reason']}")
     if fora:
         lines.append("")
     return lines
+
+
+def _nota_caixa_do_mensal(principal: dict, custo: dict | None) -> str | None:
+    """Os fundos caixa/simples fora da rentabilidade e do custo, numa frase.
+
+    As duas janelas olham as mesmas vitrines; o custo, tambem. Vale o maior
+    numero, para a frase nao subcontar quando um bloco faltar.
+    """
+    custo_fora = (custo.get("caixa_fora") or 0) if custo and custo.get("available") else 0
+    return nota_caixa(max(principal.get("caixa_fora") or 0, custo_fora))
 
 
 def _indice_mediano(casa: dict) -> str:
@@ -1838,6 +1861,9 @@ def _html_performance_section(report: RunReport, omitir: frozenset = frozenset()
             base=[_e_base(casa.get("platform_id")) for casa in custo["casas"]],
         ))
 
+    caixa = _nota_caixa_do_mensal(principal, report.custo)
+    if caixa:
+        partes.append(f'<p style="{_NOTA}">{_esc(caixa)}.</p>')
     fora = _excluidos(blocos)
     if fora:
         partes.append(

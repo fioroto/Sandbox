@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from shelf_monitor.caixa import sem_caixa
 from shelf_monitor.config import Config
 from shelf_monitor.models import (
     BLOCO_CNPJ,
@@ -661,6 +662,10 @@ def build_retail_flow(
             "excluded": fora + sem_cnpj,
         }
 
+    # Fundo caixa/simples fica fora (pedido de 16/10/2026): produto padrao de
+    # caixa, que enchia o topo das captacoes (ver shelf_monitor.caixa).
+    cruzaveis, caixa_fora = sem_caixa(cruzaveis)
+
     catalogo: dict[str, FundOffer] = {}
     presenca: dict[str, list[str]] = {}
     for platform_id, funds in cruzaveis.items():
@@ -881,6 +886,8 @@ def build_retail_flow(
         "recorte_semanal": recorte.to_dict() if recorte else None,
         "_recorte": recorte,
         "fundos_analisados": len(fluxos),
+        # Fundos caixa/simples tirados da analise (ver shelf_monitor.caixa).
+        "caixa_fora": caixa_fora,
         "baseline_id": baseline_id,
         "casas": [c.to_dict() for c in casas],
         # A lista INTEIRA, para a planilha. Os rankings abaixo continuam porque

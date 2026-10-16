@@ -70,6 +70,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from shelf_monitor.caixa import sem_caixa
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
@@ -507,6 +508,9 @@ def build_custo(
             "reason": "nenhuma vitrine publica CNPJ o bastante para buscar o extrato",
             "excluded": fora + sem_cnpj,
         }
+    # Fundo caixa/simples fica fora (pedido de 16/10/2026, ver
+    # shelf_monitor.caixa): produto padrao, de taxa baixa por natureza.
+    cruzaveis, caixa_fora = sem_caixa(cruzaveis)
 
     casas: list[CustoCasa] = []
     sem_amostra: list[dict] = []
@@ -554,6 +558,7 @@ def build_custo(
             "idade_maxima_meses": _MAX_IDADE_MESES,
         },
         "motivos_fora": dict(sorted(motivos.items(), key=lambda kv: -kv[1])),
+        "caixa_fora": caixa_fora,
         "casas": [c.to_dict() for c in casas],
         "mais_caros": [
             f.to_dict()

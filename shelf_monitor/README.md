@@ -921,6 +921,34 @@ vem cifrado. Desde 2026-10-14 o coletor do Itau resolve o CNPJ pelo nome
 (`shelf_monitor/cnpj_por_nome.py`) antes do merge, e o fundo resolvido entra pela
 via (0) como qualquer outro.
 
+### Fundos caixa/simples fora das analises
+
+Fundo caixa e fundo simples sao produto padrao: toda casa tem o seu, e nenhum vira
+decisao de grade. Eles enchiam o topo da captacao - 3 das 5 maiores captacoes do
+digest de 14/10/2026 - e somavam gaps que ninguem vai trazer. Desde 16/10/2026 saem
+da captacao, dos gaps (e com eles da grade), da rentabilidade ponderada e do custo
+(`shelf_monitor/caixa.py`). A regra, na versao "nucleo":
+
+- so renda fixa;
+- rotulo ANBIMA de caixa (Renda Fixa Simples, Duracao Baixa Soberano ou Duracao
+  Baixa Grau de Investimento) **ou** a marca no nome: Simples, Selic, Referenciado
+  DI (Ref DI, RF DI, DI CP). So o rotulo deixava caixa passar: o BTG Tesouro Selic
+  esta como "Duracao Livre Grau de Investimento" no cadastro, e so o nome o denuncia;
+- CDB e credito bancario fora desses rotulos ficam: o BTG CDB Plus (Duracao Livre
+  Grau de Investimento) continua na analise.
+
+Cada bloco conta o que tirou (`caixa_fora`), e o digest diz isso em uma linha na
+captacao, nos gaps e na rentabilidade e custo da edicao mensal. Nos gaps a conta e
+sobre os gaps aparentes (CNPJ contra CNPJ), antes do veredito de cobertura. Medido
+no relatorio de 14/10/2026: 93 dos 1.497 CNPJs das vitrines cruzaveis (XP 53, BTG
+41, Itau 9, Inter 24); 81 dos 1.334 fundos com informe, com R$ 7,9 bi dos R$ 23,1 bi
+de captacao positiva; 39 gaps aparentes, dos quais 21 eram gap real (14 dos 453 do
+digest, contra BTG e Itau); a grade foi de 54 para 53 fundos.
+
+Continuam com todos os fundos: o tamanho das vitrines, as entradas e saidas, o radar
+CVM, os blocos descritivos (competitivo, mandato, rentabilidade por fundo) e a
+mediana de cada categoria na rentabilidade e no custo, que segue sendo a do mercado.
+
 ## Qualidade da prateleira: rentabilidade, custo e mandato
 
 As quatro leituras acima respondem *o que cada casa oferta*. Estas respondem *se o

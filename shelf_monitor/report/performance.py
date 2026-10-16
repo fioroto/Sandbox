@@ -63,6 +63,7 @@ import statistics
 from collections import Counter
 from dataclasses import dataclass, field
 
+from shelf_monitor.caixa import sem_caixa
 from shelf_monitor.config import Config
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
@@ -688,7 +689,11 @@ def _montar(
     """Do retorno por CNPJ ao bloco: referencia por categoria, casas e listas.
 
     Igual nas duas janelas - o que muda entre elas e so de onde vem o retorno.
+    O fundo caixa/simples fica fora da vitrine de cada casa (pedido de
+    16/10/2026, ver shelf_monitor.caixa); a mediana da categoria segue a do
+    mercado.
     """
+    cruzaveis, caixa_fora = sem_caixa(cruzaveis)
     if categorias is None:
         categorias = categorias_por_cnpj(config)
     medianas, amostras = medianas_de_referencia(consolidado, categorias)
@@ -771,6 +776,7 @@ def _montar(
             "categorias_vistas": len(amostras),
             "amostra_minima": _MIN_AMOSTRA_CATEGORIA,
         },
+        "caixa_fora": caixa_fora,
         "casas": [c.to_dict() for c in casas],
         "por_categoria": _por_categoria(casas),
         "onde_esta_a_gente": _onde_esta_a_gente(casas),

@@ -39,7 +39,9 @@ from shelf_monitor.texto import competencia_br, data_br, meses_br, periodo_br
 
 from fixtures_comuns import temp_config
 
-RF = "Renda Fixa Duração Baixa Grau de Investimento"
+# Renda fixa que nao e caixa: "Duracao Baixa Grau de Investimento", a categoria
+# de antes, virou fundo caixa/simples e sai da analise (16/10/2026).
+RF = "Renda Fixa Duração Livre Crédito Livre"
 MESES = ["202509", "202510", "202511", "202512", "202601", "202602", "202603",
          "202604", "202605", "202606", "202607", "202608", "202609"]
 # Ultimo pregao de cada competencia no cenario: o dia 28, menos a base e a corrente.

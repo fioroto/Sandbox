@@ -49,7 +49,9 @@ from shelf_monitor.report.retail_flow import (
 
 from fixtures_comuns import temp_config
 
-RF = "Renda Fixa Duração Baixa Grau de Investimento"
+# Renda fixa que nao e caixa: "Duracao Baixa Grau de Investimento", a categoria
+# de antes, virou fundo caixa/simples e sai da analise (16/10/2026).
+RF = "Renda Fixa Duração Livre Crédito Livre"
 MULTI = "Multimercados Livre"
 INDEPENDENTE = "GESTORA INDEPENDENTE LTDA"
 MI = 1_000_000.0
