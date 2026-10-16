@@ -344,6 +344,32 @@ class TestListaDistribuivel(_ComPasta):
         self.escrever("3.csv", f"cnpj;situacao\n{EPSILON_CP};pode_distribuir\n")
         self.assertEqual(self.lista().situacao_de(EPSILON_CP), DISTRIBUI)
 
+    def test_servico_aceita_funds_as_a_service(self):
+        """O plural da planilha de 16/10/2026 e FaaS, sem aviso de desconhecido."""
+        self.escrever(
+            "lista.csv",
+            f"cnpj;situacao;servico\n{mascara(EPSILON_RF)};distribui;Funds as a Service\n",
+        )
+        lista = self.lista()
+        self.assertEqual(lista.rotulo_do_servico(EPSILON_RF), "FaaS")
+        self.assertFalse(any("serviço desconhecido" in a for a in lista.avisos))
+
+    def test_modelo_preenchido_e_apontado_quando_a_pasta_nao_tem_csv(self):
+        """A lista colada no modelo.csv nao e lida: o motivo diz para onde mover."""
+        modelo = self.pasta.parent / "modelo.csv"
+        modelo.write_text("cnpj;nome;situacao;servico\n", encoding="utf-8")
+        self.assertIn("modelo em distribuivel/modelo.csv", self.lista().motivo_da_supressao())
+
+        modelo.write_text(
+            "cnpj;nome;situacao;servico\n"
+            f"{mascara(EPSILON_RF)};EPSILON RF;distribui;FaaS\n"
+            f"{mascara(EPSILON_CP)};EPSILON CREDITO;distribui;Distribuição\n",
+            encoding="utf-8",
+        )
+        motivo = self.lista().motivo_da_supressao()
+        self.assertIn("nenhum CSV", motivo)
+        self.assertIn("modelo.csv tem 2 linhas de dados", motivo)
+
     def test_gap_da_vitrine_coberto_pela_lista_vira_expor_ou_ativar(self):
         self._pasta_completa()
         bloco = build_gap_block(_snapshots(), familias=self.mapa, distribuivel=self.lista())

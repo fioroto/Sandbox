@@ -53,6 +53,10 @@ _SITUACOES = {
 SERVICO_DISTRIBUICAO = "distribuicao"
 SERVICO_FAAS = "faas"
 ROTULOS_SERVICO = {SERVICO_DISTRIBUICAO: "Distribuição", SERVICO_FAAS: "FaaS"}
+# Grafias do FaaS, comparadas por trecho do texto normalizado. O plural veio
+# na planilha de 16/10/2026: "FUND AS A SERVICE" nao e trecho de "FUNDS AS A
+# SERVICE", e o fundo caia como servico desconhecido.
+_TERMOS_FAAS = ("FAAS", "FUND AS A SERVICE", "FUNDS AS A SERVICE")
 
 CABECALHO_MODELO = (
     "cnpj", "nome", "situacao", "servico", "gestora", "data_referencia", "observacao",
@@ -64,7 +68,7 @@ def _servico(texto: str | None) -> tuple[str | None, bool]:
     normalizado = normalize_text(texto)
     if not normalizado:
         return None, True
-    if "FAAS" in normalizado or "FUND AS A SERVICE" in normalizado:
+    if any(termo in normalizado for termo in _TERMOS_FAAS):
         return SERVICO_FAAS, True
     if normalizado.startswith("DISTRIBU"):
         return SERVICO_DISTRIBUICAO, True
@@ -142,6 +146,16 @@ class BaseDistribuivel:
         if not self.arquivos:
             # O caminho a partir de data/, que e o que a pessoa procura.
             pasta = f"{self.pasta.parent.name}/{self.pasta.name}"
+            # A planilha colada no modelo nao e lida (16/10/2026, na maquina da
+            # empresa: a lista inteira estava no modelo e a lente saia
+            # suprimida) - o motivo aponta para onde mover.
+            dados = _linhas_do_modelo(self.pasta.parent / "modelo.csv")
+            if dados:
+                linhas = "linha de dados" if dados == 1 else "linhas de dados"
+                return (
+                    f"nenhum CSV na pasta {pasta}: o modelo.csv tem {dados} {linhas}, "
+                    f"mas só {pasta} é lida - mova o CSV para essa pasta"
+                )
             return f"nenhum CSV na pasta {pasta} (modelo em {self.pasta.parent.name}/modelo.csv)"
         if self.vazia:
             return "a lista distribuível não trouxe nenhum fundo válido"
@@ -233,6 +247,14 @@ def _data_do_arquivo(caminho: Path) -> date | None:
         return datetime.fromtimestamp(caminho.stat().st_mtime).date()
     except OSError:
         return None
+
+
+def _linhas_do_modelo(caminho: Path) -> int:
+    """Linhas de dados do modelo, sem o cabecalho; 0 se ausente ou ilegivel."""
+    try:
+        return len(_ler_csv(caminho))
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return 0
 
 
 def _chave_de_coluna(nome: str | None) -> str:
