@@ -130,6 +130,7 @@ from shelf_monitor.report.performance import (
     blocos_de_rentabilidade,
     fundos_abaixo_da_categoria,
     janela_do_bloco,
+    prazo_da_rentabilidade,
 )
 from shelf_monitor.report.aggregate import listing_funds, retail_funds
 from shelf_monitor.report.digest_visao import (
@@ -525,6 +526,9 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             if carteira.get("available") else
             "A lista completa dos gaps está na planilha, aba Gaps XP."
         )
+    prazo = _prazo_da_rentabilidade(visao.report)
+    if prazo and op.get("linhas"):
+        notas.append(prazo)
     fora = [
         e for e in op.get("excluded") or []
     ]
@@ -539,6 +543,64 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
         if snapshot.reserva:
             notas.append(f"{_platform_label(snapshot.platform)}: {snapshot.reserva}.")
     return notas
+
+
+# --- rentabilidade de referencia -------------------------------------------------
+#
+# Pedido de 16/10/2026: a rentabilidade de cada fundo ao lado dele nas tabelas
+# de gaps e de captacoes, como referencia. 12 meses primeiro (a convencao da
+# lamina); o fundo sem 12 meses de cota mostra 3 meses, com o prazo escrito.
+# O "pp" compara com a mediana da propria categoria no universo da CVM - o
+# mesmo criterio da secao mensal de rentabilidade.
+
+
+def _rentabilidade_do_fundo(fundo: dict) -> tuple[float, str, float | None] | None:
+    """(retorno, prazo, excesso sobre a mediana da categoria), ou None sem serie."""
+    for prazo, rotulo in (("12m", "12 meses"), ("3m", "3 meses")):
+        retorno = fundo.get(f"retorno_{prazo}")
+        if retorno is None:
+            continue
+        mediana = fundo.get(f"mediana_{prazo}")
+        return retorno, rotulo, None if mediana is None else retorno - mediana
+    return None
+
+
+def _celula_de_rentabilidade(fundo: dict) -> str:
+    """HTML: o retorno, com a comparacao (e o prazo, quando nao e 12 meses) miuda."""
+    dados = _rentabilidade_do_fundo(fundo)
+    if dados is None:
+        return "-"
+    retorno, prazo, excesso = dados
+    miudo = _linha(
+        "" if prazo == "12 meses" else f"em {prazo}",
+        "" if excesso is None else f"{_pp(excesso)} vs categoria",
+    )
+    return _pct(retorno) + (_miudo(_esc(miudo)) if miudo else "")
+
+
+def _texto_de_rentabilidade(fundo: dict) -> str:
+    """Markdown, celula de tabela: "13,45% (+0,31pp)" ou "4,12% em 3 meses (+0,10pp)"."""
+    dados = _rentabilidade_do_fundo(fundo)
+    if dados is None:
+        return "-"
+    retorno, prazo, excesso = dados
+    texto = _pct(retorno) + ("" if prazo == "12 meses" else f" em {prazo}")
+    return texto + ("" if excesso is None else f" ({_pp(excesso)})")
+
+
+def _frase_de_rentabilidade(fundo: dict) -> str:
+    """Markdown, item de lista: "rentabilidade de 13,45% em 12 meses (+0,31pp vs categoria)"."""
+    dados = _rentabilidade_do_fundo(fundo)
+    if dados is None:
+        return ""
+    retorno, prazo, excesso = dados
+    comparacao = "" if excesso is None else f" ({_pp(excesso)} vs categoria)"
+    return f"rentabilidade de {_pct(retorno)} em {prazo}{comparacao}"
+
+
+def _prazo_da_rentabilidade(report: RunReport) -> str:
+    """A janela de cada prazo de rentabilidade, para a nota de cada secao."""
+    return prazo_da_rentabilidade(report.performance_12m, report.performance)
 
 
 def _celula_da_semana(fundo: dict) -> str:
@@ -610,10 +672,10 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
     cabecalho = ["Fundo", "Categoria", "Casas", "Semana", "3 meses"]
     if com_cotistas:
         cabecalho.append("Cotistas")
-    cabecalho += ["Ritmo na semana", "Esforço"]
+    cabecalho += ["Rent. 12m", "Ritmo na semana", "Esforço"]
     lines = [
         "| " + " | ".join(cabecalho) + " |",
-        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---|---|",
+        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---:|---|---|",
     ]
     for f in linhas:
         celulas = [
@@ -624,7 +686,10 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
         if com_cotistas:
             variacao = f.get("variacao_cotistas")
             celulas.append("-" if variacao is None else _inteiro(variacao))
-        celulas += [nome_da_tendencia(f.get("ritmo_semanal")) or "-", f["esforco"]]
+        celulas += [
+            _texto_de_rentabilidade(f), nome_da_tendencia(f.get("ritmo_semanal")) or "-",
+            f["esforco"],
+        ]
         lines.append("| " + " | ".join(celulas) + " |")
     return lines
 
@@ -719,7 +784,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         parts.append(f'<p style="{_P}">{_esc(_SEM_CAPTACAO)}</p>')
     parts.append(_html_resumo_por_casa(op))
 
-    grupos =[(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
+    grupos = [(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
     if grupos:
         semana = _semana(visao.report.retail_flow)
         parts.append(_legenda(_linha(
@@ -730,7 +795,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         cabecalho = ["Fundo", "Casas", "Semana", "3 meses"]
         if com_cotistas:
             cabecalho.append("Cotistas")
-        cabecalho.append("Esforço")
+        cabecalho += ["Rent. 12m", "Esforço"]
         tabela: list = []
         mostrados = 0
         for casa, linhas in grupos:
@@ -749,12 +814,12 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
                 ]
                 if com_cotistas:
                     linha.append(_celula_de_cotistas(f))
-                linha.append(_esc(f.get("esforco") or "-"))
+                linha += [_celula_de_rentabilidade(f), _esc(f.get("esforco") or "-")]
                 tabela.append(linha)
-        numericas = {2, 3, 4} if com_cotistas else {2, 3}
+        numericas = {2, 3, 4, 5} if com_cotistas else {2, 3, 4}
         parts.append(_tabela(
             cabecalho, tabela, direita=numericas, sinal={2, 3}, compacta=True,
-            larguras={0: 32, 1: 8, 2: 17, 3: 14},
+            larguras={0: 28, 1: 8, 2: 15, 3: 13},
         ))
         parts.append(_mais(len(op["linhas"]) - mostrados, "na planilha"))
 
@@ -832,6 +897,9 @@ def _item_de_fundo(fundo: dict, com_cotistas: bool, visao: VisaoDoDigest) -> str
         ticket = fundo.get("ticket_por_cotista")
         if ticket:
             detalhe += f" ({_mil(ticket)} por cotista novo)"
+    rentabilidade = _frase_de_rentabilidade(fundo)
+    if rentabilidade:
+        detalhe += f", {rentabilidade}"
     return f"{_nome_do_fundo(fundo['nome'])} - {detalhe} - {_casas_do_fundo(fundo, visao)}"
 
 
@@ -862,7 +930,8 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
             *("| " + " | ".join(linha) + " |" for linha in ritmo["linhas"]),
             "",
         ]
-    for titulo, fundos in _listas_do_ritmo(flow, com_cotistas):
+    listas = _listas_do_ritmo(flow, com_cotistas)
+    for titulo, fundos in listas:
         if fundos:
             lines += [f"**{titulo}**", ""]
             lines += [f"- {_item_de_fundo(f, com_cotistas, visao)}" for f in fundos]
@@ -874,6 +943,9 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
             "fora das listas: é dinheiro trocando de veículo, não demanda._",
             "",
         ]
+    prazo = _prazo_da_rentabilidade(visao.report)
+    if prazo and any(fundos for _, fundos in listas):
+        lines += [f"_{prazo}_", ""]
     return lines
 
 
@@ -927,12 +999,13 @@ def _tabela_de_fundos_da_captacao(
     fundos: list[dict], com_cotistas: bool, visao: VisaoDoDigest
 ) -> str:
     """Uma lista de fundos da captacao como tabela: Fundo | Semana | 3 meses |
-    Cotistas | Casas. O ritmo da semana vai miudo sob ela, o ticket por cotista
-    novo sob os cotistas."""
+    Cotistas | Rent. 12m | Casas. O ritmo da semana vai miudo sob ela, o ticket
+    por cotista novo sob os cotistas, a comparacao com a categoria sob a
+    rentabilidade."""
     cabecalho = ["Fundo", "Semana", "3 meses"]
     if com_cotistas:
         cabecalho.append("Cotistas")
-    cabecalho.append("Casas")
+    cabecalho += ["Rent. 12m", "Casas"]
     linhas = []
     for fundo in fundos:
         # Sem o CNPJ: nas listas de mercado o nome basta, e o CNPJ esta na
@@ -943,15 +1016,15 @@ def _tabela_de_fundos_da_captacao(
         ]
         if com_cotistas:
             linha.append(_celula_de_cotistas(fundo))
-        linha.append(_esc(_casas_do_fundo(fundo, visao)))
+        linha += [_celula_de_rentabilidade(fundo), _esc(_casas_do_fundo(fundo, visao))]
         linhas.append(linha)
     # A semana com folga para o ritmo miudo ("saída persistente") caber numa linha.
-    larguras = {0: 36, 1: 18, 2: 15}
+    larguras = {0: 30, 1: 17, 2: 14}
     if com_cotistas:
-        larguras[3] = 13
+        larguras[3] = 12
     return _tabela(
-        cabecalho, linhas, direita={1, 2, 3} if com_cotistas else {1, 2}, sinal={1, 2},
-        larguras=larguras,
+        cabecalho, linhas, direita={1, 2, 3, 4} if com_cotistas else {1, 2, 3},
+        sinal={1, 2}, larguras=larguras,
     )
 
 
@@ -969,7 +1042,8 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             direita=range(1, len(ritmo["cabecalho"])),
             base=[_e_base(pid) for pid in ritmo["casas"]],
         ))
-    for titulo, fundos in _listas_do_ritmo(flow, com_cotistas):
+    listas = _listas_do_ritmo(flow, com_cotistas)
+    for titulo, fundos in listas:
         if not fundos:
             continue
         destaque, _, resto = titulo.partition(" - ")
@@ -988,6 +1062,9 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             "estrutural (fluxo maior que o PL, ou fundo esvaziado) fora das listas: troca "
             "de veículo, não demanda."
         )
+    prazo = _prazo_da_rentabilidade(visao.report)
+    if prazo and any(fundos for _, fundos in listas):
+        notas.append(prazo)
     parts.append(
         f'<p style="{_NOTA}">{_esc(" ".join(notas))} {_fonte_html(CVM_INFORME_DIARIO)}</p>'
     )

@@ -1240,16 +1240,24 @@ def _bloco(payload: dict | None) -> dict:
     return {k: v for k, v in payload.items() if not k.startswith("_")}
 
 
-def _flow_payload(report: RunReport) -> dict:
-    """Recorte de captacao que o dashboard desenha."""
+def _flow_payload(report: RunReport, rentabilidade: dict | None = None) -> dict:
+    """Recorte de captacao que o dashboard desenha.
+
+    `rentabilidade` (`performance.rentabilidade_por_cnpj`) poe o retorno de cada
+    fundo nas listas, como referencia (16/10/2026).
+    """
     flow = report.retail_flow
     if not (flow and flow.get("available")):
         # O bloco indisponivel chega aqui COM o motivo: `main` o anexa em vez de
         # deixar None, justamente para o motivo sobreviver ate a superficie.
         return {"available": False, "reason": (flow or {}).get("reason")}
 
-    # Import tardio: retail_flow importa deste modulo.
+    # Import tardio: retail_flow e performance importam deste modulo.
+    from shelf_monitor.report.performance import com_rentabilidade, prazo_da_rentabilidade
     from shelf_monitor.report.retail_flow import leitura_da_captacao
+
+    def lista(fundos: list[dict] | None) -> list[dict]:
+        return com_rentabilidade((fundos or [])[:_FLOW_EMBEDDED], rentabilidade or {})
 
     grade = report.grade_opportunities or {}
     baseline_id = flow.get("baseline_id") or "xp"
@@ -1264,7 +1272,7 @@ def _flow_payload(report: RunReport) -> dict:
         "rotulos": {pid: _platform_label(pid) for pid in PLATFORMS},
         "por_categoria": flow.get("por_categoria") or [],
         "tendencia_por_casa": flow.get("tendencia_por_casa") or {},
-        "baseline_perdendo": (flow.get("baseline_perdendo") or [])[:_FLOW_EMBEDDED],
+        "baseline_perdendo": lista(flow.get("baseline_perdendo")),
         "periodo": flow["periodo"],
         "competencias": flow.get("competencias") or [],
         "casas": flow["casas"],
@@ -1272,10 +1280,13 @@ def _flow_payload(report: RunReport) -> dict:
         "tendencias": flow.get("tendencias") or {},
         "tendencia_labels": flow.get("tendencia_labels") or {},
         "total_estruturais": flow.get("total_estruturais", 0),
-        "top_captacao": (flow.get("top_captacao") or [])[:_FLOW_EMBEDDED],
-        "top_resgate": (flow.get("top_resgate") or [])[:_FLOW_EMBEDDED],
-        "acelerando": (flow.get("acelerando") or [])[:_FLOW_EMBEDDED],
-        "virou_saida": (flow.get("virou_saida") or [])[:_FLOW_EMBEDDED],
+        "top_captacao": lista(flow.get("top_captacao")),
+        "top_resgate": lista(flow.get("top_resgate")),
+        "acelerando": lista(flow.get("acelerando")),
+        "virou_saida": lista(flow.get("virou_saida")),
+        "prazo_rentabilidade": prazo_da_rentabilidade(
+            report.performance_12m, report.performance
+        ),
         "excluded": flow.get("excluded") or [],
         "grade": {
             "available": bool(grade.get("available")),
@@ -1287,8 +1298,8 @@ def _flow_payload(report: RunReport) -> dict:
             "total_comerciais": grade.get("total_comerciais", 0),
             "captacao_transferivel": grade.get("captacao_transferivel", 0.0),
             "cotistas_transferivel": grade.get("cotistas_transferivel", 0),
-            "mais_varejo": (grade.get("mais_varejo") or [])[:_FLOW_EMBEDDED],
-            "na_vitrine_perdendo": (grade.get("na_vitrine_perdendo") or [])[:_FLOW_EMBEDDED],
+            "mais_varejo": lista(grade.get("mais_varejo")),
+            "na_vitrine_perdendo": lista(grade.get("na_vitrine_perdendo")),
         },
     }
 
@@ -1515,6 +1526,17 @@ def build_dashboard_data(report: RunReport) -> dict:
         if any(ASSET_CLASS_LABELS[c] in s.by_class for s in summaries)
     ]
 
+    # Import tardio: performance importa deste modulo.
+    from shelf_monitor.report.performance import (
+        com_rentabilidade,
+        prazo_da_rentabilidade,
+        rentabilidade_por_cnpj,
+    )
+
+    # O retorno de cada fundo vai nas listas de gaps e de captacao, como
+    # referencia (16/10/2026).
+    rentabilidade = rentabilidade_por_cnpj(report.performance_12m, report.performance)
+
     # A lista completa de gaps vai a planilha (que chama build_gap_block
     # direto); o HTML embute so o topo para o payload nao inchar.
     gaps = bloco_de_gaps(report)
@@ -1525,7 +1547,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         cobertos = gaps.get("cobertos") or []
         gaps = {
             **gaps,
-            "funds": gap_funds[:_GAP_FUNDS_EMBEDDED],
+            "funds": com_rentabilidade(gap_funds[:_GAP_FUNDS_EMBEDDED], rentabilidade),
             "funds_truncated": max(0, len(gap_funds) - _GAP_FUNDS_EMBEDDED),
             "cobertos": cobertos[:_GAP_FUNDS_EMBEDDED],
             "cobertos_truncated": max(0, len(cobertos) - _GAP_FUNDS_EMBEDDED),
@@ -1533,6 +1555,9 @@ def build_dashboard_data(report: RunReport) -> dict:
             # painel diz exatamente o que o digest e o deck dizem.
             "frase_funil": frase_do_funil(gaps),
             "notas_cobertura": notas_da_cobertura(gaps),
+            "prazo_rentabilidade": prazo_da_rentabilidade(
+                report.performance_12m, report.performance
+            ),
         }
 
     return {
@@ -1545,7 +1570,7 @@ def build_dashboard_data(report: RunReport) -> dict:
         "restricted": build_restricted_block(report),
         # Captacao entra ja calculada pelo build_report: o dashboard nao le o
         # informe diario da CVM por conta propria - o payload e uma foto.
-        "flow": _flow_payload(report),
+        "flow": _flow_payload(report, rentabilidade),
         # Rentabilidade ponderada e custo relativo entram ja calculados, como a
         # captacao: o dashboard desenha uma foto, nao le o informe nem o
         # extrato por conta propria.

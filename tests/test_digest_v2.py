@@ -440,6 +440,164 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
         self.assertNotIn("MM/dia", texto)
 
 
+class TestRentabilidadeDeReferencia(unittest.TestCase):
+    """A rentabilidade de cada fundo ao lado dele nos gaps e nas captacoes
+    (pedido de 16/10/2026): 12 meses, ou 3 meses para o fundo sem esse
+    historico, com a distancia para a mediana da categoria e a janela escrita."""
+
+    @staticmethod
+    def _bloco(meses: int, de: str, ate: str, base: str, retornos: dict) -> dict:
+        """Um bloco de rentabilidade com a forma do `performance._montar`."""
+        from shelf_monitor.report.performance import (
+            PerformanceCasa,
+            RetornoFundo,
+            _onde_esta_a_gente,
+            _por_categoria,
+        )
+
+        fundos = [
+            RetornoFundo(cnpj=cnpj, categoria=CATEGORIA, retorno=retorno, pl=PL,
+                         cotistas=1000, dias=200, mediana_categoria=mediana)
+            for cnpj, (retorno, mediana) in retornos.items()
+        ]
+        casa = PerformanceCasa(platform_id="btg", label="BTG Pactual",
+                               vitrine=len(fundos), com_serie=len(fundos), fundos=fundos)
+        return {
+            "available": True,
+            "janela": {"rotulo": f"{meses} meses", "meses": meses, "de": de, "ate": ate,
+                       "base": base},
+            "periodo": {"de": de, "ate": ate, "meses_lidos": [], "meses_ausentes": [],
+                        "pregoes": 200},
+            "participantes": ["btg"],
+            "excluded": [],
+            "universo": {"fundos_com_serie": len(fundos), "categorias_com_referencia": 1,
+                         "categorias_vistas": 1, "amostra_minima": 20},
+            "casas": [casa.to_dict()],
+            "por_categoria": _por_categoria([casa], minimo=1),
+            "onde_esta_a_gente": _onde_esta_a_gente([casa]),
+            "_casas": [casa],
+        }
+
+    def _relatorio(self) -> RunReport:
+        report = _relatorio(com_itau=True)
+        # A tem 12 meses de cota; E so 3 (fundo novo); B e C, nenhum.
+        report.performance_12m = self._bloco(
+            12, "2025-10-31", "2026-10-14", "cota do fechamento de out/2025",
+            {A: (13.45, 13.14), B: (-30.58, 10.31)},
+        )
+        report.performance = self._bloco(
+            3, "2026-08-03", "2026-10-14", "cota do primeiro pregão do período",
+            {A: (3.2, 3.1), E: (4.12, 4.02), B: (-1.0, 2.0)},
+        )
+        return report
+
+    def test_tabela_por_cnpj_com_os_dois_prazos(self):
+        from shelf_monitor.report.performance import com_rentabilidade, rentabilidade_por_cnpj
+
+        report = self._relatorio()
+        tabela = rentabilidade_por_cnpj(report.performance_12m, report.performance)
+        self.assertEqual(tabela[A], {"retorno_12m": 13.45, "mediana_12m": 13.14,
+                                     "retorno_3m": 3.2, "mediana_3m": 3.1})
+        self.assertNotIn("retorno_12m", tabela[E])
+        [linha_c] = com_rentabilidade([{"cnpj": C, "nome": "C"}], tabela)
+        self.assertIsNone(linha_c["retorno_12m"])
+        self.assertEqual(linha_c["nome"], "C")
+        # Sem os objetos (bloco lido de JSON), a tabela sai vazia - e nada quebra.
+        self.assertEqual(rentabilidade_por_cnpj({"available": True}, None), {})
+
+    def test_digest_mostra_o_retorno_nos_gaps_e_nas_captacoes(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+
+        report = self._relatorio()
+        md = render_markdown(report, None, "semanal")
+        self.assertIn("| Cotistas | Rent. 12m | Ritmo na semana | Esforço |", md)
+        self.assertIn("| 13,45% (+0,31pp) |", md)
+        # Sem 12 meses de cota, 3 meses - com o prazo escrito.
+        self.assertIn("| 4,12% em 3 meses (+0,10pp) |", md)
+        self.assertRegex(
+            md, r"Fundo A FIC FIM - .*, rentabilidade de 13,45% em 12 meses "
+            r"\(\+0,31pp vs categoria\) - BTG, Itaú"
+        )
+        prazo = (
+            "Rentabilidade: 12 meses, de 31/10/2025 a 14/10/2026 (cota do fechamento de "
+            "out/2025); para o fundo sem esse histórico, 3 meses, de 03/08/2026 a "
+            "14/10/2026 (cota do primeiro pregão do período), com o prazo na célula. "
+            "Cota patrimonial ex-provento; o pp compara com a mediana da categoria no "
+            "universo da CVM."
+        )
+        # A janela vai nas duas secoes: oportunidade e ritmo.
+        self.assertEqual(md.count(prazo), 2)
+        texto = _texto(render_html(report, None, "semanal"))
+        self.assertIn("Rent. 12m", texto)
+        self.assertIn("13,45% +0,31pp vs categoria", texto)
+        self.assertIn("4,12% em 3 meses · +0,10pp vs categoria", texto)
+        self.assertIn(prazo, texto)
+
+    def test_painel_e_planilha_levam_o_retorno(self):
+        from openpyxl import load_workbook
+
+        from shelf_monitor.report.aggregate import build_dashboard_data
+        from shelf_monitor.report.spreadsheet import render_spreadsheet
+
+        report = self._relatorio()
+        dados = build_dashboard_data(report)
+        gap_a = next(f for f in dados["gaps"]["funds"] if f["cnpj"] == A)
+        self.assertEqual(gap_a["retorno_12m"], 13.45)
+        topo = {f["cnpj"]: f for f in dados["flow"]["top_captacao"]}
+        self.assertEqual(topo[A]["mediana_12m"], 13.14)
+        self.assertTrue(dados["flow"]["prazo_rentabilidade"].startswith("Rentabilidade: 12 meses"))
+        self.assertEqual(dados["gaps"]["prazo_rentabilidade"], dados["flow"]["prazo_rentabilidade"])
+
+        from shelf_monitor.report.retail_flow import build_grade_opportunities
+
+        config, tmp = temp_config()
+        self.addCleanup(tmp.cleanup)
+        grade = build_grade_opportunities(report.snapshots, report.retail_flow["_fluxos"])
+        caminho = render_spreadsheet(
+            config, report.snapshots, retail_flow=report.retail_flow, grade=grade,
+            performance=report.performance, performance_12m=report.performance_12m,
+        )
+        livro = load_workbook(caminho)
+
+        def coluna(aba, titulo: str) -> dict[str, object]:
+            """{nome do fundo: valor da coluna}, pela linha de cabecalho da aba."""
+            linhas = list(livro[aba].iter_rows(values_only=True))
+            topo = next(i for i, linha in enumerate(linhas) if titulo in linha)
+            idx = linhas[topo].index(titulo)
+            return {linha[0]: linha[idx] for linha in linhas[topo + 1:] if linha and linha[0]}
+
+        gaps_12m = coluna("Gaps XP", "Rentabilidade 12 meses (%)")
+        self.assertEqual(gaps_12m["Fundo A FIC FIM"], 13.45)
+        self.assertEqual(coluna("Gaps XP", "Rentabilidade 3 meses (%)")["Fundo E FIC FIM"], 4.12)
+        captacao = coluna("Captação por fundo", "Rentabilidade 12 meses (%)")
+        self.assertEqual(captacao["BTG Proprio B FIC FIM"], -30.58)
+        # Retorno negativo aparece com o sinal - o formato da taxa o trocava por "-".
+        aba = livro["Captação por fundo"]
+        celula = next(
+            c for linha in aba.iter_rows() for c in linha if c.value == -30.58
+        )
+        self.assertEqual(celula.number_format, '0.00"%";-0.00"%";0.00"%"')
+
+        def notas(aba) -> str:
+            return " ".join(str(c) for c in next(livro[aba].iter_cols(max_col=1, values_only=True)) if c)
+
+        # Na planilha cada prazo tem a propria coluna: a nota da a janela de cada
+        # uma, e a aba que so tem 12 meses so fala de 12 meses.
+        doze = ("Rentabilidade 12 meses: de 31/10/2025 a 14/10/2026 "
+                "(cota do fechamento de out/2025).")
+        tres = ("Rentabilidade 3 meses: de 03/08/2026 a 14/10/2026 "
+                "(cota do primeiro pregão do período).")
+        self.assertIn(f"{doze} {tres} Cota patrimonial ex-provento", notas("Gaps XP"))
+        for aba in ("Captação por fundo", "Oportunidades de grade"):
+            self.assertIn(doze, notas(aba))
+            self.assertNotIn("Rentabilidade 3 meses", notas(aba))
+            self.assertNotIn("com o prazo na célula", notas(aba))
+        self.assertIn("Rentabilidade 12 meses (%)", next(
+            linha for linha in livro["Oportunidades de grade"].iter_rows(values_only=True)
+            if "Fundo" in linha
+        ))
+
+
 class TestRadarSemCancelados(unittest.TestCase):
     """Na parte da CVM, nenhum fundo cancelado (pedido de 14/10/2026)."""
 

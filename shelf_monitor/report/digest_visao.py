@@ -28,6 +28,7 @@ from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import BLOCO_COTISTAS, CvmDiff, CvmSnapshot, RunReport
 from shelf_monitor.report.aggregate import bloco_de_gaps, ranquear_gaps
 from shelf_monitor.report.oportunidade import oportunidade_de_grade
+from shelf_monitor.report.performance import com_rentabilidade, rentabilidade_por_cnpj
 from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
 
 EDICAO_SEMANAL = "semanal"
@@ -104,9 +105,19 @@ def montar_visao(
         (c for c in casas if c in PLATFORMS and PLATFORMS[c].is_baseline), casas[0]
     )
     recortado = recortar(report, casas, base_id)
+    # A rentabilidade de cada fundo vai junto, como referencia, nos gaps e nas
+    # listas de captacao (pedido de 16/10/2026): 12 meses e 3 meses, com a
+    # mediana da categoria.
+    rentabilidade = rentabilidade_por_cnpj(report.performance_12m, report.performance)
+    fluxo = recortado.retail_flow
+    if fluxo and fluxo.get("available") and fluxo is not report.retail_flow:
+        for chave in ("top_captacao", "top_resgate"):
+            fluxo[chave] = com_rentabilidade(fluxo.get(chave) or [], rentabilidade)
     gaps = bloco_de_gaps(recortado)
     if gaps.get("available"):
-        gaps = {**gaps, "funds": ranquear_gaps(gaps.get("funds") or [], recortado.retail_flow)}
+        gaps = {**gaps, "funds": com_rentabilidade(
+            ranquear_gaps(gaps.get("funds") or [], recortado.retail_flow), rentabilidade
+        )}
     oportunidade = oportunidade_de_grade(
         gaps, recortado.retail_flow, com_cotistas=not report.suprime(BLOCO_COTISTAS)
     )

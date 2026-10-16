@@ -256,6 +256,22 @@ function renderVitrine(listing) {
 
 renderVitrine(DATA.listing);
 
+/* Rentabilidade de referencia de um fundo nas listas de gaps e de captacao
+   (16/10/2026): 12 meses, ou 3 meses quando o fundo nao tem 12 - com o prazo
+   escrito -, e a distancia para a mediana da categoria em pontos percentuais.
+   A janela de cada prazo vai na nota da secao (`prazo_rentabilidade`). */
+function rentabilidade(f) {
+  for (const [prazo, rotulo] of [["12m", ""], ["3m", " em 3 meses"]]) {
+    const r = f["retorno_" + prazo];
+    if (r === null || r === undefined) continue;
+    const m = f["mediana_" + prazo];
+    const pp = (m === null || m === undefined) ? ""
+      : ` (${r - m > 0 ? "+" : ""}${numBR(r - m)}pp)`;
+    return numBR(r) + "%" + rotulo + pp;
+  }
+  return "–";
+}
+
 /* --- Gaps de prateleira da XP ---------------------------------------------
    Leitura XP-centrica dos mesmos dados da vitrine: o que os concorrentes
    vitrinam e a vitrine da XP nao tem. Sem baseline utilizavel o bloco vira
@@ -413,6 +429,7 @@ function renderGaps(gaps) {
      { key: "houses_label", label: "Casas" },
      { key: "capt", label: "Captação no mercado", num: true },
      { key: "cot", label: "Cotistas ganhos", num: true },
+     { key: "rent", label: "Rent. 12m", num: true },
      { key: "esforco", label: "Esforço" },
      { key: "veredito", label: "Veredito" },
      { key: "dmais", label: "Resgate", num: true },
@@ -426,6 +443,7 @@ function renderGaps(gaps) {
       capt: mm(f.captacao_liquida),
       cot: f.variacao_cotistas === null || f.variacao_cotistas === undefined
         ? "–" : f.variacao_cotistas.toLocaleString("pt-BR"),
+      rent: rentabilidade(f),
       esforco: f.esforco || "–",
       veredito: (f.veredito && f.veredito.rotulo) || "–",
       dmais: dmais(f.dmais),
@@ -491,6 +509,7 @@ function renderGaps(gaps) {
       `${inteiro(gaps.cobertos_truncated)} na aba Gaps cobertos da planilha`);
   }
   (gaps.notas_cobertura || []).forEach(n => parts.push(n));
+  if (gaps.prazo_rentabilidade) parts.push(gaps.prazo_rentabilidade);
   parts.push("Possível equivalente XP: sinal de baixa confiança; não tira o fundo da lista");
   notas(document.getElementById("gaps-coverage"), parts);
 }
@@ -755,17 +774,18 @@ renderGaps(DATA.gaps);
   // Ticket por cotista novo: a CVM publica o fluxo do fundo inteiro, e so esse
   // numero mostra ao leitor quando a captacao nao tem cara de varejo.
   const mil = v => "R$ " + Math.round(v / 1000).toLocaleString("pt-BR") + " mil";
-  // Cada lista de fundos e uma tabela: Fundo | Captacao | Cotistas | Casas.
+  // Cada lista de fundos e uma tabela: Fundo | Captacao | Cotistas | Rent. | Casas.
   const lista = (tituloLista, fundos, classe) => {
     if (!fundos || !fundos.length) return "";
     const cabeca = "<th>Fundo</th><th class=\"num\">Captação</th>" +
       (SUPRIMIDOS.cotistas ? "" : "<th class=\"num\">Cotistas</th><th class=\"num\">Por cotista novo</th>") +
-      "<th>Casas</th>";
+      "<th class=\"num\">Rent. 12m</th><th>Casas</th>";
     const linhas = fundos.map(f => `<tr><td>${escapeHtml(f.nome)}</td>` +
       `<td class="num"><span class="${classe}">${mm(f.captacao_liquida)}</span></td>` +
       (SUPRIMIDOS.cotistas ? "" :
         `<td class="num">${int(f.variacao_cotistas)}</td>` +
         `<td class="num">${f.ticket_por_cotista ? mil(f.ticket_por_cotista) : "–"}</td>`) +
+      `<td class="num">${escapeHtml(rentabilidade(f))}</td>` +
       `<td>${(f.vitrines || []).map(rotulo).map(escapeHtml).join(", ")}</td></tr>`).join("");
     return `<h4 style="font-size:13px;font-weight:700;margin:18px 0 4px">${escapeHtml(tituloLista)}</h4>
       <div class="table-scroll"><table><thead><tr>${cabeca}</tr></thead><tbody>${linhas}</tbody></table></div>`;
@@ -823,6 +843,7 @@ renderGaps(DATA.gaps);
         "(fluxo maior que o patrimônio, ou fundo esvaziado) - troca de veículo, não demanda"
       : "",
     fora.length ? `Fora da análise: ${fora.join("; ")}` : "",
+    flow.prazo_rentabilidade || "",
   ]);
 })(DATA.flow);
 

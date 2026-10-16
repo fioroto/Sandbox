@@ -117,6 +117,18 @@ Ele abre direto na secao; a unica frase antes dela e o alerta de coleta que falh
 inteira, e a previa do e-mail e a linha do cabecalho (casas e semana) - o assunto ja
 traz a oportunidade. O ritmo de cada fundo segue na tabela ("Ritmo na semana").
 
+**Rentabilidade de referencia** (16/10/2026). Toda lista de gaps e de captacoes - no
+digest, no painel e na planilha - traz a rentabilidade do fundo em 12 meses (convencao
+de lamina: base no fechamento da competencia anterior a janela) e, em pp, a distancia
+para a mediana da categoria no universo da CVM. O fundo sem 12 meses de cota mostra 3
+meses (base no primeiro pregao), com o prazo escrito na celula; sem serie de cota, "-".
+A janela de cada prazo vai na nota da secao. O numero sai dos blocos de rentabilidade
+que toda execucao ja calcula (`performance.rentabilidade_por_cnpj`). Na planilha, as
+colunas entram em Gaps XP (12 e 3 meses, com as medianas), Captacao por fundo e
+Oportunidades de grade (12 meses e mediana), e a nota de cada aba da a janela de cada
+coluna (`performance.prazo_das_colunas_de_rentabilidade`). Retorno negativo e captacao
+liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava por "-".
+
 **O Itau em todas as analises** (pedido de 14/10/2026). A oportunidade sai por
 concorrente: o resumo de cada um (gaps reais, quantos captam, captacao na semana e
 em 3 meses) e os 5 primeiros de cada um - numa lista unica o BTG, de vitrine maior,

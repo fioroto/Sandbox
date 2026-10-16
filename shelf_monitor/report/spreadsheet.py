@@ -50,7 +50,13 @@ from shelf_monitor.report.shared.fontes import (
     Fonte,
     fontes_do_relatorio,
 )
-from shelf_monitor.report.performance import blocos_de_rentabilidade, janela_do_bloco
+from shelf_monitor.report.performance import (
+    blocos_de_rentabilidade,
+    com_rentabilidade,
+    janela_do_bloco,
+    prazo_das_colunas_de_rentabilidade,
+    rentabilidade_por_cnpj,
+)
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
     build_gap_block,
@@ -86,6 +92,9 @@ _BORDER = Border(bottom=_THIN)
 
 _MONEY = '#,##0;(#,##0);-'
 _PCT = '0.00"%";-;-'
+# Retorno e fluxo sobre o PL podem ser negativos, e o _PCT (feito para taxa,
+# que nunca e) os mostraria como "-".
+_PCT_RETORNO = '0.00"%";-0.00"%";0.00"%"'
 _INT = '0;-;-'
 
 # (cabecalho, largura, extrator) - a ordem aqui e a ordem das colunas.
@@ -637,8 +646,14 @@ def _add_gaps_sheets(
     grade: dict | None = None,
     familias=None,
     distribuivel=None,
+    retornos: dict | None = None,
+    prazo_dos_retornos: str = "",
 ) -> None:
     """Abas "Gaps XP", "Gaps cobertos", "Gaps por categoria" e "Famílias".
+
+    `retornos` (`performance.rentabilidade_por_cnpj`) poe a rentabilidade de
+    cada gap em 12 e em 3 meses, com a mediana da categoria, como referencia
+    (16/10/2026); `prazo_dos_retornos` vai nas notas com a janela de cada prazo.
 
     Os numeros vem de build_gap_block - os mesmos do dashboard, digest e deck -
     e a ORDEM vem de `ranquear_gaps`, a mesma das outras tres superficies:
@@ -653,8 +668,8 @@ def _add_gaps_sheets(
     """
     block = build_gap_block(snapshots, familias=familias, distribuivel=distribuivel)
     if block.get("available"):
-        block = {**block, "funds": ranquear_gaps(
-            block["funds"], retail_flow, grade
+        block = {**block, "funds": com_rentabilidade(
+            ranquear_gaps(block["funds"], retail_flow, grade), retornos or {}
         )}
 
     sheet = workbook.create_sheet("Gaps XP")
@@ -681,6 +696,10 @@ def _add_gaps_sheets(
         ("semana", "Captação na semana (R$)", 20),
         ("ritmo", "Ritmo na semana", 16),
         ("cotistas", "Cotistas ganhos no mercado", 24),
+        ("rent12", "Rentabilidade 12 meses (%)", 16),
+        ("cat12", "Mediana da categoria 12 meses (%)", 18),
+        ("rent3", "Rentabilidade 3 meses (%)", 16),
+        ("cat3", "Mediana da categoria 3 meses (%)", 18),
         ("esforco", "Esforço de fechar", 26),
         ("veredito", "Veredito", 26), ("familia", "Família (master)", 44),
         ("dmais", "Resgate (D+)", 12),
@@ -722,6 +741,11 @@ def _add_gaps_sheets(
             "semana": fund.get("captacao_semana"),
             "ritmo": nome_da_tendencia(fund.get("ritmo_semanal")),
             "cotistas": fund.get("variacao_cotistas"),
+            # Pontos percentuais, como a taxa de adm: _PCT so concatena o "%".
+            "rent12": fund.get("retorno_12m"),
+            "cat12": fund.get("mediana_12m"),
+            "rent3": fund.get("retorno_3m"),
+            "cat3": fund.get("mediana_3m"),
             "esforco": fund.get("esforco") or "",
             "veredito": veredito.get("rotulo") or "não verificado (sem carteira)",
             "familia": (fund.get("familia") or {}).get("nome") or "",
@@ -742,6 +766,8 @@ def _add_gaps_sheets(
             cell.border = _BORDER
         for chave, formato in (
             ("n_casas", _INT), ("captacao", _MONEY), ("semana", _MONEY), ("cotistas", _INT),
+            ("rent12", _PCT_RETORNO), ("cat12", _PCT_RETORNO), ("rent3", _PCT_RETORNO),
+            ("cat3", _PCT_RETORNO),
             ("dmais", _INT), ("minimo", _MONEY), ("taxa", _PCT), ("pl", _MONEY),
         ):
             sheet.cell(row=row, column=coluna[chave]).number_format = formato
@@ -788,6 +814,9 @@ def _add_gaps_sheets(
         sheet.cell(row=note_row, column=1, value=nota).font = (
             _ALERT_FONT if nota.startswith("Atenção") else _NOTE_FONT
         )
+    if prazo_dos_retornos:
+        note_row += 1
+        sheet.cell(row=note_row, column=1, value=prazo_dos_retornos).font = _NOTE_FONT
     if block["baseline_warning"]:
         note_row += 1
         sheet.cell(
@@ -1438,12 +1467,19 @@ def render_spreadsheet(
     listing_last_row = _add_listing_sheet(
         workbook, usable, com_exclusividade=not sem_cnpj
     )
+    # O retorno de cada fundo, como referencia nas abas de gaps e de captacao
+    # (16/10/2026): 12 e 3 meses, com a mediana da categoria. As abas de
+    # captacao e de grade so tem as colunas de 12 meses - a nota delas tambem.
+    retornos = rentabilidade_por_cnpj(performance_12m, performance)
+    prazo_dos_retornos = prazo_das_colunas_de_rentabilidade(performance_12m, performance)
+    prazo_dos_12m = prazo_das_colunas_de_rentabilidade(performance_12m)
     # Gaps recebem os snapshots completos: o proprio bloco decide quem entra
     # no universo e lista os excluidos com motivo.
     if not sem_cnpj:
         _add_gaps_sheets(
             workbook, snapshots, listing_last_row, retail_flow, grade,
             familias=familias, distribuivel=distribuivel,
+            retornos=retornos, prazo_dos_retornos=prazo_dos_retornos,
         )
     _add_restricted_sheet(workbook, usable)
     if diffs:
@@ -1461,11 +1497,16 @@ def render_spreadsheet(
         if suprimidos.get(BLOCO_PRODUTO_PROPRIO):
             omitir |= _FLOW_POR_PRODUTO
         _add_captacao_casas_sheet(workbook, retail_flow, suprimidos)
-        _add_flow_sheet(workbook, retail_flow, omitir=frozenset(omitir))
+        _add_flow_sheet(
+            workbook, retail_flow, omitir=frozenset(omitir),
+            retornos=retornos, prazo_dos_retornos=prazo_dos_12m,
+        )
         _add_trend_sheet(workbook, retail_flow)
     # A grade e "fundo que capta fora da vitrine da XP", por CNPJ.
     if grade and grade.get("available") and not sem_cnpj:
-        _add_grade_sheet(workbook, grade)
+        _add_grade_sheet(
+            workbook, grade, retornos=retornos, prazo_dos_retornos=prazo_dos_12m
+        )
     if rentabilidade and rentabilidade.get("available"):
         _add_rentabilidade_sheet(workbook, rentabilidade)
     # Uma aba por janela, a mais longa primeiro. "Onde esta a gente" lista os
@@ -1557,6 +1598,7 @@ _FLOW_HEADERS = [
     "Cotistas início", "Cotistas fim", "Variação cotistas",
     "Entrada por cotista ganho (R$)",
     "Rentabilidade no período, base no 1o pregão (%)",
+    "Rentabilidade 12 meses (%)", "Mediana da categoria 12 meses (%)",
     "Pregões observados", "Tendência", "Ritmo na semana", "Movimento estrutural",
 ]
 
@@ -1571,6 +1613,7 @@ _FLOW_MONEY = {
 _FLOW_PCT = {
     "Captação líquida / PL início (%)",
     "Rentabilidade no período, base no 1o pregão (%)",
+    "Rentabilidade 12 meses (%)", "Mediana da categoria 12 meses (%)",
 }
 _FLOW_INT = {"Cotistas início", "Cotistas fim", "Variação cotistas", "Pregões observados"}
 _FLOW_LIQUIDA = "Captação líquida (R$)"
@@ -1607,6 +1650,10 @@ def _flow_row(fundo: dict) -> list:
         fundo["variacao_cotistas"],
         fundo.get("ticket_por_cotista"),
         fundo.get("rentabilidade"),
+        # A rentabilidade de referencia (`com_rentabilidade`), na convencao de
+        # lamina: base no fechamento da competencia anterior a janela.
+        fundo.get("retorno_12m"),
+        fundo.get("mediana_12m"),
         fundo.get("dias"),
         nome_da_tendencia(fundo.get("tendencia")),
         nome_da_tendencia(fundo.get("ritmo_semanal")),
@@ -1615,12 +1662,17 @@ def _flow_row(fundo: dict) -> list:
 
 
 def _write_flow_rows(
-    ws, fundos: list[dict], header_row: int, omitir: frozenset[str] = frozenset()
+    ws, fundos: list[dict], header_row: int, omitir: frozenset[str] = frozenset(),
+    retornos: dict | None = None,
 ) -> int:
     """Escreve a tabela de fundos; devolve a linha seguinte a ultima.
 
-    `omitir` sao cabecalhos de `_FLOW_HEADERS` que saem da tabela inteira.
+    `omitir` sao cabecalhos de `_FLOW_HEADERS` que saem da tabela inteira;
+    `retornos` (`performance.rentabilidade_por_cnpj`) preenche as colunas de
+    rentabilidade de 12 meses.
     """
+    if retornos:
+        fundos = com_rentabilidade(fundos, retornos)
     colunas = [
         (i, header) for i, header in enumerate(_FLOW_HEADERS) if header not in omitir
     ]
@@ -1644,7 +1696,7 @@ def _write_flow_rows(
             if header in _FLOW_MONEY:
                 cell.number_format = _MONEY
             elif header in _FLOW_PCT:
-                cell.number_format = _PCT
+                cell.number_format = _PCT_RETORNO
             elif header in _FLOW_INT:
                 cell.number_format = _INT
             if header == _FLOW_LIQUIDA and isinstance(valor, (int, float)) and valor:
@@ -1865,7 +1917,8 @@ def _add_captacao_casas_sheet(
 
 
 def _add_flow_sheet(
-    workbook: Workbook, flow: dict, omitir: frozenset[str] = frozenset()
+    workbook: Workbook, flow: dict, omitir: frozenset[str] = frozenset(),
+    retornos: dict | None = None, prazo_dos_retornos: str = "",
 ) -> None:
     """Aba "Captacao por fundo": o fluxo de CADA fundo de vitrine no periodo.
 
@@ -1905,6 +1958,7 @@ def _add_flow_sheet(
             "'Rentabilidade por fundo' usam a cota do fim da competência anterior, "
             "que é a convenção de lâmina, e por isso o mesmo fundo aparece com "
             "número ligeiramente diferente nelas."
+            + (f" {prazo_dos_retornos}" if prazo_dos_retornos else "")
         ),
     )
 
@@ -1923,7 +1977,7 @@ def _add_flow_sheet(
                 fundos.append(fundo)
 
     cabecalho = 7
-    ultima = _write_flow_rows(ws, fundos, cabecalho, omitir)
+    ultima = _write_flow_rows(ws, fundos, cabecalho, omitir, retornos)
     ws.freeze_panes = f"A{cabecalho + 1}"
     if ultima > cabecalho + 1:
         ultima_coluna = get_column_letter(
@@ -2042,7 +2096,10 @@ def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
             linha += 1
 
 
-def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
+def _add_grade_sheet(
+    workbook: Workbook, grade: dict, retornos: dict | None = None,
+    prazo_dos_retornos: str = "",
+) -> None:
     """Aba "Oportunidades de grade": o que capta fora da vitrine da XP."""
     ws = workbook.create_sheet("Oportunidades de grade")
 
@@ -2055,6 +2112,7 @@ def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
             f"os exibe e não se transferem. Restam {grade['total_transferiveis']} "
             f"({grade['total_operacionais']} de gestora já distribuída pela XP, "
             f"{grade['total_comerciais']} exigem abrir gestora)."
+            + (f" {prazo_dos_retornos}" if prazo_dos_retornos else "")
         ),
     ).font = _NOTE_FONT
 
@@ -2070,7 +2128,7 @@ def _add_grade_sheet(workbook: Workbook, grade: dict) -> None:
         if not fundos:
             continue
         ws.cell(row=linha, column=1, value=titulo).font = _HEADER_FONT
-        linha = _write_flow_rows(ws, fundos, linha + 1) + 1
+        linha = _write_flow_rows(ws, fundos, linha + 1, retornos=retornos) + 1
 
 
 # --- rentabilidade ponderada --------------------------------------------------

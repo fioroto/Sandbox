@@ -404,6 +404,90 @@ def blocos_de_rentabilidade(*blocos: dict | None) -> list[dict]:
     return [b for b in blocos if b and b.get("available")]
 
 
+# Os campos que `com_rentabilidade` acrescenta a uma linha de fundo, em pontos
+# percentuais (13,45 para 13,45%), como o resto do bloco.
+CAMPOS_DE_RENTABILIDADE = ("retorno_12m", "mediana_12m", "retorno_3m", "mediana_3m")
+
+
+def rentabilidade_por_cnpj(
+    bloco_12m: dict | None, bloco_3m: dict | None
+) -> dict[str, dict[str, float | None]]:
+    """O retorno de cada fundo das vitrines, por CNPJ, com a mediana da categoria.
+
+    E a referencia que as listas de gaps e de captacao mostram ao lado do fundo
+    (pedido de 16/10/2026). Sai dos objetos dos blocos (`_casas`): um fundo em
+    tres vitrines tem o mesmo retorno nas tres, porque a CVM publica cota por
+    fundo. Bloco lido de JSON nao tem `_casas` - e a tabela sai sem ele.
+    """
+    tabela: dict[str, dict[str, float | None]] = {}
+    for prazo, bloco in (("12m", bloco_12m), ("3m", bloco_3m)):
+        if not (bloco and bloco.get("available")):
+            continue
+        for casa in bloco.get("_casas") or []:
+            for fundo in casa.fundos:
+                linha = tabela.setdefault(fundo.cnpj, {})
+                if f"retorno_{prazo}" in linha:
+                    continue
+                linha[f"retorno_{prazo}"] = round(fundo.retorno, 4)
+                linha[f"mediana_{prazo}"] = (
+                    None if fundo.mediana_categoria is None
+                    else round(fundo.mediana_categoria, 4)
+                )
+    return tabela
+
+
+def prazo_da_rentabilidade(bloco_12m: dict | None, bloco_3m: dict | None) -> str:
+    """A janela de cada prazo, para a nota das listas que mostram o retorno.
+
+    "Rentabilidade: 12 meses, de 31/10/2025 a 14/10/2026 (cota do fechamento de
+    out/2025); para o fundo sem esse historico, 3 meses, de ... (cota do
+    primeiro pregao do periodo), com o prazo na celula." Vazio sem bloco.
+    """
+    janelas = [janela_do_bloco(b) for b in blocos_de_rentabilidade(bloco_12m, bloco_3m)]
+    if not janelas:
+        return ""
+    descricoes = [
+        f"{j['rotulo']}, {periodo_br(j.get('de'), j.get('ate'))} ({j.get('base')})"
+        for j in janelas
+    ]
+    texto = f"Rentabilidade: {descricoes[0]}"
+    if len(descricoes) > 1:
+        texto += f"; para o fundo sem esse histórico, {descricoes[1]}, com o prazo na célula"
+    return (
+        texto + ". Cota patrimonial ex-provento; o pp compara com a mediana da categoria "
+        "no universo da CVM."
+    )
+
+
+def prazo_das_colunas_de_rentabilidade(*blocos: dict | None) -> str:
+    """A janela de cada coluna de rentabilidade, para a nota de uma aba da planilha.
+
+    Na planilha cada prazo tem a propria coluna - o de 3 meses nao substitui o
+    de 12 na celula, como no digest: "Rentabilidade 12 meses: de 31/10/2025 a
+    14/10/2026 (cota do fechamento de out/2025). Rentabilidade 3 meses: ...".
+    A aba sem coluna de 3 meses passa so o bloco de 12. Vazio sem bloco.
+    """
+    janelas = [janela_do_bloco(b) for b in blocos_de_rentabilidade(*blocos)]
+    if not janelas:
+        return ""
+    return " ".join(
+        f"Rentabilidade {j['rotulo']}: {periodo_br(j.get('de'), j.get('ate'))} "
+        f"({j.get('base')})."
+        for j in janelas
+    ) + " Cota patrimonial ex-provento; a mediana é a da categoria no universo da CVM."
+
+
+def com_rentabilidade(fundos: list[dict], tabela: dict[str, dict]) -> list[dict]:
+    """Copias das linhas com `CAMPOS_DE_RENTABILIDADE` (None sem serie de cota)."""
+    return [
+        {**fundo, **{
+            campo: (tabela.get(fundo.get("cnpj") or "") or {}).get(campo)
+            for campo in CAMPOS_DE_RENTABILIDADE
+        }}
+        for fundo in fundos
+    ]
+
+
 def tem_vitrine_com_cnpj(snapshots: list[ShelfSnapshot]) -> bool:
     """Ha alguma vitrine cujo retorno da para buscar no informe?"""
     return bool(_vitrines_cruzaveis(snapshots)[0])
