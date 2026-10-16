@@ -134,6 +134,7 @@ from shelf_monitor.report.performance import (
     prazo_da_rentabilidade,
 )
 from shelf_monitor.report.aggregate import listing_funds, retail_funds
+from shelf_monitor.report.custo import classes_com_indice, nota_das_classes
 from shelf_monitor.report.digest_visao import (
     VisaoDoDigest,
     edicao_do_digest,
@@ -1722,6 +1723,7 @@ def _md_performance_section(report: RunReport) -> list[str]:
                 f"{_share(casa['share_liquidez_imediata'])} |"
             )
         lines.append("")
+        lines += _md_custo_por_classe(custo)
 
     caixa = _nota_caixa_do_mensal(principal, custo)
     if caixa:
@@ -1748,6 +1750,83 @@ def _indice_mediano(casa: dict) -> str:
     """"1,65x", ou "-" quando a casa nao tem amostra comparavel."""
     indice = casa.get("indice_mediano")
     return "-" if indice is None else f"{indice:.2f}x".replace(".", ",")
+
+
+# --- custo por classe (pedido de 16/10/2026) ----------------------------------------
+#
+# A mesma conta do custo da casa, dentro de cada classe de fundo (nivel 1 da
+# ANBIMA). As colunas sao as classes com indice em alguma das casas do recorte;
+# a XP sai da base interna, e a nota do bloco diz isso.
+
+
+def _celulas_por_classe(casa: dict) -> dict[str, dict]:
+    return {c["classe"]: c for c in casa.get("por_classe") or []}
+
+
+def _md_custo_por_classe(custo: dict) -> list[str]:
+    """A nota da base da prateleira e a tabela casa x classe, em markdown."""
+    casas = custo.get("casas") or []
+    lines = [f"_{custo['nota_prateleira']}_", ""] if custo.get("nota_prateleira") else []
+    classes = classes_com_indice(casas)
+    if not classes:
+        return lines
+    lines += [
+        "**Custo por classe de fundo** (índice mediano; entre parênteses, os fundos "
+        "comparáveis)",
+        "",
+        "| Casa | " + " | ".join(classes) + " |",
+        "|---|" + "---:|" * len(classes),
+    ]
+    for casa in casas:
+        celulas = _celulas_por_classe(casa)
+        textos = []
+        for classe in classes:
+            celula = celulas.get(classe)
+            textos.append(
+                "-" if celula is None
+                else f"{_indice_mediano(celula)} ({_contagem(celula['comparaveis'])})"
+            )
+        lines.append(f"| {casa['label']} | " + " | ".join(textos) + " |")
+    lines += ["", f"_{nota_das_classes(casas)}_", ""]
+    return lines
+
+
+def _html_custo_por_classe(custo: dict) -> str:
+    """A nota da base da prateleira e a tabela casa x classe, no e-mail."""
+    casas = custo.get("casas") or []
+    partes = []
+    if custo.get("nota_prateleira"):
+        partes.append(f'<p style="{_NOTA}">{_esc(custo["nota_prateleira"])}</p>')
+    classes = classes_com_indice(casas)
+    if not classes:
+        return "".join(partes)
+    partes.append(f'<h3 style="{_H3}">Custo por classe de fundo</h3>')
+    linhas = []
+    for casa in casas:
+        celulas = _celulas_por_classe(casa)
+        linha = [_esc(casa["label"])]
+        for classe in classes:
+            celula = celulas.get(classe)
+            linha.append(
+                "-" if celula is None
+                else _indice_mediano(celula) + _miudo(
+                    _esc(_contagem_de_fundos(celula["comparaveis"]))
+                )
+            )
+        linhas.append(linha)
+    partes.append(_tabela(
+        ["Casa", *classes], linhas, direita=range(1, len(classes) + 1),
+        base=[_e_base(casa.get("platform_id")) for casa in casas], compacta=True,
+    ))
+    partes.append(
+        f'<p style="{_NOTA}">Índice mediano da classe; embaixo, os fundos '
+        f"comparáveis. {_esc(nota_das_classes(casas))}</p>"
+    )
+    return "".join(partes)
+
+
+def _contagem_de_fundos(n: int) -> str:
+    return f"{_contagem(n)} {'fundo' if n == 1 else 'fundos'}"
 
 
 def _html_tabela_rentabilidade(bloco: dict, sem_cotistas: str | None) -> str:
@@ -1860,6 +1939,7 @@ def _html_performance_section(report: RunReport, omitir: frozenset = frozenset()
             direita={1, 2, 3, 4},
             base=[_e_base(casa.get("platform_id")) for casa in custo["casas"]],
         ))
+        partes.append(_html_custo_por_classe(custo))
 
     caixa = _nota_caixa_do_mensal(principal, report.custo)
     if caixa:

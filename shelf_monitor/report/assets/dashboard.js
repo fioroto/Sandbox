@@ -1066,6 +1066,33 @@ renderGaps(DATA.gaps);
       nota: l => `${share(l.caro)} caros · ${share(l.barato)} baratos`,
       aria: "Custo relativo à categoria por casa",
     });
+
+    // Por classe de fundo (nivel 1 da ANBIMA): a mesma conta dentro de cada
+    // classe, e a nota de onde sai a prateleira da XP - a base interna
+    // (16/10/2026).
+    const classes = custo.classes || [];
+    let porClasse = custo.nota_prateleira
+      ? `<p class="card-sub">${escapeHtml(custo.nota_prateleira)}</p>` : "";
+    if (classes.length) {
+      porClasse += '<h4 style="font-size:13px;font-weight:700;margin:18px 0 4px">Custo por classe de fundo</h4>' +
+        '<div class="matrix-scroll"><table class="matrix"><thead><tr><th class="rowh">Casa</th>' +
+        classes.map(c => `<th>${escapeHtml(c)}</th>`).join("") + "</tr></thead><tbody>" +
+        custo.casas.map(casa => {
+          const celulas = Object.fromEntries((casa.por_classe || []).map(c => [c.classe, c]));
+          return `<tr${casa.platform_id === BASE_ID ? ' class="base"' : ""}>` +
+            `<th class="rowh">${escapeHtml(casa.label)}</th>` +
+            classes.map(classe => {
+              const c = celulas[classe];
+              if (!c) return '<td><span class="cell zero">-</span></td>';
+              const indice = ok(c.indice_mediano) ? numBR(c.indice_mediano) + "x" : "-";
+              return `<td><span class="cell">${indice}<small>${inteiro(c.comparaveis)} ` +
+                `${c.comparaveis === 1 ? "fundo" : "fundos"}</small></span></td>`;
+            }).join("") + "</tr>";
+        }).join("") + "</tbody></table></div>" +
+        '<p class="card-sub">Índice mediano da classe; embaixo, os fundos comparáveis. ' +
+        `${escapeHtml(custo.nota_classes || "")}</p>`;
+    }
+    bloco.insertAdjacentHTML("beforeend", porClasse);
   } else if (bloco) {
     bloco.innerHTML = `<p class="card-sub">Custo não calculado: ${(custo || {}).reason || "sem base de mercado"}</p>`;
   }

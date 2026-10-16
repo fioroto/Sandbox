@@ -41,6 +41,12 @@ MIN_AMOSTRA_CATEGORIA = 20
 # Vitrine menor que isto nao e vitrine: e o que sobrou de uma coleta parcial.
 MIN_VITRINE = 30
 
+# Fundos comparaveis de uma classe (nivel 1 da ANBIMA) numa casa para o custo
+# da classe ter indice. Medido em 16/10/2026: renda fixa, multimercados e acoes
+# tem de 41 a 136 por casa; cambial, de 1 a 4 - e a XP saia "3,29x em cambial"
+# com dois fundos. Abaixo disto a celula sai sem indice, com a contagem.
+MIN_COMPARAVEIS_CLASSE_CUSTO = 5
+
 # Fundos com aplicacao minima lida da propria vitrine para o ticket da casa
 # significar algo. Abaixo disso a casa entra como "sem base na coleta", nunca
 # como "nao tem fundo barato" - era o que a leitura de ticket e o posicionamento

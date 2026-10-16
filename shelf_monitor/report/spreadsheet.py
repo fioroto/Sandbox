@@ -50,6 +50,7 @@ from shelf_monitor.report.shared.fontes import (
     Fonte,
     fontes_do_relatorio,
 )
+from shelf_monitor.report.custo import nota_das_classes
 from shelf_monitor.report.performance import (
     blocos_de_rentabilidade,
     com_rentabilidade,
@@ -1224,6 +1225,12 @@ def _periodos_das_abas(
             f"Não é intervalo: cada classe tem a data-base da própria entrega, "
             f"e só entram as de até {idade} meses",
         ))
+        linhas.append((
+            "Custo por classe",
+            "Extrato de informações da CVM (EXTRATO)",
+            f"O mesmo de Custo e acesso: a data-base da entrega de cada classe, "
+            f"até {idade} meses",
+        ))
 
     if mandato and mandato.get("available"):
         linhas.append((
@@ -1520,6 +1527,7 @@ def render_spreadsheet(
         )
     if custo and custo.get("available"):
         _add_custo_sheet(workbook, custo)
+        _add_custo_por_classe_sheet(workbook, custo)
     if mandato and mandato.get("available"):
         _add_mandato_sheet(workbook, mandato)
     _add_collection_health(workbook, snapshots, cvm)
@@ -2453,6 +2461,70 @@ _PERF_FORMATOS = {
 }
 
 
+# Como a coluna "Base da prateleira" escreve `CustoCasa.fonte`.
+_BASE_DA_PRATELEIRA = {
+    "vitrine": "vitrine do site",
+    "base_interna": "base interna (lista distribuível)",
+}
+_CUSTO_POR_CLASSE_HEADERS = [
+    "Casa", "Classe", "Fundos na prateleira", "Comparáveis", "Índice mediano",
+    "Taxa mediana (% a.a.)", "Caros", "Baratos", "Base da prateleira",
+]
+
+
+def _add_custo_por_classe_sheet(workbook: Workbook, custo: dict) -> None:
+    """Aba "Custo por classe": o custo de cada casa em cada classe de fundo.
+
+    Pedido de 16/10/2026. Todas as classes de cada casa, inclusive as sem
+    indice - a planilha e a versao completa; o digest e o painel mostram so as
+    classes com indice. Aba propria porque a lista de fundos de "Custo e
+    acesso" congela o cabecalho dela, e uma tabela de ~30 linhas acima o
+    empurraria para fora da tela.
+    """
+    ws = workbook.create_sheet("Custo por classe")
+    ws.cell(row=1, column=1, value="Custo por classe de fundo").font = _TITLE_FONT
+    notas = [
+        "A mesma conta do custo da casa - mediana dos índices (taxa do fundo ÷ mediana "
+        "da categoria dele), não das taxas - dentro de cada classe. A taxa mediana é "
+        "referência: dentro da classe o mix pesa menos, mas ainda pesa (renda fixa "
+        "simples contra crédito livre). Fonte e regras na aba Custo e acesso.",
+        nota_das_classes(custo["casas"]),
+    ]
+    if custo.get("nota_prateleira"):
+        notas.append(custo["nota_prateleira"])
+    for linha, nota in enumerate(notas, start=2):
+        ws.cell(row=linha, column=1, value=nota).font = _NOTE_FONT
+
+    cabecalho = len(notas) + 3
+    for col, titulo in enumerate(_CUSTO_POR_CLASSE_HEADERS, start=1):
+        ws.cell(row=cabecalho, column=col, value=titulo)
+    _style_header(ws, cabecalho, len(_CUSTO_POR_CLASSE_HEADERS))
+    linha = cabecalho + 1
+    for casa in custo["casas"]:
+        for classe in casa.get("por_classe") or []:
+            valores = [
+                casa["label"], classe["classe"], classe["fundos"], classe["comparaveis"],
+                classe["indice_mediano"], classe["taxa_mediana"], classe["share_caro"],
+                classe["share_barato"],
+                _BASE_DA_PRATELEIRA.get(casa.get("fonte"), "vitrine do site"),
+            ]
+            for col, valor in enumerate(valores, start=1):
+                ws.cell(row=linha, column=col, value=valor)
+            ws.cell(row=linha, column=5).number_format = _INDICE_FMT
+            ws.cell(row=linha, column=6).number_format = _PCT
+            for col in (7, 8):
+                ws.cell(row=linha, column=col).number_format = _SHARE_FMT
+            _style_row(ws, linha, len(_CUSTO_POR_CLASSE_HEADERS))
+            linha += 1
+
+    ws.freeze_panes = f"A{cabecalho + 1}"
+    if linha > cabecalho + 1:
+        ultima = get_column_letter(len(_CUSTO_POR_CLASSE_HEADERS))
+        ws.auto_filter.ref = f"A{cabecalho}:{ultima}{linha - 1}"
+    for col, largura in zip("ABCDEFGHI", (18, 20, 14, 13, 14, 14, 10, 10, 30)):
+        ws.column_dimensions[col].width = largura
+
+
 def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
     """Aba "Custo e acesso": a taxa de cada fundo contra a categoria dele.
 
@@ -2464,7 +2536,7 @@ def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
     ws = workbook.create_sheet("Custo e acesso")
     universo = custo["universo"]
 
-    ws.cell(row=1, column=1, value="Custo da vitrine").font = _TITLE_FONT
+    ws.cell(row=1, column=1, value="Custo da prateleira").font = _TITLE_FONT
     ws.cell(row=2, column=1, value="Fonte").font = _HEADER_FONT
     ws.cell(
         row=2, column=2,
@@ -2494,11 +2566,15 @@ def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
             "que o site cobra."
         ),
     ).font = _NOTE_FONT
+    # De onde sai a prateleira de cada casa: a XP pela base interna (16/10/2026).
+    if custo.get("nota_prateleira"):
+        ws.cell(row=5, column=1, value=custo["nota_prateleira"]).font = _NOTE_FONT
 
-    linha = 6
+    linha = 7
     resumo = [
-        "Casa", "Comparáveis", "Vitrine", "Índice mediano", "Caros", "Baratos",
+        "Casa", "Comparáveis", "Fundos na prateleira", "Índice mediano", "Caros", "Baratos",
         "Sem taxa de entrada/saída", "Resgate até D+1", "Com porta menor",
+        "Base da prateleira",
     ]
     for col, titulo in enumerate(resumo, start=1):
         ws.cell(row=linha, column=col, value=titulo)
@@ -2509,7 +2585,7 @@ def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
             casa["label"], casa["comparaveis"], casa["vitrine"],
             casa["indice_mediano"], casa["share_caro"], casa["share_barato"],
             casa["share_sem_entrada_ou_saida"], casa["share_liquidez_imediata"],
-            casa["com_porta_menor"],
+            casa["com_porta_menor"], _BASE_DA_PRATELEIRA.get(casa.get("fonte"), "vitrine do site"),
         ]
         for col, valor in enumerate(valores, start=1):
             ws.cell(row=linha, column=col, value=valor)

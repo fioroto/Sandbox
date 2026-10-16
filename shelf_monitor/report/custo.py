@@ -61,6 +61,25 @@ minimo do registro e o institucional da classe, nao o que o site cobra, e
 `competitive.vitrine_only_values` existe para impedir essa confusao. Aqui o
 minimo oficial e usado para uma pergunta so, que e interna a base e nao envolve
 o site: *existe outra classe do mesmo fundo com porta de entrada menor?*
+
+Quebra por classe e a prateleira da XP (pedido de 16/10/2026)
+-------------------------------------------------------------
+
+**Por classe.** Cada casa sai tambem por classe de fundo - o nivel 1 da ANBIMA,
+o eixo grosso do monitor (`competitive.classe_grossa`): renda fixa,
+multimercados, acoes, cambial... A conta e a mesma da casa inteira, mediana dos
+indices, dentro de cada classe. Classe com menos de
+`MIN_COMPARAVEIS_CLASSE_CUSTO` fundos comparaveis na casa fica sem indice, com
+a contagem ao lado.
+
+**XP pela base interna.** O custo da XP sai da lista distribuivel - os fundos
+que a casa distribui, inclusive os que nao estao na vitrine publica -, e o das
+demais casas, da vitrine do site. Da lista entram os de situacao "distribui";
+"pode distribuir" ainda nao esta na prateleira, e classe exclusiva e veiculo de
+um cotista, nao produto de prateleira. Publico profissional fica: as vitrines
+tambem exibem algumas (medido em 16/10/2026: 2 na XP, 8 no BTG, 4 no Itau), e
+tira-las so da XP a deixaria com regra mais dura que a das outras. Sem lista na
+pasta, a XP volta a vitrine e a nota do bloco diz por que.
 """
 from __future__ import annotations
 
@@ -71,18 +90,27 @@ from datetime import date
 from pathlib import Path
 
 from shelf_monitor.caixa import sem_caixa
+from shelf_monitor.classify import CATEGORIA_ESTRUTURADO, KEY_CATEGORIA, eh_estruturado
+from shelf_monitor.config import PLATFORMS
+from shelf_monitor.distribuivel import DISTRIBUI
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
-from shelf_monitor.normalize import normalize_cnpj, normalize_text, parse_number
+from shelf_monitor.normalize import format_cnpj, normalize_cnpj, normalize_text, parse_number
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
-from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
+from shelf_monitor.report.competitive import (
+    KEY_CATEGORIA_GROSSA,
+    classe_grossa,
+    identifiable_vitrines,
+    vitrine_snapshots,
+)
 from shelf_monitor.report.shared import (
     BARATO,
     CARO,
     MIN_AMOSTRA_CATEGORIA,
     MIN_COBERTURA_CUSTO,
+    MIN_COMPARAVEIS_CLASSE_CUSTO,
 )
-from shelf_monitor.texto import milhar
+from shelf_monitor.texto import contagem, data_br, milhar
 
 # Acima disto a entrega e historico, nao condicao vigente. Dois anos cobrem
 # classes que nao reentregam todo ano sem deixar passar a entrega de 2015.
@@ -106,6 +134,26 @@ _LIQUIDEZ_IMEDIATA = 1
 # passava a dizer "ninguem mensuravel" em vez de "custo da prateleira". O piso
 # ficou onde a fonte permite, e a cobertura sai ao lado de todo indice.
 _MIN_COBERTURA = MIN_COBERTURA_CUSTO
+
+# Fundos comparaveis de uma classe numa casa para a classe ter indice.
+_MIN_COMPARAVEIS_CLASSE = MIN_COMPARAVEIS_CLASSE_CUSTO
+
+# De onde sai a prateleira de cada casa no custo.
+FONTE_VITRINE = "vitrine"
+FONTE_BASE_INTERNA = "base_interna"
+
+# A ordem das classes nas tabelas: as tres que toda vitrine tem, as raras, e os
+# baldes sem classificacao ANBIMA no fim. Classe fora da lista vem depois.
+ORDEM_DAS_CLASSES = (
+    "Renda Fixa", "Multimercados", "Ações", "Cambial", "Exterior", "Previdência",
+    "Estruturado", "Sem classificação",
+)
+
+
+def _ordem_da_classe(classe: str) -> tuple[int, str]:
+    if classe in ORDEM_DAS_CLASSES:
+        return ORDEM_DAS_CLASSES.index(classe), classe
+    return len(ORDEM_DAS_CLASSES), classe
 
 
 def _idade_meses(referencia: date | None, hoje: date | None = None) -> int | None:
@@ -132,6 +180,12 @@ class CustoClasse:
     minimo: float | None = None
     exclusivo: bool = False
     publico_alvo: str = ""
+    # A denominacao do cadastro: e o nome do fundo da base interna, que chega
+    # so com o CNPJ.
+    nome: str = ""
+    # O tipo do cadastro ("Classes de Cotas de Fundos FIDC"): marca o
+    # estruturado que nao tem categoria ANBIMA, quando o nome nao diz.
+    tipo: str = ""
 
     @property
     def restrita(self) -> bool:
@@ -190,6 +244,8 @@ class CustoFundo:
     minimo_classe: float | None = None
     minimo_do_fundo: float | None = None
     motivo_fora: str | None = None
+    # Nivel 1 da categoria (`competitive.classe_grossa`): a quebra por classe.
+    classe: str | None = None
 
     @property
     def indice(self) -> float | None:
@@ -256,6 +312,7 @@ class CustoFundo:
             "minimo_classe": self.minimo_classe,
             "porta_menor": self.porta_menor,
             "motivo_fora": self.motivo_fora,
+            "classe": self.classe,
         }
 
 
@@ -316,6 +373,8 @@ class IndiceCusto:
                     minimo=parse_number(row.get("aplicacao_inicial_minima")),
                     exclusivo=normalize_text(row.get("exclusivo")).startswith("S"),
                     publico_alvo=normalize_text(row.get("publico_alvo")),
+                    nome=(row.get("denominacao") or "").strip(),
+                    tipo=(row.get("tipo") or "").strip(),
                 )
         return cls(classes) if classes else None
 
@@ -323,6 +382,12 @@ class IndiceCusto:
         """Custo de um fundo da vitrine, com o motivo quando nao da para medir."""
         classe = self.get(offer.cnpj)
         categoria = categoria_comparavel(offer) or (classe.categoria if classe else None)
+        grossa = classe_grossa(categoria, offer.extra.get(KEY_CATEGORIA_GROSSA))
+        # O fundo da base interna chega sem o nome comercial que o classificador
+        # le ("FII", "FIDC"): o tipo do cadastro diz o mesmo. So o rotulo da
+        # classe muda - o indice e o motivo seguem os de qualquer fundo.
+        if not categoria and classe is not None and eh_estruturado(classe.tipo):
+            grossa = classe_grossa(CATEGORIA_ESTRUTURADO)
         if classe is None:
             return CustoFundo(
                 cnpj=offer.cnpj or "", nome=offer.name, categoria=categoria,
@@ -330,6 +395,7 @@ class IndiceCusto:
                 tem_taxa_entrada=None, tem_taxa_saida=None, taxa_custodia_max=None,
                 dias_cotizacao=None,
                 motivo_fora="fundo não encontrado na base oficial por CNPJ",
+                classe=grossa,
             )
 
         motivo = None
@@ -373,6 +439,7 @@ class IndiceCusto:
             minimo_classe=classe.minimo,
             minimo_do_fundo=self.minimo_do_fundo(classe.id_fundo),
             motivo_fora=motivo,
+            classe=grossa,
         )
 
 
@@ -385,16 +452,60 @@ def _data(texto: str | None) -> date | None:
 
 @dataclass
 class CustoCasa:
-    """O custo da vitrine de uma casa, medido contra as categorias dela."""
+    """O custo da prateleira de uma casa, medido contra as categorias dela.
+
+    `vitrine` e quantos fundos a prateleira tem; `fonte` diz de onde ela saiu -
+    a vitrine do site ou, para a XP, a base interna.
+    """
 
     platform_id: str
     label: str
     vitrine: int
     fundos: list[CustoFundo] = field(default_factory=list)
+    fonte: str = FONTE_VITRINE
 
     @property
     def comparaveis(self) -> list[CustoFundo]:
         return [f for f in self.fundos if f.indice is not None]
+
+    def por_classe(self) -> list[dict]:
+        """O custo da casa em cada classe de fundo, na ordem de `ORDEM_DAS_CLASSES`.
+
+        A mesma conta da casa inteira - mediana dos indices, nao das taxas -
+        dentro de cada classe. A taxa mediana vai junto como referencia: dentro
+        da classe o mix pesa menos, mas ainda pesa (renda fixa simples contra
+        credito livre), e por isso o indice continua sendo o numero. Classe com
+        menos de `_MIN_COMPARAVEIS_CLASSE` comparaveis sai sem indice.
+        """
+        grupos: dict[str, list[CustoFundo]] = {}
+        for fundo in self.fundos:
+            grupos.setdefault(fundo.classe or classe_grossa(None), []).append(fundo)
+        saida = []
+        for classe in sorted(grupos, key=_ordem_da_classe):
+            fundos = grupos[classe]
+            comparaveis = [f for f in fundos if f.indice is not None]
+            medida = len(comparaveis) >= _MIN_COMPARAVEIS_CLASSE
+
+            def mediana(valores: list[float], casas: int) -> float | None:
+                return round(statistics.median(valores), casas) if medida else None
+
+            def share(selecao) -> float | None:
+                if not medida:
+                    return None
+                return round(sum(1 for f in comparaveis if selecao(f)) / len(comparaveis), 4)
+
+            saida.append({
+                "classe": classe,
+                "fundos": len(fundos),
+                "comparaveis": len(comparaveis),
+                # Duas casas, como se escreve: com tres, 1,515 saia 1,51x no
+                # digest (Python) e 1,52x no painel (navegador).
+                "indice_mediano": mediana([f.indice for f in comparaveis], 2),
+                "taxa_mediana": mediana([f.taxa_adm for f in comparaveis], 4),
+                "share_caro": share(lambda f: f.indice >= _CARO),
+                "share_barato": share(lambda f: f.indice <= _BARATO),
+            })
+        return saida
 
     @property
     def cobertura(self) -> float:
@@ -459,28 +570,185 @@ class CustoCasa:
             "platform_id": self.platform_id,
             "label": self.label,
             "vitrine": self.vitrine,
+            "fonte": self.fonte,
             "comparaveis": len(self.comparaveis),
             "cobertura": r(self.cobertura),
-            "indice_mediano": r(self.indice_mediano),
+            # Duas casas, como se escreve (ver `por_classe`): com tres, 1,625
+            # saia 1,62x no digest e 1,63x no painel.
+            "indice_mediano": r(self.indice_mediano, 2),
             "share_caro": r(self.share_caro, 4),
             "share_barato": r(self.share_barato, 4),
             "share_sem_entrada_ou_saida": r(self.share_sem_entrada_ou_saida, 4),
             "share_liquidez_imediata": r(self.share_liquidez_imediata, 4),
             "com_porta_menor": len(self.com_porta_menor),
+            "por_classe": self.por_classe(),
         }
+
+
+@dataclass
+class PrateleiraInterna:
+    """A prateleira da casa-base pela base interna (a lista distribuivel).
+
+    `motivo` diz por que ela nao entrou, quando nao entrou - e a casa volta a
+    vitrine do site. `ofertas` sao os fundos da lista que a casa distribui;
+    `caixa`, quantos deles o `sem_caixa` tirou depois, como tira das vitrines.
+    """
+
+    platform_id: str
+    motivo: str | None = None
+    ofertas: list[FundOffer] = field(default_factory=list)
+    exclusivas: int = 0
+    so_capacidade: int = 0
+    data_referencia: date | None = None
+    caixa: int = 0
+
+    @property
+    def usada(self) -> bool:
+        return bool(self.ofertas)
+
+    @property
+    def entram(self) -> int:
+        """Os fundos da base interna que entram no custo."""
+        return len(self.ofertas) - self.caixa
+
+    def nota(self) -> str:
+        """A frase que toda superficie escreve ao lado do custo por casa."""
+        rotulo = _platform_label(self.platform_id)
+        if not self.usada:
+            return (
+                f"{rotulo} pela vitrine do site, como as demais casas: a base interna "
+                f"não entrou - {self.motivo}."
+            )
+        lista = "lista distribuível" + (
+            f" de {data_br(self.data_referencia)}" if self.data_referencia else ""
+        )
+        fora = []
+        if self.exclusivas:
+            fora.append(
+                contagem(self.exclusivas, "classe exclusiva", "classes exclusivas")
+                + " (veículo de um cotista, não produto de prateleira)"
+            )
+        if self.caixa:
+            fora.append(contagem(self.caixa, "fundo caixa/simples", "fundos caixa/simples"))
+        if self.so_capacidade:
+            fora.append(
+                contagem(self.so_capacidade, "fundo", "fundos")
+                + " só com capacidade de distribuir"
+            )
+        if len(fora) > 1:
+            fora = [", ".join(fora[:-1]) + " e " + fora[-1]]
+        return (
+            f"{rotulo} pela base interna ({lista}): entram "
+            f"{contagem(self.entram, 'fundo', 'fundos')} que a casa distribui."
+            + (f" Ficam fora {fora[0]}." if fora else "")
+            + " As demais casas, pela vitrine do site."
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "platform_id": self.platform_id,
+            "fonte": FONTE_BASE_INTERNA if self.usada else FONTE_VITRINE,
+            "motivo": self.motivo,
+            "fundos": self.entram,
+            "exclusivas": self.exclusivas,
+            "caixa": self.caixa,
+            "so_capacidade": self.so_capacidade,
+            "data_referencia": (
+                self.data_referencia.isoformat() if self.data_referencia else None
+            ),
+        }
+
+
+def _casa_base() -> str:
+    return next((p.platform_id for p in PLATFORMS.values() if p.is_baseline), "xp")
+
+
+def classes_com_indice(casas: list[dict]) -> list[str]:
+    """As classes com indice em ao menos uma das casas, na ordem do eixo.
+
+    Recebe as casas ja serializadas (`CustoCasa.to_dict`), para servir tanto ao
+    bloco inteiro quanto ao recorte do digest, que tem menos casas.
+    """
+    return sorted(
+        {
+            c["classe"] for casa in casas for c in casa.get("por_classe") or []
+            if c.get("indice_mediano") is not None
+        },
+        key=_ordem_da_classe,
+    )
+
+
+def nota_das_classes(casas: list[dict]) -> str:
+    """O que a quebra por classe nao mostra, e por que - uma frase."""
+    mostradas = set(classes_com_indice(casas))
+    fora = sorted(
+        {c["classe"] for casa in casas for c in casa.get("por_classe") or []} - mostradas,
+        key=_ordem_da_classe,
+    )
+    texto = (
+        f"Classe é o nível 1 da ANBIMA. Com menos de {_MIN_COMPARAVEIS_CLASSE} "
+        "fundos comparáveis na casa, a classe fica sem índice."
+    )
+    if fora:
+        nomes = ", ".join(fora[:-1]) + " e " + fora[-1] if len(fora) > 1 else fora[0]
+        texto += (
+            f" Sem {_MIN_COMPARAVEIS_CLASSE} comparáveis em nenhuma casa, fora da "
+            f"tabela: {nomes}."
+        )
+    return texto
+
+
+def prateleira_interna(distribuivel, indice: IndiceCusto, platform_id: str) -> PrateleiraInterna:
+    """Os fundos da base interna que entram no custo da casa-base.
+
+    Entram os de situacao "distribui". "Pode distribuir" ainda nao esta na
+    prateleira, e classe exclusiva e veiculo de um cotista. Publico
+    profissional fica, como fica nas vitrines (ver o docstring do modulo).
+    Fundo fora do cadastro entra, e o `avaliar` o lista com o motivo.
+    """
+    interna = PrateleiraInterna(platform_id=platform_id)
+    motivo = distribuivel.motivo_da_supressao()
+    if motivo:
+        interna.motivo = motivo
+        return interna
+    interna.data_referencia = distribuivel.data_referencia
+    for cnpj in distribuivel.cnpjs():
+        if distribuivel.situacao_de(cnpj) != DISTRIBUI:
+            interna.so_capacidade += 1
+            continue
+        classe = indice.get(cnpj)
+        if classe is not None and classe.exclusivo:
+            interna.exclusivas += 1
+            continue
+        nome = (classe.nome if classe else "") or format_cnpj(cnpj)
+        oferta = FundOffer(platform=platform_id, name=nome, cnpj=cnpj)
+        # A categoria do cadastro vai na oferta, como o enriquecimento faz com
+        # a da vitrine: e o que `caixa.oferta_caixa` le. Sem ela, todo fundo da
+        # lista passava como "nao caixa", e a XP saia mais barata do que e.
+        if classe is not None and classe.categoria:
+            oferta.extra[KEY_CATEGORIA] = classe.categoria
+        interna.ofertas.append(oferta)
+    if not interna.ofertas:
+        interna.motivo = "a lista não traz fundo que a casa distribua fora das classes exclusivas"
+    return interna
 
 
 def build_custo(
     config,
     snapshots: list[ShelfSnapshot],
     classe_indice: type[IndiceCusto] = IndiceCusto,
+    distribuivel=None,
 ) -> dict:
-    """Custo da vitrine de cada casa, relativo a categoria de cada fundo.
+    """Custo da prateleira de cada casa, relativo a categoria de cada fundo.
 
     `classe_indice` monta o universo de referencia. O modulo de previdencia
     passa o dele (`previdencia.custo.IndiceCustoPrevidencia`), em que a
     classe exclusiva de previdencia serve de referencia - todo FIE e
     exclusivo, e sem isso nenhuma categoria de previdencia tinha mediana.
+
+    `distribuivel` e a lista distribuivel (`RunReport.distribuivel`): com ela,
+    a prateleira da XP sai da base interna, e a das demais casas, da vitrine.
+    None (a previdencia nao le a lista) deixa todas na vitrine, sem nota.
     """
     indice = classe_indice.load(config.market_dir)
     if indice is None:
@@ -502,6 +770,20 @@ def build_custo(
         )}
         for item in sem_identidade
     ]
+    # A XP pela base interna (pedido de 16/10/2026): a vitrine dela, se veio,
+    # da lugar a lista - e o que ficou de fora por falta de vitrine deixa de
+    # valer para ela.
+    interna = None
+    if distribuivel is not None:
+        base_id = _casa_base()
+        interna = prateleira_interna(distribuivel, indice, base_id)
+        if interna.usada:
+            cruzaveis = {
+                base_id: interna.ofertas,
+                **{pid: funds for pid, funds in cruzaveis.items() if pid != base_id},
+            }
+            fora = [e for e in fora if e.get("platform_id") != base_id]
+            sem_cnpj = [e for e in sem_cnpj if e.get("platform_id") != base_id]
     if not cruzaveis:
         return {
             "available": False,
@@ -509,17 +791,23 @@ def build_custo(
             "excluded": fora + sem_cnpj,
         }
     # Fundo caixa/simples fica fora (pedido de 16/10/2026, ver
-    # shelf_monitor.caixa): produto padrao, de taxa baixa por natureza.
+    # shelf_monitor.caixa): produto padrao, de taxa baixa por natureza. Roda
+    # depois da troca da XP pela base interna, para a regra valer igual em
+    # todas as casas - e a nota da XP diz quantos dela sairam.
     cruzaveis, caixa_fora = sem_caixa(cruzaveis)
+    if interna is not None and interna.usada:
+        interna.caixa = len(interna.ofertas) - len(cruzaveis.get(interna.platform_id, ()))
 
     casas: list[CustoCasa] = []
     sem_amostra: list[dict] = []
     for platform_id, funds in cruzaveis.items():
+        da_base = interna is not None and interna.usada and platform_id == interna.platform_id
         casa = CustoCasa(
             platform_id=platform_id,
             label=_platform_label(platform_id),
             vitrine=len(funds),
             fundos=[indice.avaliar(f) for f in funds],
+            fonte=FONTE_BASE_INTERNA if da_base else FONTE_VITRINE,
         )
         if casa.cobertura < _MIN_COBERTURA:
             sem_amostra.append({
@@ -528,7 +816,8 @@ def build_custo(
                 "reason": (
                     f"apenas {len(casa.comparaveis)} de {casa.vitrine} fundos com "
                     "taxa comparável (percentual, entrega recente e categoria com "
-                    "referência) - o índice descreveria a amostra, não a vitrine"
+                    "referência) - o índice descreveria a amostra, não a "
+                    + ("prateleira da base interna" if da_base else "vitrine")
                 ),
             })
             continue
@@ -547,6 +836,7 @@ def build_custo(
             if fundo.motivo_fora:
                 motivos[fundo.motivo_fora] = motivos.get(fundo.motivo_fora, 0) + 1
 
+    serializadas = [c.to_dict() for c in casas]
     return {
         "available": True,
         "participantes": [c.platform_id for c in casas],
@@ -559,7 +849,13 @@ def build_custo(
         },
         "motivos_fora": dict(sorted(motivos.items(), key=lambda kv: -kv[1])),
         "caixa_fora": caixa_fora,
-        "casas": [c.to_dict() for c in casas],
+        # De onde sai a prateleira da XP, e a frase que toda superficie escreve.
+        "prateleira_da_base": interna.to_dict() if interna is not None else None,
+        "nota_prateleira": interna.nota() if interna is not None else "",
+        # A quebra por classe: as colunas que tem indice e a nota do que ficou fora.
+        "classes": classes_com_indice(serializadas),
+        "nota_classes": nota_das_classes(serializadas),
+        "casas": serializadas,
         "mais_caros": [
             f.to_dict()
             for f in sorted(
@@ -618,7 +914,7 @@ def print_custo(resultado: dict) -> None:
         table.add_row(
             casa["label"],
             f"{casa['comparaveis']}/{casa['vitrine']}",
-            "-" if indice is None else f"{indice:.2f}x",
+            "-" if indice is None else f"{indice:.2f}x".replace(".", ","),
             pct(casa["share_caro"]),
             pct(casa["share_barato"]),
             pct(casa["share_sem_entrada_ou_saida"]),
@@ -630,6 +926,29 @@ def print_custo(resultado: dict) -> None:
         "   [dim]Índice mediano, não taxa mediana: comparar a taxa bruta entre "
         "casas mede o MIX da prateleira, não o preço dos produtos.[/]"
     )
+    if resultado.get("nota_prateleira"):
+        console.print(f"   [dim]{resultado['nota_prateleira']}[/]")
+
+    classes = resultado.get("classes") or []
+    if classes:
+        por_classe = Table(title="Índice por classe (fundos comparáveis)", title_style="bold")
+        por_classe.add_column("Casa")
+        for classe in classes:
+            por_classe.add_column(classe, justify="right")
+        for casa in resultado["casas"]:
+            celulas = {c["classe"]: c for c in casa.get("por_classe") or []}
+            linha = [casa["label"]]
+            for classe in classes:
+                celula = celulas.get(classe)
+                if celula is None:
+                    linha.append("-")
+                    continue
+                indice = celula["indice_mediano"]
+                texto = "-" if indice is None else f"{indice:.2f}x".replace(".", ",")
+                linha.append(f"{texto} ({celula['comparaveis']})")
+            por_classe.add_row(*linha)
+        console.print(por_classe)
+        console.print(f"   [dim]{resultado.get('nota_classes', '')}[/]")
     if resultado.get("motivos_fora"):
         console.print("   [dim]fundos fora do índice, por motivo:[/]")
         for motivo, quantos in resultado["motivos_fora"].items():

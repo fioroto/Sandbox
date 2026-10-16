@@ -160,14 +160,22 @@ _FORA_DO_EIXO = frozenset({_UNCLASSIFIED, _ESTRUTURADO})
 KEY_CATEGORIA_GROSSA = "categoria_grossa"
 
 
-def coarse_category(fund: FundOffer) -> str:
-    """Nivel 1 da categoria oficial - o eixo grosso, comparavel entre casas."""
-    categoria = categoria_comparavel(fund)
+def classe_grossa(categoria: str | None, grossa: str | None = None) -> str:
+    """Nivel 1 de uma categoria oficial - o eixo grosso, comparavel entre casas.
+
+    `grossa` e o rotulo gravado em `KEY_CATEGORIA_GROSSA`, quando o fundo tem.
+    O custo usa direto (a categoria dele pode vir do extrato, nao da oferta).
+    """
     if not categoria:
         return _UNCLASSIFIED
     if categoria == CATEGORIA_ESTRUTURADO:
         return _ESTRUTURADO
-    return fund.extra.get(KEY_CATEGORIA_GROSSA) or label_nivel1(categoria)
+    return grossa or label_nivel1(categoria)
+
+
+def coarse_category(fund: FundOffer) -> str:
+    """Nivel 1 da categoria oficial - o eixo grosso, comparavel entre casas."""
+    return classe_grossa(categoria_comparavel(fund), fund.extra.get(KEY_CATEGORIA_GROSSA))
 
 
 def fine_category(fund: FundOffer) -> str:

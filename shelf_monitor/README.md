@@ -1156,6 +1156,26 @@ apenas 13 tem duas ou mais classes com minimo e **5** tem minimos diferentes. On
 condicoes comerciais variam de fato e a subclasse, e `subclasses.csv` nao traz minimo
 nem taxa: o extrato e entregue por CNPJ de classe.
 
+**Por classe de fundo e a XP pela base interna** (16/10/2026). Cada casa sai tambem por
+classe - o nivel 1 da ANBIMA (renda fixa, multimercados, acoes, cambial...), o eixo
+grosso do monitor (`competitive.classe_grossa`). A conta e a mesma, mediana dos
+indices, dentro de cada classe; com menos de 5 fundos comparaveis na casa
+(`MIN_COMPARAVEIS_CLASSE_CUSTO`) a classe fica sem indice, com a contagem. Medido em
+15/10/2026: renda fixa, multimercados e acoes tem de 41 a 136 comparaveis por casa;
+cambial, de 1 a 4. O estruturado sem categoria ANBIMA (FIDC, FII, FIP...) sai no balde
+"Estruturado" tambem pelo tipo do cadastro, nao so pelo nome. O custo da **XP sai da
+base interna** - a lista distribuivel, os fundos de situacao "distribui", menos as
+classes exclusivas (veiculo de um cotista) -, e o das demais casas, da vitrine do site.
+O fundo caixa/simples sai da lista como sai das vitrines (`caixa.sem_caixa`, depois da
+troca): a oferta da lista leva a categoria do cadastro, que e o que a regra le, e a
+nota da XP diz quantos sairam.
+Publico profissional fica, como fica nas vitrines (2 na XP, 8 no BTG, 4 no Itau). Sem
+lista em `data/distribuivel/entrada/`, a XP volta a vitrine e a nota do bloco diz por
+que. Superficies: digest mensal (tabela casa x classe), painel (no bloco de custo),
+planilha (aba "Custo por classe" e a coluna "Base da prateleira" em "Custo e acesso")
+e deck (segunda tabela no slide de custo). O indice da casa e o da classe vao com duas
+casas: com tres, 1,625 saia 1,62x no digest e 1,63x no painel.
+
 ### Mandato declarado (`mandato`)
 
 Das 117 colunas do extrato, o parser consumia 17. O bloco maior das que sobravam

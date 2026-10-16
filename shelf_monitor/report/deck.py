@@ -17,6 +17,7 @@ from pathlib import Path
 from shelf_monitor.config import Config
 from shelf_monitor.models import RunReport
 from shelf_monitor.report.aggregate import build_dashboard_data, listing_funds, resumo_do_funil
+from shelf_monitor.report.custo import classes_com_indice, nota_das_classes
 from shelf_monitor.report.shared import (
     fontes_do_relatorio,
     movimentos_de_vitrine,
@@ -455,7 +456,7 @@ def _costs(prs, platforms: list[dict], custo: dict | None = None):
             indice = casa.get("indice_mediano")
             rows.append([
                 casa["label"],
-                f"{indice:.2f}x" if indice is not None else "-",
+                f"{indice:.2f}x".replace(".", ",") if indice is not None else "-",
                 share(casa.get("share_caro")),
                 share(casa.get("share_barato")),
                 share(casa.get("share_liquidez_imediata")),
@@ -490,7 +491,44 @@ def _costs(prs, platforms: list[dict], custo: dict | None = None):
         )
 
     _table(slide, 0.6, 1.7, 10.5, cabecalho, rows, col_widths=larguras)
-    _text(slide, 0.6, 1.7 + 0.32 * (len(rows) + 1) + 0.3, 12, 0.6, nota, 10, color=_MUTED)
+    y = 1.7 + 0.32 * (len(rows) + 1)
+    classes = classes_com_indice(custo["casas"]) if tem_indice else []
+    if not classes:
+        _text(slide, 0.6, y + 0.3, 12, 0.6, nota, 10, color=_MUTED)
+        return
+
+    # Por classe de fundo (16/10/2026): o indice de cada casa dentro de cada
+    # classe, e de onde sai a prateleira da XP. A nota de cima encolhe para a
+    # segunda tabela caber no slide.
+    _text(slide, 0.6, y + 0.12, 12, 0.5, nota, 9, color=_MUTED)
+    y += 0.75
+    linhas = []
+    for casa in custo["casas"]:
+        celulas = {c["classe"]: c for c in casa.get("por_classe") or []}
+        linha = [casa["label"]]
+        for classe in classes:
+            celula = celulas.get(classe)
+            indice = (celula or {}).get("indice_mediano")
+            linha.append(
+                "-" if celula is None
+                else ("-" if indice is None else f"{indice:.2f}x".replace(".", ","))
+                + f" ({celula['comparaveis']})"
+            )
+        linhas.append(linha)
+    _table(
+        slide, 0.6, y, 2.2 + 1.7 * len(classes), ["Por classe", *classes], linhas,
+        col_widths=[2.2] + [1.7] * len(classes), size=10,
+    )
+    y += 0.32 * (len(linhas) + 1) + 0.1
+    _text(
+        slide, 0.6, y, 12, 0.8,
+        " ".join(filter(None, [
+            "Índice mediano da classe; entre parênteses, os fundos comparáveis.",
+            nota_das_classes(custo["casas"]),
+            custo.get("nota_prateleira"),
+        ])),
+        9, color=_MUTED,
+    )
 
 
 def _mm_deck(valor: float | None) -> str:

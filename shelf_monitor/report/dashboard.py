@@ -1155,7 +1155,9 @@ def _painel_rentabilidade(resumo: dict[str, str], trecho: dict[str, str]) -> str
         "categoria. Abaixo de 1, o dinheiro evita os piores; metade de qualquer universo fica "
         "abaixo da mediana por construção.",
         "Custo em índice, não em taxa: a taxa bruta mede o mix (renda fixa ~0,2% ao ano, ações "
-        f"~2%). 1,00x = mediana da categoria ({_a(CVM_EXTRATO, 'extrato de informações da CVM')}).",
+        f"~2%). 1,00x = mediana da categoria ({_a(CVM_EXTRATO, 'extrato de informações da CVM')}). "
+        "Por classe de fundo (nível 1 da ANBIMA), a mesma conta dentro de cada classe. A XP "
+        "entra pela base interna (a lista distribuível); as demais casas, pela vitrine do site.",
         "Mandato: o que o regulamento autoriza, nunca o que a carteira carrega (isso exigiria a "
         "carteira mensal). ▲ acima das concorrentes, ▼ abaixo.",
     ) + """

@@ -559,10 +559,14 @@ def attach_custo_e_mandato(
 
     Os dois saem do extrato da CVM ja em disco, entao nao dependem de rede - mas
     dependem da base importada. Sem ela o bloco e omitido com motivo, como todos
-    os outros.
+    os outros. O custo da XP sai da lista distribuivel (`attach_familias` ja a
+    leu), e o das demais casas, da vitrine.
     """
+    custo = partial(
+        build_custo, classe_indice=indice_custo, distribuivel=report.distribuivel
+    )
     for nome, construtor, destino in (
-        ("Custo", partial(build_custo, classe_indice=indice_custo), "custo"),
+        ("Custo", custo, "custo"),
         ("Mandato", build_mandato, "mandato"),
     ):
         try:
@@ -1156,7 +1160,13 @@ def cmd_custo(config: Config, args: argparse.Namespace) -> None:
     if not snapshots:
         console.print("[yellow]Nenhum snapshot encontrado.[/] Rode `run` antes.")
         return
-    resultado = build_custo(config, snapshots)
+    # A XP pela base interna, como no relatorio.
+    try:
+        distribuivel = carregar_distribuivel(config)
+    except Exception as exc:  # noqa: BLE001 - a pasta e opcional
+        console.print(f"[yellow]Lista distribuível não lida:[/] {_short(str(exc))}")
+        distribuivel = None
+    resultado = build_custo(config, snapshots, distribuivel=distribuivel)
     print_custo(resultado)
     _talvez_json(args, resultado)
 
