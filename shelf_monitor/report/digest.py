@@ -101,6 +101,7 @@ from shelf_monitor.report.shared.email_xp import (  # noqa: F401
     TRACO as _TRACO,
     UL as _UL,
     casca as _casca_do_email,
+    como_ler as _como_ler,
     cor_do_valor as _cor_do_valor,
     esc as _esc,
     faixa as _faixa,
@@ -513,7 +514,12 @@ _SEM_CAPTACAO = (
 
 
 def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
-    """O que e gap real, o que ficou fora e de onde vem cada numero - em frases curtas."""
+    """O que e gap real e de onde vem cada numero - em frases curtas.
+
+    No HTML ficam no bloco que abre no clique (17/10/2026); o que muda a leitura
+    dos numeros - casa fora, vitrine de reserva - e aviso, e fica a mostra
+    (`_avisos_da_oportunidade`).
+    """
     op = visao.oportunidade
     carteira = op.get("carteira") or {}
     competencias = carteira.get("competencias") or []
@@ -554,11 +560,15 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and op.get("linhas"):
         notas.append(prazo)
-    fora = [
-        e for e in op.get("excluded") or []
-    ]
+    return notas
+
+
+def _avisos_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
+    """A casa que ficou fora e a vitrine de reserva: mudam a leitura dos numeros."""
+    avisos = []
+    fora = visao.oportunidade.get("excluded") or []
     if fora:
-        notas.append(
+        avisos.append(
             "Fora: " + "; ".join(f"{e['label']}, {_motivo_curto(e['reason'])}" for e in fora)
             + "."
         )
@@ -566,8 +576,8 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     # tem de saber de que dia ela e.
     for snapshot in visao.report.snapshots:
         if snapshot.reserva:
-            notas.append(f"{_platform_label(snapshot.platform)}: {snapshot.reserva}.")
-    return notas
+            avisos.append(f"{_platform_label(snapshot.platform)}: {snapshot.reserva}.")
+    return avisos
 
 
 # --- rentabilidade de referencia -------------------------------------------------
@@ -779,7 +789,7 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     if resto > 0:
         lines += [f"Mais {milhar(resto)} na planilha.", ""]
 
-    for nota in _notas_da_oportunidade(visao):
+    for nota in _notas_da_oportunidade(visao) + _avisos_da_oportunidade(visao):
         lines.append(f"_{nota}_")
     flow = visao.report.retail_flow
     if flow and flow.get("available"):
@@ -867,11 +877,14 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         ))
         parts.append(_mais(len(op["linhas"]) - mostrados, "na planilha"))
 
-    notas = " ".join(_esc(n) for n in _notas_da_oportunidade(visao))
+    avisos = _avisos_da_oportunidade(visao)
+    if avisos:
+        parts.append(f'<p style="{_NOTA}">{_esc(" ".join(avisos))}</p>')
+    notas = [_esc(n) for n in _notas_da_oportunidade(visao)]
     flow = visao.report.retail_flow
     if flow and flow.get("available"):
-        notas += " " + _esc(_capitalizar("; ".join(_prazos_da_captacao(flow)))) + "."
-    parts.append(f'<p style="{_NOTA}">{notas}</p>')
+        notas.append(_esc(_capitalizar("; ".join(_prazos_da_captacao(flow)))) + ".")
+    parts.append(_como_ler("".join(f'<p style="{_NOTA}">{n}</p>' for n in notas)))
     return "".join(parts)
 
 
@@ -1148,15 +1161,19 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
-    parts.append(
-        f'<p style="{_NOTA}">{_esc(" ".join(notas))} {_fonte_html(CVM_INFORME_DIARIO)}</p>'
+    # A legenda do ritmo e as notas ficam no bloco que abre no clique (17/10/2026).
+    paragrafos = [_esc(n) for n in notas]
+    paragrafos[0] += f" {_fonte_html(CVM_INFORME_DIARIO)}"
+    corpo = (
+        _legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}")
+        + _tabela(
+            ["Ritmo", "O que quer dizer"],
+            [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
+            compacta=True,
+        )
+        + "".join(f'<p style="{_NOTA}">{p}</p>' for p in paragrafos)
     )
-    parts.append(_legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}"))
-    parts.append(_tabela(
-        ["Ritmo", "O que quer dizer"],
-        [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
-        compacta=True,
-    ))
+    parts.append(_como_ler(corpo, "Como ler o ritmo: critérios e prazos"))
     return "".join(parts)
 
 

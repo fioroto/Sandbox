@@ -221,6 +221,30 @@ def nota(texto_html: str) -> str:
     return f'<p style="{NOTA}">{texto_html}</p>'
 
 
+# O titulo do bloco que abre no clique: miudo como a nota, em negrito para se
+# ler como algo a clicar.
+RESUMO = (
+    f"font-size:12px;line-height:1.5;margin:0 0 8px;color:{TINTA_2};font-weight:700;"
+    "cursor:pointer;"
+)
+
+
+def como_ler(corpo_html: str, resumo: str = "Como ler: critérios e prazos") -> str:
+    """As notas de metodologia de uma secao num bloco que abre no clique.
+
+    Pedido de 17/10/2026: o criterio, as fontes e os prazos ficam a um clique,
+    e a secao termina nos numeros. `<details>` abre no clique no navegador, no
+    Apple Mail e no Thunderbird; o cliente sem o recurso (Gmail e Outlook) o
+    mostra aberto, como antes - nenhum leitor perde a nota.
+    """
+    if not corpo_html:
+        return ""
+    return (
+        f'<details style="margin:0 0 12px;"><summary style="{RESUMO}">{esc(resumo)}'
+        f"</summary>{corpo_html}</details>"
+    )
+
+
 def tabela(
     cabecalho: list[str],
     linhas: list[list[str]],

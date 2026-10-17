@@ -126,6 +126,15 @@ persistente e sem serie, com a faixa de 25% da regra e as duas janelas - a seman
 contra as 12 anteriores na tabela de gaps e nas listas, o ultimo mes contra os
 anteriores no mapa por casa.
 
+As notas de metodologia de cada secao - o criterio do gap real e da lista, onde
+esta o resto na planilha, os fundos caixa, as janelas de rentabilidade e de
+captacao - e a legenda do ritmo ficam num bloco "Como ler" que abre no clique
+(`email_xp.como_ler`, um `<details>`; 17/10/2026): a secao termina nos numeros.
+Abre no navegador, no Apple Mail e no Thunderbird; o Gmail e o Outlook nao tem o
+recurso e mostram o bloco aberto, como antes. Casa fora da analise e vitrine de
+reserva sao aviso e ficam a mostra. O texto puro do e-mail (o `.md`) segue com
+tudo a vista.
+
 **Rentabilidade de referencia** (16/10/2026). Toda lista de gaps e de captacoes - no
 digest, no painel e na planilha - traz a rentabilidade do fundo em 12 meses (convencao
 de lamina: base no fechamento da competencia anterior a janela) e, em pp, a distancia

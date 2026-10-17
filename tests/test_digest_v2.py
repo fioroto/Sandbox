@@ -765,6 +765,51 @@ class TestLegendaDoRitmo(unittest.TestCase):
         self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", texto)
 
 
+class TestNotasNoClique(unittest.TestCase):
+    """As notas de metodologia no bloco que abre no clique (pedido de 17/10/2026).
+    O aviso que muda a leitura dos numeros fica a mostra, e o texto puro do
+    e-mail, que nao tem como esconder, segue com tudo."""
+
+    @staticmethod
+    def _blocos(html: str) -> list[str]:
+        return [_texto(b) for b in re.findall(r"<details[^>]*>(.*?)</details>", html, re.S)]
+
+    def test_criterio_prazos_e_legenda_ficam_no_clique(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+
+        report = _relatorio()
+        html = render_html(report, None, "semanal")
+        oportunidade, ritmo = self._blocos(html)
+        self.assertIn("Como ler: critérios e prazos", oportunidade)
+        self.assertIn("Gap: fundo na vitrine do concorrente", oportunidade)
+        self.assertIn("Na lista: os que captaram em 3 meses", oportunidade)
+        self.assertIn("Semana: de 05/10/2026 a 09/10/2026", oportunidade)
+        self.assertIn("Como ler o ritmo: critérios e prazos", ritmo)
+        self.assertIn("Saída persistente", ritmo)
+        self.assertIn("Fluxo por fundo, no mercado inteiro", ritmo)
+        # Fora dos blocos as secoes terminam nos numeros.
+        a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
+        for texto in ("Gap: fundo na vitrine", "Na lista:", "Como ler o ritmo ·",
+                      "Fluxo por fundo"):
+            self.assertNotIn(texto, a_mostra)
+        md = render_markdown(report, None, "semanal")
+        self.assertIn("_Na lista: os que captaram em 3 meses", md)
+        self.assertNotIn("<details", md)
+
+    def test_casa_fora_e_aviso_a_mostra(self):
+        from shelf_monitor.report.digest import render_html
+
+        report = _relatorio()
+        itau = _snapshot("itau", [], datetime(2026, 10, 14, 8, 0))
+        itau.status = SnapshotStatus.UNAVAILABLE
+        itau.error = "página da vitrine fora do ar"
+        report.snapshots.append(itau)
+        html = render_html(report, None, "semanal")
+        a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
+        self.assertIn("Fora: Itaú", a_mostra)
+        self.assertNotIn("Fora: Itaú", " ".join(self._blocos(html)))
+
+
 class TestServicoDaCasa(unittest.TestCase):
     def test_fundo_da_casa_sai_com_o_servico(self):
         from shelf_monitor.report.digest import render_html, render_markdown
