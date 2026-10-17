@@ -33,6 +33,12 @@ de 16/10/2026): mostra onde o concorrente ganha com produto dele. Os numeros de
 cima - quantos para a grade, captacao, cotistas e esforco - contam so o que da
 para trazer, e o produto proprio sai contado a parte. Ate essa data a ordem era
 esforco e depois captacao, com o produto proprio fora e 5 fundos por casa.
+
+Por tipo de produto (pedido de 17/10/2026): os gaps reais somados pela
+categoria ANBIMA - a mesma da coluna Categoria das listas -, na semana e em 3
+meses, com o ritmo da soma de cada categoria (`_por_tipo`): onde, entre o que
+a XP nao tem, o dinheiro acelera ou reduz. A classe (nivel 1, o eixo do custo
+por classe) foi a primeira versao e saiu no mesmo dia, a pedido: grossa demais.
 """
 from __future__ import annotations
 
@@ -46,7 +52,12 @@ from shelf_monitor.report.aggregate import (
     ESFORCO_OPERACIONAL,
     chave_do_gap,
 )
-from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
+from shelf_monitor.report.retail_flow import (
+    _MIN_PL_RANKING,
+    FundFlow,
+    SemanaDoFundo,
+    ritmo_da_semana,
+)
 
 # O que a lista da casa ja tem (fora da vitrine) e o que so falta em outra
 # faixa de liquidez nao e gap real.
@@ -123,6 +134,7 @@ def oportunidade_de_grade(
             _da_casa(concorrente, reais, na_lista, com_semana)
             for concorrente in gaps.get("competitors") or []
         ],
+        "por_tipo": _por_tipo(reais, fluxos, {f.get("cnpj") for f in linhas}, com_semana),
         "com_fluxo": True,
         "com_ritmo": com_semana,
         "total_reais": len(reais),
@@ -174,6 +186,60 @@ def _da_casa(
     }
 
 
+def tipo_de_produto(categoria: str | None) -> str:
+    """A categoria ANBIMA do gap, inteira: o mesmo rotulo da coluna Categoria."""
+    return categoria or "Sem classificação"
+
+
+def _por_tipo(
+    reais: list[dict], fluxos: dict[str, FundFlow], na_lista: set[str], com_semana: bool
+) -> list[dict]:
+    """A captacao dos gaps reais somada por tipo de produto, da maior para a menor.
+
+    Entram os gaps com informe, PL de ao menos R$ 1 mi no inicio e sem movimento
+    estrutural - os mesmos que contam no ritmo por casa -, captando ou nao: a
+    soma da classe e o saldo dela. O ritmo e o da soma, pela regra dos fundos:
+    a captacao por dia da semana contra a das 12 semanas anteriores.
+    """
+    grupos: dict[str, list[tuple[dict, FundFlow]]] = {}
+    for fundo in reais:
+        fluxo = fluxos.get(fundo.get("cnpj"))
+        if fluxo is None or fluxo.estrutural or fluxo.pl_inicio < _MIN_PL_RANKING:
+            continue
+        grupos.setdefault(tipo_de_produto(fundo.get("category")), []).append((fundo, fluxo))
+    linhas = []
+    for tipo, pares in grupos.items():
+        do_tipo = [fluxo for _, fluxo in pares]
+        linhas.append({
+            "tipo": tipo,
+            "fundos": len(pares),
+            "na_lista": sum(1 for fundo, _ in pares if fundo.get("cnpj") in na_lista),
+            "captacao_3m": round(sum(f.captacao_liquida for f in do_tipo), 2),
+            "captacao_semana": (
+                round(sum(f.captacao_semana or 0.0 for f in do_tipo), 2) if com_semana else None
+            ),
+            "ritmo_semanal": _ritmo_da_soma(do_tipo) if com_semana else None,
+        })
+    return sorted(linhas, key=lambda linha: -linha["captacao_3m"])
+
+
+def _ritmo_da_soma(fluxos: list[FundFlow]) -> str:
+    """O ritmo da semana da soma dos fundos: as series semanais estao alinhadas
+    as mesmas semanas do recorte (`weekly_by_fund`), entao somam posicao a posicao."""
+    series = [f.semanas for f in fluxos if f.semanas]
+    if not series:
+        return "sem_serie"
+    soma = []
+    for i, semana in enumerate(series[0]):
+        da_semana = [serie[i] for serie in series if i < len(serie)]
+        soma.append(SemanaDoFundo(
+            semana.segunda,
+            sum(s.captacao_liquida for s in da_semana),
+            max(s.dias for s in da_semana),
+        ))
+    return ritmo_da_semana(soma)
+
+
 def _cabecalho(gaps: dict, com_cotistas: bool) -> dict:
     """O que a oportunidade carrega do bloco de gaps, com ou sem informe."""
     return {
@@ -207,6 +273,7 @@ def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
     return {
         **_cabecalho(gaps, com_cotistas),
         "por_casa": por_casa,
+        "por_tipo": [],
         "com_fluxo": False,
         "com_ritmo": False,
         "total_reais": len(reais),

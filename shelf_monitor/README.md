@@ -96,8 +96,8 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado |
-| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela, e a legenda do ritmo: o que cada rotulo quer dizer |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a captacao dos gaps por tipo de produto (a categoria ANBIMA), na semana e em 3 meses, com o ritmo de cada uma |
+| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
 
@@ -120,15 +120,28 @@ Em 17/10/2026 saiu o radar CVM - o que as gestoras dos grupos BTG e Itau
 registraram -, e o assunto deixou de contar registro na CVM. O radar segue no
 dashboard, na planilha e no deck, sem fundo cancelado (14/10/2026: so os ativos
 contam e a passagem para cancelado nao vira movimento; o extrato gravado segue
-inteiro). No mesmo dia entrou a legenda do ritmo, no fim da secao de captacao: uma
-tabela com acelerando, virou entrada, estavel, desacelerando, virou saida, saida
-persistente e sem serie, com a faixa de 25% da regra e as duas janelas - a semana
-contra as 12 anteriores na tabela de gaps e nas listas, o ultimo mes contra os
-anteriores no mapa por casa.
+inteiro). No mesmo dia entrou a legenda do ritmo, no topo do digest, para consulta
+antes das secoes: uma tabela com acelerando, virou entrada, estavel, desacelerando,
+virou saida, saida persistente e sem serie, com a faixa de 25% da regra e as duas
+janelas - a semana contra as 12 anteriores nas tabelas de gaps e de tipo de produto
+e nas listas, o ultimo mes contra os anteriores no mapa por casa.
+
+**Por tipo de produto** (17/10/2026). Na secao de oportunidade, entre o resumo por
+concorrente e as listas, os gaps reais de BTG e Itau somados pela categoria ANBIMA -
+a mesma da coluna Categoria das listas: captacao na semana e em 3 meses, o ritmo da
+soma de cada categoria e quantos dela entram na lista. Entram os gaps com informe,
+PL de ao menos R$ 1 mi no inicio e sem movimento estrutural, captando ou nao - a
+soma e o saldo da categoria (`oportunidade._por_tipo`). O e-mail mostra a categoria
+com fundo na lista ou que mexe ao menos R$ 10 mi em 3 meses, para entrar ou para
+sair, e conta as outras numa linha. A primeira versao, do mesmo dia, somava pela
+classe (nivel 1) e saiu a pedido: grossa demais. No digest de 14/10/2026, 27
+categorias, 21 na tabela: Renda Fixa Duracao Alta Credito Livre +R$ 1,8 bi em 3
+meses, Duracao Livre Grau de Investimento +R$ 1,5 bi; na ponta de saida, Duracao
+Livre Credito Livre -R$ 1,3 bi e Acoes Livre -R$ 365 mi.
 
 As notas de metodologia de cada secao - o criterio do gap real e da lista, onde
 esta o resto na planilha, os fundos caixa, as janelas de rentabilidade e de
-captacao - e a legenda do ritmo ficam num bloco "Como ler" que abre no clique
+captacao - ficam num bloco "Como ler" que abre no clique
 (`email_xp.como_ler`, um `<details>`; 17/10/2026): a secao termina nos numeros.
 Abre no navegador, no Apple Mail e no Thunderbird; o Gmail e o Outlook nao tem o
 recurso e mostram o bloco aberto, como antes. Casa fora da analise e vitrine de

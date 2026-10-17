@@ -63,6 +63,8 @@ from fixtures_comuns import temp_config
 MI = 1_000_000.0
 PL = 1_000 * MI
 CATEGORIA = "Multimercados Livre"
+# A classe de E, para a tabela por tipo de produto ter duas linhas.
+RENDA_FIXA = "Renda Fixa Duração Livre Crédito Livre"
 INDEPENDENTE = "GESTORA INDEPENDENTE LTDA"
 BTG_ASSET = "BTG PACTUAL ASSET MANAGEMENT S/A DTVM"
 
@@ -126,12 +128,14 @@ def _registros() -> list[DailyFlow]:
     return registros
 
 
-def _oferta(platform: str, cnpj: str, nome: str, gestor: str = INDEPENDENTE) -> FundOffer:
+def _oferta(
+    platform: str, cnpj: str, nome: str, gestor: str = INDEPENDENTE, categoria: str = CATEGORIA
+) -> FundOffer:
     fundo = FundOffer(
         platform=platform, name=nome, cnpj=cnpj, manager_name=gestor,
         sources=[CollectorStrategy.API_JSON.value],
     )
-    fundo.extra[KEY_CATEGORIA] = CATEGORIA
+    fundo.extra[KEY_CATEGORIA] = categoria
     return fundo
 
 
@@ -164,7 +168,8 @@ def _snapshots(
     casas = [_snapshot("xp", xp, quando), _snapshot("btg", btg, quando)]
     if com_itau:
         # A nas duas vitrines concorrentes; E so na do Itau.
-        itau = [_oferta("itau", A, "Fundo A FIC FIM"), _oferta("itau", E, "Fundo E FIC FIM")]
+        itau = [_oferta("itau", A, "Fundo A FIC FIM"),
+                _oferta("itau", E, "Fundo E FIC FIM", categoria=RENDA_FIXA)]
         casas.append(_snapshot("itau", itau + enchimento(32, "itau"), quando))
     return casas + [_snapshot("nu", nu, quando)]
 
@@ -370,13 +375,14 @@ class TestOportunidadeDeGrade(unittest.TestCase):
     def test_digest_abre_direto_nas_secoes_com_os_numeros_em_destaque(self):
         """15/10/2026, pedido da area: sem a frase de abertura ("1 fundo capta
         nas vitrines..."), sem a frase do funil ("N gaps nas vitrines...") e sem
-        a evolucao semanal da soma. Os numeros em destaque dizem a oportunidade."""
+        a evolucao semanal da soma. Os numeros em destaque dizem a oportunidade;
+        antes dela, desde 17/10/2026, so a legenda do ritmo, para consulta."""
         from shelf_monitor.report.digest import render_html, render_markdown
 
         report = _relatorio()
         md = render_markdown(report, None, "semanal")
         self.assertIn(
-            "execução de 14/10/2026 08:00\n\n## Oportunidade de grade e gaps\n\n"
+            "## Oportunidade de grade e gaps\n\n"
             "- **1** fundo para a grade: gap acelerando na semana\n"
             "- **+150,0 MM** captação dele na semana\n"
             "- **+590,0 MM** captação dele em 3 meses\n",
@@ -741,8 +747,9 @@ class TestRadarSemCancelados(unittest.TestCase):
 
 
 class TestLegendaDoRitmo(unittest.TestCase):
-    """A legenda do ritmo no fim da secao de captacao (pedido de 17/10/2026): o
-    que cada rotulo quer dizer, com a faixa da regra e as duas janelas."""
+    """A legenda do ritmo no topo do digest, para consulta antes das secoes
+    (pedidos de 17/10/2026): o que cada rotulo quer dizer, com a faixa da regra e
+    as duas janelas."""
 
     def test_legenda_no_markdown_e_no_html(self):
         from shelf_monitor.report.digest import render_html, render_markdown
@@ -757,12 +764,86 @@ class TestLegendaDoRitmo(unittest.TestCase):
         for rotulo in ("Virou entrada", "Estável", "Desacelerando", "Virou saída",
                        "Saída persistente", "Sem série"):
             self.assertIn(f"| {rotulo} |", md)
-        # A legenda fecha a secao de captacao, antes das vitrines.
-        self.assertLess(md.index("Como ler o ritmo"), md.index("## Vitrines"))
-        self.assertGreater(md.index("Como ler o ritmo"), md.index("## Ritmo de captação"))
-        texto = _texto(render_html(report, None, "semanal"))
-        self.assertIn("Como ler o ritmo · a captação líquida por dia útil", texto)
-        self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", texto)
+        # Logo depois do cabecalho, antes da primeira secao - e so uma vez.
+        self.assertIn("execução de 14/10/2026 08:00\n\n**Como ler o ritmo**", md)
+        self.assertLess(md.index("Como ler o ritmo"), md.index("## Oportunidade de grade"))
+        self.assertEqual(md.count("| Ritmo | O que quer dizer |"), 1)
+        html = render_html(report, None, "semanal")
+        # No HTML ela fica a mostra, fora dos blocos que abrem no clique.
+        a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
+        self.assertIn("Como ler o ritmo · a captação líquida por dia útil", a_mostra)
+        self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", a_mostra)
+        self.assertLess(a_mostra.index("Como ler o ritmo"),
+                        a_mostra.index("Oportunidade de grade e gaps"))
+
+
+class TestPorTipoDeProduto(unittest.TestCase):
+    """A captacao dos gaps reais por tipo de produto (pedidos de 17/10/2026): a
+    categoria ANBIMA, na semana e em 3 meses, com o ritmo da soma de cada uma."""
+
+    @classmethod
+    def setUpClass(cls):
+        from shelf_monitor.report.digest_visao import montar_visao
+
+        cls.report = _relatorio(com_itau=True, com_proprio=True)
+        cls.op = montar_visao(cls.report, None, "semanal").oportunidade
+
+    def test_soma_por_categoria_com_o_ritmo_da_soma(self):
+        # Multimercados: A, B, F e os 32 de enchimento (gaps com informe e sem
+        # captacao); Renda Fixa: E. Captando ou nao, todos entram na soma.
+        self.assertEqual([t["tipo"] for t in self.op["por_tipo"]], [CATEGORIA, RENDA_FIXA])
+        multi, rf = self.op["por_tipo"]
+        self.assertEqual(multi["fundos"], 3 + _ENCHIMENTO)
+        self.assertAlmostEqual(multi["captacao_3m"], (590 + 245 + 728) * MI)
+        self.assertAlmostEqual(multi["captacao_semana"], (150 + 25 + 200) * MI)
+        # 27 por dia nas 12 semanas, 75 na semana: a soma acelera.
+        self.assertEqual(multi["ritmo_semanal"], "acelerando")
+        self.assertEqual(multi["na_lista"], 2)  # A e F; B segue estavel
+        self.assertEqual((rf["fundos"], rf["na_lista"], rf["ritmo_semanal"]),
+                         (1, 1, "virou_entrada"))
+        self.assertAlmostEqual(rf["captacao_3m"], 20 * MI)
+
+    def test_tabela_no_digest(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+
+        md = render_markdown(self.report, None, "semanal")
+        self.assertIn("**Por tipo de produto** - os gaps reais somados pela categoria ANBIMA", md)
+        self.assertIn(
+            "| Tipo de produto | Gaps | Semana | 3 meses | Ritmo na semana | Na lista |", md
+        )
+        self.assertIn(
+            "| Multimercados Livre | 35 | +375,0 MM | +1.563,0 MM | acelerando | 2 |", md
+        )
+        self.assertIn(
+            "| Renda Fixa Duração Livre Crédito Livre | 1 | +20,0 MM | +20,0 MM | "
+            "virou entrada | 1 |", md
+        )
+        self.assertNotIn("Mais 1 categoria", md)
+        # Entre o resumo por concorrente e as listas de cada um.
+        self.assertLess(md.index("**Por tipo de produto**"), md.index("**BTG Pactual** - os"))
+        self.assertIn("Por tipo de produto: os gaps reais com informe", md)
+        texto = _texto(render_html(self.report, None, "semanal"))
+        self.assertIn("Por tipo de produto · os gaps reais somados pela categoria ANBIMA", texto)
+        self.assertIn("Multimercados Livre 35 +375,0 MM +1.563,0 MM acelerando 2", texto)
+
+    def test_categoria_que_mexe_pouco_e_sem_fundo_na_lista_sai_contada(self):
+        """O e-mail mostra a categoria com fundo na lista ou com ao menos 10 MM
+        em 3 meses, para entrar ou para sair; as outras viram uma linha."""
+        from shelf_monitor.report.digest import _html_por_tipo, _md_por_tipo
+
+        def tipo(nome: str, tres: float, na_lista: int) -> dict:
+            return {"tipo": nome, "fundos": 3, "na_lista": na_lista, "captacao_3m": tres * MI,
+                    "captacao_semana": 1 * MI, "ritmo_semanal": "estavel"}
+
+        op = {"por_tipo": [tipo("Grande", 50, 0), tipo("Na lista", 2, 1),
+                           tipo("Pequena", 9, 0), tipo("Saindo", -12, 0)]}
+        md = "\n".join(_md_por_tipo(op))
+        for nome in ("Grande", "Na lista", "Saindo"):
+            self.assertIn(f"| {nome} |", md)
+        self.assertNotIn("| Pequena |", md)
+        self.assertIn("Mais 1 categoria, cada uma com menos de 10,0 MM em 3 meses e "
+                      "nenhum fundo na lista.", md)
+        self.assertIn("Mais 1 categoria", _texto(_html_por_tipo(op)))
 
 
 class TestNotasNoClique(unittest.TestCase):
@@ -774,7 +855,7 @@ class TestNotasNoClique(unittest.TestCase):
     def _blocos(html: str) -> list[str]:
         return [_texto(b) for b in re.findall(r"<details[^>]*>(.*?)</details>", html, re.S)]
 
-    def test_criterio_prazos_e_legenda_ficam_no_clique(self):
+    def test_criterio_e_prazos_ficam_no_clique(self):
         from shelf_monitor.report.digest import render_html, render_markdown
 
         report = _relatorio()
@@ -784,13 +865,13 @@ class TestNotasNoClique(unittest.TestCase):
         self.assertIn("Gap: fundo na vitrine do concorrente", oportunidade)
         self.assertIn("Na lista: os que captaram em 3 meses", oportunidade)
         self.assertIn("Semana: de 05/10/2026 a 09/10/2026", oportunidade)
-        self.assertIn("Como ler o ritmo: critérios e prazos", ritmo)
-        self.assertIn("Saída persistente", ritmo)
+        # A legenda do ritmo foi para o topo, a mostra; no bloco ficam as notas.
+        self.assertIn("Como ler: critérios e prazos", ritmo)
+        self.assertNotIn("Saída persistente", ritmo)
         self.assertIn("Fluxo por fundo, no mercado inteiro", ritmo)
         # Fora dos blocos as secoes terminam nos numeros.
         a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
-        for texto in ("Gap: fundo na vitrine", "Na lista:", "Como ler o ritmo ·",
-                      "Fluxo por fundo"):
+        for texto in ("Gap: fundo na vitrine", "Na lista:", "Fluxo por fundo"):
             self.assertNotIn(texto, a_mostra)
         md = render_markdown(report, None, "semanal")
         self.assertIn("_Na lista: os que captaram em 3 meses", md)

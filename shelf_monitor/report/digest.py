@@ -547,6 +547,15 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             + " O produto próprio do concorrente entra marcado e fica fora dos números de "
             "cima."
         )
+    if op.get("por_tipo"):
+        notas.append(
+            "Por tipo de produto: os gaps reais com informe, PL de ao menos R$ 1 mi no "
+            "início e sem movimento estrutural, captando ou não, somados pela categoria "
+            "ANBIMA; o ritmo é o da soma de cada categoria, e Na lista conta os da "
+            "categoria que entram na lista. Aparece a categoria com fundo na lista ou com "
+            f"ao menos {_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} de captação ou resgate em 3 "
+            "meses."
+        )
     if op.get("total_reais"):
         notas.append(
             "Na planilha: os gaps reais na aba Gaps XP e os cobertos, com o fundo da XP "
@@ -728,6 +737,69 @@ def _md_resumo_por_casa(op: dict) -> list[str]:
     return lines + [""]
 
 
+# A tabela por tipo de produto (pedidos de 17/10/2026): a categoria ANBIMA, a
+# mesma da coluna Categoria das listas. Sao ~27 categorias entre os gaps (14/10);
+# o e-mail mostra a que tem fundo na lista ou mexe ao menos R$ 10 mi em 3 meses,
+# para entrar ou para sair, e conta as outras numa linha.
+_POR_TIPO = "os gaps reais somados pela categoria ANBIMA, com o ritmo da soma de cada uma"
+_CABECALHO_POR_TIPO = ["Tipo de produto", "Gaps", "Semana", "3 meses", "Ritmo na semana",
+                       "Na lista"]
+_MIN_CATEGORIA_NO_DIGEST = 10_000_000.0
+
+
+def _tipos_no_digest(op: dict) -> tuple[list[dict], int]:
+    """As categorias da tabela, e quantas ficaram de fora por mexer pouco."""
+    tipos = op.get("por_tipo") or []
+    mostrados = [
+        t for t in tipos
+        if t["na_lista"] or abs(t["captacao_3m"]) >= _MIN_CATEGORIA_NO_DIGEST
+    ]
+    return mostrados, len(tipos) - len(mostrados)
+
+
+def _resto_das_categorias(fora: int) -> str:
+    return (
+        f"Mais {contagem(fora, 'categoria', 'categorias')}, cada uma com menos de "
+        f"{_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} em 3 meses e nenhum fundo na lista."
+    )
+
+
+def _celulas_do_tipo(tipo: dict) -> list[str]:
+    return [
+        milhar(tipo["fundos"]), _mm_ou_traco(tipo["captacao_semana"]),
+        _mm_ou_traco(tipo["captacao_3m"]), nome_da_tendencia(tipo["ritmo_semanal"]) or "-",
+        milhar(tipo["na_lista"]),
+    ]
+
+
+def _md_por_tipo(op: dict) -> list[str]:
+    """A captacao dos gaps por tipo de produto: semana, 3 meses e o ritmo da categoria."""
+    tipos, fora = _tipos_no_digest(op)
+    if not tipos:
+        return []
+    return [
+        f"**Por tipo de produto** - {_POR_TIPO}",
+        "",
+        "| " + " | ".join(_CABECALHO_POR_TIPO) + " |",
+        "|---|---:|---:|---:|---|---:|",
+        *(f"| {t['tipo']} | " + " | ".join(_celulas_do_tipo(t)) + " |" for t in tipos),
+        "",
+        *([_resto_das_categorias(fora), ""] if fora else []),
+    ]
+
+
+def _html_por_tipo(op: dict) -> str:
+    tipos, fora = _tipos_no_digest(op)
+    if not tipos:
+        return ""
+    linhas = [[_esc(t["tipo"]), *(_esc(c) for c in _celulas_do_tipo(t))] for t in tipos]
+    resto = f'<p style="{_NOTA}">{_esc(_resto_das_categorias(fora))}</p>' if fora else ""
+    return _legenda(f"**Por tipo de produto** · {_POR_TIPO}") + _tabela(
+        _CABECALHO_POR_TIPO, linhas, direita={1, 2, 3, 5}, sinal={2, 3}, compacta=True,
+        larguras={0: 34},
+    ) + resto
+
+
 def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
     cabecalho = ["Fundo", "Categoria", "Casas", "Semana", "3 meses"]
     if com_cotistas:
@@ -771,6 +843,7 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     else:
         lines += [_SEM_CAPTACAO, ""]
     lines += _md_resumo_por_casa(op)
+    lines += _md_por_tipo(op)
 
     com_cotistas = op.get("com_cotistas")
     mostrados = 0
@@ -837,6 +910,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
     else:
         parts.append(f'<p style="{_P}">{_esc(_SEM_CAPTACAO)}</p>')
     parts.append(_html_resumo_por_casa(op))
+    parts.append(_html_por_tipo(op))
 
     grupos = [(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
     if grupos:
@@ -1006,7 +1080,28 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
-    lines += [
+    return lines
+
+
+# A legenda do ritmo (pedido de 17/10/2026), no topo do digest para consulta
+# antes das secoes. O mesmo rotulo vale para a semana (tabelas de gaps e de
+# tipo de produto, listas de captacao) e para o mes (mapa por casa): muda so a
+# janela, e a faixa e a da regra (`retail_flow.classificar_ritmo`).
+_COMO_LER_O_RITMO = (
+    "a captação líquida por dia útil de agora contra a de antes. Nas tabelas de gaps "
+    "e de tipo de produto e nas listas, a semana contra as 12 semanas anteriores; no "
+    "mapa por casa, o último mês contra os anteriores."
+)
+
+
+def _com_ritmo(visao: VisaoDoDigest) -> bool:
+    """O digest mostra ritmo so quando ha informe diario nesta execucao."""
+    flow = visao.report.retail_flow
+    return bool(flow and flow.get("available"))
+
+
+def _md_legenda_do_ritmo() -> list[str]:
+    return [
         f"**Como ler o ritmo** - {_COMO_LER_O_RITMO}",
         "",
         "| Ritmo | O que quer dizer |",
@@ -1014,17 +1109,14 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
         *(f"| {nome} | {texto} |" for nome, texto in _legenda_do_ritmo()),
         "",
     ]
-    return lines
 
 
-# A legenda do ritmo (pedido de 17/10/2026). O mesmo rotulo vale para a semana
-# (tabela de gaps e listas de captacao) e para o mes (mapa por casa): muda so a
-# janela, e a faixa e a da regra (`retail_flow.classificar_ritmo`).
-_COMO_LER_O_RITMO = (
-    "a captação líquida por dia útil de agora contra a de antes. Na tabela de gaps e "
-    "nas listas, a semana contra as 12 semanas anteriores; no mapa por casa, o último "
-    "mês contra os anteriores."
-)
+def _html_legenda_do_ritmo() -> str:
+    return _legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}") + _tabela(
+        ["Ritmo", "O que quer dizer"],
+        [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
+        compacta=True,
+    )
 
 
 def _legenda_do_ritmo() -> list[tuple[str, str]]:
@@ -1161,19 +1253,11 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
-    # A legenda do ritmo e as notas ficam no bloco que abre no clique (17/10/2026).
+    # As notas ficam no bloco que abre no clique (17/10/2026); a legenda do
+    # ritmo foi para o topo do digest.
     paragrafos = [_esc(n) for n in notas]
     paragrafos[0] += f" {_fonte_html(CVM_INFORME_DIARIO)}"
-    corpo = (
-        _legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}")
-        + _tabela(
-            ["Ritmo", "O que quer dizer"],
-            [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
-            compacta=True,
-        )
-        + "".join(f'<p style="{_NOTA}">{p}</p>' for p in paragrafos)
-    )
-    parts.append(_como_ler(corpo, "Como ler o ritmo: critérios e prazos"))
+    parts.append(_como_ler("".join(f'<p style="{_NOTA}">{p}</p>' for p in paragrafos)))
     return "".join(parts)
 
 
@@ -1996,6 +2080,9 @@ def render_markdown(
     if alerta:
         lines += [f"**{alerta}**", ""]
 
+    # A legenda do ritmo antes das secoes, para consulta (17/10/2026).
+    if _com_ritmo(visao):
+        lines += _md_legenda_do_ritmo()
     lines += _md_oportunidade(visao)
     lines += _md_ritmo(visao)
 
@@ -2083,6 +2170,8 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
         f'<p style="{_CHAMADA}font-size:15px;"><strong>{_md_para_html(alerta)}</strong></p>'
         if alerta else ""
     )
+    # A legenda do ritmo antes das secoes, para consulta (17/10/2026).
+    legenda_do_ritmo = _html_legenda_do_ritmo() if _com_ritmo(visao) else ""
     nomes = dict(_FIGURAS_POR_CORTE)
 
     def montar(omitidas: tuple[str, ...]) -> str:
@@ -2100,6 +2189,7 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
   <h1 style="font-size:28px;line-height:32px;font-weight:800;letter-spacing:-0.02em;color:{TINTA};margin:0 0 8px;">{_esc(identidade.titulo_relatorio)}</h1>
   <p style="font-size:14px;line-height:20px;color:{TINTA_2};margin:0 0 18px;">{_esc(_linha_do_cabecalho(visao, generated))}</p>
   {lede}
+  {legenda_do_ritmo}
 
   {_html_oportunidade(visao, omitir)}
 
