@@ -1000,7 +1000,8 @@ class TestReports(unittest.TestCase):
         relatorio = self._com_vitrine()
         markdown = render_markdown(relatorio)
         self.assertIn("Fundo Descontinuado", markdown)
-        self.assertIn("pré-operacional", markdown.lower())
+        # O radar CVM saiu do digest em 17/10/2026 (segue no dashboard).
+        self.assertNotIn("pré-operacional", markdown.lower())
         # Alteracao de condicao e casa fora do digest (o Nu) sairam em 14/10/2026.
         self.assertNotIn("aplicação mínima", markdown)
         self.assertNotIn("Nu (Nubank)", markdown)
@@ -1163,7 +1164,7 @@ class TestReports(unittest.TestCase):
         # HTML monta o sumario sem um cabecalho proprio, e isso e escolha de
         # formatacao, nao divergencia de conteudo. O que tem de bater sao os
         # blocos nomeados que os dois declaram publicar.
-        for bloco in ("Oportunidade de grade e gaps", "Radar CVM"):
+        for bloco in ("Oportunidade de grade e gaps", "Ritmo de captação"):
             if bloco in markdown:
                 self.assertIn(
                     bloco, visivel, f"bloco '{bloco}' só existe no markdown"

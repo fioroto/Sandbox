@@ -23,11 +23,11 @@ def build_subject(
 ) -> str:
     """Assunto que ja conta a novidade - o e-mail e lido pela linha de assunto.
 
-    Abre com a mensagem principal do digest - quantos gaps reais captam e
-    quanto na semana - e segue com o que entrou e saiu das vitrines e o que as
-    gestoras dos concorrentes lancaram na CVM, tudo so das casas do digest
-    (`Config.casas_do_digest`). Alteracao de condicao nao conta mais: saiu do
-    digest em 14/10/2026.
+    Abre com a mensagem principal do digest - quantos gaps reais aceleram e
+    quanto captam na semana - e segue com o que entrou e saiu das vitrines, so
+    das casas do digest (`Config.casas_do_digest`). Alteracao de condicao nao
+    conta mais desde 14/10/2026, e o que as gestoras registraram na CVM desde
+    17/10/2026, quando o radar saiu do digest.
 
     `rotulo` identifica o monitor na caixa de entrada; o de previdencia passa o
     dele (`ConfigPrevidencia.rotulo_assunto`).
@@ -36,14 +36,6 @@ def build_subject(
     visao = montar_visao(report, config, EDICAO_SEMANAL)
     recortado = visao.report
 
-    launches = len(recortado.cvm_diff.launches) if recortado.cvm_diff else 0
-    # Na primeira execucao new_registrations traz todos os pre-operacionais que
-    # ja existiam: isso e baseline, nao novidade, e nao pode virar manchete.
-    new_registrations = (
-        len(recortado.cvm_diff.new_registrations)
-        if recortado.cvm_diff and not recortado.cvm_diff.is_first_run
-        else 0
-    )
     # Movimento de vitrine, a mesma conta do corpo do digest: o assunto contava
     # o diff inteiro (catalogo Open Finance e restritos) e prometia mais do que
     # o e-mail mostrava - 236 contra 174 no BTG de 13 para 19/09.
@@ -66,12 +58,6 @@ def build_subject(
     if added or removed:
         highlights.append(
             f"{contagem(added, 'entrada', 'entradas')} / {contagem(removed, 'saída', 'saídas')}"
-        )
-    if launches:
-        highlights.append(contagem(launches, "fundo em operação", "fundos em operação"))
-    if new_registrations:
-        highlights.append(
-            contagem(new_registrations, "novo registro na CVM", "novos registros na CVM")
         )
     if rebaseadas:
         # Sem isto o dia em que a coleta passa a ver a vitrine sai como "sem

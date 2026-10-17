@@ -96,9 +96,8 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses, sem o produto proprio do concorrente; numeros em destaque, o resumo por concorrente e os 5 primeiros de cada um pelo esforco de trazer |
-| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
-| Radar CVM | o que as gestoras dos grupos BTG e Itau registraram - sem a XP e sem fundo cancelado (14/10/2026: so os ativos contam e a passagem para cancelado nao vira movimento, em todas as superficies; o extrato gravado segue inteiro), e dito que e a gestora, nao a vitrine |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado |
+| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela, e a legenda do ritmo: o que cada rotulo quer dizer |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
 
@@ -117,6 +116,16 @@ Ele abre direto na secao; a unica frase antes dela e o alerta de coleta que falh
 inteira, e a previa do e-mail e a linha do cabecalho (casas e semana) - o assunto ja
 traz a oportunidade. O ritmo de cada fundo segue na tabela ("Ritmo na semana").
 
+Em 17/10/2026 saiu o radar CVM - o que as gestoras dos grupos BTG e Itau
+registraram -, e o assunto deixou de contar registro na CVM. O radar segue no
+dashboard, na planilha e no deck, sem fundo cancelado (14/10/2026: so os ativos
+contam e a passagem para cancelado nao vira movimento; o extrato gravado segue
+inteiro). No mesmo dia entrou a legenda do ritmo, no fim da secao de captacao: uma
+tabela com acelerando, virou entrada, estavel, desacelerando, virou saida, saida
+persistente e sem serie, com a faixa de 25% da regra e as duas janelas - a semana
+contra as 12 anteriores na tabela de gaps e nas listas, o ultimo mes contra os
+anteriores no mapa por casa.
+
 **Rentabilidade de referencia** (16/10/2026). Toda lista de gaps e de captacoes - no
 digest, no painel e na planilha - traz a rentabilidade do fundo em 12 meses (convencao
 de lamina: base no fechamento da competencia anterior a janela) e, em pp, a distancia
@@ -129,10 +138,23 @@ Oportunidades de grade (12 meses e mediana), e a nota de cada aba da a janela de
 coluna (`performance.prazo_das_colunas_de_rentabilidade`). Retorno negativo e captacao
 liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava por "-".
 
+**A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
+acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
+12 semanas anteriores) ou "virou entrada" (antes perdia dinheiro). Estavel,
+desacelerando e virou saida ficam fora. A ordem e a captacao em 3 meses, 10 por
+concorrente, sem repetir fundo. O produto proprio do concorrente entra, marcado
+"produto proprio" na coluna Esforco, e fica fora dos numeros de cima e do assunto, que
+contam so o que da para trazer (`report/oportunidade.py`). Ate ali a ordem era esforco e
+depois captacao, 5 por casa e sem o produto proprio - e no digest de 14/10/2026, 3 dos
+5 primeiros do BTG ja nao aceleravam, um deles tendo virado saida. Medido no mesmo
+relatorio: no BTG 25 gaps aceleram na semana (14 para trazer, 11 produto proprio), no
+Itau 24 (8 e 16). Sem semana completa no informe, a lista nao filtra pelo ritmo e a nota
+diz isso. A planilha segue com a lista inteira, na ordem de esforco.
+
 **O Itau em todas as analises** (pedido de 14/10/2026). A oportunidade sai por
-concorrente: o resumo de cada um (gaps reais, quantos captam, captacao na semana e
-em 3 meses) e os 5 primeiros de cada um - numa lista unica o BTG, de vitrine maior,
-ocupava o topo inteiro. E a coleta
+concorrente: o resumo de cada um (gaps reais, quantos aceleram, quantos da para
+trazer e a captacao deles na semana e em 3 meses) e os 10 primeiros de cada um - numa
+lista unica o BTG, de vitrine maior, ocupava o topo inteiro. E a coleta
 que falha nao tira a casa das analises: para as casas de `Config.vitrine_de_reserva`
 (hoje, o Itau), um dia sem vitrine utilizavel - coleta indisponivel, so o catalogo
 Open Finance, menos de 30 fundos ou CNPJ em menos de metade da vitrine - entra com a

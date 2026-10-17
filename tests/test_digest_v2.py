@@ -11,8 +11,9 @@ O digest passou a ser semanal de fato e mais curto. Os testes travam:
 - a oportunidade de grade: gaps reais que captam, sem o produto proprio do
   concorrente nem o que a lista da casa ja tem; desde 15/10/2026 sem a frase
   de abertura, sem a frase do funil e sem a evolucao semanal da soma;
-- o recorte as casas do digest (XP, BTG e Itau): Nu e Inter fora, o radar sem
-  a XP;
+- o recorte as casas do digest (XP, BTG e Itau): Nu e Inter fora, e sem o radar
+  da CVM desde 17/10/2026 - nem no corpo, nem no assunto;
+- a legenda do ritmo no fim da secao de captacao (17/10/2026);
 - o servico da lista da casa (Distribuicao ou FaaS) ao lado do fundo da XP;
 - a edicao mensal no primeiro digest do mes, com rentabilidade e custo.
 
@@ -72,7 +73,12 @@ A = "11000000000101"
 B = "12000000000101"
 C = "13000000000101"
 D = "14000000000101"
-E = "16000000000101"  # so a vitrine do Itau exibe; capta 4 por dia
+# So a vitrine do Itau exibe. Perde 4 por dia ate julho, fica parado e capta 4
+# por dia na ultima semana: virou entrada, e capta nos 3 meses.
+E = "16000000000101"
+# Produto proprio do BTG que acelera (de 12 para 40 por dia) e capta mais que A
+# em 3 meses, abaixo do proprio PL: so entra na vitrine com `com_proprio`.
+F = "17000000000101"
 _ENCHIMENTO = 32  # cada vitrine com 30 fundos ou mais (MIN_VITRINE)
 
 PRIMEIRO_DIA = date(2026, 6, 1)
@@ -98,13 +104,18 @@ def _registros() -> list[DailyFlow]:
         if dia == FERIADO:
             registros.append(DailyFlow(cnpj=C, dia=dia, pl=PL, cota=10.0, cotistas=1000 + n))
             continue
-        a = 30 * MI if dia >= INICIO_DA_SEMANA else 10 * MI
+        na_semana = dia >= INICIO_DA_SEMANA
+        a = 30 * MI if na_semana else 10 * MI
+        e = 4 * MI if na_semana else -4 * MI if dia < date(2026, 8, 1) else 0.0
         registros += [
             DailyFlow(cnpj=A, dia=dia, captacao=a, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=B, dia=dia, captacao=5 * MI, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=C, dia=dia, captacao=2 * MI, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=D, dia=dia, pl=PL, cota=10.0, cotistas=1000),
-            DailyFlow(cnpj=E, dia=dia, captacao=4 * MI, pl=PL, cota=10.0, cotistas=1000 + n),
+            DailyFlow(cnpj=E, dia=dia, captacao=max(e, 0.0), resgates=max(-e, 0.0), pl=PL,
+                      cota=10.0, cotistas=1000 + n),
+            DailyFlow(cnpj=F, dia=dia, captacao=(40 if na_semana else 12) * MI, pl=PL,
+                      cota=10.0, cotistas=1000 + n),
         ]
         registros += [
             DailyFlow(cnpj=cnpj, dia=dia, pl=PL, cota=10.0, cotistas=1000)
@@ -132,7 +143,8 @@ def _snapshot(platform: str, fundos: list[FundOffer], quando: datetime) -> Shelf
 
 
 def _snapshots(
-    quando: datetime = datetime(2026, 10, 14, 8, 0), com_itau: bool = False
+    quando: datetime = datetime(2026, 10, 14, 8, 0), com_itau: bool = False,
+    com_proprio: bool = False,
 ) -> list[ShelfSnapshot]:
     def enchimento(casa: int, platform: str) -> list[FundOffer]:
         return [
@@ -146,6 +158,8 @@ def _snapshots(
         _oferta("btg", B, "BTG Proprio B FIC FIM", BTG_ASSET),
         _oferta("btg", C, "Fundo C FIC FIM"),
     ] + enchimento(32, "btg")
+    if com_proprio:
+        btg.append(_oferta("btg", F, "BTG Proprio F FIC FIM", BTG_ASSET))
     nu = [_oferta("nu", D, "Fundo D FIC FIM")] + enchimento(32, "nu")
     casas = [_snapshot("xp", xp, quando), _snapshot("btg", btg, quando)]
     if com_itau:
@@ -181,8 +195,10 @@ def _lista_da_casa(**servicos: str) -> BaseDistribuivel:
     )
 
 
-def _relatorio(lista: BaseDistribuivel | None = None, com_itau: bool = False) -> RunReport:
-    snapshots = _snapshots(com_itau=com_itau)
+def _relatorio(
+    lista: BaseDistribuivel | None = None, com_itau: bool = False, com_proprio: bool = False
+) -> RunReport:
+    snapshots = _snapshots(com_itau=com_itau, com_proprio=com_proprio)
     flow, _, _ = _fluxo(snapshots)
     antes = [_snapshot(s.platform, list(s.funds), datetime(2026, 10, 7)) for s in snapshots]
     novo = _oferta("btg", "15000000000101", "BTG Novo Credito FIC FIM")
@@ -320,12 +336,15 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         cls.visao = montar_visao(_relatorio(), None, "semanal")
         cls.op = cls.visao.oportunidade
 
-    def test_so_gap_real_transferivel_que_capta(self):
+    def test_so_gap_real_que_capta_e_acelera_na_semana(self):
         # A e B estao no BTG e fora da XP; B e produto proprio do BTG. O
-        # enchimento do BTG e o fundo novo tambem sao gap, mas nao captam.
+        # enchimento do BTG e o fundo novo tambem sao gap, mas nao captam. B
+        # capta, mas estavel na semana: fica fora da lista (16/10/2026).
         self.assertEqual(self.op["total_reais"], 3 + _ENCHIMENTO)
         self.assertEqual(self.op["total_captando"], 2)
-        self.assertEqual(self.op["total_produto_do_concorrente"], 1)
+        self.assertTrue(self.op["com_ritmo"])
+        self.assertEqual(self.op["total_na_lista"], 1)
+        self.assertEqual(self.op["total_produto_do_concorrente"], 0)
         self.assertEqual([f["cnpj"] for f in self.op["linhas"]], [A])
         self.assertEqual(self.op["total_operacionais"], 1)  # a gestora de A esta na XP
         self.assertAlmostEqual(self.op["captacao_semana"], 150 * MI)
@@ -337,11 +356,13 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         visao = montar_visao(_relatorio(_lista_da_casa(**{A: "faas"})), None, "semanal")
         self.assertNotIn(A, [f["cnpj"] for f in visao.oportunidade["linhas"]])
 
-    def test_recorte_tira_nu_e_inter_e_a_xp_do_radar(self):
+    def test_recorte_tira_nu_inter_e_o_radar(self):
         recortado = self.visao.report
         self.assertEqual([s.platform for s in recortado.snapshots], ["xp", "btg"])
-        self.assertEqual({f.house for f in recortado.cvm_snapshot.funds}, {"btg", "itau"})
-        self.assertEqual({f.house for f in recortado.cvm_diff.new_registrations}, {"btg", "itau"})
+        # O radar saiu do digest em 17/10/2026: a execucao tem o extrato, o recorte nao.
+        self.assertIsNotNone(_relatorio().cvm_snapshot)
+        self.assertIsNone(recortado.cvm_snapshot)
+        self.assertIsNone(recortado.cvm_diff)
         nomes = [f["nome"] for f in recortado.retail_flow["top_captacao"]]
         self.assertIn("Fundo A FIC FIM", nomes)
         self.assertTrue(all("nu" not in f["vitrines"] for f in recortado.retail_flow["top_captacao"]))
@@ -356,7 +377,7 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         md = render_markdown(report, None, "semanal")
         self.assertIn(
             "execução de 14/10/2026 08:00\n\n## Oportunidade de grade e gaps\n\n"
-            "- **1** fundo para a grade: gap captando\n"
+            "- **1** fundo para a grade: gap acelerando na semana\n"
             "- **+150,0 MM** captação dele na semana\n"
             "- **+590,0 MM** captação dele em 3 meses\n",
             md,
@@ -365,18 +386,17 @@ class TestOportunidadeDeGrade(unittest.TestCase):
                      "acima do ritmo das 12"):
             self.assertNotIn(fora, md)
         # A ordem das secoes e o que saiu do semanal.
-        ordem = ["## Oportunidade de grade e gaps", "## Ritmo de captação", "## Radar CVM",
+        ordem = ["## Oportunidade de grade e gaps", "## Ritmo de captação",
                  "## Vitrines: entradas e saídas", "## Fontes"]
         posicoes = [md.index(titulo) for titulo in ordem]
         self.assertEqual(posicoes, sorted(posicoes))
         for fora in ("## Sumário", "Ticket de entrada", "Captação dos fundos de vitrine",
-                     "Rentabilidade", "Nu (Nubank)", "Banco Inter", "NU NOVO FIC", "XP NOVO FIC"):
+                     "Rentabilidade", "Nu (Nubank)", "Banco Inter", "NU NOVO FIC", "XP NOVO FIC",
+                     "Radar CVM", "BTG NOVO FIC", "radar de registros"):
             self.assertNotIn(fora, md)
-        self.assertIn("BTG NOVO FIC", md)
-        self.assertIn("gestoras dos grupos concorrentes", md)
         html = render_html(report, None, "semanal")
         texto = _texto(html)
-        self.assertIn("fundo para a grade: gap captando", texto)
+        self.assertIn("fundo para a grade: gap acelerando na semana", texto)
         for fora in ("A captação dos gaps", "MM/dia", "gaps nas vitrines", "capta nas vitrines"):
             self.assertNotIn(fora, texto)
         # A previa do e-mail: as casas e a semana, como o cabecalho.
@@ -393,8 +413,8 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         assunto = build_subject(_relatorio())
         self.assertIn("1 fundo para a grade (+150,0 MM na semana)", assunto)
         self.assertIn("1 entrada / 0 saídas", assunto)
-        # So os registros das gestoras do BTG e do Itau, sem XP e Nu.
-        self.assertIn("2 novos registros na CVM", assunto)
+        # Sem o radar no digest (17/10/2026), o assunto nao conta registro na CVM.
+        self.assertNotIn("CVM", assunto)
 
 
 class TestOportunidadePorConcorrente(unittest.TestCase):
@@ -423,7 +443,7 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
 
         md = render_markdown(self.report, None, "semanal")
         # Sem a carteira da CVM a coluna e "Gaps", nao "Gaps reais".
-        self.assertIn("| Concorrente | Gaps | Captando | Semana | 3 meses |", md)
+        self.assertIn("| Concorrente | Gaps | Acelerando | Para trazer | Semana | 3 meses |", md)
         # O nome da casa e so "Itaú" (pedido de 15/10/2026).
         self.assertIn("| Itaú |", md)
         self.assertNotIn("íon", md)
@@ -434,10 +454,73 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
         self.assertIn("| BTG, Itaú |", md)
         html = render_html(self.report, None, "semanal")
         texto = _texto(html)
-        self.assertIn("Os 5 primeiros de cada concorrente", texto)
+        self.assertIn("Os 10 primeiros de cada concorrente · por captação em 3 meses", texto)
         self.assertIn(">Itaú</td></tr>", html)
         # A evolucao semanal com uma miniatura por casa saiu.
         self.assertNotIn("MM/dia", texto)
+
+
+class TestListaAcelerando(unittest.TestCase):
+    """A lista de gaps do digest (pedido de 16/10/2026): so quem acelera ou virou
+    entrada na semana, pela captacao em 3 meses, 10 por concorrente, com o
+    produto proprio do concorrente marcado e fora dos numeros de cima."""
+
+    @classmethod
+    def setUpClass(cls):
+        from shelf_monitor.report.digest_visao import montar_visao
+
+        cls.report = _relatorio(com_itau=True, com_proprio=True)
+        cls.visao = montar_visao(cls.report, None, "semanal")
+        cls.op = cls.visao.oportunidade
+
+    def test_entra_quem_acelera_ou_virou_entrada(self):
+        # B capta estavel na semana e fica fora; E virou entrada e entra.
+        self.assertEqual(self.op["total_captando"], 4)  # A, B, E e F
+        por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
+        self.assertNotIn(B, [f["cnpj"] for f in por_casa["btg"]["linhas"]])
+        self.assertIn(E, [f["cnpj"] for f in por_casa["itau"]["linhas"]])
+        ritmos = {f["cnpj"]: f["ritmo_semanal"] for f in self.op["linhas"]}
+        self.assertEqual(ritmos, {F: "acelerando", A: "acelerando", E: "virou_entrada"})
+
+    def test_ordem_pela_captacao_em_3_meses_com_o_produto_proprio(self):
+        # F (produto proprio, +728 MM) passa na frente de A (+590 MM): o
+        # esforco nao ordena mais.
+        por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
+        self.assertEqual([f["cnpj"] for f in por_casa["btg"]["linhas"]], [F, A])
+        self.assertEqual(por_casa["btg"]["total_na_lista"], 2)
+        self.assertEqual(por_casa["btg"]["total_transferiveis"], 1)
+
+    def test_numeros_de_cima_so_com_o_que_da_para_trazer(self):
+        self.assertEqual(self.op["total_produto_do_concorrente"], 1)
+        self.assertEqual(self.op["total_transferiveis"], 2)  # A e E
+        self.assertAlmostEqual(self.op["captacao_semana"], 170 * MI)
+        self.assertAlmostEqual(self.op["captacao_3m"], 610 * MI)
+        por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
+        self.assertAlmostEqual(por_casa["btg"]["captacao_3m"], 590 * MI)
+
+    def test_digest_marca_o_produto_proprio(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+        from shelf_monitor.report.mailer import build_subject
+
+        md = render_markdown(self.report, None, "semanal")
+        self.assertIn("- **1** produto próprio do concorrente, marcado na lista\n", md)
+        linha_f = next(linha for linha in md.splitlines() if "BTG Proprio F FIC FIM (" in linha)
+        self.assertTrue(linha_f.endswith("| produto próprio |"))
+        self.assertIn("**BTG Pactual** - os 2 primeiros, por captação em 3 meses", md)
+        self.assertIn("estão acelerando na semana - captação por dia mais de 25% acima", md)
+        texto = _texto(render_html(self.report, None, "semanal"))
+        self.assertIn("produto próprio do concorrente, marcado na lista", texto)
+        # O assunto segue contando so o que da para trazer.
+        self.assertIn("2 fundos para a grade (+170,0 MM na semana)", build_subject(self.report))
+
+    def test_sem_semana_completa_a_lista_nao_filtra_pelo_ritmo(self):
+        from shelf_monitor.report.oportunidade import oportunidade_de_grade
+
+        flow = {**self.visao.report.retail_flow, "_recorte": None}
+        op = oportunidade_de_grade(self.visao.gaps, flow)
+        self.assertFalse(op["com_ritmo"])
+        self.assertIn(B, [f["cnpj"] for f in op["linhas"]])
+        self.assertIsNone(op["captacao_semana"])
 
 
 class TestRentabilidadeDeReferencia(unittest.TestCase):
@@ -599,7 +682,8 @@ class TestRentabilidadeDeReferencia(unittest.TestCase):
 
 
 class TestRadarSemCancelados(unittest.TestCase):
-    """Na parte da CVM, nenhum fundo cancelado (pedido de 14/10/2026)."""
+    """Na parte da CVM, nenhum fundo cancelado (pedido de 14/10/2026). O digest
+    nao traz o radar desde 17/10/2026; o dashboard e a planilha seguem com ele."""
 
     @staticmethod
     def _fundo(cnpj: str, nome: str, casa: str, situacao: str) -> CvmFund:
@@ -639,7 +723,7 @@ class TestRadarSemCancelados(unittest.TestCase):
         # O extrato da coleta segue inteiro: e ele que a proxima execucao compara.
         self.assertEqual(len(agora.funds), 4)
 
-    def test_digest_conta_os_ativos_e_nao_cita_cancelado(self):
+    def test_digest_nao_traz_o_radar(self):
         from shelf_monitor.diff import diff_cvm, radar_sem_cancelados
         from shelf_monitor.report.digest import render_html, render_markdown
 
@@ -647,13 +731,38 @@ class TestRadarSemCancelados(unittest.TestCase):
         report = _relatorio()
         report.cvm_snapshot, report.cvm_diff = radar_sem_cancelados(agora, diff_cvm(agora, antes))
         md = render_markdown(report, None, "semanal")
-        self.assertIn("| Grupo | Ativos | Pré-operacionais |", md)
-        self.assertIn("2 fundos ativos no cadastro", md)
-        self.assertIn("ITAU NOVO FIC", md)
         for texto in (md, _texto(render_html(report, None, "semanal"))):
+            self.assertNotIn("Radar CVM", texto)
+            self.assertNotIn("ITAU NOVO FIC", texto)
+            self.assertNotIn("Pré-operacionais", texto)
             self.assertNotIn("Cancelado", texto)
             self.assertNotIn("CANCELAR", texto)
             self.assertNotIn("Saíram do cadastro", texto)
+
+
+class TestLegendaDoRitmo(unittest.TestCase):
+    """A legenda do ritmo no fim da secao de captacao (pedido de 17/10/2026): o
+    que cada rotulo quer dizer, com a faixa da regra e as duas janelas."""
+
+    def test_legenda_no_markdown_e_no_html(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+
+        report = _relatorio()
+        md = render_markdown(report, None, "semanal")
+        self.assertIn("**Como ler o ritmo** - a captação líquida por dia útil de agora "
+                      "contra a de antes.", md)
+        self.assertIn("| Ritmo | O que quer dizer |", md)
+        self.assertIn("| Acelerando | já captava e passou a captar mais de 25% acima do "
+                      "ritmo de antes |", md)
+        for rotulo in ("Virou entrada", "Estável", "Desacelerando", "Virou saída",
+                       "Saída persistente", "Sem série"):
+            self.assertIn(f"| {rotulo} |", md)
+        # A legenda fecha a secao de captacao, antes das vitrines.
+        self.assertLess(md.index("Como ler o ritmo"), md.index("## Vitrines"))
+        self.assertGreater(md.index("Como ler o ritmo"), md.index("## Ritmo de captação"))
+        texto = _texto(render_html(report, None, "semanal"))
+        self.assertIn("Como ler o ritmo · a captação líquida por dia útil", texto)
+        self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", texto)
 
 
 class TestServicoDaCasa(unittest.TestCase):

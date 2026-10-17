@@ -17,11 +17,22 @@ O recorte, sobre o bloco de gaps ja ranqueado das casas do digest:
 - **captando**: o criterio da grade (`FundFlow.entrou`) - captacao liquida em 3
   meses positiva, com cotistas novos onde cotista mede gente, PL de ao menos
   R$ 1 mi no inicio e sem movimento estrutural;
-- **transferivel**: produto proprio do concorrente fica fora, contado.
+- **acelerando na semana** (pedido de 16/10/2026): o ritmo da semana e
+  "acelerando" ou "virou entrada" (`RITMOS_DA_LISTA`) - a captacao por dia da
+  semana de referencia contra a das 12 semanas anteriores. Estavel,
+  desacelerando e virou saida ficam fora: no digest de 14/10/2026, 3 dos 5
+  primeiros do BTG ja nao aceleravam, e um deles tinha virado saida.
 
-A ordem e a dos gaps: esforco, depois captacao em 3 meses (`chave_do_gap`). A
-semana entra como leitura - captacao da semana e o ritmo dela -, nao como
-ordem: uma semana de um fundo e ruidosa demais para decidir o topo.
+A semana filtra e os 3 meses ordenam (`chave_da_lista`). A semana de um fundo e
+ruidosa demais para decidir o topo sozinha, mas basta para separar quem ganha
+forca de quem perde. Sem semana completa no informe nao ha ritmo: a lista fica
+com todos os que captam, e `com_ritmo` diz isso.
+
+O produto proprio do concorrente entra na lista, marcado pelo esforco (pedido
+de 16/10/2026): mostra onde o concorrente ganha com produto dele. Os numeros de
+cima - quantos para a grade, captacao, cotistas e esforco - contam so o que da
+para trazer, e o produto proprio sai contado a parte. Ate essa data a ordem era
+esforco e depois captacao, com o produto proprio fora e 5 fundos por casa.
 """
 from __future__ import annotations
 
@@ -41,11 +52,29 @@ from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
 # faixa de liquidez nao e gap real.
 _NAO_REAIS = frozenset({ESFORCO_EXPOR, ESFORCO_ATIVAR, ESFORCO_LIQUIDEZ})
 
+# O ritmo da semana que poe o gap na lista: capta mais por dia do que nas 12
+# semanas anteriores, ou saiu do negativo (ver retail_flow.classificar_ritmo).
+RITMOS_DA_LISTA = frozenset({"acelerando", "virou_entrada"})
+
+
+def chave_da_lista(fundo: dict) -> tuple:
+    """A ordem da lista do digest: captacao em 3 meses, depois casas e PL."""
+    return (
+        -(fundo.get("captacao_liquida") or 0.0),
+        -(fundo.get("houses_count") or 0),
+        -(fundo.get("pl_cvm") or 0.0),
+    )
+
+
+def da_para_trazer(fundo: dict) -> bool:
+    """Tudo menos o produto proprio do concorrente, que a XP nao traz."""
+    return fundo.get("esforco") != ESFORCO_NAO_TRANSFERIVEL
+
 
 def oportunidade_de_grade(
     gaps: dict, retail_flow: dict | None, com_cotistas: bool = True
 ) -> dict:
-    """Os gaps reais que estao captando, com os numeros que abrem o digest.
+    """Os gaps reais que captam e aceleram, com os numeros que abrem o digest.
 
     `gaps` e o bloco de gaps ja ranqueado (`ranquear_gaps`), montado so com as
     casas do digest. Sem o informe diario (a CVM fora do ar) nao ha como saber
@@ -73,63 +102,74 @@ def oportunidade_de_grade(
             continue
         if fluxo.entrou(com_cotistas) and fluxo.pl_inicio >= _MIN_PL_RANKING:
             captando.append((fundo, fluxo))
-    proprios = [par for par in captando if par[0]["esforco"] == ESFORCO_NAO_TRANSFERIVEL]
-    transferiveis = sorted(
-        (par for par in captando if par[0]["esforco"] != ESFORCO_NAO_TRANSFERIVEL),
-        key=lambda par: chave_do_gap(par[0]),
-    )
-    linhas = [fundo for fundo, _ in transferiveis]
 
-    # Sem recorte semanal (informe sem semana completa) a captacao da semana
-    # nao existe - e "-", nunca zero.
+    # Sem recorte semanal (informe sem semana completa) nao ha captacao da
+    # semana nem ritmo dela: a captacao e "-", nunca zero, e a lista nao filtra.
     recorte = flow.get("_recorte")
     com_semana = bool(recorte is not None and recorte.todas())
+    na_lista = sorted(
+        (
+            par for par in captando
+            if not com_semana or par[1].ritmo_semanal in RITMOS_DA_LISTA
+        ),
+        key=lambda par: chave_da_lista(par[0]),
+    )
+    trazer = [par for par in na_lista if da_para_trazer(par[0])]
+    linhas = [fundo for fundo, _ in na_lista]
+    para_trazer = [fundo for fundo, _ in trazer]
     return {
         **_cabecalho(gaps, com_cotistas),
         "por_casa": [
-            _da_casa(concorrente, reais, transferiveis, com_semana)
+            _da_casa(concorrente, reais, na_lista, com_semana)
             for concorrente in gaps.get("competitors") or []
         ],
         "com_fluxo": True,
+        "com_ritmo": com_semana,
         "total_reais": len(reais),
         "sem_informe": sem_informe,
         "total_captando": len(captando),
-        "total_produto_do_concorrente": len(proprios),
-        "total_transferiveis": len(linhas),
-        "total_operacionais": sum(1 for f in linhas if f["esforco"] == ESFORCO_OPERACIONAL),
-        "total_abrir_gestora": sum(1 for f in linhas if f["esforco"] == ESFORCO_ABRIR_GESTORA),
-        "total_gestora_indefinida": sum(1 for f in linhas if f["esforco"] == ESFORCO_INDEFINIDO),
-        "captacao_3m": round(sum(f.captacao_liquida for _, f in transferiveis), 2),
+        "total_na_lista": len(linhas),
+        "total_produto_do_concorrente": len(linhas) - len(para_trazer),
+        "total_transferiveis": len(para_trazer),
+        "total_operacionais": sum(1 for f in para_trazer if f["esforco"] == ESFORCO_OPERACIONAL),
+        "total_abrir_gestora": sum(1 for f in para_trazer if f["esforco"] == ESFORCO_ABRIR_GESTORA),
+        "total_gestora_indefinida": sum(
+            1 for f in para_trazer if f["esforco"] == ESFORCO_INDEFINIDO
+        ),
+        "captacao_3m": round(sum(f.captacao_liquida for _, f in trazer), 2),
         "captacao_semana": (
-            round(sum(f.captacao_semana or 0.0 for _, f in transferiveis), 2)
+            round(sum(f.captacao_semana or 0.0 for _, f in trazer), 2)
             if com_semana else None
         ),
-        "cotistas_3m": sum(f.variacao_cotistas for _, f in transferiveis),
+        "cotistas_3m": sum(f.variacao_cotistas for _, f in trazer),
         "linhas": linhas,
     }
 
 
 def _da_casa(
-    concorrente: dict, reais: list[dict], transferiveis: list[tuple], com_semana: bool
+    concorrente: dict, reais: list[dict], na_lista: list[tuple], com_semana: bool
 ) -> dict:
-    """A oportunidade de um concorrente: os gaps reais da vitrine dele.
+    """A lista de um concorrente: os gaps da vitrine dele que entram na lista.
 
     O Itau tem de aparecer em toda analise (pedido de 14/10/2026), e na lista
     unica o BTG - vitrine maior, mais fundos captando - ocupava o topo inteiro.
-    Fundo exibido pelas duas casas conta nas duas.
+    Fundo exibido pelas duas casas conta nas duas. A captacao somada e a do que
+    da para trazer, como nos numeros de cima.
     """
     pid = concorrente["platform_id"]
-    da_casa = [(f, fluxo) for f, fluxo in transferiveis if pid in (f.get("houses") or [])]
+    da_casa = [(f, fluxo) for f, fluxo in na_lista if pid in (f.get("houses") or [])]
+    trazer = [(f, fluxo) for f, fluxo in da_casa if da_para_trazer(f)]
     return {
         "platform_id": pid,
         "label": concorrente["label"],
         "total_reais": sum(1 for f in reais if pid in (f.get("houses") or [])),
-        "total_transferiveis": len(da_casa),
+        "total_na_lista": len(da_casa),
+        "total_transferiveis": len(trazer),
         "captacao_semana": (
-            round(sum(fluxo.captacao_semana or 0.0 for _, fluxo in da_casa), 2)
+            round(sum(fluxo.captacao_semana or 0.0 for _, fluxo in trazer), 2)
             if com_semana else None
         ),
-        "captacao_3m": round(sum(fluxo.captacao_liquida for _, fluxo in da_casa), 2),
+        "captacao_3m": round(sum(fluxo.captacao_liquida for _, fluxo in trazer), 2),
         "linhas": [f for f, _ in da_casa],
     }
 
@@ -149,9 +189,7 @@ def _cabecalho(gaps: dict, com_cotistas: bool) -> dict:
 
 def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
     """Sem o informe diario: os gaps reais transferiveis, pelo esforco, sem captacao."""
-    linhas = sorted(
-        (f for f in reais if f["esforco"] != ESFORCO_NAO_TRANSFERIVEL), key=chave_do_gap
-    )
+    linhas = sorted((f for f in reais if da_para_trazer(f)), key=chave_do_gap)
     por_casa = []
     for concorrente in gaps.get("competitors") or []:
         pid = concorrente["platform_id"]
@@ -160,6 +198,7 @@ def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
             "platform_id": pid,
             "label": concorrente["label"],
             "total_reais": sum(1 for f in reais if pid in (f.get("houses") or [])),
+            "total_na_lista": len(da_casa),
             "total_transferiveis": len(da_casa),
             "captacao_semana": None,
             "captacao_3m": None,
@@ -169,9 +208,11 @@ def _sem_informe(gaps: dict, reais: list[dict], com_cotistas: bool) -> dict:
         **_cabecalho(gaps, com_cotistas),
         "por_casa": por_casa,
         "com_fluxo": False,
+        "com_ritmo": False,
         "total_reais": len(reais),
         "sem_informe": len(reais),
         "total_captando": None,
+        "total_na_lista": len(linhas),
         "total_produto_do_concorrente": len(reais) - len(linhas),
         "total_transferiveis": len(linhas),
         "total_operacionais": sum(1 for f in linhas if f["esforco"] == ESFORCO_OPERACIONAL),

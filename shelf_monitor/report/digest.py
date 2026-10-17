@@ -1,4 +1,4 @@
-"""Digest semanal: a oportunidade de grade, o ritmo da captacao, o radar e a vitrine.
+"""Digest semanal: a oportunidade de grade, o ritmo da captacao e a vitrine.
 
 Gera markdown (leitura no repo, diff de git legivel) e HTML com CSS inline,
 sem JS e com largura contida - pronto para ir no corpo do e-mail.
@@ -10,14 +10,13 @@ informacao. So XP, BTG e Itau (`Config.casas_do_digest`, recorte em
 grade e os gaps reais. Na ordem:
 
 1. **Oportunidade de grade e gaps** (`report.oportunidade`): os numeros em
-   destaque, o resumo por concorrente e os gaps reais que estao captando, com
-   a captacao da semana, a de 3 meses, o ritmo e o esforco de trazer cada um;
+   destaque, o resumo por concorrente e os gaps reais que captam e aceleram na
+   semana, pela captacao em 3 meses, com o produto proprio do concorrente
+   marcado (16/10/2026), a captacao da semana, o ritmo e o esforco de trazer;
 2. **Ritmo de captacao**: o mapa de ritmo por casa e as maiores captacoes e
-   resgates, agora com a semana;
-3. **Radar CVM**: o que as gestoras do BTG e do Itau registraram - so os
-   concorrentes, e dito que e a gestora, nao a vitrine;
-4. **Vitrines**: so o que entrou e o que saiu;
-5. **Rentabilidade e custo**, so na edicao mensal (o primeiro digest do mes).
+   resgates, agora com a semana, e a legenda do ritmo (17/10/2026);
+3. **Vitrines**: so o que entrou e o que saiu;
+4. **Rentabilidade e custo**, so na edicao mensal (o primeiro digest do mes).
 
 Saiu do semanal - e continua no dashboard e na planilha: o sumario com o
 tamanho das vitrines, o funil e os gaps por categoria, os ja cobertos, a
@@ -30,7 +29,9 @@ Em 15/10/2026, a pedido da area, sairam tambem a frase de abertura (a
 oportunidade em uma frase, que repetia os numeros em destaque), a frase do
 funil ("504 gaps reais nas vitrines...") e a evolucao semanal da captacao dos
 gaps, com as miniaturas por casa. O digest abre direto nas secoes; a unica
-frase antes delas e o alerta de coleta que falhou inteira.
+frase antes delas e o alerta de coleta que falhou inteira. Em 17/10/2026
+saiu o radar CVM (o que as gestoras do BTG e do Itau registraram), que segue
+no dashboard, na planilha e no deck.
 """
 from __future__ import annotations
 
@@ -42,7 +43,6 @@ from shelf_monitor.caixa import nota_caixa
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import (
     BLOCO_COTISTAS,
-    CvmDiff,
     FundOffer,
     RunReport,
     ShelfDiff,
@@ -55,7 +55,7 @@ from shelf_monitor.report.shared import (
     movimentos_do_run,
     rotulo_da_casa,
 )
-from shelf_monitor.report.retail_flow import nome_da_tendencia
+from shelf_monitor.report.retail_flow import _TREND_BAND, nome_da_tendencia
 from shelf_monitor.report.shared.semanas import prazos_da_semana
 from shelf_monitor.texto import (
     competencia_br,
@@ -72,7 +72,6 @@ from shelf_monitor.report.shared.estilo import (
     cor_da_casa,
 )
 from shelf_monitor.report.shared.fontes import (
-    CVM_CADASTRO,
     CVM_EXTRATO,
     CVM_INFORME_DIARIO,
     Fonte,
@@ -140,12 +139,13 @@ from shelf_monitor.report.digest_visao import (
     edicao_do_digest,
     montar_visao,
 )
+from shelf_monitor.report.oportunidade import da_para_trazer
 
 _MAX_LISTED = 25
 
-# A oportunidade listada no e-mail, por concorrente: os 5 primeiros de cada um
-# (o Itau sempre ao lado do BTG). O resto mora na planilha.
-_GAP_POR_CASA = 5
+# A oportunidade listada no e-mail, por concorrente: os 10 primeiros de cada um
+# (o Itau sempre ao lado do BTG; eram 5 ate 16/10/2026). O resto mora na planilha.
+_GAP_POR_CASA = 10
 # Quantos fundos listar em cada lista de captacao. O digest e leitura de 2
 # minutos: a lista inteira mora na planilha.
 _FLOW_LISTED = 5
@@ -472,14 +472,16 @@ def _numeros_da_oportunidade(op: dict) -> list[tuple]:
     """Os numeros em destaque, (valor, rotulo[, destaque]): os mesmos no HTML e no markdown.
 
     "Gap real" so com a carteira da CVM: sem ela, espelho, equivalente e
-    correlato nao foram verificados.
+    correlato nao foram verificados. Contam o que da para trazer; o produto
+    proprio do concorrente, que a lista mostra marcado, sai contado a parte.
     """
     n = op["total_transferiveis"]
     real = (op.get("carteira") or {}).get("available")
     gaps = ("gap real" if n == 1 else "gaps reais") if real else ("gap" if n == 1 else "gaps")
     deles = "dele" if n == 1 else "deles"
+    ritmo = "acelerando na semana" if op.get("com_ritmo") else "captando"
     numeros: list[tuple] = [
-        (milhar(n), f"{'fundo' if n == 1 else 'fundos'} para a grade: {gaps} captando", True)
+        (milhar(n), f"{'fundo' if n == 1 else 'fundos'} para a grade: {gaps} {ritmo}", True)
     ]
     if op.get("captacao_semana") is not None:
         numeros.append((_mm(op["captacao_semana"]), f"captação {deles} na semana"))
@@ -493,6 +495,13 @@ def _numeros_da_oportunidade(op: dict) -> list[tuple]:
     ]
     if op.get("total_gestora_indefinida"):
         numeros.append((milhar(op["total_gestora_indefinida"]), "sem gestora identificada"))
+    proprios = op.get("total_produto_do_concorrente") or 0
+    if proprios:
+        numeros.append((
+            milhar(proprios),
+            "produto próprio do concorrente, marcado na lista" if proprios == 1
+            else "produtos próprios do concorrente, marcados na lista",
+        ))
     return numeros
 
 
@@ -521,6 +530,17 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
         "mesma estratégia não foram verificados."
     )
     notas = [criterio]
+    if op.get("com_fluxo"):
+        notas.append(
+            ("Na lista: os que captaram em 3 meses e estão acelerando na semana - captação "
+             "por dia mais de 25% acima da média das 12 semanas anteriores, ou que virou "
+             "entrada -, pela captação em 3 meses."
+             if op.get("com_ritmo") else
+             "Na lista: os que captaram em 3 meses, pela captação - sem semana completa no "
+             "informe, o ritmo da semana não filtra.")
+            + " O produto próprio do concorrente entra marcado e fica fora dos números de "
+            "cima."
+        )
     if op.get("total_reais"):
         notas.append(
             "Na planilha: os gaps reais na aba Gaps XP e os cobertos, com o fundo da XP "
@@ -655,21 +675,46 @@ def _rotulo_dos_gaps(op: dict) -> str:
     return "Gaps reais" if (op.get("carteira") or {}).get("available") else "Gaps"
 
 
+def _coluna_da_lista(op: dict) -> str:
+    """O que poe o gap na lista: o ritmo da semana, ou so captar sem semana completa."""
+    return "Acelerando" if op.get("com_ritmo") else "Captando"
+
+
+def _ordem_da_lista(op: dict) -> str:
+    """Com o informe a lista vai pela captacao; sem ele, pelo esforco de trazer."""
+    return "por captação em 3 meses" if op.get("com_fluxo") else "por esforço de trazer"
+
+
+def _esforco_na_tabela(fundo: dict) -> str:
+    """O esforco na tabela, com "produto próprio" curto: e a etiqueta dele na lista."""
+    if not da_para_trazer(fundo):
+        return "produto próprio"
+    return fundo.get("esforco") or "-"
+
+
+def _resumo_da_casa(op: dict, casa: dict) -> list[str]:
+    """Gaps, quantos entram na lista, quantos dá para trazer e a captação deles."""
+    com_fluxo = op.get("com_fluxo")
+    return [
+        milhar(casa["total_reais"]),
+        milhar(casa["total_na_lista"]) if com_fluxo else "-",
+        milhar(casa["total_transferiveis"]),
+        _mm_ou_traco(casa["captacao_semana"]), _mm_ou_traco(casa["captacao_3m"]),
+    ]
+
+
 def _md_resumo_por_casa(op: dict) -> list[str]:
-    """Concorrente a concorrente: gaps, quantos captam e quanto, na semana e em 3 meses."""
+    """Concorrente a concorrente: gaps, quantos entram na lista e a captacao do que da para trazer."""
     casas = op.get("por_casa") or []
     if not casas:
         return []
     lines = [
-        f"| Concorrente | {_rotulo_dos_gaps(op)} | Captando | Semana | 3 meses |",
-        "|---|---:|---:|---:|---:|",
+        (f"| Concorrente | {_rotulo_dos_gaps(op)} | {_coluna_da_lista(op)} | Para trazer | "
+         "Semana | 3 meses |"),
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for casa in casas:
-        captando = milhar(casa["total_transferiveis"]) if op.get("com_fluxo") else "-"
-        lines.append(
-            f"| {casa['label']} | {milhar(casa['total_reais'])} | {captando} | "
-            f"{_mm_ou_traco(casa['captacao_semana'])} | {_mm_ou_traco(casa['captacao_3m'])} |"
-        )
+        lines.append(f"| {casa['label']} | " + " | ".join(_resumo_da_casa(op, casa)) + " |")
     return lines + [""]
 
 
@@ -693,7 +738,7 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
             celulas.append("-" if variacao is None else _inteiro(variacao))
         celulas += [
             _texto_de_rentabilidade(f), nome_da_tendencia(f.get("ritmo_semanal")) or "-",
-            f["esforco"],
+            _esforco_na_tabela(f),
         ]
         lines.append("| " + " | ".join(celulas) + " |")
     return lines
@@ -725,7 +770,7 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
         mostrados += len(linhas)
         primeiros = "o primeiro" if len(linhas) == 1 else f"os {len(linhas)} primeiros"
         lines += [
-            f"**{casa['label']}** - {primeiros}, por esforço de trazer e captação em 3 meses",
+            f"**{casa['label']}** - {primeiros}, {_ordem_da_lista(op)}",
             "",
             *_md_tabela_de_gaps(linhas, com_cotistas),
             "",
@@ -747,17 +792,11 @@ def _html_resumo_por_casa(op: dict) -> str:
     casas = op.get("por_casa") or []
     if not casas:
         return ""
-    linhas = [
-        [
-            _esc(casa["label"]), milhar(casa["total_reais"]),
-            milhar(casa["total_transferiveis"]) if op.get("com_fluxo") else "-",
-            _mm_ou_traco(casa["captacao_semana"]), _mm_ou_traco(casa["captacao_3m"]),
-        ]
-        for casa in casas
-    ]
+    linhas = [[_esc(casa["label"]), *_resumo_da_casa(op, casa)] for casa in casas]
     return _tabela(
-        ["Concorrente", _rotulo_dos_gaps(op), "Captando", "Semana", "3 meses"], linhas,
-        direita={1, 2, 3, 4}, sinal={3, 4},
+        ["Concorrente", _rotulo_dos_gaps(op), _coluna_da_lista(op), "Para trazer", "Semana",
+         "3 meses"],
+        linhas, direita={1, 2, 3, 4, 5}, sinal={4, 5},
     )
 
 
@@ -794,7 +833,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         semana = _semana(visao.report.retail_flow)
         parts.append(_legenda(_linha(
             f"**Os {_GAP_POR_CASA} primeiros de cada concorrente**",
-            "por esforço de trazer e captação em 3 meses",
+            _ordem_da_lista(op),
             f"semana {periodo_br(semana['de'], semana['ate'])}" if semana else "",
         )))
         cabecalho = ["Fundo", "Casas", "Semana", "3 meses"]
@@ -819,7 +858,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
                 ]
                 if com_cotistas:
                     linha.append(_celula_de_cotistas(f))
-                linha += [_celula_de_rentabilidade(f), _esc(f.get("esforco") or "-")]
+                linha += [_celula_de_rentabilidade(f), _esc(_esforco_na_tabela(f))]
                 tabela.append(linha)
         numericas = {2, 3, 4, 5} if com_cotistas else {2, 3, 4}
         parts.append(_tabela(
@@ -954,7 +993,40 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
+    lines += [
+        f"**Como ler o ritmo** - {_COMO_LER_O_RITMO}",
+        "",
+        "| Ritmo | O que quer dizer |",
+        "|---|---|",
+        *(f"| {nome} | {texto} |" for nome, texto in _legenda_do_ritmo()),
+        "",
+    ]
     return lines
+
+
+# A legenda do ritmo (pedido de 17/10/2026). O mesmo rotulo vale para a semana
+# (tabela de gaps e listas de captacao) e para o mes (mapa por casa): muda so a
+# janela, e a faixa e a da regra (`retail_flow.classificar_ritmo`).
+_COMO_LER_O_RITMO = (
+    "a captação líquida por dia útil de agora contra a de antes. Na tabela de gaps e "
+    "nas listas, a semana contra as 12 semanas anteriores; no mapa por casa, o último "
+    "mês contra os anteriores."
+)
+
+
+def _legenda_do_ritmo() -> list[tuple[str, str]]:
+    """(rotulo, o que quer dizer) de cada ritmo, na ordem de quem capta mais."""
+    faixa = f"{_TREND_BAND:.0%}"
+    textos = (
+        ("acelerando", f"já captava e passou a captar mais de {faixa} acima do ritmo de antes"),
+        ("virou_entrada", "perdia dinheiro antes e passou a captar"),
+        ("estavel", f"capta no ritmo de antes, com até {faixa} para mais ou para menos"),
+        ("desacelerando", f"ainda capta, mas mais de {faixa} abaixo do ritmo de antes"),
+        ("virou_saida", "captava antes e passou a perder dinheiro"),
+        ("saida_persistente", "perdia dinheiro antes e continua perdendo"),
+        ("sem_serie", "dado de menos para comparar"),
+    )
+    return [(_capitalizar(nome_da_tendencia(chave)), texto) for chave, texto in textos]
 
 
 def _figura_do_ritmo(bloco: dict, flow: dict) -> str:
@@ -1079,276 +1151,12 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
     parts.append(
         f'<p style="{_NOTA}">{_esc(" ".join(notas))} {_fonte_html(CVM_INFORME_DIARIO)}</p>'
     )
-    return "".join(parts)
-
-
-# --- radar CVM -----------------------------------------------------------------
-
-_SUFIXOS_DE_EMPRESA = re.compile(r"\s+(LTDA|S/?A|S\.A|DTVM|EIRELI)\b\.?", re.I)
-_SIGLAS = {"BTG", "WM", "XP", "DTVM", "CCTVM"}
-_MINUSCULAS = {"de", "da", "do", "das", "dos", "e", "em"}
-
-
-def _nome_da_gestora(nome: str) -> str:
-    """"BTG PACTUAL WM GESTÃO DE RECURSOS LTDA" -> "BTG Pactual WM Gestão de Recursos"."""
-    texto = _SUFIXOS_DE_EMPRESA.sub("", nome or "").strip(" .-")
-    palavras = []
-    for palavra in texto.split():
-        if palavra.upper() in _SIGLAS:
-            palavras.append(palavra.upper())
-        elif palavra.lower() in _MINUSCULAS and palavras:
-            palavras.append(palavra.lower())
-        else:
-            palavras.append(palavra.capitalize())
-    return " ".join(palavras)
-
-
-def _gestoras_do_radar(report: RunReport) -> list[str]:
-    """"BTG: BTG Pactual Gestão..., Empiricus Asset Management e mais 5" por grupo."""
-    snapshot = report.cvm_snapshot
-    if not snapshot:
-        return []
-    saida = []
-    for casa, fundos in sorted(snapshot.by_house().items()):
-        contagem_por_gestora: dict[str, int] = {}
-        for fundo in fundos:
-            if fundo.manager_name:
-                contagem_por_gestora[fundo.manager_name] = (
-                    contagem_por_gestora.get(fundo.manager_name, 0) + 1
-                )
-        nomes = [
-            _nome_da_gestora(n)
-            for n, _ in sorted(contagem_por_gestora.items(), key=lambda kv: (-kv[1], kv[0]))
-        ]
-        if not nomes:
-            continue
-        mostrados = ", ".join(nomes[:2])
-        resto = f" e mais {len(nomes) - 2}" if len(nomes) > 2 else ""
-        saida.append(f"{_casas_curtas([casa])}: {mostrados}{resto}")
-    return saida
-
-
-def _titulo_do_radar(report: RunReport) -> str:
-    casas = sorted({f.house for f in report.cvm_snapshot.funds}) if report.cvm_snapshot else []
-    grupos = _juntar([_casas_curtas([c]) for c in casas])
-    return f"Radar CVM — gestoras de {grupos}" if grupos else "Radar CVM — gestoras dos concorrentes"
-
-
-def _nota_do_radar(report: RunReport) -> str:
-    gestoras = _gestoras_do_radar(report)
-    return (
-        "Fundos registrados na CVM pelas gestoras dos grupos concorrentes, pelo gestor do "
-        "cadastro: é o produto que a gestora prepara, não a vitrine da casa. A XP e os "
-        "fundos cancelados ficam de fora."
-        + (f" Gestoras: {'; '.join(gestoras)}." if gestoras else "")
-    )
-
-
-def _md_cvm_section(diff: CvmDiff | None, report: RunReport) -> list[str]:
-    lines = [f"## {_titulo_do_radar(report)}", ""]
-
-    snapshot = report.cvm_snapshot
-    if not snapshot or snapshot.status == SnapshotStatus.UNAVAILABLE:
-        error = snapshot.error if snapshot else "extrato não coletado"
-        lines += [f"Extrato da CVM indisponível: {error}.", ""]
-        return lines
-
-    by_house = snapshot.by_house()
-    lines.append(_nota_do_radar(report))
-    lines.append("")
-    lines.append(
-        f"{contagem(len(snapshot.funds), 'fundo ativo', 'fundos ativos')} no cadastro, "
-        f"{_contagem(sum(1 for f in snapshot.funds if f.is_pre_operational))} em fase "
-        f"pré-operacional. Fonte: {_link(CVM_CADASTRO)}."
-    )
-    lines.append("")
-    lines.append("| Grupo | Ativos | Pré-operacionais |")
-    lines.append("|---|---:|---:|")
-    for house, funds in sorted(by_house.items()):
-        pre_op = sum(1 for f in funds if f.is_pre_operational)
-        lines.append(f"| {_platform_label(house)} | {_contagem(len(funds))} | {_contagem(pre_op)} |")
-    lines.append("")
-
-    if not diff:
-        return lines
-
-    if diff.is_first_run:
-        pre_op = diff.new_registrations
-        if pre_op:
-            lines += ["**Fundos registrados e ainda não lançados**", ""]
-            for fund in pre_op[:_MAX_LISTED]:
-                lines.append(
-                    f"- [{_platform_label(fund.house)}] {_nome_do_fundo(fund.name)} "
-                    f"({format_cnpj(fund.cnpj)}) - registrado em "
-                    f"{fund.registered_at or 'data não informada'}"
-                )
-            if len(pre_op) > _MAX_LISTED:
-                lines.append(f"- ... e mais {contagem(len(pre_op) - _MAX_LISTED, 'fundo', 'fundos')}")
-            lines.append("")
-        return lines
-
-    if diff.new_registrations:
-        lines += ["**Novos registros na CVM**", ""]
-        for fund in diff.new_registrations[:_MAX_LISTED]:
-            status = " (pré-operacional)" if fund.is_pre_operational else ""
-            lines.append(
-                f"- [{_platform_label(fund.house)}] {_nome_do_fundo(fund.name)} "
-                f"({format_cnpj(fund.cnpj)}) - gestor {fund.manager_name or '-'}{status}"
-            )
-        if len(diff.new_registrations) > _MAX_LISTED:
-            lines.append(f"- ... e mais {len(diff.new_registrations) - _MAX_LISTED}")
-        lines.append("")
-
-    launches = diff.launches
-    if launches:
-        lines += ["**Fundos que entraram em operação**", ""]
-        for change in launches[:_MAX_LISTED]:
-            lines.append(
-                f"- [{_platform_label(change.fund.house)}] {_nome_do_fundo(change.fund.name)} "
-                f"({format_cnpj(change.fund.cnpj)})"
-            )
-        lines.append("")
-
-    others = [c for c in diff.situation_changes if not c.is_launch]
-    if others:
-        lines += ["**Outras mudanças de situação**", ""]
-        for change in others[:_MAX_LISTED]:
-            lines.append(
-                f"- [{_platform_label(change.fund.house)}] {_nome_do_fundo(change.fund.name)}: "
-                f"{change.old_situation or '-'} -> {change.new_situation or '-'}"
-            )
-        lines.append("")
-
-    if diff.cancelled:
-        lines += ["**Saíram do cadastro**", ""]
-        for fund in diff.cancelled[:_MAX_LISTED]:
-            lines.append(f"- [{_platform_label(fund.house)}] {_nome_do_fundo(fund.name)}")
-        lines.append("")
-
-    return lines
-
-
-def _figura_do_radar(report: RunReport) -> str:
-    """Fundos registrados e ainda nao lancados, por grupo gestor."""
-    snapshot = report.cvm_snapshot
-    linhas = []
-    for house, funds in snapshot.by_house().items():
-        pre_operacionais = sum(1 for f in funds if f.is_pre_operational)
-        if pre_operacionais:
-            linhas.append(Linha(
-                _platform_label(house), pre_operacionais, milhar(pre_operacionais),
-                **_marca(house),
-            ))
-    if not linhas:
-        return ""
-    linhas.sort(key=lambda linha: (-linha.valor, not linha.destaque))
-    lider, base = _lider_e_base(linhas)
-    empate = _empatadas(linhas)
-    verbo = "têm" if len(empate) > 1 else "tem"
-    titulo = (
-        f"{_juntar([linha.rotulo for linha in empate])} {verbo} mais fundos "
-        f"pré-operacionais: {lider.texto}"
-    )
-    if len(linhas) > 1 and base is None and len(empate) == 1:
-        titulo += f"; {linhas[1].rotulo}, {linhas[1].texto}"
-    return figura(
-        titulo,
-        _linha("Registrados na CVM pelas gestoras do grupo e ainda não lançados",
-               f"cadastro de {data_br(snapshot.collected_at.date())}"),
-        barras(linhas),
-        _fonte_html(CVM_CADASTRO),
-    )
-
-
-def _html_cvm_section(report: RunReport, omitir: frozenset = frozenset()) -> str:
-    snapshot = report.cvm_snapshot
-    parts = [_secao(_esc(_titulo_do_radar(report)))]
-
-    if not snapshot or snapshot.status == SnapshotStatus.UNAVAILABLE:
-        error = snapshot.error if snapshot else "extrato não coletado"
-        parts.append(f'<p style="{_P}">Extrato da CVM indisponível: {_esc(error)}.</p>')
-        return "".join(parts)
-
-    figura_do_radar = "" if "radar" in omitir else _figura_do_radar(report)
-    parts.append(figura_do_radar or (
-        f'<p style="{_LEGENDA}">Fundos das gestoras dos grupos · '
-        f"cadastro de {data_br(snapshot.collected_at.date())} · "
-        f"Fonte: {_md_para_html(_link(CVM_CADASTRO))}.</p>"
-    ))
-
-    por_casa = sorted(snapshot.by_house().items())
-    linhas = [
-        [
-            _esc(_platform_label(house)), _contagem(len(funds)),
-            _contagem(sum(1 for f in funds if f.is_pre_operational)),
-        ]
-        for house, funds in por_casa
-    ]
-    if len(por_casa) > 1:
-        linhas.append([
-            "Total", _contagem(len(snapshot.funds)),
-            _contagem(sum(1 for f in snapshot.funds if f.is_pre_operational)),
-        ])
+    parts.append(_legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}"))
     parts.append(_tabela(
-        ["Grupo", "Ativos", "Pré-operacionais"], linhas, direita={1, 2},
-        total=len(por_casa) > 1,
+        ["Ritmo", "O que quer dizer"],
+        [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
+        compacta=True,
     ))
-    parts.append(f'<p style="{_NOTA}">{_esc(_nota_do_radar(report))}</p>')
-
-    diff = report.cvm_diff
-    if not diff:
-        return "".join(parts)
-
-    movimentos: list[tuple[str, object, str, str | None]] = []
-    sobra = 0
-
-    def juntar(fundos: list, rotulo, data) -> None:
-        nonlocal sobra
-        sobra += max(0, len(fundos) - _MAX_LISTED)
-        for item in fundos[:_MAX_LISTED]:
-            fundo = getattr(item, "fund", item)
-            movimentos.append((fundo.house, fundo, rotulo(item), data(item)))
-
-    if diff.is_first_run:
-        juntar(diff.new_registrations, lambda f: "Registrado, não lançado",
-               lambda f: f.registered_at)
-        legenda = "**Registrados e ainda não lançados**"
-    else:
-        juntar(
-            diff.new_registrations,
-            lambda f: "Novo registro" + (" · pré-operacional" if f.is_pre_operational else ""),
-            lambda f: f.registered_at,
-        )
-        juntar(diff.launches, lambda c: "Entrou em operação",
-               lambda c: c.fund.situation_started_at)
-        juntar(
-            [c for c in diff.situation_changes if not c.is_launch],
-            lambda c: f"{c.old_situation or '-'} → {c.new_situation or '-'}",
-            lambda c: c.fund.situation_started_at,
-        )
-        juntar(diff.cancelled, lambda f: "Saiu do cadastro", lambda f: None)
-        legenda = (
-            f"**Movimentos no cadastro** · desde {data_br(diff.prev_date)}"
-            if diff.prev_date else "**Movimentos no cadastro**"
-        )
-    if movimentos:
-        # A data vai sob o movimento, miuda: quatro colunas nao cabem no telefone.
-        parts.append(_legenda(legenda))
-        parts.append(_tabela(
-            ["Grupo", "Fundo", "Movimento"],
-            [
-                [
-                    _esc(_casas_curtas([casa])),
-                    _fundo_html(_nome_do_fundo(fundo.name), format_cnpj(fundo.cnpj)),
-                    _esc(movimento)
-                    + (f'<br><small style="{_MIUDO_CINZA}">{data_br(data)}</small>'
-                       if data else ""),
-                ]
-                for casa, fundo, movimento, data in movimentos
-            ],
-            larguras={0: 10, 2: 30},
-        ))
-        parts.append(_mais(sobra, "no dashboard e na planilha"))
     return "".join(parts)
 
 
@@ -2173,7 +1981,6 @@ def render_markdown(
 
     lines += _md_oportunidade(visao)
     lines += _md_ritmo(visao)
-    lines += _md_cvm_section(recortado.cvm_diff, recortado)
 
     lines += ["## Vitrines: entradas e saídas", ""]
     urls = _urls_das_vitrines(fontes_config, recortado)
@@ -2216,7 +2023,6 @@ def render_markdown(
 _ORCAMENTO_DO_EMAIL = 100_000
 _FIGURAS_POR_CORTE = (
     ("pl_abaixo", "PL abaixo da mediana"),
-    ("radar", "radar CVM"),
     ("custo", "custo"),
     ("rentabilidade", "rentabilidade"),
     ("ritmo", "ritmo dos fundos"),
@@ -2281,8 +2087,6 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
   {_html_oportunidade(visao, omitir)}
 
   {_html_ritmo(visao, omitir)}
-
-  {_html_cvm_section(recortado, omitir)}
 
   {_secao("Vitrines: entradas e saídas")}
   {vitrines}

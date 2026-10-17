@@ -4,11 +4,12 @@ O digest v2 (14/10/2026) mostra so XP, BTG e Itau (`Config.casas_do_digest`);
 o resto da execucao - dashboard, planilha e deck - continua com todas as casas.
 Este modulo monta, uma vez, o que o digest desenha:
 
-- o relatorio RECORTADO as casas do digest: as vitrines e os diffs delas; o
-  radar da CVM so com os concorrentes (o que as gestoras do grupo registraram:
-  a XP sai); a captacao com o mapa de ritmo das casas em foco e as listas de
-  maiores captacoes e resgates refeitas so com fundos delas; rentabilidade e
-  custo so com as linhas delas;
+- o relatorio RECORTADO as casas do digest: as vitrines e os diffs delas; a
+  captacao com o mapa de ritmo das casas em foco e as listas de maiores
+  captacoes e resgates refeitas so com fundos delas; rentabilidade e custo so
+  com as linhas delas. Sem o radar da CVM: saiu do digest em 17/10/2026, a
+  pedido da area, e segue no dashboard, na planilha e no deck - tirado aqui, o
+  assunto e as fontes do e-mail tambem deixam de cita-lo;
 - o bloco de gaps ranqueado e a oportunidade de grade (`report.oportunidade`)
   sobre esse recorte - os gaps sao medidos so contra as vitrines em foco;
 - a edicao: o primeiro digest de cada mes e o mensal, com rentabilidade e
@@ -25,7 +26,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 
 from shelf_monitor.config import PLATFORMS, Config
-from shelf_monitor.models import BLOCO_COTISTAS, CvmDiff, CvmSnapshot, RunReport
+from shelf_monitor.models import BLOCO_COTISTAS, RunReport
 from shelf_monitor.report.aggregate import bloco_de_gaps, ranquear_gaps
 from shelf_monitor.report.oportunidade import oportunidade_de_grade
 from shelf_monitor.report.performance import com_rentabilidade, rentabilidade_por_cnpj
@@ -104,7 +105,7 @@ def montar_visao(
     base_id = next(
         (c for c in casas if c in PLATFORMS and PLATFORMS[c].is_baseline), casas[0]
     )
-    recortado = recortar(report, casas, base_id)
+    recortado = recortar(report, casas)
     # A rentabilidade de cada fundo vai junto, como referencia, nos gaps e nas
     # listas de captacao (pedido de 16/10/2026): 12 meses e 3 meses, com a
     # mediana da categoria.
@@ -132,39 +133,21 @@ def montar_visao(
     )
 
 
-def recortar(report: RunReport, casas: tuple[str, ...], base_id: str) -> RunReport:
-    """O relatorio so com as casas do digest; o radar so com os concorrentes."""
+def recortar(report: RunReport, casas: tuple[str, ...]) -> RunReport:
+    """O relatorio so com as casas do digest, e sem o radar da CVM (17/10/2026)."""
     foco = set(casas)
-    concorrentes = foco - {base_id}
     com_cotistas = not report.suprime(BLOCO_COTISTAS)
     return replace(
         report,
         snapshots=[s for s in report.snapshots if s.platform in foco],
         shelf_diffs=[d for d in report.shelf_diffs if d.platform in foco],
-        cvm_snapshot=_recortar_cvm(report.cvm_snapshot, concorrentes),
-        cvm_diff=_recortar_cvm_diff(report.cvm_diff, concorrentes),
+        cvm_snapshot=None,
+        cvm_diff=None,
         retail_flow=_recortar_fluxo(report.retail_flow, foco, com_cotistas),
         performance=_recortar_casas(report.performance, foco),
         performance_12m=_recortar_casas(report.performance_12m, foco),
         custo=_recortar_casas(report.custo, foco),
         mandato=_recortar_casas(report.mandato, foco),
-    )
-
-
-def _recortar_cvm(snapshot: CvmSnapshot | None, casas: set[str]) -> CvmSnapshot | None:
-    if snapshot is None:
-        return None
-    return replace(snapshot, funds=[f for f in snapshot.funds if f.house in casas])
-
-
-def _recortar_cvm_diff(diff: CvmDiff | None, casas: set[str]) -> CvmDiff | None:
-    if diff is None:
-        return None
-    return replace(
-        diff,
-        new_registrations=[f for f in diff.new_registrations if f.house in casas],
-        situation_changes=[c for c in diff.situation_changes if c.fund.house in casas],
-        cancelled=[f for f in diff.cancelled if f.house in casas],
     )
 
 
