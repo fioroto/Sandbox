@@ -24,6 +24,7 @@ nao analise.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from shelf_monitor.classify import KEY_CATEGORIA
 from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM
@@ -59,21 +60,31 @@ def oferta_caixa(fund: FundOffer) -> bool:
     return e_caixa(fund.name, categoria)
 
 
-def sem_caixa(
-    vitrines: dict[str, list[FundOffer]]
+def sem_os(
+    vitrines: dict[str, list[FundOffer]], regra: Callable[[FundOffer], bool]
 ) -> tuple[dict[str, list[FundOffer]], int]:
-    """As vitrines sem os fundos caixa/simples, e quantos fundos distintos sairam."""
+    """As vitrines sem os fundos que a `regra` tira, e quantos fundos distintos sairam.
+
+    O mesmo corte serve ao caixa e a previdencia (`shelf_monitor.previdencia_fora`).
+    """
     fora: set[str] = set()
     limpas: dict[str, list[FundOffer]] = {}
     for platform_id, fundos in vitrines.items():
         mantidos = []
         for fundo in fundos:
-            if oferta_caixa(fundo):
+            if regra(fundo):
                 fora.add(fundo.cnpj or f"{platform_id}:{fundo.name}")
             else:
                 mantidos.append(fundo)
         limpas[platform_id] = mantidos
     return limpas, len(fora)
+
+
+def sem_caixa(
+    vitrines: dict[str, list[FundOffer]]
+) -> tuple[dict[str, list[FundOffer]], int]:
+    """As vitrines sem os fundos caixa/simples, e quantos fundos distintos sairam."""
+    return sem_os(vitrines, oferta_caixa)
 
 
 def nota_caixa(fora: int | None) -> str | None:

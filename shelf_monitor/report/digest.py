@@ -50,6 +50,7 @@ from shelf_monitor.models import (
     SnapshotStatus,
 )
 from shelf_monitor.normalize import format_cnpj
+from shelf_monitor.previdencia_fora import nota_previdencia
 from shelf_monitor.report.shared import (
     movimentos_de_vitrine,
     movimentos_do_run,
@@ -549,7 +550,7 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
         )
     if op.get("por_tipo"):
         notas.append(
-            "Por tipo de produto: os gaps reais com informe, PL de ao menos R$ 1 mi no "
+            "Por categoria: os gaps reais com informe, PL de ao menos R$ 1 mi no "
             "início e sem movimento estrutural, captando ou não, somados pela categoria "
             "ANBIMA; o ritmo é o da soma de cada categoria, e Na lista conta os da "
             "categoria que entram na lista. Aparece a categoria com fundo na lista ou com "
@@ -563,9 +564,7 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             if carteira.get("available") else
             "A lista completa dos gaps está na planilha, aba Gaps XP."
         )
-    caixa = nota_caixa(visao.gaps.get("caixa_fora"))
-    if caixa:
-        notas.append(f"Gaps: {caixa}.")
+    notas += [f"Gaps: {nota}." for nota in _notas_de_fora(visao.gaps)]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and op.get("linhas"):
         notas.append(prazo)
@@ -737,12 +736,13 @@ def _md_resumo_por_casa(op: dict) -> list[str]:
     return lines + [""]
 
 
-# A tabela por tipo de produto (pedidos de 17/10/2026): a categoria ANBIMA, a
+# A tabela por categoria (pedidos de 17/10/2026, abaixo das listas dos
+# concorrentes): a categoria ANBIMA, a
 # mesma da coluna Categoria das listas. Sao ~27 categorias entre os gaps (14/10);
 # o e-mail mostra a que tem fundo na lista ou mexe ao menos R$ 10 mi em 3 meses,
 # para entrar ou para sair, e conta as outras numa linha.
 _POR_TIPO = "os gaps reais somados pela categoria ANBIMA, com o ritmo da soma de cada uma"
-_CABECALHO_POR_TIPO = ["Tipo de produto", "Gaps", "Semana", "3 meses", "Ritmo na semana",
+_CABECALHO_POR_TIPO = ["Categoria", "Gaps", "Semana", "3 meses", "Ritmo na semana",
                        "Na lista"]
 _MIN_CATEGORIA_NO_DIGEST = 10_000_000.0
 
@@ -778,7 +778,7 @@ def _md_por_tipo(op: dict) -> list[str]:
     if not tipos:
         return []
     return [
-        f"**Por tipo de produto** - {_POR_TIPO}",
+        f"**Por categoria** - {_POR_TIPO}",
         "",
         "| " + " | ".join(_CABECALHO_POR_TIPO) + " |",
         "|---|---:|---:|---:|---|---:|",
@@ -794,7 +794,7 @@ def _html_por_tipo(op: dict) -> str:
         return ""
     linhas = [[_esc(t["tipo"]), *(_esc(c) for c in _celulas_do_tipo(t))] for t in tipos]
     resto = f'<p style="{_NOTA}">{_esc(_resto_das_categorias(fora))}</p>' if fora else ""
-    return _legenda(f"**Por tipo de produto** · {_POR_TIPO}") + _tabela(
+    return _legenda(f"**Por categoria** · {_POR_TIPO}") + _tabela(
         _CABECALHO_POR_TIPO, linhas, direita={1, 2, 3, 5}, sinal={2, 3}, compacta=True,
         larguras={0: 34},
     ) + resto
@@ -842,8 +842,11 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
         ] + [""]
     else:
         lines += [_SEM_CAPTACAO, ""]
+    # A legenda do ritmo logo depois dos numeros (17/10/2026); no texto puro nao
+    # ha como recolher.
+    if _com_ritmo(visao):
+        lines += _md_legenda_do_ritmo()
     lines += _md_resumo_por_casa(op)
-    lines += _md_por_tipo(op)
 
     com_cotistas = op.get("com_cotistas")
     mostrados = 0
@@ -861,6 +864,8 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     resto = len(op["linhas"]) - mostrados
     if resto > 0:
         lines += [f"Mais {milhar(resto)} na planilha.", ""]
+    # Por categoria, abaixo das listas dos concorrentes (17/10/2026).
+    lines += _md_por_tipo(op)
 
     for nota in _notas_da_oportunidade(visao) + _avisos_da_oportunidade(visao):
         lines.append(f"_{nota}_")
@@ -909,8 +914,11 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         parts.append(numeros_em_destaque(_numeros_da_oportunidade(op)))
     else:
         parts.append(f'<p style="{_P}">{_esc(_SEM_CAPTACAO)}</p>')
+    # A legenda do ritmo logo depois dos numeros, num bloco que abre no clique
+    # (17/10/2026).
+    if _com_ritmo(visao):
+        parts.append(_como_ler(_html_legenda_do_ritmo(), "Como ler o ritmo"))
     parts.append(_html_resumo_por_casa(op))
-    parts.append(_html_por_tipo(op))
 
     grupos = [(casa, linhas) for casa, linhas in _linhas_por_casa(op) if linhas]
     if grupos:
@@ -950,6 +958,8 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
             larguras={0: 28, 1: 8, 2: 15, 3: 13},
         ))
         parts.append(_mais(len(op["linhas"]) - mostrados, "na planilha"))
+    # Por categoria, abaixo das listas dos concorrentes (17/10/2026).
+    parts.append(_html_por_tipo(op))
 
     avisos = _avisos_da_oportunidade(visao)
     if avisos:
@@ -1074,23 +1084,22 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
             "fora das listas: é dinheiro trocando de veículo, não demanda._",
             "",
         ]
-    caixa = nota_caixa(flow.get("caixa_fora"))
-    if caixa:
-        lines += [f"_{caixa}._", ""]
+    for nota in _notas_de_fora(flow):
+        lines += [f"_{nota}._", ""]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
     return lines
 
 
-# A legenda do ritmo (pedido de 17/10/2026), no topo do digest para consulta
-# antes das secoes. O mesmo rotulo vale para a semana (tabelas de gaps e de
-# tipo de produto, listas de captacao) e para o mes (mapa por casa): muda so a
-# janela, e a faixa e a da regra (`retail_flow.classificar_ritmo`).
+# A legenda do ritmo (pedidos de 17/10/2026): logo depois dos numeros em
+# destaque, num bloco que abre no clique. O mesmo rotulo vale para a semana
+# (tabelas de gaps e por categoria, listas de captacao) e para o mes (mapa por
+# casa): muda so a janela, e a faixa e a da regra (`classificar_ritmo`).
 _COMO_LER_O_RITMO = (
     "a captação líquida por dia útil de agora contra a de antes. Nas tabelas de gaps "
-    "e de tipo de produto e nas listas, a semana contra as 12 semanas anteriores; no "
-    "mapa por casa, o último mês contra os anteriores."
+    "e por categoria e nas listas, a semana contra as 12 semanas anteriores; no mapa "
+    "por casa, o último mês contra os anteriores."
 )
 
 
@@ -1112,7 +1121,8 @@ def _md_legenda_do_ritmo() -> list[str]:
 
 
 def _html_legenda_do_ritmo() -> str:
-    return _legenda(f"**Como ler o ritmo** · {_COMO_LER_O_RITMO}") + _tabela(
+    """O corpo do bloco "Como ler o ritmo": o titulo e o do resumo do bloco."""
+    return _legenda(_capitalizar(_COMO_LER_O_RITMO)) + _tabela(
         ["Ritmo", "O que quer dizer"],
         [[_esc(nome), _esc(texto)] for nome, texto in _legenda_do_ritmo()],
         compacta=True,
@@ -1247,9 +1257,7 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             "estrutural (fluxo maior que o PL, ou fundo esvaziado) fora das listas: troca "
             "de veículo, não demanda."
         )
-    caixa = nota_caixa(flow.get("caixa_fora"))
-    if caixa:
-        notas.append(f"{caixa}.")
+    notas += [f"{nota}." for nota in _notas_de_fora(flow)]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
@@ -1634,9 +1642,8 @@ def _md_performance_section(report: RunReport) -> list[str]:
         lines.append("")
         lines += _md_custo_por_classe(custo)
 
-    caixa = _nota_caixa_do_mensal(principal, custo)
-    if caixa:
-        lines += [f"_{caixa}._", ""]
+    for nota in _notas_de_fora_do_mensal(principal, custo):
+        lines += [f"_{nota}._", ""]
     fora = _excluidos(blocos)
     for excluido in fora:
         lines.append(f"> Fora: {excluido['label']} - {excluido['reason']}")
@@ -1645,14 +1652,28 @@ def _md_performance_section(report: RunReport) -> list[str]:
     return lines
 
 
-def _nota_caixa_do_mensal(principal: dict, custo: dict | None) -> str | None:
-    """Os fundos caixa/simples fora da rentabilidade e do custo, numa frase.
+def _notas_de_fora(bloco: dict | None) -> list[str]:
+    """O que o bloco tirou da analise, uma frase por regra: os fundos
+    caixa/simples (16/10/2026) e os de previdencia (17/10/2026)."""
+    bloco = bloco or {}
+    notas = (
+        nota_caixa(bloco.get("caixa_fora")),
+        nota_previdencia(bloco.get("previdencia_fora")),
+    )
+    return [nota for nota in notas if nota]
+
+
+def _notas_de_fora_do_mensal(principal: dict, custo: dict | None) -> list[str]:
+    """O que saiu da rentabilidade e do custo, uma frase por regra.
 
     As duas janelas olham as mesmas vitrines; o custo, tambem. Vale o maior
-    numero, para a frase nao subcontar quando um bloco faltar.
+    numero de cada regra, para a frase nao subcontar quando um bloco faltar.
     """
-    custo_fora = (custo.get("caixa_fora") or 0) if custo and custo.get("available") else 0
-    return nota_caixa(max(principal.get("caixa_fora") or 0, custo_fora))
+    custo = custo if custo and custo.get("available") else {}
+    return _notas_de_fora({
+        chave: max(principal.get(chave) or 0, custo.get(chave) or 0)
+        for chave in ("caixa_fora", "previdencia_fora")
+    })
 
 
 def _indice_mediano(casa: dict) -> str:
@@ -1850,9 +1871,8 @@ def _html_performance_section(report: RunReport, omitir: frozenset = frozenset()
         ))
         partes.append(_html_custo_por_classe(custo))
 
-    caixa = _nota_caixa_do_mensal(principal, report.custo)
-    if caixa:
-        partes.append(f'<p style="{_NOTA}">{_esc(caixa)}.</p>')
+    for nota in _notas_de_fora_do_mensal(principal, report.custo):
+        partes.append(f'<p style="{_NOTA}">{_esc(nota)}.</p>')
     fora = _excluidos(blocos)
     if fora:
         partes.append(
@@ -2080,9 +2100,6 @@ def render_markdown(
     if alerta:
         lines += [f"**{alerta}**", ""]
 
-    # A legenda do ritmo antes das secoes, para consulta (17/10/2026).
-    if _com_ritmo(visao):
-        lines += _md_legenda_do_ritmo()
     lines += _md_oportunidade(visao)
     lines += _md_ritmo(visao)
 
@@ -2170,8 +2187,6 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
         f'<p style="{_CHAMADA}font-size:15px;"><strong>{_md_para_html(alerta)}</strong></p>'
         if alerta else ""
     )
-    # A legenda do ritmo antes das secoes, para consulta (17/10/2026).
-    legenda_do_ritmo = _html_legenda_do_ritmo() if _com_ritmo(visao) else ""
     nomes = dict(_FIGURAS_POR_CORTE)
 
     def montar(omitidas: tuple[str, ...]) -> str:
@@ -2189,7 +2204,6 @@ def _montador_do_html(report: RunReport, config: Config | None, edicao: str | No
   <h1 style="font-size:28px;line-height:32px;font-weight:800;letter-spacing:-0.02em;color:{TINTA};margin:0 0 8px;">{_esc(identidade.titulo_relatorio)}</h1>
   <p style="font-size:14px;line-height:20px;color:{TINTA_2};margin:0 0 18px;">{_esc(_linha_do_cabecalho(visao, generated))}</p>
   {lede}
-  {legenda_do_ritmo}
 
   {_html_oportunidade(visao, omitir)}
 

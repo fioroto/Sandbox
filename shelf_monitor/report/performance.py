@@ -68,6 +68,7 @@ from shelf_monitor.config import Config
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import normalize_cnpj
+from shelf_monitor.previdencia_fora import sem_previdencia
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
 from shelf_monitor.report.competitive import identifiable_vitrines, vitrine_snapshots
 from shelf_monitor.report.retail_flow import (
@@ -694,6 +695,7 @@ def _montar(
     mercado.
     """
     cruzaveis, caixa_fora = sem_caixa(cruzaveis)
+    cruzaveis, previdencia_fora = sem_previdencia(cruzaveis, config)
     if categorias is None:
         categorias = categorias_por_cnpj(config)
     medianas, amostras = medianas_de_referencia(consolidado, categorias)
@@ -777,6 +779,7 @@ def _montar(
             "amostra_minima": _MIN_AMOSTRA_CATEGORIA,
         },
         "caixa_fora": caixa_fora,
+        "previdencia_fora": previdencia_fora,
         "casas": [c.to_dict() for c in casas],
         "por_categoria": _por_categoria(casas),
         "onde_esta_a_gente": _onde_esta_a_gente(casas),

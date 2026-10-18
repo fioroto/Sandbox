@@ -747,9 +747,9 @@ class TestRadarSemCancelados(unittest.TestCase):
 
 
 class TestLegendaDoRitmo(unittest.TestCase):
-    """A legenda do ritmo no topo do digest, para consulta antes das secoes
-    (pedidos de 17/10/2026): o que cada rotulo quer dizer, com a faixa da regra e
-    as duas janelas."""
+    """A legenda do ritmo logo depois dos numeros em destaque, num bloco que abre
+    no clique (pedidos de 17/10/2026): o que cada rotulo quer dizer, com a faixa
+    da regra e as duas janelas."""
 
     def test_legenda_no_markdown_e_no_html(self):
         from shelf_monitor.report.digest import render_html, render_markdown
@@ -764,17 +764,24 @@ class TestLegendaDoRitmo(unittest.TestCase):
         for rotulo in ("Virou entrada", "Estável", "Desacelerando", "Virou saída",
                        "Saída persistente", "Sem série"):
             self.assertIn(f"| {rotulo} |", md)
-        # Logo depois do cabecalho, antes da primeira secao - e so uma vez.
-        self.assertIn("execução de 14/10/2026 08:00\n\n**Como ler o ritmo**", md)
-        self.assertLess(md.index("Como ler o ritmo"), md.index("## Oportunidade de grade"))
+        # Depois dos numeros em destaque e antes do resumo por concorrente - uma vez.
+        self.assertLess(md.index("captação dele em 3 meses"), md.index("**Como ler o ritmo**"))
+        self.assertLess(md.index("**Como ler o ritmo**"), md.index("| Concorrente |"))
         self.assertEqual(md.count("| Ritmo | O que quer dizer |"), 1)
         html = render_html(report, None, "semanal")
-        # No HTML ela fica a mostra, fora dos blocos que abrem no clique.
+        # No HTML ela fica num bloco que abre no clique, o primeiro da secao.
+        legenda = TestNotasNoClique._blocos(html)[0]
+        self.assertTrue(legenda.strip().startswith("Como ler o ritmo"))
+        self.assertIn("A captação líquida por dia útil de agora contra a de antes", legenda)
+        self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", legenda)
         a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
-        self.assertIn("Como ler o ritmo · a captação líquida por dia útil", a_mostra)
-        self.assertIn("Saída persistente perdia dinheiro antes e continua perdendo", a_mostra)
-        self.assertLess(a_mostra.index("Como ler o ritmo"),
-                        a_mostra.index("Oportunidade de grade e gaps"))
+        # "Saída persistente" segue a mostra como coluna do mapa por casa; a
+        # explicacao dela, so no bloco.
+        self.assertNotIn("perdia dinheiro antes e continua perdendo", a_mostra)
+        texto = _texto(html)
+        self.assertLess(texto.index("captação dele em 3 meses"), texto.index("Como ler o ritmo"))
+        # "Para trazer" e coluna do resumo por concorrente, que vem depois.
+        self.assertLess(texto.index("Como ler o ritmo"), texto.index("Para trazer"))
 
 
 class TestPorTipoDeProduto(unittest.TestCase):
@@ -807,9 +814,9 @@ class TestPorTipoDeProduto(unittest.TestCase):
         from shelf_monitor.report.digest import render_html, render_markdown
 
         md = render_markdown(self.report, None, "semanal")
-        self.assertIn("**Por tipo de produto** - os gaps reais somados pela categoria ANBIMA", md)
+        self.assertIn("**Por categoria** - os gaps reais somados pela categoria ANBIMA", md)
         self.assertIn(
-            "| Tipo de produto | Gaps | Semana | 3 meses | Ritmo na semana | Na lista |", md
+            "| Categoria | Gaps | Semana | 3 meses | Ritmo na semana | Na lista |", md
         )
         self.assertIn(
             "| Multimercados Livre | 35 | +375,0 MM | +1.563,0 MM | acelerando | 2 |", md
@@ -819,11 +826,12 @@ class TestPorTipoDeProduto(unittest.TestCase):
             "virou entrada | 1 |", md
         )
         self.assertNotIn("Mais 1 categoria", md)
-        # Entre o resumo por concorrente e as listas de cada um.
-        self.assertLess(md.index("**Por tipo de produto**"), md.index("**BTG Pactual** - os"))
-        self.assertIn("Por tipo de produto: os gaps reais com informe", md)
+        # Abaixo das listas dos concorrentes (17/10/2026), antes das notas.
+        self.assertLess(md.index("**Itaú** - "), md.index("**Por categoria**"))
+        self.assertLess(md.index("**Por categoria**"), md.index("_Gap: fundo na vitrine"))
+        self.assertIn("Por categoria: os gaps reais com informe", md)
         texto = _texto(render_html(self.report, None, "semanal"))
-        self.assertIn("Por tipo de produto · os gaps reais somados pela categoria ANBIMA", texto)
+        self.assertIn("Por categoria · os gaps reais somados pela categoria ANBIMA", texto)
         self.assertIn("Multimercados Livre 35 +375,0 MM +1.563,0 MM acelerando 2", texto)
 
     def test_categoria_que_mexe_pouco_e_sem_fundo_na_lista_sai_contada(self):
@@ -860,12 +868,13 @@ class TestNotasNoClique(unittest.TestCase):
 
         report = _relatorio()
         html = render_html(report, None, "semanal")
-        oportunidade, ritmo = self._blocos(html)
+        legenda, oportunidade, ritmo = self._blocos(html)
+        self.assertIn("Saída persistente", legenda)
         self.assertIn("Como ler: critérios e prazos", oportunidade)
         self.assertIn("Gap: fundo na vitrine do concorrente", oportunidade)
         self.assertIn("Na lista: os que captaram em 3 meses", oportunidade)
         self.assertIn("Semana: de 05/10/2026 a 09/10/2026", oportunidade)
-        # A legenda do ritmo foi para o topo, a mostra; no bloco ficam as notas.
+        # A legenda do ritmo tem o bloco dela, depois dos numeros; aqui, as notas.
         self.assertIn("Como ler: critérios e prazos", ritmo)
         self.assertNotIn("Saída persistente", ritmo)
         self.assertIn("Fluxo por fundo, no mercado inteiro", ritmo)

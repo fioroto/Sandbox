@@ -96,6 +96,7 @@ from shelf_monitor.distribuivel import DISTRIBUI
 from shelf_monitor.mercado_csv import categoria_da_linha
 from shelf_monitor.models import FundOffer, ShelfSnapshot
 from shelf_monitor.normalize import format_cnpj, normalize_cnpj, normalize_text, parse_number
+from shelf_monitor.previdencia_fora import sem_previdencia
 from shelf_monitor.report.aggregate import _platform_label, categoria_comparavel
 from shelf_monitor.report.competitive import (
     KEY_CATEGORIA_GROSSA,
@@ -797,6 +798,9 @@ def build_custo(
     cruzaveis, caixa_fora = sem_caixa(cruzaveis)
     if interna is not None and interna.usada:
         interna.caixa = len(interna.ofertas) - len(cruzaveis.get(interna.platform_id, ()))
+    # O fundo de previdencia sai do mesmo jeito (17/10/2026, ver
+    # shelf_monitor.previdencia_fora); o monitor de previdencia o mantem.
+    cruzaveis, previdencia_fora = sem_previdencia(cruzaveis, config)
 
     casas: list[CustoCasa] = []
     sem_amostra: list[dict] = []
@@ -849,6 +853,7 @@ def build_custo(
         },
         "motivos_fora": dict(sorted(motivos.items(), key=lambda kv: -kv[1])),
         "caixa_fora": caixa_fora,
+        "previdencia_fora": previdencia_fora,
         # De onde sai a prateleira da XP, e a frase que toda superficie escreve.
         "prateleira_da_base": interna.to_dict() if interna is not None else None,
         "nota_prateleira": interna.nota() if interna is not None else "",

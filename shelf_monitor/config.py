@@ -224,6 +224,10 @@ class Config:
     # (`shelf_monitor.reserva`). Pedido em 14/10/2026: o Itau em todas as
     # analises.
     vitrine_de_reserva: tuple[str, ...] = ("itau",)
+    # O fundo de previdencia que aparece numa vitrine de fundos sai da captacao,
+    # dos gaps, da rentabilidade e do custo (pedido de 17/10/2026, ver
+    # shelf_monitor.previdencia_fora). O monitor de previdencia o mantem.
+    tira_previdencia: bool = True
 
     def __init__(
         self,

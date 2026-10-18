@@ -42,6 +42,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
     SnapshotStatus,
 )
+from shelf_monitor.previdencia_fora import nota_previdencia, oferta_previdencia
 
 ASSET_CLASS_LABELS: dict[AssetClass, str] = {
     AssetClass.RENDA_FIXA: "Renda Fixa",
@@ -887,6 +888,9 @@ def notas_da_cobertura(gap_block: dict) -> list[str]:
     caixa = nota_caixa(gap_block.get("caixa_fora"))
     if caixa:
         notas.append(f"Gaps: {caixa}.")
+    previdencia = nota_previdencia(gap_block.get("previdencia_fora"))
+    if previdencia:
+        notas.append(f"Gaps: {previdencia}.")
     return notas
 
 
@@ -1030,7 +1034,17 @@ def build_gap_block(
         if f.cnpj and oferta_caixa(f)
     }
     caixa_fora = sum(1 for f in funds if f["cnpj"] in caixa)
-    funds = [f for f in funds if f["cnpj"] not in caixa]
+    # E o fundo de previdencia, que tem o monitor proprio (17/10/2026, ver
+    # shelf_monitor.previdencia_fora). O monitor de previdencia nao chega
+    # aqui: o gap por CNPJ e suprimido nele (BLOCO_CNPJ).
+    previdencia = {
+        f.cnpj
+        for f in baseline_listing + [o for s in competitor_snaps for o in _listing_funds(s)]
+        if f.cnpj and f.cnpj not in caixa and oferta_previdencia(f)
+    }
+    previdencia_fora = sum(1 for f in funds if f["cnpj"] in previdencia)
+    fora_da_analise = caixa | previdencia
+    funds = [f for f in funds if f["cnpj"] not in fora_da_analise]
 
     base_primaria = familias.preparar_base(base_cnpjs) if familias else None
     base_lista = (
@@ -1074,7 +1088,7 @@ def build_gap_block(
     reais = [f for f in acao if (f["veredito"] or {}).get("tipo") != OUTRA_LIQUIDEZ]
     categories = _gap_categories(
         baseline_listing, competitor_snaps, reais,
-        cobertos=Counter(f["category"] for f in cobertos), fora=caixa,
+        cobertos=Counter(f["category"] for f in cobertos), fora=fora_da_analise,
     )
     funil = _funil([f["veredito"] for f in funds])
 
@@ -1095,7 +1109,7 @@ def build_gap_block(
     if primaria == "vitrine" and lista_ok:
         universo = sorted({
             f.cnpj for s in competitor_snaps for f in _listing_funds(s)
-            if f.cnpj and f.cnpj not in caixa
+            if f.cnpj and f.cnpj not in fora_da_analise
         })
         lentes["distribuivel"]["funil"] = _funil([
             _veredito_contra(c, lista_cnpjs, familias, base_lista)
@@ -1121,6 +1135,8 @@ def build_gap_block(
         "gaps_aparentes": len(funds),
         # Gaps aparentes tirados por serem fundo caixa/simples.
         "caixa_fora": caixa_fora,
+        # E os de previdencia (ver shelf_monitor.previdencia_fora).
+        "previdencia_fora": previdencia_fora,
         "gaps_liquidez": len(acao) - len(reais),
         "total_cobertos": len(cobertos),
         "multi_house_gaps": sum(1 for f in reais if f["houses_count"] >= 2),

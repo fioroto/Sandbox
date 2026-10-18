@@ -96,7 +96,7 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a captacao dos gaps por tipo de produto (a categoria ANBIMA), na semana e em 3 meses, com o ritmo de cada uma |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; a legenda do ritmo, que abre no clique, logo depois dos numeros; e, abaixo das listas, a captacao dos gaps por categoria ANBIMA, na semana e em 3 meses, com o ritmo de cada uma |
 | Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
@@ -120,22 +120,23 @@ Em 17/10/2026 saiu o radar CVM - o que as gestoras dos grupos BTG e Itau
 registraram -, e o assunto deixou de contar registro na CVM. O radar segue no
 dashboard, na planilha e no deck, sem fundo cancelado (14/10/2026: so os ativos
 contam e a passagem para cancelado nao vira movimento; o extrato gravado segue
-inteiro). No mesmo dia entrou a legenda do ritmo, no topo do digest, para consulta
-antes das secoes: uma tabela com acelerando, virou entrada, estavel, desacelerando,
-virou saida, saida persistente e sem serie, com a faixa de 25% da regra e as duas
-janelas - a semana contra as 12 anteriores nas tabelas de gaps e de tipo de produto
-e nas listas, o ultimo mes contra os anteriores no mapa por casa.
+inteiro). No mesmo dia entrou a legenda do ritmo, logo depois dos numeros em
+destaque, num bloco que abre no clique (no texto puro, a vista): uma tabela com
+acelerando, virou entrada, estavel, desacelerando, virou saida, saida persistente e
+sem serie, com a faixa de 25% da regra e as duas janelas - a semana contra as 12
+anteriores nas tabelas de gaps e por categoria e nas listas, o ultimo mes contra os
+anteriores no mapa por casa.
 
-**Por tipo de produto** (17/10/2026). Na secao de oportunidade, entre o resumo por
-concorrente e as listas, os gaps reais de BTG e Itau somados pela categoria ANBIMA -
+**Por categoria** (17/10/2026). Na secao de oportunidade, abaixo das listas dos
+concorrentes, os gaps reais de BTG e Itau somados pela categoria ANBIMA -
 a mesma da coluna Categoria das listas: captacao na semana e em 3 meses, o ritmo da
 soma de cada categoria e quantos dela entram na lista. Entram os gaps com informe,
 PL de ao menos R$ 1 mi no inicio e sem movimento estrutural, captando ou nao - a
 soma e o saldo da categoria (`oportunidade._por_tipo`). O e-mail mostra a categoria
 com fundo na lista ou que mexe ao menos R$ 10 mi em 3 meses, para entrar ou para
 sair, e conta as outras numa linha. A primeira versao, do mesmo dia, somava pela
-classe (nivel 1) e saiu a pedido: grossa demais. No digest de 14/10/2026, 27
-categorias, 21 na tabela: Renda Fixa Duracao Alta Credito Livre +R$ 1,8 bi em 3
+classe (nivel 1) e saiu a pedido: grossa demais. No digest de 14/10/2026, sem a
+previdencia, 26 categorias, 20 na tabela: Renda Fixa Duracao Alta Credito Livre +R$ 1,8 bi em 3
 meses, Duracao Livre Grau de Investimento +R$ 1,5 bi; na ponta de saida, Duracao
 Livre Credito Livre -R$ 1,3 bi e Acoes Livre -R$ 365 mi.
 
@@ -992,6 +993,21 @@ digest, contra BTG e Itau); a grade foi de 54 para 53 fundos.
 Continuam com todos os fundos: o tamanho das vitrines, as entradas e saidas, o radar
 CVM, os blocos descritivos (competitivo, mandato, rentabilidade por fundo) e a
 mediana de cada categoria na rentabilidade e no custo, que segue sendo a do mercado.
+
+### Fundos de previdencia fora das analises
+
+A previdencia tem o monitor proprio (`shelf_monitor.previdencia`). Desde
+17/10/2026, o fundo de previdencia que aparece numa vitrine de fundos sai da
+captacao, dos gaps (e com eles da grade e da tabela por categoria), da
+rentabilidade e do custo do monitor de fundos, como o caixa
+(`shelf_monitor/previdencia_fora.py`). A regra: o rotulo ANBIMA comeca por
+"Previdencia", ou o nome traz a marca - Prev, Previdencia, FIE, VGBL, PGBL. Cada
+bloco conta o que tirou (`previdencia_fora`), e o digest diz isso nas notas.
+Medido nas vitrines de 14/10/2026: 5 fundos, todos pelo rotulo (3 na XP e 3 no
+BTG, um nas duas - debentures incentivadas que o cadastro classifica como
+previdencia), com +R$ 30 mi em 3 meses; 2 deles eram gap. O monitor de
+previdencia, que analisa justamente esses fundos e passa pelos mesmos blocos,
+desliga a regra (`ConfigPrevidencia.tira_previdencia`).
 
 ## Qualidade da prateleira: rentabilidade, custo e mandato
 

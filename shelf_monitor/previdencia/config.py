@@ -154,6 +154,8 @@ class ConfigPrevidencia(Config):
         (BLOCO_CNPJ, MOTIVO_CNPJ),
         (BLOCO_PRODUTO_PROPRIO, MOTIVO_PRODUTO_PROPRIO),
     )
+    # Aqui o fundo de previdencia e o objeto da analise (ver Config).
+    tira_previdencia = False
 
     @property
     def previdencia_dir(self) -> Path:

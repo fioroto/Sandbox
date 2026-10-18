@@ -44,6 +44,7 @@ from shelf_monitor.models import (
     ShelfSnapshot,
 )
 from shelf_monitor.normalize import normalize_cnpj
+from shelf_monitor.previdencia_fora import sem_previdencia
 from shelf_monitor.report.aggregate import (
     _offer_manager,
     _platform_label,
@@ -665,6 +666,9 @@ def build_retail_flow(
     # Fundo caixa/simples fica fora (pedido de 16/10/2026): produto padrao de
     # caixa, que enchia o topo das captacoes (ver shelf_monitor.caixa).
     cruzaveis, caixa_fora = sem_caixa(cruzaveis)
+    # E o de previdencia, que tem o monitor proprio (17/10/2026, ver
+    # shelf_monitor.previdencia_fora); o monitor de previdencia o mantem.
+    cruzaveis, previdencia_fora = sem_previdencia(cruzaveis, config)
 
     catalogo: dict[str, FundOffer] = {}
     presenca: dict[str, list[str]] = {}
@@ -888,6 +892,8 @@ def build_retail_flow(
         "fundos_analisados": len(fluxos),
         # Fundos caixa/simples tirados da analise (ver shelf_monitor.caixa).
         "caixa_fora": caixa_fora,
+        # Fundos de previdencia tirados da analise (ver shelf_monitor.previdencia_fora).
+        "previdencia_fora": previdencia_fora,
         "baseline_id": baseline_id,
         "casas": [c.to_dict() for c in casas],
         # A lista INTEIRA, para a planilha. Os rankings abaixo continuam porque
