@@ -83,6 +83,13 @@ filtrar "so no site" ou cruzar plataforma x fonte numa tabela dinamica.
 A aba **Fontes** e a que responde se vale manter o scraping de uma casa: se o site nao
 traz nada que o Open Finance ja nao tenha, ele so custa tempo de coleta.
 
+**Captacao no mercado** (19/10/2026). As colunas "no mercado" (captacao, cotistas e
+PL) sao do fundo inteiro: aplicacoes menos resgates de todos os cotistas, por todos
+os distribuidores, somadas do informe diario da CVM - nao a captacao que a casa fez
+com o fundo, porque a CVM nao publica fluxo por distribuidor. A definicao fica na aba
+Metodologia e no comentario do cabecalho "Captacao no mercado" das abas Gaps XP e
+Onde esta a gente (`spreadsheet.DEFINICAO_CAPTACAO_NO_MERCADO`).
+
 ### Digest por e-mail
 
 Por padrao o monitor so grava os arquivos - o `digest-<data>.html` tem CSS inline
@@ -96,8 +103,8 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; a legenda do ritmo, que abre no clique, logo depois dos numeros; e, abaixo das listas, a captacao dos gaps por categoria ANBIMA, na semana e em 3 meses, com o ritmo de cada uma |
-| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
+| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela; abaixo delas, a captacao de todos os fundos das vitrines por categoria ANBIMA - a visao de mercado -, na semana e em 3 meses, com o ritmo de cada uma |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
 
@@ -127,18 +134,21 @@ sem serie, com a faixa de 25% da regra e as duas janelas - a semana contra as 12
 anteriores nas tabelas de gaps e por categoria e nas listas, o ultimo mes contra os
 anteriores no mapa por casa.
 
-**Por categoria** (17/10/2026). Na secao de oportunidade, abaixo das listas dos
-concorrentes, os gaps reais de BTG e Itau somados pela categoria ANBIMA -
-a mesma da coluna Categoria das listas: captacao na semana e em 3 meses, o ritmo da
-soma de cada categoria e quantos dela entram na lista. Entram os gaps com informe,
-PL de ao menos R$ 1 mi no inicio e sem movimento estrutural, captando ou nao - a
-soma e o saldo da categoria (`oportunidade._por_tipo`). O e-mail mostra a categoria
-com fundo na lista ou que mexe ao menos R$ 10 mi em 3 meses, para entrar ou para
-sair, e conta as outras numa linha. A primeira versao, do mesmo dia, somava pela
-classe (nivel 1) e saiu a pedido: grossa demais. No digest de 14/10/2026, sem a
-previdencia, 26 categorias, 20 na tabela: Renda Fixa Duracao Alta Credito Livre +R$ 1,8 bi em 3
-meses, Duracao Livre Grau de Investimento +R$ 1,5 bi; na ponta de saida, Duracao
-Livre Credito Livre -R$ 1,3 bi e Acoes Livre -R$ 365 mi.
+**Por categoria** (17 e 19/10/2026). Na secao Ritmo de captacao, abaixo das maiores
+captacoes e dos maiores resgates, a visao de mercado das vitrines: todos os fundos de
+XP, BTG e Itau, cada um uma vez, e nao so os gaps, com a captacao de cada fundo no
+mercado inteiro (o informe da CVM e por fundo, nao por distribuidor), somados pela
+categoria ANBIMA - a mesma da coluna Categoria das listas: captacao na semana e em 3
+meses e o ritmo da soma de cada categoria (`report/por_categoria.py`). Entram os
+fundos com informe, PL de ao menos R$ 1 mi no inicio e sem movimento estrutural; o
+caixa e a previdencia ja sairam da captacao. O e-mail mostra a categoria que mexe ao
+menos R$ 50 mi em 3 meses, para entrar ou para sair, e conta as outras numa linha.
+A tabela nasceu no dia 17 somando so os gaps (primeiro pela classe, depois pela
+categoria), na secao de oportunidade; no dia 19 virou a visao de mercado, na secao
+de captacao. No relatorio de 14/10/2026: 1.113 fundos em 30 categorias, 19 na
+tabela; entrou dinheiro em Renda Fixa Duracao Alta Credito Livre (+R$ 1,8 bi em 3
+meses) e saiu de Renda Fixa Duracao Livre Credito Livre (-R$ 2,8 bi), Multimercados
+Macro (-R$ 1,7 bi) e Acoes Livre (-R$ 1,3 bi).
 
 As notas de metodologia de cada secao - o criterio do gap real e da lista, onde
 esta o resto na planilha, os fundos caixa, as janelas de rentabilidade e de

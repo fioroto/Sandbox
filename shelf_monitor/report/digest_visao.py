@@ -22,13 +22,14 @@ numero que dependia - "so nesta vitrine" - saiu junto com a captacao por casa.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import BLOCO_COTISTAS, RunReport
 from shelf_monitor.report.aggregate import bloco_de_gaps, ranquear_gaps
 from shelf_monitor.report.oportunidade import oportunidade_de_grade
+from shelf_monitor.report.por_categoria import captacao_por_categoria
 from shelf_monitor.report.performance import com_rentabilidade, rentabilidade_por_cnpj
 from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
 
@@ -76,6 +77,9 @@ class VisaoDoDigest:
     # A lista da casa (`distribuivel.BaseDistribuivel`): o servico de cada
     # fundo que a XP tem, Distribuicao ou FaaS.
     distribuivel: object | None = None
+    # A captacao das vitrines em foco por categoria ANBIMA, a visao de mercado
+    # da secao de captacao (`report/por_categoria.py`, 19/10/2026).
+    por_categoria: list[dict] = field(default_factory=list)
 
     @property
     def concorrentes(self) -> tuple[str, ...]:
@@ -130,6 +134,9 @@ def montar_visao(
         gaps=gaps,
         oportunidade=oportunidade,
         distribuivel=report.distribuivel,
+        por_categoria=captacao_por_categoria(
+            recortado.snapshots, recortado.retail_flow, set(casas)
+        ),
     )
 
 

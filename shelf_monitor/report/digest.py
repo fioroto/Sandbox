@@ -10,11 +10,13 @@ informacao. So XP, BTG e Itau (`Config.casas_do_digest`, recorte em
 grade e os gaps reais. Na ordem:
 
 1. **Oportunidade de grade e gaps** (`report.oportunidade`): os numeros em
-   destaque, o resumo por concorrente e os gaps reais que captam e aceleram na
-   semana, pela captacao em 3 meses, com o produto proprio do concorrente
-   marcado (16/10/2026), a captacao da semana, o ritmo e o esforco de trazer;
-2. **Ritmo de captacao**: o mapa de ritmo por casa e as maiores captacoes e
-   resgates, agora com a semana, e a legenda do ritmo (17/10/2026);
+   destaque, a legenda do ritmo num bloco que abre no clique (17/10/2026), o
+   resumo por concorrente e os gaps reais que captam e aceleram na semana, pela
+   captacao em 3 meses, com o produto proprio do concorrente marcado
+   (16/10/2026), a captacao da semana, o ritmo e o esforco de trazer;
+2. **Ritmo de captacao**: o mapa de ritmo por casa, as maiores captacoes e
+   resgates, com a semana, e abaixo deles a captacao das vitrines por
+   categoria ANBIMA, a visao de mercado (19/10/2026);
 3. **Vitrines**: so o que entrou e o que saiu;
 4. **Rentabilidade e custo**, so na edicao mensal (o primeiro digest do mes).
 
@@ -548,15 +550,6 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             + " O produto próprio do concorrente entra marcado e fica fora dos números de "
             "cima."
         )
-    if op.get("por_tipo"):
-        notas.append(
-            "Por categoria: os gaps reais com informe, PL de ao menos R$ 1 mi no "
-            "início e sem movimento estrutural, captando ou não, somados pela categoria "
-            "ANBIMA; o ritmo é o da soma de cada categoria, e Na lista conta os da "
-            "categoria que entram na lista. Aparece a categoria com fundo na lista ou com "
-            f"ao menos {_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} de captação ou resgate em 3 "
-            "meses."
-        )
     if op.get("total_reais"):
         notas.append(
             "Na planilha: os gaps reais na aba Gaps XP e os cobertos, com o fundo da XP "
@@ -736,67 +729,91 @@ def _md_resumo_por_casa(op: dict) -> list[str]:
     return lines + [""]
 
 
-# A tabela por categoria (pedidos de 17/10/2026, abaixo das listas dos
-# concorrentes): a categoria ANBIMA, a
-# mesma da coluna Categoria das listas. Sao ~27 categorias entre os gaps (14/10);
-# o e-mail mostra a que tem fundo na lista ou mexe ao menos R$ 10 mi em 3 meses,
-# para entrar ou para sair, e conta as outras numa linha.
-_POR_TIPO = "os gaps reais somados pela categoria ANBIMA, com o ritmo da soma de cada uma"
-_CABECALHO_POR_TIPO = ["Categoria", "Gaps", "Semana", "3 meses", "Ritmo na semana",
-                       "Na lista"]
-_MIN_CATEGORIA_NO_DIGEST = 10_000_000.0
+# A tabela por categoria (pedidos de 17 e 19/10/2026), no Ritmo de captacao,
+# abaixo dos maiores resgates: a visao de mercado das vitrines em foco - todos os
+# fundos, cada um uma vez, com a captacao no mercado inteiro -, pela categoria
+# ANBIMA (`report/por_categoria.py`). Sao ~30 categorias (14/10/2026); o e-mail
+# mostra a que mexe ao menos R$ 50 mi em 3 meses, para entrar ou para sair, e
+# conta as outras numa linha.
+_POR_CATEGORIA = (
+    "todos os fundos das vitrines, cada um uma vez, com a captação no mercado inteiro, "
+    "pela categoria ANBIMA"
+)
+_CABECALHO_POR_CATEGORIA = ["Categoria", "Fundos", "Semana", "3 meses", "Ritmo na semana"]
+_MIN_CATEGORIA_NO_DIGEST = 50_000_000.0
 
 
-def _tipos_no_digest(op: dict) -> tuple[list[dict], int]:
+def _nota_por_categoria(visao: VisaoDoDigest) -> str | None:
+    """Como a tabela por categoria e montada: a nota dela, na secao de captacao."""
+    if not visao.por_categoria:
+        return None
+    return (
+        f"Por categoria: os fundos das vitrines de {_juntar(_rotulos_do_foco(visao))}, "
+        "cada um uma vez, com informe, PL de ao menos R$ 1 mi no início e sem movimento "
+        "estrutural, somados pela categoria ANBIMA. A captação é a do fundo no mercado "
+        "inteiro (informe da CVM), não a que cada casa fez; o ritmo é o da soma de cada "
+        "categoria. Aparece a categoria com ao menos "
+        f"{_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} de captação ou resgate em 3 meses."
+    )
+
+
+def _rotulos_do_foco(visao: VisaoDoDigest) -> list[str]:
+    return [_platform_label(pid) for pid in visao.casas]
+
+
+def _categorias_no_digest(visao: VisaoDoDigest) -> tuple[list[dict], int]:
     """As categorias da tabela, e quantas ficaram de fora por mexer pouco."""
-    tipos = op.get("por_tipo") or []
-    mostrados = [
-        t for t in tipos
-        if t["na_lista"] or abs(t["captacao_3m"]) >= _MIN_CATEGORIA_NO_DIGEST
-    ]
-    return mostrados, len(tipos) - len(mostrados)
+    todas = visao.por_categoria or []
+    mostradas = [c for c in todas if abs(c["captacao_3m"]) >= _MIN_CATEGORIA_NO_DIGEST]
+    return mostradas, len(todas) - len(mostradas)
 
 
 def _resto_das_categorias(fora: int) -> str:
     return (
         f"Mais {contagem(fora, 'categoria', 'categorias')}, cada uma com menos de "
-        f"{_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} em 3 meses e nenhum fundo na lista."
+        f"{_mm(_MIN_CATEGORIA_NO_DIGEST).lstrip('+')} em 3 meses."
     )
 
 
-def _celulas_do_tipo(tipo: dict) -> list[str]:
+def _celulas_da_categoria(categoria: dict) -> list[str]:
     return [
-        milhar(tipo["fundos"]), _mm_ou_traco(tipo["captacao_semana"]),
-        _mm_ou_traco(tipo["captacao_3m"]), nome_da_tendencia(tipo["ritmo_semanal"]) or "-",
-        milhar(tipo["na_lista"]),
+        milhar(categoria["fundos"]), _mm_ou_traco(categoria["captacao_semana"]),
+        _mm_ou_traco(categoria["captacao_3m"]),
+        nome_da_tendencia(categoria["ritmo_semanal"]) or "-",
     ]
 
 
-def _md_por_tipo(op: dict) -> list[str]:
-    """A captacao dos gaps por tipo de produto: semana, 3 meses e o ritmo da categoria."""
-    tipos, fora = _tipos_no_digest(op)
-    if not tipos:
+def _md_por_categoria(visao: VisaoDoDigest) -> list[str]:
+    """A captacao das vitrines por categoria: semana, 3 meses e o ritmo da soma."""
+    categorias, fora = _categorias_no_digest(visao)
+    if not categorias:
         return []
     return [
-        f"**Por categoria** - {_POR_TIPO}",
+        f"**Por categoria** - {_POR_CATEGORIA}",
         "",
-        "| " + " | ".join(_CABECALHO_POR_TIPO) + " |",
-        "|---|---:|---:|---:|---|---:|",
-        *(f"| {t['tipo']} | " + " | ".join(_celulas_do_tipo(t)) + " |" for t in tipos),
+        "| " + " | ".join(_CABECALHO_POR_CATEGORIA) + " |",
+        "|---|---:|---:|---:|---|",
+        *(
+            f"| {c['categoria']} | " + " | ".join(_celulas_da_categoria(c)) + " |"
+            for c in categorias
+        ),
         "",
         *([_resto_das_categorias(fora), ""] if fora else []),
     ]
 
 
-def _html_por_tipo(op: dict) -> str:
-    tipos, fora = _tipos_no_digest(op)
-    if not tipos:
+def _html_por_categoria(visao: VisaoDoDigest) -> str:
+    categorias, fora = _categorias_no_digest(visao)
+    if not categorias:
         return ""
-    linhas = [[_esc(t["tipo"]), *(_esc(c) for c in _celulas_do_tipo(t))] for t in tipos]
+    linhas = [
+        [_esc(c["categoria"]), *(_esc(celula) for celula in _celulas_da_categoria(c))]
+        for c in categorias
+    ]
     resto = f'<p style="{_NOTA}">{_esc(_resto_das_categorias(fora))}</p>' if fora else ""
-    return _legenda(f"**Por categoria** · {_POR_TIPO}") + _tabela(
-        _CABECALHO_POR_TIPO, linhas, direita={1, 2, 3, 5}, sinal={2, 3}, compacta=True,
-        larguras={0: 34},
+    return _legenda(f"**Por categoria** · {_POR_CATEGORIA}") + _tabela(
+        _CABECALHO_POR_CATEGORIA, linhas, direita={1, 2, 3}, sinal={2, 3}, compacta=True,
+        larguras={0: 40},
     ) + resto
 
 
@@ -864,8 +881,6 @@ def _md_oportunidade(visao: VisaoDoDigest) -> list[str]:
     resto = len(op["linhas"]) - mostrados
     if resto > 0:
         lines += [f"Mais {milhar(resto)} na planilha.", ""]
-    # Por categoria, abaixo das listas dos concorrentes (17/10/2026).
-    lines += _md_por_tipo(op)
 
     for nota in _notas_da_oportunidade(visao) + _avisos_da_oportunidade(visao):
         lines.append(f"_{nota}_")
@@ -958,8 +973,6 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
             larguras={0: 28, 1: 8, 2: 15, 3: 13},
         ))
         parts.append(_mais(len(op["linhas"]) - mostrados, "na planilha"))
-    # Por categoria, abaixo das listas dos concorrentes (17/10/2026).
-    parts.append(_html_por_tipo(op))
 
     avisos = _avisos_da_oportunidade(visao)
     if avisos:
@@ -1005,7 +1018,11 @@ def _bloco_do_ritmo(flow: dict) -> dict | None:
             por_estado.get("virou_saida", 0) / total,
             por_estado.get("saida_persistente", 0) / total,
         ]
-        rotulo = casa["label"] + (" (lista)" if casa["platform_id"] == pela_lista else "")
+        # O rotulo de hoje, e nao o gravado no bloco: um bloco calculado antes de
+        # 15/10/2026 ainda trazia "Itaú (íon)" (pedido de 19/10/2026).
+        rotulo = _platform_label(casa["platform_id"]) + (
+            " (lista)" if casa["platform_id"] == pela_lista else ""
+        )
         linhas.append([rotulo, str(total), *(f"{n:.0%}" for n in numeros)])
         parcelas.append(numeros)
         casas.append(casa["platform_id"])
@@ -1089,6 +1106,8 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
             lines += [f"**{titulo}**", ""]
             lines += [f"- {_item_de_fundo(f, com_cotistas, visao)}" for f in fundos]
             lines.append("")
+    # Por categoria, abaixo das maiores captacoes e resgates (19/10/2026).
+    lines += _md_por_categoria(visao)
     if flow.get("total_estruturais"):
         lines += [
             f"_{contagem(flow['total_estruturais'], 'fundo', 'fundos')} com movimento "
@@ -1101,6 +1120,9 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
     if ritmo_da_base:
         lines += [f"_{ritmo_da_base}._", ""]
+    categoria = _nota_por_categoria(visao)
+    if categoria:
+        lines += [f"_{categoria}_", ""]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
@@ -1267,6 +1289,8 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             f"{_esc(destaque)}</strong>{' · ' + _esc(resto) if resto else ''}</p>"
         )
         parts.append(_tabela_de_fundos_da_captacao(fundos, com_cotistas, visao))
+    # Por categoria, abaixo das maiores captacoes e resgates (19/10/2026).
+    parts.append(_html_por_categoria(visao))
     notas = [
         f"Fluxo por fundo, no mercado inteiro, não por distribuidor. "
         f"{_capitalizar('; '.join(_prazos_da_captacao(flow)))}."
@@ -1281,11 +1305,14 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
     ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
     if ritmo_da_base:
         notas.append(f"{ritmo_da_base}.")
+    categoria = _nota_por_categoria(visao)
+    if categoria:
+        notas.append(categoria)
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
     # As notas ficam no bloco que abre no clique (17/10/2026); a legenda do
-    # ritmo foi para o topo do digest.
+    # ritmo fica na oportunidade, depois dos numeros em destaque.
     paragrafos = [_esc(n) for n in notas]
     paragrafos[0] += f" {_fonte_html(CVM_INFORME_DIARIO)}"
     parts.append(_como_ler("".join(f'<p style="{_NOTA}">{p}</p>' for p in paragrafos)))

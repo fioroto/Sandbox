@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -148,6 +149,23 @@ _COL_QUOTATION = 13
 _COL_PAYMENT = 14
 _COL_GRACE = 15
 _COL_EXCLUSIVE = len(_COLUMNS) + 1
+
+
+# O que "no mercado" quer dizer nas colunas de captacao (pedido de 19/10/2026):
+# a mesma frase na aba Metodologia e no comentario de cada cabecalho.
+DEFINICAO_CAPTACAO_NO_MERCADO = (
+    "Captação líquida do FUNDO inteiro no período: aplicações menos resgates de "
+    "todos os cotistas, por todos os distribuidores e plataformas, somadas do informe "
+    "diário da CVM (a classe, com as subclasses). Não é a captação que a casa fez com "
+    "o fundo: a CVM não publica fluxo por distribuidor, e um fundo em três vitrines "
+    "entra inteiro nas três. O mesmo vale para cotistas e PL no mercado. O período de "
+    "cada aba está na aba Metodologia."
+)
+
+
+def _comentar(celula, texto: str) -> None:
+    """Um comentario (a nota que aparece ao passar o mouse) num cabecalho."""
+    celula.comment = Comment(texto, "Monitor de fundos", height=170, width=360)
 
 
 def _yes_no(value: bool | None) -> str:
@@ -718,6 +736,7 @@ def _add_gaps_sheets(
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
     _style_header(sheet, 1, len(colunas))
+    _comentar(sheet.cell(row=1, column=coluna["captacao"]), DEFINICAO_CAPTACAO_NO_MERCADO)
 
     baseline_label = block["baseline_label"].replace('"', "")
     row = 1
@@ -1316,6 +1335,7 @@ def _add_methodology_sheet(
         "da casa ou nome) ficam FORA das abas de análise e moram na aba "
         "'Restritos (auxiliar)' com o motivo. Qualificado não é motivo de corte.",
     )
+    row = line(row, "Captação no mercado", DEFINICAO_CAPTACAO_NO_MERCADO)
     if suprimidos.get(BLOCO_CNPJ):
         row = line(
             row, "Gaps e exclusivos por CNPJ",
@@ -2395,6 +2415,8 @@ def _add_gente_sheet(
     ]
     for col, (titulo, _, _) in enumerate(cabecalhos, start=1):
         ws.cell(row=linha, column=col, value=titulo)
+        if titulo.startswith("Captação líquida no mercado"):
+            _comentar(ws.cell(row=linha, column=col), DEFINICAO_CAPTACAO_NO_MERCADO)
     _style_header(ws, linha, len(cabecalhos))
     cabecalho_gente = linha
     linha += 1

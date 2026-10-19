@@ -427,12 +427,15 @@ class TestDigest(unittest.TestCase):
         self.assertEqual(html.count(MARCA_DA_FIGURA), 1)
         self.assertIn("dos fundos em saída persistente", html)
         # O mapa de calor substitui a tabela de ritmo, com as mesmas celulas; a
-        # contagem de fundos desce para baixo do nome da casa.
-        self.assertNotIn(">Fundos</th>", html)
-        self.assertIn(" fundos</span>", html)
+        # contagem de fundos desce para baixo do nome da casa. So o trecho do
+        # mapa, antes das listas: a tabela por categoria (19/10/2026), depois
+        # delas, tem a coluna Fundos.
+        mapa = html[:html.index("Maiores captações")]
+        self.assertNotIn(">Fundos</th>", mapa)
+        self.assertIn(" fundos</span>", mapa)
         # Sem a figura (orcamento), a tabela volta.
         sem_ritmo = _html_ritmo(visao, frozenset({"ritmo"}))
-        self.assertIn(">Fundos</th>", sem_ritmo)
+        self.assertIn(">Fundos</th>", sem_ritmo[:sem_ritmo.index("Maiores captações")])
         self.assertEqual(sem_ritmo.count(MARCA_DA_FIGURA), 0)
 
     def test_cor_de_saldo_e_uma_so_e_vem_com_sinal(self):
