@@ -368,7 +368,11 @@ def carregar(config, familias=None) -> BaseDistribuivel:
     """
     if familias is not None:
         base = BaseDistribuivel.ler(config.distribuivel_dir, familias.resolver)
-        registros = {cnpj: familias.classe(cnpj) for cnpj in base.situacao}
+        # O fundo espelho da lista fica com a gestora do master, como na vitrine.
+        registros = {
+            cnpj: familias.gestora_do_master(cnpj) or familias.classe(cnpj)
+            for cnpj in base.situacao
+        }
     else:
         from shelf_monitor.enrich import MarketLookup
 

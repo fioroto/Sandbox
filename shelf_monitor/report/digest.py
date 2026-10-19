@@ -136,14 +136,17 @@ from shelf_monitor.report.performance import (
     janela_do_bloco,
     prazo_da_rentabilidade,
 )
-from shelf_monitor.report.aggregate import listing_funds, retail_funds
+from shelf_monitor.report.aggregate import _offer_manager, listing_funds, retail_funds
 from shelf_monitor.report.custo import classes_com_indice, nota_das_classes
 from shelf_monitor.report.digest_visao import (
     VisaoDoDigest,
     edicao_do_digest,
     montar_visao,
 )
-from shelf_monitor.report.oportunidade import da_para_trazer
+from shelf_monitor.report.oportunidade import CAPTACAO_MINIMA_NA_SEMANA, da_para_trazer
+
+# O corte de captacao da semana da lista de gaps, por extenso ("R$ 10 MM").
+_MINIMO_NA_SEMANA = f"R$ {CAPTACAO_MINIMA_NA_SEMANA / 1e6:.0f} MM"
 
 _MAX_LISTED = 25
 
@@ -460,7 +463,10 @@ def _numeros_da_oportunidade(op: dict) -> list[tuple]:
     real = (op.get("carteira") or {}).get("available")
     gaps = ("gap real" if n == 1 else "gaps reais") if real else ("gap" if n == 1 else "gaps")
     deles = "dele" if n == 1 else "deles"
-    ritmo = "acelerando na semana" if op.get("com_ritmo") else "captando"
+    ritmo = (
+        f"acelerando, com mais de {_MINIMO_NA_SEMANA} na semana"
+        if op.get("com_ritmo") else "captando"
+    )
     numeros: list[tuple] = [
         (milhar(n), f"{'fundo' if n == 1 else 'fundos'} para a grade: {gaps} {ritmo}", True)
     ]
@@ -523,9 +529,10 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     ]
     if op.get("com_fluxo"):
         notas.append(
-            ("Na lista: os que captaram em 3 meses e estão acelerando na semana - captação "
+            ("Na lista: os que captaram em 3 meses, estão acelerando na semana - captação "
              "por dia mais de 25% acima da média das 12 semanas anteriores, que já era "
-             "positiva -, pela captação em 3 meses."
+             f"positiva - e captaram mais de {_MINIMO_NA_SEMANA} na semana, pela captação "
+             "em 3 meses."
              if op.get("com_ritmo") else
              "Na lista: os que captaram em 3 meses, pela captação - sem semana completa no "
              "informe, o ritmo da semana não filtra.")
@@ -670,8 +677,10 @@ def _rotulo_dos_gaps(op: dict) -> str:
 
 
 def _coluna_da_lista(op: dict) -> str:
-    """O que poe o gap na lista: o ritmo da semana, ou so captar sem semana completa."""
-    return "Acelerando" if op.get("com_ritmo") else "Captando"
+    """Quantos gaps entram na lista. Com a semana, "Na lista" - acelerar e
+    captar mais de R$ 10 MM nela (19/10/2026), como diz a nota; sem semana
+    completa, so captar."""
+    return "Na lista" if op.get("com_ritmo") else "Captando"
 
 
 def _ordem_da_lista(op: dict) -> str:
@@ -1445,7 +1454,8 @@ def _md_shelf_section(
         lines.append("")
         for fund in entradas[:_MAX_LISTED]:
             cnpj = f" ({format_cnpj(fund.cnpj)})" if fund.cnpj else ""
-            manager = f" - {fund.manager_name}" if fund.manager_name else ""
+            # A gestora mapeada: a do master, quando o fundo e espelho.
+            manager = f" - {_offer_manager(fund)}" if _offer_manager(fund) else ""
             lines.append(
                 f"- {_nome_do_fundo(fund.name)}{cnpj}{_servico_do_fundo(fund, diff, visao)}{manager}"
             )
@@ -1458,7 +1468,8 @@ def _md_shelf_section(
         lines.append("")
         for fund in saidas[:_MAX_LISTED]:
             cnpj = f" ({format_cnpj(fund.cnpj)})" if fund.cnpj else ""
-            manager = f" - {fund.manager_name}" if fund.manager_name else ""
+            # A gestora mapeada: a do master, quando o fundo e espelho.
+            manager = f" - {_offer_manager(fund)}" if _offer_manager(fund) else ""
             lines.append(
                 f"- {_nome_do_fundo(fund.name)}{cnpj}{_servico_do_fundo(fund, diff, visao)}{manager}"
             )
@@ -1526,9 +1537,9 @@ def _html_vitrines(
             )
 
         movimentos = [
-            ["Entrou", fundo(f), _esc(f.manager_name or "-")] for f in entradas[:_MAX_LISTED]
+            ["Entrou", fundo(f), _esc(_offer_manager(f) or "-")] for f in entradas[:_MAX_LISTED]
         ] + [
-            ["Saiu", fundo(f), _esc(f.manager_name or "-")] for f in saidas[:_MAX_LISTED]
+            ["Saiu", fundo(f), _esc(_offer_manager(f) or "-")] for f in saidas[:_MAX_LISTED]
         ]
         sobra += sum(max(0, len(lista) - _MAX_LISTED) for lista in (entradas, saidas))
         # A casa e o cabecalho do grupo, e nao uma coluna: no telefone a coluna

@@ -23,7 +23,11 @@ O recorte, sobre o bloco de gaps ja ranqueado das casas do digest:
   referencia mais de 25% acima da das 12 semanas anteriores, que ja era
   positiva. Estavel, desacelerando, virou saida e, desde 19/10/2026, virou
   entrada ficam fora: no digest de 14/10/2026, 3 dos 5 primeiros do BTG ja nao
-  aceleravam, e um deles tinha virado saida.
+  aceleravam, e um deles tinha virado saida;
+- **mais de R$ 10 MM na semana** (pedido de 19/10/2026): a captacao liquida
+  da semana de referencia passa de `CAPTACAO_MINIMA_NA_SEMANA`. O fundo
+  pequeno que acelera de +0,1 MM para +1 MM por dia acelera, mas nao muda a
+  grade. Os numeros de cima e o resumo por concorrente contam a mesma lista.
 
 A semana filtra e os 3 meses ordenam (`chave_da_lista`). A semana de um fundo e
 ruidosa demais para decidir o topo sozinha, mas basta para separar quem ganha
@@ -59,6 +63,10 @@ _NAO_REAIS = frozenset({ESFORCO_EXPOR, ESFORCO_ATIVAR, ESFORCO_LIQUIDEZ})
 # semanas anteriores (ver retail_flow.classificar_ritmo). "Virou entrada" saiu
 # em 19/10/2026, a pedido: a visao semanal e so de quem acelera.
 RITMOS_DA_LISTA = frozenset({"acelerando"})
+
+# A captacao da semana que, alem do ritmo, poe o gap na lista (pedido de
+# 19/10/2026): mais de R$ 10 MM liquidos na semana de referencia.
+CAPTACAO_MINIMA_NA_SEMANA = 10_000_000.0
 
 
 def chave_da_lista(fundo: dict) -> tuple:
@@ -114,7 +122,10 @@ def oportunidade_de_grade(
     na_lista = sorted(
         (
             par for par in captando
-            if not com_semana or par[1].ritmo_semanal in RITMOS_DA_LISTA
+            if not com_semana or (
+                par[1].ritmo_semanal in RITMOS_DA_LISTA
+                and (par[1].captacao_semana or 0.0) > CAPTACAO_MINIMA_NA_SEMANA
+            )
         ),
         key=lambda par: chave_da_lista(par[0]),
     )

@@ -612,6 +612,67 @@ class TestVersaoDaMesmaEstrategia(unittest.TestCase):
         self.assertEqual(sozinha.cobertura(self.GAP, [self.XP_ENDURANCE]).tipo, COBERTO_CORRELATO)
 
 
+class TestGestoraDoMaster(unittest.TestCase):
+    """Pedido de 19/10/2026: o fundo espelho fica com a gestora do master. O
+    BTGP Thunderbolt e registrado na BTG Asset, mas e espelho do master da SPX."""
+
+    def setUp(self):
+        from shelf_monitor.familias import anotar_gestora_do_master
+
+        self.mapa = _mapa()
+        self.snapshots = _snapshots()
+        self.anotadas = anotar_gestora_do_master(self.snapshots, self.mapa)
+        self.thunderbolt = next(f for f in self.snapshots[1].funds if f.cnpj == THUNDERBOLT)
+
+    def test_o_espelho_fica_com_a_gestora_do_master(self):
+        from shelf_monitor.report.aggregate import _offer_manager
+
+        self.assertEqual(self.mapa.gestora_do_master(THUNDERBOLT).gestor, SPX[0])
+        self.assertIsNone(self.mapa.gestora_do_master(SPX_OUTRO))  # master de si
+        self.assertEqual(_offer_manager(self.thunderbolt), SPX[0])
+        # O registro continua onde estava.
+        self.assertEqual(self.thunderbolt.manager_name, BTG_ASSET[0])
+
+    def test_o_espelho_do_distribuidor_nao_e_produto_proprio(self):
+        from shelf_monitor.report.aggregate import is_own_product
+
+        self.assertFalse(is_own_product("btg", self.thunderbolt))
+        sem_anotacao = next(f for f in _snapshots()[1].funds if f.cnpj == THUNDERBOLT)
+        self.assertTrue(is_own_product("btg", sem_anotacao))
+
+    def test_o_gap_guarda_a_gestora_do_veiculo_e_decide_pela_do_master(self):
+        gap = _por_cnpj(build_gap_block(self.snapshots)["funds"])[THUNDERBOLT]
+        self.assertEqual(gap["manager"], BTG_ASSET[0])
+        self.assertEqual(gap["gestora_estrategia"], SPX[0])
+        # Sem o mapa no bloco, a SPX ja e da casa pelo nome: a XP exibe o Falcon.
+        self.assertTrue(gap["manager_on_xp"])
+        esforco = _por_cnpj(ranquear_gaps(build_gap_block(self.snapshots)["funds"]))
+        self.assertEqual(esforco[THUNDERBOLT]["esforco"], ESFORCO_OPERACIONAL)
+
+    def test_a_grade_conta_o_espelho_pela_gestora_do_master(self):
+        from shelf_monitor.report.retail_flow import FundFlow, build_grade_opportunities
+
+        def grade(snapshots):
+            for snapshot in snapshots:
+                snapshot.funds += [
+                    _fundo(snapshot.platform, f"8800000000{n:02d}01", f"COMUM {n}", ALFA[0],
+                           snapshot.funds[0].sources)
+                    for n in range(30)
+                ]
+            fluxo = FundFlow(
+                cnpj=THUNDERBOLT, nome="BTGP THUNDERBOLT FIC", categoria="Multimercados Livre",
+                gestora=None, vitrines=["btg"], captacao_bruta=100_000_000.0, resgates=0.0,
+                pl_inicio=500_000_000.0, pl_fim=600_000_000.0, cotistas_inicio=1000,
+                cotistas_fim=5000, dias=60,
+            )
+            return build_grade_opportunities(snapshots, [fluxo])
+
+        self.assertEqual(grade(_snapshots())["total_produto_do_concorrente"], 1)
+        anotada = grade(self.snapshots)
+        self.assertEqual(anotada["total_produto_do_concorrente"], 0)
+        self.assertEqual(anotada["total_transferiveis"], 1)
+
+
 class TestOutrosBlocosUsamOMesmoVeredito(unittest.TestCase):
     def test_oportunidade_de_grade_nao_lista_o_que_a_xp_ja_cobre(self):
         from shelf_monitor.report.retail_flow import FundFlow, build_grade_opportunities

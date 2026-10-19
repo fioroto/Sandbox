@@ -46,7 +46,7 @@ from shelf_monitor.config import (
 from shelf_monitor.diff import assess_quality, diff_cvm, diff_shelf, radar_sem_cancelados
 from shelf_monitor.distribuivel import carregar as carregar_distribuivel
 from shelf_monitor.enrich import enrich_snapshots
-from shelf_monitor.familias import MapaDeFamilias
+from shelf_monitor.familias import MapaDeFamilias, anotar_gestora_do_master
 from shelf_monitor.http import SourceUnavailable, check_reachable
 from shelf_monitor.models import (
     BLOCO_CNPJ,
@@ -383,6 +383,11 @@ def attach_familias(
             else:
                 for aviso in report.familias.avisos:
                     console.print(f"  [dim]{_short(aviso)}[/]")
+                # Fundo espelho fica com a gestora do master em todas as
+                # analises (19/10/2026): esforco, grade, consenso e listas.
+                anotadas = anotar_gestora_do_master(report.snapshots, report.familias)
+                espelhos = contagem(anotadas, "fundo espelho", "fundos espelho")
+                console.print(f"  [dim]Gestora do master em {espelhos}.[/]")
     try:
         report.distribuivel = carregar_distribuivel(config, report.familias)
     except Exception as exc:  # noqa: BLE001 - a pasta e opcional

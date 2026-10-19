@@ -12,6 +12,7 @@ from shelf_monitor.distribuivel import PODE_DISTRIBUIR, BaseDistribuivel
 from shelf_monitor.enrich import (
     KEY_ANBIMA,
     KEY_CVM,
+    KEY_GESTOR_ESTRATEGIA,
     KEY_GESTOR_OFICIAL,
     KEY_PL,
     assinatura_da_gestora,
@@ -166,7 +167,8 @@ def is_own_product(platform_id: str, fund: FundOffer) -> bool | None:
     da casa" e uma so no monitor inteiro.
     """
     patterns = _own_product_patterns(platform_id)
-    manager = fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name
+    # A gestora mapeada: o Access do BTG sobre o master da SPX e da SPX.
+    manager = _offer_manager(fund)
     if not patterns or not manager:
         return None
     normalized = normalize_text(manager)
@@ -361,11 +363,7 @@ def build_listing_block(report: RunReport) -> dict:
 
         own = sum(1 for f in listing if is_own_product(snapshot.platform, f) is True)
         third = sum(1 for f in listing if is_own_product(snapshot.platform, f) is False)
-        managers = {
-            (f.extra.get(KEY_GESTOR_OFICIAL) or f.manager_name or "").strip()
-            for f in listing
-            if f.extra.get(KEY_GESTOR_OFICIAL) or f.manager_name
-        }
+        managers = {m for m in (_offer_manager(f) for f in listing) if m}
         exclusive = sum(
             1
             for f in listing
@@ -467,8 +465,16 @@ _platform_label = rotulo_da_casa
 _canonical_order = ordem_canonica
 
 
-def _offer_manager(fund: FundOffer) -> str | None:
+def _gestora_do_veiculo(fund: FundOffer) -> str | None:
+    """A gestora do registro do fundo (a CVM, senao a que a casa publica)."""
     manager = fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name
+    return manager.strip() if manager else None
+
+
+def _offer_manager(fund: FundOffer) -> str | None:
+    """A gestora mapeada do fundo: a do master quando ele e espelho
+    (`familias.anotar_gestora_do_master`, 19/10/2026), senao a do registro."""
+    manager = fund.extra.get(KEY_GESTOR_ESTRATEGIA) or _gestora_do_veiculo(fund)
     return manager.strip() if manager else None
 
 
@@ -537,7 +543,13 @@ def _gap_funds(
         )
         category = anbima_category(rep)
 
+        # A gestora do veiculo (o registro) e a mapeada - a do master, quando
+        # o fundo e espelho. A mapeada decide; a do veiculo fica na coluna
+        # "Gestora (veículo)" da planilha.
         manager = next(
+            (m for m in (_gestora_do_veiculo(f) for _, f in offers) if m), None
+        )
+        mapeada = next(
             (m for m in (_offer_manager(f) for _, f in offers) if m), None
         )
         minimums = [m for _, f in offers if (m := f.minimo_vitrine) is not None]
@@ -557,6 +569,7 @@ def _gap_funds(
                 "name": rep.name,
                 "category": category,
                 "manager": manager,
+                "gestora_estrategia": mapeada if mapeada != manager else None,
                 "houses": houses,
                 "houses_label": ", ".join(_platform_label(h) for h in houses),
                 "houses_count": len(houses),
@@ -564,8 +577,8 @@ def _gap_funds(
                 "admin_fee_pct": min(fees) if fees else None,
                 "pl_cvm": pl,
                 "manager_on_xp": (
-                    assinatura_da_gestora(manager) in baseline_managers
-                    if manager
+                    assinatura_da_gestora(mapeada) in baseline_managers
+                    if mapeada
                     else None
                 ),
                 "possible_xp_equivalent": baseline_slugs.get(name_slug(rep.name)),
@@ -1300,12 +1313,12 @@ def summarize_platform(
         if count:
             by_class[ASSET_CLASS_LABELS[asset_class]] = count
 
+    # Pela gestora mapeada: o feeder do distribuidor conta para a do master.
     managers: dict[str, int] = {}
     for fund in funds:
-        if fund.manager_name:
-            managers[fund.manager_name.strip()] = (
-                managers.get(fund.manager_name.strip(), 0) + 1
-            )
+        gestora = _offer_manager(fund)
+        if gestora:
+            managers[gestora] = managers.get(gestora, 0) + 1
 
     # Faixas e menor minimo so sobre o minimo que a vitrine mostra: o
     # `min_initial` de um fundo que tambem esta no catalogo e o institucional do

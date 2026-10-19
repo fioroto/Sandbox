@@ -103,7 +103,7 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora, nem so em outra faixa de liquidez) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora, nem so em outra faixa de liquidez) que captam varejo em 3 meses, aceleram na semana e captam mais de R$ 10 MM nela; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
 | Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela; abaixo delas, a captacao de todos os fundos das vitrines por categoria ANBIMA - a visao de mercado -, na semana e em 3 meses, com o ritmo de cada uma |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
@@ -174,7 +174,10 @@ liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava 
 **A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
 acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
 12 semanas anteriores, que ja era positiva). Estavel, desacelerando, virou saida e,
-desde 19/10/2026, virou entrada ficam fora. A ordem e a captacao em 3 meses, 10 por
+desde 19/10/2026, virou entrada ficam fora; e, desde a mesma data, o gap tem de
+captar mais de R$ 10 MM liquidos na semana (`CAPTACAO_MINIMA_NA_SEMANA`) - o fundo
+pequeno que acelera nao muda a grade. Os numeros de cima e o resumo por concorrente
+(coluna "Na lista") contam a mesma lista. A ordem e a captacao em 3 meses, 10 por
 concorrente, sem repetir fundo. O produto proprio do concorrente entra, marcado
 "produto proprio" na coluna Esforco, e fica fora dos numeros de cima e do assunto, que
 contam so o que da para trazer (`report/oportunidade.py`). Ate ali a ordem era esforco e
@@ -951,7 +954,15 @@ da lista.
 
 A gestora que decide o esforco e a **da estrategia** (a do master), nao a do
 veiculo: o BTGP Thunderbolt, feeder de marca propria do BTG, investe no SPX Raptor
-- saia "produto proprio do concorrente", e a XP exibe o SPX Raptor 180 Advisory. A
+- saia "produto proprio do concorrente", e a XP exibe o SPX Raptor 180 Advisory.
+Desde 19/10/2026 (pedido do usuario) a regra vale para o monitor inteiro: o fundo
+espelho (master pela carteira) fica com a gestora do master
+(`familias.anotar_gestora_do_master`, lida primeiro por `aggregate._offer_manager`)
+na captacao, na grade, no consenso, no produto proprio, na gestora da casa, nas
+vitrines do digest e nas abas da planilha; a coluna "Gestora (veículo)" e a aba
+Consolidado guardam a do registro. Medido em 14/10/2026: 188 dos 1.334 fundos da
+captacao estavam com a gestora do veiculo - 147 "Seleção" do Itau, 19 Access do
+BTG -, e o BTGP Access SPX Nimitz saia como produto proprio do BTG. A
 escada de esforco, do mais barato ao mais caro: expor na vitrine, ativar
 distribuicao (as duas so com a lista distribuivel), inclusao operacional, versao
 de liquidez (custa o mesmo que a operacional, mas a estrategia ja esta na

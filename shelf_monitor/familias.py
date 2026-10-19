@@ -48,7 +48,7 @@ from datetime import date
 
 from shelf_monitor.cnpj_por_nome import palavras_do_nome
 from shelf_monitor.config import Config
-from shelf_monitor.enrich import assinatura_da_gestora
+from shelf_monitor.enrich import KEY_GESTOR_ESTRATEGIA, assinatura_da_gestora
 from shelf_monitor.market.carteira import (
     ATIVOS_OPACOS,
     COTAS_NAO_RESOLVIDAS,
@@ -178,6 +178,27 @@ def palavras_da_estrategia(
             or palavra in _MARCAS_DE_VERSAO
         )
     )
+
+
+def anotar_gestora_do_master(snapshots, mapa: "MapaDeFamilias") -> int:
+    """Fundo espelho fica com a gestora do master (pedido de 19/10/2026).
+
+    O feeder de cada distribuidor - o "BTGP Access SPX Nimitz", o "Seleção" do
+    Itau, o "Advisory" da XP - e registrado na gestora do distribuidor, mas a
+    estrategia e a do master. Em 14/10/2026, 188 dos 1.334 fundos da captacao
+    estavam com a gestora do veiculo, e o Access da SPX saia como produto
+    proprio do BTG. A gestora mapeada vai em `KEY_GESTOR_ESTRATEGIA`, que
+    `aggregate._offer_manager` le primeiro; a do registro fica onde estava.
+    Devolve quantas ofertas foram anotadas.
+    """
+    anotadas = 0
+    for snapshot in snapshots:
+        for oferta in snapshot.funds:
+            master = mapa.gestora_do_master(oferta.cnpj)
+            if master is not None:
+                oferta.extra[KEY_GESTOR_ESTRATEGIA] = master.gestor
+                anotadas += 1
+    return anotadas
 
 
 def faixa_de_liquidez(dias: int | None) -> str | None:
@@ -919,6 +940,21 @@ class MapaDeFamilias:
         raizes = {raiz for raiz, _ in self.gestoras(consulta)}
         familias = [f for f in self._familias.values() if f.raiz_gestora in raizes]
         return sorted(familias, key=lambda f: (f.gestora or "", -f.pl, f.id))
+
+    def gestora_do_master(self, cnpj: str | None) -> Classe | None:
+        """A classe do master de um fundo espelho, quando ela traz a gestora.
+
+        None quando o fundo nao e espelho (e master de si) ou o master esta
+        fora do cadastro.
+        """
+        if not normalize_cnpj(cnpj):
+            return None
+        fundo = self._classe_principal(cnpj)
+        master = self.master_de(fundo)
+        if not master or master == fundo:
+            return None
+        classe = self._classes.get(master)
+        return classe if classe and classe.gestor else None
 
     # --- cobertura ------------------------------------------------------------
 

@@ -85,6 +85,10 @@ F = "17000000000101"
 # fica parado e capta 4 por dia na ultima semana: virou entrada, e capta nos 3
 # meses - fora da lista, que desde 19/10/2026 e so de quem acelera.
 G = "18000000000101"
+# So a vitrine do Itau exibe, com `com_pequeno`. Capta 0,1 por dia e acelera
+# para 1 por dia na ultima semana: acelerando, mas so uns 5 MM na semana -
+# fora da lista, que desde 19/10/2026 pede mais de R$ 10 MM na semana.
+H = "19000000000101"
 _ENCHIMENTO = 32  # cada vitrine com 30 fundos ou mais (MIN_VITRINE)
 
 PRIMEIRO_DIA = date(2026, 6, 1)
@@ -124,6 +128,8 @@ def _registros() -> list[DailyFlow]:
                       cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=F, dia=dia, captacao=(40 if na_semana else 12) * MI, pl=PL,
                       cota=10.0, cotistas=1000 + n),
+            DailyFlow(cnpj=H, dia=dia, captacao=(1 if na_semana else 0.1) * MI, pl=PL,
+                      cota=10.0, cotistas=1000 + n),
         ]
         registros += [
             DailyFlow(cnpj=cnpj, dia=dia, pl=PL, cota=10.0, cotistas=1000)
@@ -156,6 +162,7 @@ def _snapshots(
     quando: datetime = datetime(2026, 10, 14, 8, 0), com_itau: bool = False,
     com_proprio: bool = False,
     com_virou_entrada: bool = False,
+    com_pequeno: bool = False,
 ) -> list[ShelfSnapshot]:
     def enchimento(casa: int, platform: str) -> list[FundOffer]:
         return [
@@ -179,6 +186,8 @@ def _snapshots(
                 _oferta("itau", E, "Fundo E FIC FIM", categoria=RENDA_FIXA)]
         if com_virou_entrada:
             itau.append(_oferta("itau", G, "Fundo G FIC FIM"))
+        if com_pequeno:
+            itau.append(_oferta("itau", H, "Fundo H FIC FIM"))
         casas.append(_snapshot("itau", itau + enchimento(32, "itau"), quando))
     return casas + [_snapshot("nu", nu, quando)]
 
@@ -213,10 +222,11 @@ def _lista_da_casa(**servicos: str) -> BaseDistribuivel:
 
 def _relatorio(
     lista: BaseDistribuivel | None = None, com_itau: bool = False, com_proprio: bool = False,
-    com_virou_entrada: bool = False,
+    com_virou_entrada: bool = False, com_pequeno: bool = False,
 ) -> RunReport:
     snapshots = _snapshots(
-        com_itau=com_itau, com_proprio=com_proprio, com_virou_entrada=com_virou_entrada
+        com_itau=com_itau, com_proprio=com_proprio, com_virou_entrada=com_virou_entrada,
+        com_pequeno=com_pequeno,
     )
     flow, _, _ = _fluxo(snapshots)
     antes = [_snapshot(s.platform, list(s.funds), datetime(2026, 10, 7)) for s in snapshots]
@@ -397,7 +407,7 @@ class TestOportunidadeDeGrade(unittest.TestCase):
         md = render_markdown(report, None, "semanal")
         self.assertIn(
             "## Oportunidade de grade e gaps\n\n"
-            "- **1** fundo para a grade: gap acelerando na semana\n"
+            "- **1** fundo para a grade: gap acelerando, com mais de R$ 10 MM na semana\n"
             "- **+150,0 MM** captação dele na semana\n"
             "- **+590,0 MM** captação dele em 3 meses\n",
             md,
@@ -416,7 +426,7 @@ class TestOportunidadeDeGrade(unittest.TestCase):
             self.assertNotIn(fora, md)
         html = render_html(report, None, "semanal")
         texto = _texto(html)
-        self.assertIn("fundo para a grade: gap acelerando na semana", texto)
+        self.assertIn("fundo para a grade: gap acelerando, com mais de R$ 10 MM na semana", texto)
         for fora in ("A captação dos gaps", "MM/dia", "gaps nas vitrines", "capta nas vitrines"):
             self.assertNotIn(fora, texto)
         # A previa do e-mail: as casas e a semana, como o cabecalho.
@@ -463,7 +473,7 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
 
         md = render_markdown(self.report, None, "semanal")
         # Sem a carteira da CVM a coluna e "Gaps", nao "Gaps reais".
-        self.assertIn("| Concorrente | Gaps | Acelerando | Para trazer | Semana | 3 meses |", md)
+        self.assertIn("| Concorrente | Gaps | Na lista | Para trazer | Semana | 3 meses |", md)
         # O nome da casa e so "Itaú" (pedido de 15/10/2026).
         self.assertIn("| Itaú |", md)
         self.assertNotIn("íon", md)
@@ -515,6 +525,23 @@ class TestListaAcelerando(unittest.TestCase):
         self.assertNotIn(G, [f["cnpj"] for f in visao.oportunidade["linhas"]])
         self.assertEqual(visao.oportunidade["total_captando"], 4)  # A, B, E e G
 
+    def test_acelerando_com_pouca_captacao_na_semana_fica_fora(self):
+        """Pedido de 19/10/2026: alem de acelerar, o gap tem de captar mais de
+        R$ 10 MM na semana. H acelera de 0,1 para 1 por dia - uns 5 MM."""
+        from shelf_monitor.report.digest_visao import montar_visao
+
+        visao = montar_visao(_relatorio(com_itau=True, com_pequeno=True), None, "semanal")
+        fundos = {f["cnpj"]: f for f in visao.report.retail_flow["fundos"]}
+        self.assertEqual(fundos[H]["ritmo_semanal"], "acelerando")
+        self.assertLess(fundos[H]["captacao_semana"], 10 * MI)
+        op = visao.oportunidade
+        self.assertNotIn(H, [f["cnpj"] for f in op["linhas"]])
+        itau = {c["platform_id"]: c for c in op["por_casa"]}["itau"]
+        self.assertEqual([f["cnpj"] for f in itau["linhas"]], [A, E])
+        # O resumo e os numeros de cima contam a mesma lista.
+        self.assertEqual(itau["total_na_lista"], 2)
+        self.assertEqual(op["total_na_lista"], 2)  # A e E
+
     def test_ordem_pela_captacao_em_3_meses_com_o_produto_proprio(self):
         # F (produto proprio, +728 MM) passa na frente de A (+590 MM): o
         # esforco nao ordena mais.
@@ -541,6 +568,7 @@ class TestListaAcelerando(unittest.TestCase):
         self.assertTrue(linha_f.endswith("| produto próprio |"))
         self.assertIn("**BTG Pactual** - os 2 primeiros, por captação em 3 meses", md)
         self.assertIn("estão acelerando na semana - captação por dia mais de 25% acima", md)
+        self.assertIn("e captaram mais de R$ 10 MM na semana, pela captação em 3 meses", md)
         texto = _texto(render_html(self.report, None, "semanal"))
         self.assertIn("produto próprio do concorrente, marcado na lista", texto)
         # O assunto segue contando so o que da para trazer.

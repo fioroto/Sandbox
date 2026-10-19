@@ -36,6 +36,9 @@ from shelf_monitor.normalize import (
 KEY_ANBIMA = "classificacao_anbima"
 KEY_CVM = "classificacao_cvm"
 KEY_GESTOR_OFICIAL = "gestor_oficial"
+# A gestora do master, quando o fundo e espelho (`familias.anotar_gestora_do_master`):
+# a gestora mapeada do fundo, que prevalece sobre a do registro nas analises.
+KEY_GESTOR_ESTRATEGIA = "gestor_estrategia"
 KEY_CNPJ_GESTOR = "cnpj_gestor"
 # O que a casa dizia antes de a CVM prevalecer - a divergencia e informacao.
 KEY_GESTOR_CASA = "gestor_casa"

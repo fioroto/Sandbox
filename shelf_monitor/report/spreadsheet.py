@@ -21,7 +21,6 @@ from shelf_monitor.enrich import (
     EnrichmentStats,
     KEY_ANBIMA,
     KEY_CVM,
-    KEY_GESTOR_OFICIAL,
     KEY_SITUACAO,
 )
 from shelf_monitor.models import (
@@ -63,6 +62,7 @@ from shelf_monitor.report.performance import (
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
     COBERTURA_CARTEIRA,
+    _offer_manager,
     build_gap_block,
     frase_do_funil,
     notas_da_cobertura,
@@ -607,7 +607,8 @@ def _add_listing_sheet(
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
                 fund.raw_category or "",
-                fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+                # A gestora mapeada, a mesma que decide o "Produto" ao lado.
+                _offer_manager(fund) or "",
                 _OWN_LABELS[own],
                 fund.admin_fee_pct,
                 fund.min_initial,
@@ -1106,7 +1107,7 @@ def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) ->
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 reason,
                 fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
-                fund.extra.get(KEY_GESTOR_OFICIAL) or fund.manager_name or "",
+                _offer_manager(fund) or "",
                 "Sim" if fund.on_listing else "Não",
                 ", ".join(SOURCE_LABELS.get(s, s) for s in fund.sources),
             ]
