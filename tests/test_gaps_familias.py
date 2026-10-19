@@ -19,11 +19,12 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from shelf_monitor.distribuivel import DISTRIBUI, PODE_DISTRIBUIR, BaseDistribuivel
+from shelf_monitor.distribuivel import DISTRIBUI, PODE_DISTRIBUIR, BaseDistribuivel, carregar
 from shelf_monitor.familias import (
     COBERTO_CORRELATO,
     COBERTO_ESPELHO,
     GAP_ESTRATEGIA,
+    GAP_GESTORA,
     OUTRA_LIQUIDEZ,
     MapaDeFamilias,
 )
@@ -164,6 +165,24 @@ def _snapshots(xp_fontes=("playwright",)) -> list[ShelfSnapshot]:
     return [xp, btg, inter]
 
 
+def _vitrines_cruzaveis() -> list[ShelfSnapshot]:
+    """As vitrines do caso com 30 fundos comuns a mais: a grade so cruza
+    vitrine com 30 fundos ou mais, e os comuns nao viram gap de ninguem."""
+    snapshots = _snapshots()
+    for snapshot in snapshots:
+        snapshot.funds += [
+            _fundo(snapshot.platform, f"8800000000{n:02d}01", f"COMUM {n}", ALFA[0],
+                   snapshot.funds[0].sources)
+            for n in range(30)
+        ]
+    return snapshots
+
+
+def antes_funil_gestora(mapa: MapaDeFamilias) -> int:
+    """Os gaps de gestora do caso sem a lista da casa."""
+    return build_gap_block(_snapshots(), familias=mapa)["funil"]["gestora"]
+
+
 def _por_cnpj(linhas: list[dict]) -> dict[str, dict]:
     return {f["cnpj"]: f for f in linhas}
 
@@ -193,7 +212,7 @@ class TestFunil(unittest.TestCase):
         funil = self.bloco["funil"]
         self.assertEqual(
             funil["aparentes"],
-            funil["cobertos"] + funil["outra_liquidez"] + funil["reais"],
+            funil["cobertos"] + funil["na_lista"] + funil["outra_liquidez"] + funil["reais"],
         )
         self.assertEqual(self.bloco["gaps_aparentes"], funil["aparentes"])
         self.assertEqual(self.bloco["total_gaps"], funil["reais"])
@@ -206,14 +225,20 @@ class TestFunil(unittest.TestCase):
         self.assertEqual(coberto["veredito"]["tipo"], COBERTO_ESPELHO)
         self.assertEqual(coberto["veredito"]["cobre"], ALFA_ADVISORY)
         self.assertNotIn(ALFA_ACCESS, _por_cnpj(self.bloco["funds"]))
-        # Os cobertos: o espelho e o correlato (ver o teste do Delta Macro).
-        self.assertEqual(cnpjs_cobertos(self.bloco), {ALFA_ACCESS, DELTA_INTER})
+        # Os cobertos: o espelho, o correlato (ver o teste do Delta Macro) e,
+        # desde 19/10/2026, o que so falta em outra faixa de liquidez.
+        self.assertEqual(cnpjs_cobertos(self.bloco), {ALFA_ACCESS, DELTA_INTER, SPARTA_INTER})
 
-    def test_estrategia_so_em_outra_liquidez_fica_na_lista_mas_nao_na_conta(self):
-        gap = _por_cnpj(self.bloco["funds"])[SPARTA_INTER]
-        self.assertEqual(gap["veredito"]["tipo"], OUTRA_LIQUIDEZ)
+    def test_estrategia_so_em_outra_liquidez_sai_dos_gaps_para_os_cobertos(self):
+        """Pedido de 19/10/2026: gap e so o que a XP nao tem de forma nenhuma. A
+        estrategia que ela tem em outro D+ vai para os cobertos, com a prova."""
+        self.assertNotIn(SPARTA_INTER, _por_cnpj(self.bloco["funds"]))
+        coberto = _por_cnpj(self.bloco["cobertos"])[SPARTA_INTER]
+        self.assertEqual(coberto["cobertura"], "liquidez")
+        self.assertEqual(coberto["cobertura_rotulo"], "Outra faixa de liquidez")
+        self.assertEqual(coberto["prova"]["tipo"], OUTRA_LIQUIDEZ)
         self.assertEqual(self.bloco["gaps_liquidez"], 1)
-        esforco = _por_cnpj(ranquear_gaps(self.bloco["funds"]))[SPARTA_INTER]["esforco"]
+        esforco = _por_cnpj(ranquear_gaps(self.bloco["cobertos"]))[SPARTA_INTER]["esforco"]
         self.assertEqual(esforco, ESFORCO_LIQUIDEZ)
 
     def test_feeder_de_marca_propria_sobre_master_de_terceiro_e_da_gestora_do_master(self):
@@ -244,13 +269,12 @@ class TestFunil(unittest.TestCase):
         self.assertFalse(coberto["veredito"]["gap_real"])
         self.assertEqual(self.bloco["funil"]["correlato"], 1)
 
-    def test_a_lista_abre_pelo_gap_real_mais_barato_e_a_liquidez_vem_depois(self):
-        """Versao de liquidez custa o mesmo que a inclusao operacional, mas a
-        estrategia ja esta na prateleira: vem depois dela, antes de abrir
-        gestora nova."""
+    def test_a_lista_abre_pelo_gap_mais_barato_e_o_produto_proprio_fecha(self):
+        """Inclusao operacional antes de abrir gestora nova; a outra liquidez
+        nao e mais gap (19/10/2026)."""
         ordem = [f["cnpj"] for f in ranquear_gaps(self.bloco["funds"])]
-        self.assertLess(ordem.index(THUNDERBOLT), ordem.index(SPARTA_INTER))
-        self.assertLess(ordem.index(SPARTA_INTER), ordem.index(EPSILON_RF))
+        self.assertLess(ordem.index(THUNDERBOLT), ordem.index(EPSILON_RF))
+        self.assertNotIn(SPARTA_INTER, ordem)
         self.assertEqual(ordem[-1], BTG_SELIC)
 
     def test_gestora_nova_e_abrir_gestora(self):
@@ -260,7 +284,9 @@ class TestFunil(unittest.TestCase):
     def test_categorias_contam_gaps_reais_e_cobertos(self):
         categorias = {c["category"]: c for c in self.bloco["categories"]}
         self.assertEqual(sum(c["gap_count"] for c in categorias.values()), self.bloco["total_gaps"])
-        self.assertEqual(sum(c["cobertos"] for c in categorias.values()), 2)
+        self.assertEqual(
+            sum(c["cobertos"] for c in categorias.values()), len(self.bloco["cobertos"])
+        )
 
     def test_a_frase_do_funil_diz_os_numeros_do_bloco(self):
         frase = frase_do_funil(self.bloco)
@@ -370,16 +396,33 @@ class TestListaDistribuivel(_ComPasta):
         self.assertIn("nenhum CSV", motivo)
         self.assertIn("modelo.csv tem 2 linhas de dados", motivo)
 
-    def test_gap_da_vitrine_coberto_pela_lista_vira_expor_ou_ativar(self):
+    def test_gap_da_vitrine_que_a_lista_cobre_vai_para_os_cobertos(self):
+        """Pedido de 19/10/2026: o que a XP ja distribui, ou pode distribuir,
+        nao e gap - sai da aba Gaps XP e vai para os cobertos, com o esforco de
+        expor ou ativar ao lado."""
         self._pasta_completa()
         bloco = build_gap_block(_snapshots(), familias=self.mapa, distribuivel=self.lista())
-        esforcos = {f["cnpj"]: f["esforco"] for f in ranquear_gaps(bloco["funds"])}
+        for cnpj in (EPSILON_RF, EPSILON_CP):
+            self.assertNotIn(cnpj, _por_cnpj(bloco["funds"]))
+        cobertos = _por_cnpj(bloco["cobertos"])
+        self.assertEqual(cobertos[EPSILON_RF]["cobertura"], "lista")
+        self.assertEqual(cobertos[EPSILON_RF]["prova"], cobertos[EPSILON_RF]["veredito_distribuivel"])
+        self.assertEqual(bloco["gaps_na_lista"], 2)
+        funil = bloco["funil"]
+        self.assertEqual(funil["na_lista"], 2)
+        # O funil fecha com o passo da lista, e o detalhe do real soma o real:
+        # o que a lista cobre sai dos dois.
+        self.assertEqual(
+            funil["aparentes"],
+            funil["cobertos"] + funil["na_lista"] + funil["outra_liquidez"] + funil["reais"],
+        )
+        self.assertEqual(
+            funil["estrategia"] + funil["gestora"] + funil["sem_dado"], funil["reais"]
+        )
+        esforcos = {f["cnpj"]: f["esforco"] for f in ranquear_gaps(bloco["cobertos"])}
         self.assertEqual(esforcos[EPSILON_RF], ESFORCO_EXPOR)
         self.assertEqual(esforcos[EPSILON_CP], ESFORCO_ATIVAR)
-        # Continua gap da VITRINE: o cliente nao o ve. So o esforco muda.
-        self.assertIn(EPSILON_RF, _por_cnpj(bloco["funds"]))
-        # E abre a lista: expor e o degrau mais barato.
-        self.assertEqual(ranquear_gaps(bloco["funds"])[0]["esforco"], ESFORCO_EXPOR)
+        self.assertIn("2 estão na lista da casa", frase_do_funil(bloco))
         # A outra lente mede a vitrine concorrente contra a lista: o que ja
         # esta nela nao e gap aparente dessa lente (7 fundos, 2 na lista).
         lente = bloco["lentes"]["distribuivel"]
@@ -417,6 +460,58 @@ class TestListaDistribuivel(_ComPasta):
         lista = BaseDistribuivel.ler(self.pasta, None)
         self.assertEqual(lista.situacao_de(EPSILON_RF), DISTRIBUI)
         self.assertTrue(any("não foram conferidos" in a for a in lista.avisos))
+
+    def test_gestora_com_fundo_na_lista_e_gestora_da_xp(self):
+        """Pedido de 19/10/2026: a Epsilon nao tem fundo na vitrine da XP, mas
+        tem o RF na lista da casa. O Epsilon Credito deixa de ser gap de gestora
+        ("abrir gestora") e vira gap de estrategia, de inclusao operacional."""
+        antes = _por_cnpj(ranquear_gaps(build_gap_block(_snapshots(), familias=self.mapa)["funds"]))
+        self.assertEqual(antes[EPSILON_CP]["veredito"]["tipo"], GAP_GESTORA)
+        self.assertEqual(antes[EPSILON_CP]["esforco"], ESFORCO_ABRIR_GESTORA)
+
+        self.escrever("lista.csv", f"cnpj;situacao\n{EPSILON_RF};distribui\n")
+        bloco = build_gap_block(_snapshots(), familias=self.mapa, distribuivel=self.lista())
+        gap = _por_cnpj(ranquear_gaps(bloco["funds"]))[EPSILON_CP]
+        self.assertEqual(gap["veredito"]["tipo"], GAP_ESTRATEGIA)
+        self.assertTrue(gap["manager_on_xp"])
+        self.assertEqual(gap["esforco"], ESFORCO_OPERACIONAL)
+        self.assertEqual(bloco["funil"]["gestora"], antes_funil_gestora(self.mapa) - 2)
+
+    def test_sem_o_mapa_a_gestora_da_lista_vale_pelo_nome(self):
+        """Sem a carteira da CVM a regra e a mesma, pelo nome: o do cadastro ou,
+        sem base de mercado, o da coluna `gestora` do CSV."""
+        sem_lista = _por_cnpj(build_gap_block(_snapshots())["funds"])
+        self.assertFalse(sem_lista[EPSILON_CP]["manager_on_xp"])
+        self.escrever(
+            "lista.csv", f"cnpj;situacao;gestora\n{EPSILON_RF};distribui;Epsilon Investimentos\n"
+        )
+        bloco = build_gap_block(_snapshots(), distribuivel=BaseDistribuivel.ler(self.pasta))
+        self.assertTrue(_por_cnpj(bloco["funds"])[EPSILON_CP]["manager_on_xp"])
+
+    def test_a_gestora_da_lista_vem_do_cadastro(self):
+        self.escrever("lista.csv", f"cnpj;situacao;gestora\n{EPSILON_RF};distribui;Epsilon\n")
+        lista = carregar(self.config, self.mapa)
+        # O cadastro prevalece sobre o que a pessoa digitou, como no enriquecimento.
+        self.assertEqual(lista.gestora, {EPSILON_RF: EPSILON[0]})
+        self.assertEqual(lista.gestoras(), {"EPSILON INVESTIMENTOS"})
+
+    def test_a_grade_conta_a_gestora_da_lista_como_ja_distribuida(self):
+        """A grade de oportunidades usa a mesma regra: o Epsilon Credito sai de
+        "exige abrir gestora" para "gestora que a XP ja distribui"."""
+        from shelf_monitor.report.retail_flow import FundFlow, build_grade_opportunities
+
+        snapshots = _vitrines_cruzaveis()
+        fluxos = [FundFlow(
+            cnpj=EPSILON_CP, nome="EPSILON CREDITO", categoria="Multimercados Livre",
+            gestora="Epsilon Investimentos", vitrines=["inter"],
+            captacao_bruta=100_000_000.0, resgates=0.0, pl_inicio=500_000_000.0,
+            pl_fim=600_000_000.0, cotistas_inicio=1000, cotistas_fim=5000, dias=60,
+        )]
+        sem = build_grade_opportunities(snapshots, fluxos)
+        self.assertEqual((sem["total_operacionais"], sem["total_comerciais"]), (0, 1))
+        self.escrever("lista.csv", f"cnpj;situacao\n{EPSILON_RF};distribui\n")
+        com = build_grade_opportunities(snapshots, fluxos, distribuivel=carregar(self.config, self.mapa))
+        self.assertEqual((com["total_operacionais"], com["total_comerciais"]), (1, 0))
 
 
 class TestOutrosBlocosUsamOMesmoVeredito(unittest.TestCase):
@@ -515,9 +610,31 @@ class TestSuperficies(_ComPasta):
     def test_dashboard_leva_o_funil_os_cobertos_e_as_notas(self):
         dados = build_dashboard_data(self._relatorio())["gaps"]
         self.assertEqual(dados["frase_funil"], frase_do_funil(dados))
-        self.assertEqual([f["cnpj"] for f in dados["cobertos"]], [ALFA_ACCESS, DELTA_INTER])
+        # Os cobertos com o motivo: a carteira, a lista da casa e a outra liquidez.
+        self.assertEqual(
+            {f["cnpj"]: f["cobertura"] for f in dados["cobertos"]},
+            {ALFA_ACCESS: "carteira", DELTA_INTER: "carteira", EPSILON_RF: "lista",
+             SPARTA_INTER: "liquidez"},
+        )
+        self.assertNotIn(EPSILON_RF, {f["cnpj"] for f in dados["funds"]})
         self.assertTrue(any("Correlato: mesma gestora" in n for n in dados["notas_cobertura"]))
         self.assertTrue(any("Lista distribuível" in n for n in dados["notas_cobertura"]))
+
+    def test_painel_escreve_o_nome_no_padrao_e_guarda_o_da_fonte(self):
+        """Pedido de 19/10/2026: o JS escreve o nome que recebe, entao o
+        payload embutido sai no padrao; o dicionario de Python, como veio."""
+        from shelf_monitor.report.dashboard import _nomes_para_ler
+
+        dados = build_dashboard_data(self._relatorio())
+        exibido = _nomes_para_ler(dados)
+        alfa = {f["cnpj"]: f for f in exibido["gaps"]["cobertos"]}[ALFA_ACCESS]
+        self.assertEqual(alfa["name"], "BTG Access Alfa Credito FIC")
+        self.assertEqual(alfa["prova"]["nome_cobre"], "Alfa Credito Advisory FIC")
+        fonte = {f["cnpj"]: f for f in dados["gaps"]["cobertos"]}[ALFA_ACCESS]
+        self.assertEqual(fonte["name"], "BTG ACCESS ALFA CREDITO FIC")
+        # A gestora nao e nome de fundo: fica como a CVM a escreve.
+        for casa, original in zip(exibido["platforms"], dados["platforms"]):
+            self.assertEqual(casa.get("top_managers"), original.get("top_managers"))
 
     def test_planilha_ganha_gaps_cobertos_e_familias(self):
         from openpyxl import load_workbook
@@ -533,16 +650,38 @@ class TestSuperficies(_ComPasta):
         self.assertIn("Gaps cobertos", livro.sheetnames)
         self.assertIn("Famílias", livro.sheetnames)
         cobertos = livro["Gaps cobertos"]
-        self.assertEqual(cobertos.cell(row=2, column=2).value, mascara(ALFA_ACCESS))
-        self.assertEqual(cobertos.cell(row=2, column=8).value, mascara(ALFA_ADVISORY))
+        cabecalho_cobertos = [c.value for c in cobertos[1]]
+        self.assertEqual(cabecalho_cobertos[0], "Coberto por")
+        self.assertEqual(cabecalho_cobertos[-1], "Esforço")
+        linhas = {r[2]: r for r in cobertos.iter_rows(min_row=2, values_only=True) if r[2]}
+        # O espelho, com o fundo da XP que cobre, e sem esforco: a XP ja o tem.
+        alfa = linhas[mascara(ALFA_ACCESS)]
+        self.assertEqual(alfa[0], "Fundo da XP")
+        # O nome no padrao das vitrines (19/10/2026), o da fonte em caixa alta.
+        self.assertEqual(alfa[1], "BTG Access Alfa Credito FIC")
+        self.assertEqual(alfa[8], mascara(ALFA_ADVISORY))
+        self.assertIn(alfa[-1], ("", None))
+        # O que a lista da casa cobre (19/10/2026), com o esforco de expor; e o
+        # que so falta em outra liquidez, com o da versao de liquidez.
+        epsilon = linhas[mascara(EPSILON_RF)]
+        self.assertEqual((epsilon[0], epsilon[-1]), ("Lista da casa", ESFORCO_EXPOR))
+        sparta = linhas[mascara(SPARTA_INTER)]
+        self.assertEqual((sparta[0], sparta[-1]), ("Outra faixa de liquidez", ESFORCO_LIQUIDEZ))
         gaps = livro["Gaps XP"]
         cabecalho = [c.value for c in gaps[1]]
         self.assertIn("Veredito", cabecalho)
-        self.assertIn("Na lista distribuível", cabecalho)
+        # A aba Gaps XP e so do gap real: nenhum fundo dela esta na lista.
+        self.assertNotIn("Na lista distribuível", cabecalho)
+        na_aba = {
+            r[cabecalho.index("CNPJ")] for r in gaps.iter_rows(min_row=2, values_only=True)
+        }
+        self.assertIn(mascara(THUNDERBOLT), na_aba)
+        for cnpj in (ALFA_ACCESS, EPSILON_RF, SPARTA_INTER):
+            self.assertNotIn(mascara(cnpj), na_aba)
         familias = [
             r[1] for r in livro["Famílias"].iter_rows(min_row=2, values_only=True) if r[1]
         ]
-        self.assertIn("ALFA CREDITO MASTER", familias)
+        self.assertIn("Alfa Credito Master", familias)
 
 
 if __name__ == "__main__":

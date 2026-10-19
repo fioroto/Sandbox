@@ -23,6 +23,7 @@ from shelf_monitor.report.shared import (
     movimentos_de_vitrine,
     rotulo_da_casa,
 )
+from shelf_monitor.report.shared.nomes import nome_de_fundo
 from shelf_monitor.texto import competencia_br, periodo_br
 
 # Paleta de referencia (modo claro) - a mesma do dashboard.
@@ -278,14 +279,20 @@ def _gaps(prs, gaps: dict):
 
     if (gaps.get("carteira") or {}).get("available"):
         # Com a carteira da CVM a manchete e o gap REAL: o aparente que a XP
-        # cobre por espelho ou equivalente nao e decisao de comite.
+        # cobre - por fundo dela, pela lista da casa ou em outra liquidez - nao
+        # e decisao de comite. O tile da lista so quando ela foi lida contra a
+        # vitrine: sem ela, "0" afirmaria o que ninguem checou.
         tiles = [
-            ("Gaps reais", _fmt(gaps["total_gaps"]), "sem espelho nem equivalente"),
-            ("Já cobertos", _fmt(gaps.get("total_cobertos", 0)),
-             f"de {_fmt(gaps.get('gaps_aparentes', 0))} gaps aparentes"),
-            ("Em outra liquidez", _fmt(gaps.get("gaps_liquidez", 0)),
-             "a XP tem a estratégia em outro D+"),
+            ("Gaps reais", _fmt(gaps["total_gaps"]), "a XP não tem de forma nenhuma"),
+            ("Cobertos: fundo da XP", _fmt(gaps.get("total_cobertos", 0)),
+             "espelho, equivalente ou correlato"),
         ]
+        lista = ((gaps.get("lentes") or {}).get("distribuivel") or {}).get("available")
+        if lista and gaps.get("base") == "vitrine":
+            tiles.append(("Cobertos: lista da casa", _fmt(gaps.get("gaps_na_lista", 0)),
+                          "a XP distribui ou pode distribuir"))
+        tiles.append(("Cobertos: outra liquidez", _fmt(gaps.get("gaps_liquidez", 0)),
+                      "a XP tem a estratégia em outro D+"))
     else:
         tiles = [
             ("Fundos de gap", _fmt(gaps["total_gaps"]), "fora da vitrine XP"),
@@ -308,6 +315,7 @@ def _gaps(prs, gaps: dict):
         return f"{_fmt(value)}%" if value is not None else "-"
 
     def clip(name: str) -> str:
+        name = nome_de_fundo(name)
         return name if len(name) <= 60 else name[:57] + "..."
 
     funds = gaps.get("funds") or []
@@ -370,7 +378,8 @@ def _gaps(prs, gaps: dict):
         notes.append(f"Atenção: {carteira['aviso']}.")
     notes.append(
         "Lista completa na planilha (abas Gaps XP e Gaps cobertos)."
-        if gaps.get("total_cobertos") else "Lista completa na planilha (aba Gaps XP)."
+        if gaps.get("cobertos") or gaps.get("total_cobertos")
+        else "Lista completa na planilha (aba Gaps XP)."
     )
     _text(slide, 0.6, 6.95, 12.1, 0.4, " ".join(notes), 9.5, color=_MUTED)
 
@@ -605,7 +614,7 @@ def _movements(prs, report: RunReport):
         # entrada tambem - antes o slide citava fundo que so estava no catalogo.
         casa = movimentos_de_vitrine(diff, report.snapshot_for(diff.platform))
         note = "coleta suspeita - saídas suprimidas" if diff.suspect else ""
-        sample = ", ".join(f.name for f in casa.entradas[:3])
+        sample = ", ".join(nome_de_fundo(f.name) for f in casa.entradas[:3])
         if len(casa.entradas) > 3:
             sample += ", ..."
         rows.append([

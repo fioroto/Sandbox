@@ -103,7 +103,7 @@ nesta ordem:
 
 | Secao | O que traz |
 |---|---|
-| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
+| Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora, nem so em outra faixa de liquidez) que captam varejo em 3 meses e aceleram na semana; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
 | Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela; abaixo delas, a captacao de todos os fundos das vitrines por categoria ANBIMA - a visao de mercado -, na semana e em 3 meses, com o ritmo de cada uma |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
@@ -173,8 +173,8 @@ liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava 
 
 **A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
 acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
-12 semanas anteriores) ou "virou entrada" (antes perdia dinheiro). Estavel,
-desacelerando e virou saida ficam fora. A ordem e a captacao em 3 meses, 10 por
+12 semanas anteriores, que ja era positiva). Estavel, desacelerando, virou saida e,
+desde 19/10/2026, virou entrada ficam fora. A ordem e a captacao em 3 meses, 10 por
 concorrente, sem repetir fundo. O produto proprio do concorrente entra, marcado
 "produto proprio" na coluna Esforco, e fica fora dos numeros de cima e do assunto, que
 contam so o que da para trazer (`report/oportunidade.py`). Ate ali a ordem era esforco e
@@ -224,8 +224,20 @@ quando existe, o diretorio dos arquivos que o monitor le.
 
 O texto das saidas segue a norma do portugues do Brasil: acento, crase, concordancia
 de numero (`texto.contagem`: "1 alteração", "3 alterações") e separador de milhar
-("6.631"). Comentarios e docstrings do codigo seguem em ASCII. Nome de fundo sai
-como a fonte publica ("Itau Credito Bancario" fica assim), com uma excecao: texto
+("6.631"). Comentarios e docstrings do codigo seguem em ASCII.
+
+**Nome de fundo no padrao das vitrines** (19/10/2026, pedido do usuario). A XP e o
+Inter escrevem o nome em caixa de titulo, com as siglas ("AZ Quest Termo FIF RF
+LP"); o BTG, o Itau, o Nu e o cadastro da CVM, em caixa alta, e o cadastro ainda
+com a forma juridica por extenso. Na exibicao - digest, painel, planilha e deck -
+todos saem no padrao da XP (`report/shared/nomes.py`): a forma juridica em sigla
+(FIF, FIC FI, CIC, RL) e, no nome em caixa alta, caixa de titulo com as siglas em
+maiuscula e os conectores em minuscula ("TREND CASH RENDA FIXA SIMPLES FIF RL" vira
+"Trend Cash Renda Fixa Simples FIF RL"). As siglas sao as da forma juridica e do
+mercado e as marcas que a XP e o Inter escrevem em sigla (SPX, JGP, AZ, BTG...). So
+a exibicao muda: o nome guardado, que os cruzamentos por nome usam, e o CNPJ seguem
+os da fonte, e o acento que a fonte nao publica nao e reposto ("Itau Credito
+Bancario" fica assim). A outra excecao e o texto
 decodificado com o charset errado. Em 2026-09-24, 133 dos 466 nomes do Inter estavam
 gravados como "DÃ³lar" - o servidor nao declara charset e o `requests` lia UTF-8 como
 Latin-1. O `http.get` passou a decodificar certo, e `texto.consertar_mojibake`
@@ -899,6 +911,17 @@ sem dado de carteira. Os cobertos saem da contagem e vao para a aba "Gaps cobert
 da planilha, com o fundo XP que cobre, o master, o D+ dos dois lados, a distancia e
 a sobreposicao.
 
+**Gap real e so o que nao esta coberto** (19/10/2026, pedido do usuario: a aba de
+gaps e so do gap efetivo). Alem do fundo da XP (mesma classe, espelho, equivalente
+ou correlato), vao para os cobertos o gap que a lista da casa cobre (a XP ja
+distribui ou pode distribuir) e o que a XP tem so em outra faixa de liquidez
+(`aggregate._cobertura`). A aba "Gaps cobertos" abre com a coluna "Coberto por"
+(fundo da XP, lista da casa ou outra faixa de liquidez) e fecha com o esforco de
+quem ainda pede acao (expor na vitrine, ativar distribuicao, versao de liquidez); a
+aba "Gaps XP", o painel, o deck, o digest, a grade e o consenso so contam o gap
+real. No funil a lista da casa e um passo proprio, entre o correlato e a outra
+liquidez, e o detalhe do real (de estrategia, de gestora, sem dado) soma o real.
+
 **Correlato** (15/10/2026, pedido do usuario: gap real e so o que a XP nao tem de
 forma nenhuma). E outra versao da mesma estrategia da mesma gestora (raiz do CNPJ
 do gestor) que a carteira nao ligou: o nome da estrategia e o mesmo depois de tirar
@@ -923,8 +946,10 @@ escada de esforco, do mais barato ao mais caro: expor na vitrine, ativar
 distribuicao (as duas so com a lista distribuivel), inclusao operacional, versao
 de liquidez (custa o mesmo que a operacional, mas a estrategia ja esta na
 prateleira), abrir gestora, gestora nao identificada, produto proprio do
-concorrente. A decisao de consenso (`insights`) e as oportunidades de grade
-(`captacao`) usam o mesmo veredito: fundo coberto nao vira lacuna em nenhum bloco.
+concorrente. Desde 19/10/2026 expor, ativar e a versao de liquidez so marcam os
+cobertos: o gap real comeca na inclusao operacional. A decisao de consenso
+(`insights`) e as oportunidades de grade (`captacao`) usam o mesmo veredito: fundo
+coberto nao vira lacuna em nenhum bloco.
 
 `python -m shelf_monitor familias "NOME"` lista todas as familias de uma gestora
 (ou a de um fundo, pelo CNPJ): versoes, papel de cada classe, D+, perfil de
@@ -956,10 +981,20 @@ A vitrine publica nao e tudo que a XP distribui. CSVs soltos em
 - linha que nao se resolve (CNPJ invalido, situacao desconhecida, fundo fora do
   cadastro) e listada com arquivo, linha e motivo no fim da aba "Gaps XP".
 
-As duas lentes sao independentes. Com a vitrine, a lista muda o esforco: gap da
-vitrine que a lista cobre vira "expor na vitrine" (ou "ativar distribuicao"). Sem
-a vitrine da XP (dia de bloqueio de CDN), a lista vira a base e o aviso diz que a
-vitrine faltou. Sem CSV na pasta, a lente sai suprimida com o motivo.
+As duas lentes sao independentes. Com a vitrine, gap da vitrine que a lista cobre
+nao e gap: vai para os cobertos (motivo "lista da casa"), com o esforco "expor na
+vitrine" (ou "ativar distribuicao"). Sem a vitrine da XP (dia de bloqueio de CDN),
+a lista vira a base e o aviso diz que a vitrine faltou. Sem CSV na pasta, a lente
+sai suprimida com o motivo.
+
+**A gestora da lista e gestora da XP** (19/10/2026, pedido do usuario). A gestora
+com algum fundo na lista conta como gestora que a XP distribui, como a da vitrine:
+decide a coluna "Gestora na base XP", o gap de estrategia contra o de gestora, o
+esforco (inclusao operacional contra abrir gestora), os numeros do digest e a
+divisao da grade. Com o mapa de familias, pela raiz do CNPJ da gestora; sem ele,
+pelo nome do cadastro da CVM (a coluna `gestora` do CSV so vale para fundo que o
+cadastro nao traz). Ate ali so a vitrine contava, e a gestora que a XP distribui
+fora da vitrine saia como "abrir gestora".
 
 **Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
 Quatro vias, na ordem de confianca: (0) o join com o registro da CVM, pelo CNPJ ou

@@ -48,6 +48,7 @@ from shelf_monitor.report.performance import blocos_de_rentabilidade, janela_do_
 from shelf_monitor.report.retail_flow import _reais
 from shelf_monitor.report.shared import rotulo_da_casa
 from shelf_monitor.report.shared.estilo import CORES_DAS_CASAS
+from shelf_monitor.report.shared.nomes import nome_de_fundo
 from shelf_monitor.report.shared.fontes import (
     CVM_CADASTRO,
     CVM_EXTRATO,
@@ -275,9 +276,14 @@ def _kpi_gaps(data: dict) -> str:
         if (gaps.get("carteira") or {}).get("available"):
             return _kpi(
                 "gaps-section", "Fundos que faltam na XP", milhar(gaps.get("total_gaps", 0)),
-                f"reais, de {milhar(funil.get('aparentes', 0))} aparentes · "
-                f"{contagem(gaps.get('total_cobertos', 0), 'já coberto', 'já cobertos')} · "
-                f"{milhar(gaps.get('gaps_liquidez', 0))} em outra liquidez",
+                _pontos(
+                    f"reais, de {milhar(funil.get('aparentes', 0))} aparentes",
+                    f"{contagem(gaps.get('total_cobertos', 0), 'coberto', 'cobertos')} "
+                    "por fundo da XP",
+                    f"{milhar(gaps['gaps_na_lista'])} na lista da casa"
+                    if gaps.get("gaps_na_lista") else "",
+                    f"{milhar(gaps.get('gaps_liquidez', 0))} em outra liquidez",
+                ),
             )
         return _kpi(
             "gaps-section", "Fundos que faltam na XP", milhar(gaps.get("total_gaps", 0)),
@@ -430,7 +436,9 @@ def _leitura_gaps(report: RunReport, data: dict) -> Leitura | None:
         if (gaps.get("carteira") or {}).get("available") and funil.get("aparentes"):
             texto = _pontos(
                 f"{milhar(funil.get('reais', 0))} reais de {milhar(funil['aparentes'])} aparentes",
-                f"{milhar(funil.get('cobertos', 0))} já cobertos" if funil.get("cobertos") else "",
+                f"{milhar(funil.get('cobertos', 0))} cobertos por fundo da XP"
+                if funil.get("cobertos") else "",
+                f"{milhar(funil['na_lista'])} na lista da casa" if funil.get("na_lista") else "",
                 f"{milhar(funil.get('outra_liquidez', 0))} em outra liquidez"
                 if funil.get("outra_liquidez") else "",
             )
@@ -825,10 +833,16 @@ def _resumos(report: RunReport, data: dict, config: Config) -> dict[str, str]:
     if gaps.get("nao_se_aplica"):
         r["gaps"] = "Não se aplica a este monitor."
     elif gaps.get("available"):
-        cobertos = gaps.get("total_cobertos") or 0
+        # Os cobertos pelos tres motivos: fundo da XP, lista da casa e outra
+        # liquidez (19/10/2026).
+        cobertos = sum(
+            gaps.get(chave) or 0
+            for chave in ("total_cobertos", "gaps_na_lista", "gaps_liquidez")
+        )
         r["gaps"] = (
             f"{contagem(gaps.get('total_gaps', 0), 'gap real', 'gaps reais')} na vitrine da {base}"
-            + (f" · {contagem(cobertos, 'já coberto', 'já cobertos')}, com a evidência." if cobertos else ".")
+            + (f" · {contagem(cobertos, 'já coberto', 'já cobertos')}, com o motivo e a evidência."
+               if cobertos else ".")
         )
     else:
         r["gaps"] = f"Suprimido nesta coleta: {gaps.get('reason') or 'dados insuficientes'}."
@@ -956,6 +970,33 @@ def _painel(ident: str, titulo: str, resumo: str, corpo: str) -> str:
         f"    </details>\n"
         f"  </section>"
     )
+
+
+# As chaves do payload que guardam nome de fundo. O JS escreve o que recebe,
+# entao o padrao de exibicao (`shared.nomes`, 19/10/2026) entra aqui, uma vez,
+# na serializacao: o dicionario de `build_dashboard_data` segue o da fonte.
+_CHAVES_DE_NOME = frozenset({
+    "name", "nome", "nome_cobre", "nome_master", "familia_nome",
+    "nome_possivel_equivalente", "possible_xp_equivalent",
+})
+# Onde "name" e "nome" nao sao de fundo: a gestora, o CSV da lista, a fonte.
+_SEM_NOME_DE_FUNDO = frozenset({"top_managers", "arquivos", "invalidas", "fontes"})
+
+
+def _nomes_para_ler(no):
+    """O payload com os nomes de fundo no padrao de exibicao; o resto igual."""
+    if isinstance(no, dict):
+        return {
+            chave: (
+                nome_de_fundo(valor) if chave in _CHAVES_DE_NOME and isinstance(valor, str)
+                else valor if chave in _SEM_NOME_DE_FUNDO
+                else _nomes_para_ler(valor)
+            )
+            for chave, valor in no.items()
+        }
+    if isinstance(no, list):
+        return [_nomes_para_ler(valor) for valor in no]
+    return no
 
 
 def _embed_json(data: dict) -> str:
@@ -1086,11 +1127,14 @@ def _painel_gaps(resumo: dict[str, str]) -> str:
     <div class="matrix-scroll" id="matrix-gaps"></div>
 
     <details><summary>Ver os fundos de gap (ordenados pelo esforço de fechar e pela captação)</summary><div id="table-gaps"></div></details>
-    <details><summary>Ver os gaps aparentes que a XP já cobre (com a evidência)</summary><div id="table-gaps-cobertos"></div></details>""" + _como_ler(
+    <details><summary>Ver os gaps aparentes que a XP já cobre (com o motivo e a evidência)</summary><div id="table-gaps-cobertos"></div></details>""" + _como_ler(
         "Vitrine × vitrine: o catálogo Open Finance não conta em nenhum dos lados.",
-        "Coberto: a XP já tem o mesmo master (espelho) ou fundo da mesma gestora com carteira "
-        "equivalente, pela carteira mensal da CVM. Sai da conta e fica listado com a prova.",
-        "Esforço: inclusão operacional (gestora que a XP já distribui) ou comercial (abrir gestora).",
+        "Coberto: a XP já tem o fundo de outro jeito - o mesmo master (espelho) ou fundo da "
+        "mesma gestora com carteira equivalente, pela carteira mensal da CVM; o fundo na "
+        "lista da casa (distribui ou pode distribuir); ou a estratégia em outra faixa de "
+        "liquidez. Sai da conta e fica listado com o motivo e a prova.",
+        "Esforço: inclusão operacional (gestora que a XP já distribui, com fundo na vitrine "
+        "ou na lista da casa) ou comercial (abrir gestora).",
     ) + """
     <div class="coverage" id="gaps-coverage"></div>""")
 
@@ -1131,8 +1175,8 @@ def _painel_captacao(
         "três somas. " + trecho["flow_como_ler_exclusivos"],
         "Família: a última coluna conta cada fundo uma vez, mesmo exibido por várias casas.",
         "Tendência em média por pregão: o mês corrente tem menos pregões que os cheios.",
-        "Ritmo: fundos com PL de ao menos R$ 1 mi no início. Captando = acelerando, estável, "
-        "desacelerando ou que virou entrada no último mês.",
+        "Ritmo: fundos com PL de ao menos R$ 1 mi no início, cada um num ritmo só - a "
+        "linha da tabela soma 100%.",
         trecho["flow_ritmo_da_base"],
     ) + """
     <div class="coverage" id="flow-coverage"></div>""")
@@ -1344,7 +1388,7 @@ def _documento(
   </footer>
 </div>
 
-<script type="application/json" id="dashboard-data">{_embed_json(data)}</script>
+<script type="application/json" id="dashboard-data">{_embed_json(_nomes_para_ler(data))}</script>
 <script>{_SCRIPT}</script>
 </body>
 </html>

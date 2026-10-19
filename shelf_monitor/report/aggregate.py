@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from shelf_monitor.caixa import nota_caixa, oferta_caixa
 from shelf_monitor.classify import KEY_CATEGORIA
@@ -785,6 +785,11 @@ def frase_do_funil(gap_block: dict) -> str | None:
             f"{contagem(funil['correlato'], 'é outra versão', 'são outra versão')} de "
             f"estratégia que a {base} já tem, da mesma gestora"
         )
+    if funil.get("na_lista"):
+        partes.append(
+            f"{contagem(funil['na_lista'], 'está', 'estão')} na lista da casa (a XP já "
+            "distribui ou pode distribuir)"
+        )
     if funil.get("outra_liquidez"):
         partes.append(
             f"{contagem(funil['outra_liquidez'], 'é coberto', 'são cobertos')} só em "
@@ -825,11 +830,14 @@ def resumo_do_funil(gap_block: dict) -> str | None:
     if frase_do_funil(gap_block) is None:
         return None
     funil = gap_block["funil"]
+    na_lista = (
+        f"{milhar(funil['na_lista'])} na lista da casa, " if funil.get("na_lista") else ""
+    )
     return (
         f"{contagem(funil['aparentes'], 'gap aparente', 'gaps aparentes')}: "
         f"{contagem(funil['cobertos'], 'já coberto', 'já cobertos')} por espelho, "
-        f"equivalente ou correlato, {milhar(funil['outra_liquidez'])} só em outra liquidez - "
-        f"{contagem(funil['reais'], 'gap real', 'gaps reais')} "
+        f"equivalente ou correlato, {na_lista}{milhar(funil['outra_liquidez'])} só em "
+        f"outra liquidez - {contagem(funil['reais'], 'gap real', 'gaps reais')} "
         f"(carteira da CVM de {competencia_br((gap_block['carteira'].get('competencias') or [''])[0])})"
     )
 
@@ -895,11 +903,43 @@ def notas_da_cobertura(gap_block: dict) -> list[str]:
 
 
 def cnpjs_cobertos(gap_block: dict) -> set[str]:
-    """CNPJs de gap aparente que a base cobre (mesma classe, espelho,
-    equivalente ou correlato). Os outros blocos que dizem "a XP nao tem" - consenso na
+    """CNPJs de gap aparente que a XP cobre: por fundo dela (mesma classe,
+    espelho, equivalente ou correlato) e, desde 19/10/2026, pela lista da casa
+    e em outra faixa de liquidez. Os outros blocos que dizem "a XP nao tem" - consenso na
     leitura competitiva, oportunidade de grade na captacao - excluem estes, para
     nenhum chamar de lacuna o que o bloco de gaps diz estar coberto."""
     return {f["cnpj"] for f in gap_block.get("cobertos") or [] if f.get("cnpj")}
+
+
+# Por que um gap aparente nao e gap (pedido de 19/10/2026): a XP ja tem o fundo
+# de outro jeito. So o que sobra - o gap efetivo - aparece como gap em qualquer
+# superficie; o resto vai para os cobertos, com o motivo e a prova. "Fundo da
+# XP" e a mesma classe, o espelho, o equivalente ou o correlato da carteira.
+COBERTURA_CARTEIRA = "carteira"
+COBERTURA_LISTA = "lista"
+COBERTURA_LIQUIDEZ = "liquidez"
+ROTULOS_DA_COBERTURA = {
+    COBERTURA_CARTEIRA: "Fundo da XP",
+    COBERTURA_LISTA: "Lista da casa",
+    COBERTURA_LIQUIDEZ: "Outra faixa de liquidez",
+}
+
+
+def _cobertura(fundo: dict) -> tuple[str | None, dict | None]:
+    """(motivo, prova) de o gap aparente nao ser gap, ou (None, None).
+
+    A ordem e a do esforco (`_esforco_do_gap`): a carteira primeiro, depois a
+    lista da casa, e a outra liquidez so quando a lista nao cobre.
+    """
+    veredito = fundo.get("veredito") or {}
+    if veredito.get("coberto"):
+        return COBERTURA_CARTEIRA, veredito
+    na_lista = fundo.get("veredito_distribuivel") or {}
+    if na_lista.get("coberto"):
+        return COBERTURA_LISTA, na_lista
+    if veredito.get("tipo") == OUTRA_LIQUIDEZ:
+        return COBERTURA_LIQUIDEZ, veredito
+    return None, None
 
 
 def build_gap_block(
@@ -918,13 +958,14 @@ def build_gap_block(
     - a vitrine da XP, como sempre: um fundo que a XP so tem via Open Finance
       conta como gap, porque o cliente nao o ve;
     - a lista distribuivel (pasta de CSVs), quando existe: o que a XP distribui
-      ou pode distribuir. Um gap da vitrine coberto por ela vira "expor na
-      vitrine" em vez de "incluir".
+      ou pode distribuir. Um gap da vitrine coberto por ela nao e gap: vai para
+      os cobertos, com o esforco "expor na vitrine" ou "ativar distribuição".
 
-    Cada gap aparente recebe um veredito por lente (`familias.Veredito`):
-    coberto por espelho, equivalente ou correlato sai da contagem de gaps reais
-    e vai para `cobertos`, com a evidencia - nada some. Sem o mapa (carteira da CVM
-    ausente) o bloco e o de antes, CNPJ contra CNPJ, com o aviso.
+    Cada gap aparente recebe um veredito por lente (`familias.Veredito`). O
+    coberto - por espelho, equivalente ou correlato, pela lista da casa ou so
+    em outra faixa de liquidez (`_cobertura`) - sai da contagem de gaps reais e
+    vai para `cobertos`, com o motivo e a evidencia - nada some. Sem o mapa
+    (carteira da CVM ausente) o bloco e o de antes, CNPJ contra CNPJ, com o aviso.
 
     Protecoes anti-falso-alarme, na mesma linha de _exclusive_cnpjs:
     - baseline ausente, indisponivel ou sem vitrine, e sem lista distribuivel ->
@@ -1017,6 +1058,11 @@ def build_gap_block(
         for m in (_offer_manager(f) for f in baseline_listing)
         if m
     }
+    # A gestora com fundo na lista da casa tambem e gestora que a XP distribui
+    # (pedido de 19/10/2026): a vitrine nao e tudo que a casa tem. Com o mapa
+    # de familias a regra e a mesma, pela raiz do CNPJ (`base_primaria`).
+    gestoras_da_lista = distribuivel.gestoras() if lista_ok else set()
+    baseline_managers |= gestoras_da_lista
     baseline_slugs: dict[str, str] = {}
     for fund in baseline_listing:
         slug = name_slug(fund.name)
@@ -1050,6 +1096,12 @@ def build_gap_block(
     base_lista = (
         familias.preparar_base(lista_cnpjs) if familias and lista_ok else None
     )
+    if base_primaria is not None and base_lista is not None and primaria == "vitrine":
+        # A gestora da lista entra nas da XP: decide "gap de estrategia" contra
+        # "gap de gestora" e "inclusao operacional" contra "abrir gestora".
+        base_primaria = replace(
+            base_primaria, raizes=base_primaria.raizes | base_lista.raizes
+        )
     for fund in funds:
         veredito = _veredito_contra(fund["cnpj"], base_cnpjs, familias, base_primaria)
         fund["veredito"] = veredito
@@ -1064,9 +1116,9 @@ def build_gap_block(
                 )
         elif primaria == "distribuivel" and veredito and veredito.get("coberto"):
             fund["situacao_distribuivel"] = distribuivel.situacao_de(veredito.get("cobre"))
-        if not baseline_listing and base_primaria is None:
-            # Sem vitrine e sem mapa nao ha de onde saber que gestoras a XP
-            # distribui: "nao" seria afirmar o que ninguem checou.
+        if not baseline_listing and not gestoras_da_lista and base_primaria is None:
+            # Sem vitrine, sem a gestora da lista e sem mapa nao ha de onde saber
+            # que gestoras a XP distribui: "nao" seria afirmar o que ninguem checou.
             fund["manager_on_xp"] = None
         if veredito and veredito.get("tipo") != PRESENTE:
             # Com o mapa, "gestora" e a da ESTRATEGIA (a do master), e e ela
@@ -1083,14 +1135,36 @@ def build_gap_block(
             )
             fund["dmais"] = veredito.get("dmais")
 
-    cobertos = [f for f in funds if (f["veredito"] or {}).get("coberto")]
-    acao = [f for f in funds if not (f["veredito"] or {}).get("coberto")]
-    reais = [f for f in acao if (f["veredito"] or {}).get("tipo") != OUTRA_LIQUIDEZ]
+    # O gap efetivo (pedido de 19/10/2026): fora da carteira, fora da lista da
+    # casa e sem ser so outra faixa de liquidez. O resto vai para os cobertos,
+    # com o motivo e a prova: a aba de gaps, o painel, o deck e o digest so
+    # mostram o efetivo. Ate ali a lista da casa e a outra liquidez ficavam
+    # entre os gaps, com o esforco "expor na vitrine" ou "versao de liquidez".
+    for fund in funds:
+        motivo, prova = _cobertura(fund)
+        fund["cobertura"] = motivo
+        fund["cobertura_rotulo"] = ROTULOS_DA_COBERTURA.get(motivo)
+        fund["prova"] = prova
+    cobertos = [f for f in funds if f["cobertura"]]
+    efetivos = [f for f in funds if not f["cobertura"]]
+    por_motivo = Counter(f["cobertura"] for f in cobertos)
     categories = _gap_categories(
-        baseline_listing, competitor_snaps, reais,
+        baseline_listing, competitor_snaps, efetivos,
         cobertos=Counter(f["category"] for f in cobertos), fora=fora_da_analise,
     )
     funil = _funil([f["veredito"] for f in funds])
+    # No funil a lista da casa e um passo: o que ela cobre sai do gap real, e a
+    # outra liquidez conta so o que a lista nao cobriu.
+    funil["na_lista"] = por_motivo[COBERTURA_LISTA]
+    funil["outra_liquidez"] = por_motivo[COBERTURA_LIQUIDEZ]
+    funil["reais"] = len(efetivos)
+    # E o detalhe do real (de estrategia, de gestora, sem dado) conta so os
+    # efetivos: o que a lista cobre sai dele, e a soma fecha com `reais`.
+    tipos_efetivos = Counter((f["veredito"] or {}).get("tipo") for f in efetivos)
+    for chave, tipo in (
+        ("estrategia", GAP_ESTRATEGIA), ("gestora", GAP_GESTORA), ("sem_dado", SEM_DADO)
+    ):
+        funil[chave] = tipos_efetivos.get(tipo, 0)
 
     # A outra lente, sobre o mesmo universo: quanto da vitrine concorrente a
     # lista distribuivel cobre. So o funil - a lista nominal e a da primaria.
@@ -1129,18 +1203,21 @@ def build_gap_block(
         "base": primaria,
         "competitors": competitors,
         "excluded": excluded,
-        # Manchete: gaps REAIS. Sem o mapa de familias sao os aparentes, como
-        # antes; com ele, o funil diz quantos a carteira resolveu.
-        "total_gaps": len(reais),
+        # Manchete: gaps EFETIVOS - fora da carteira, da lista da casa e de outra
+        # liquidez. Sem o mapa de familias e sem a lista, sao os aparentes.
+        "total_gaps": len(efetivos),
         "gaps_aparentes": len(funds),
         # Gaps aparentes tirados por serem fundo caixa/simples.
         "caixa_fora": caixa_fora,
         # E os de previdencia (ver shelf_monitor.previdencia_fora).
         "previdencia_fora": previdencia_fora,
-        "gaps_liquidez": len(acao) - len(reais),
-        "total_cobertos": len(cobertos),
-        "multi_house_gaps": sum(1 for f in reais if f["houses_count"] >= 2),
-        "funds": acao,
+        # Os cobertos por motivo: a carteira (espelho, equivalente, correlato),
+        # a lista da casa e a outra faixa de liquidez. `cobertos` traz os tres.
+        "total_cobertos": por_motivo[COBERTURA_CARTEIRA],
+        "gaps_na_lista": por_motivo[COBERTURA_LISTA],
+        "gaps_liquidez": por_motivo[COBERTURA_LIQUIDEZ],
+        "multi_house_gaps": sum(1 for f in efetivos if f["houses_count"] >= 2),
+        "funds": efetivos,
         "cobertos": cobertos,
         "categories": categories,
         "funil": funil,
@@ -1349,7 +1426,9 @@ def _flow_payload(report: RunReport, rentabilidade: dict | None = None) -> dict:
 # prateleira -, entao vem logo depois; um de gestora nova exige abrir
 # relacionamento; produto proprio do concorrente nao se transfere. Medido em
 # 26/09/2026 com a versao de liquidez antes da inclusao operacional: o digest
-# abria com dez fundos que nao eram gap real.
+# abria com dez fundos que nao eram gap real. Desde 19/10/2026 os degraus da
+# lista e da liquidez so marcam os cobertos (`_cobertura`): o gap real comeca
+# na inclusao operacional.
 ESFORCO_EXPOR = "expor na vitrine"
 ESFORCO_ATIVAR = "ativar distribuição"
 ESFORCO_LIQUIDEZ = "versão de liquidez"

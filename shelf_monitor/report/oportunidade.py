@@ -12,16 +12,18 @@ O recorte, sobre o bloco de gaps ja ranqueado das casas do digest:
 - **gap real**: fora da vitrine da XP, sem espelho nem equivalente pela
   carteira, sem correlato da mesma gestora (outra versao da mesma estrategia,
   como o Advisory da XP contra o Seleção do Itau - `familias`), sem ser so
-  outra faixa de liquidez e fora da lista da casa (`distribuivel`; esforco
-  "expor na vitrine" ou "ativar distribuição");
+  outra faixa de liquidez e fora da lista da casa (`distribuivel`). Desde
+  19/10/2026 o bloco de gaps ja manda a lista e a liquidez para os cobertos
+  (`aggregate._cobertura`);
 - **captando**: o criterio da grade (`FundFlow.entrou`) - captacao liquida em 3
   meses positiva, com cotistas novos onde cotista mede gente, PL de ao menos
   R$ 1 mi no inicio e sem movimento estrutural;
-- **acelerando na semana** (pedido de 16/10/2026): o ritmo da semana e
-  "acelerando" ou "virou entrada" (`RITMOS_DA_LISTA`) - a captacao por dia da
-  semana de referencia contra a das 12 semanas anteriores. Estavel,
-  desacelerando e virou saida ficam fora: no digest de 14/10/2026, 3 dos 5
-  primeiros do BTG ja nao aceleravam, e um deles tinha virado saida.
+- **acelerando na semana** (pedidos de 16 e 19/10/2026): o ritmo da semana e
+  "acelerando" (`RITMOS_DA_LISTA`) - a captacao por dia da semana de
+  referencia mais de 25% acima da das 12 semanas anteriores, que ja era
+  positiva. Estavel, desacelerando, virou saida e, desde 19/10/2026, virou
+  entrada ficam fora: no digest de 14/10/2026, 3 dos 5 primeiros do BTG ja nao
+  aceleravam, e um deles tinha virado saida.
 
 A semana filtra e os 3 meses ordenam (`chave_da_lista`). A semana de um fundo e
 ruidosa demais para decidir o topo sozinha, mas basta para separar quem ganha
@@ -49,12 +51,14 @@ from shelf_monitor.report.aggregate import (
 from shelf_monitor.report.retail_flow import _MIN_PL_RANKING
 
 # O que a lista da casa ja tem (fora da vitrine) e o que so falta em outra
-# faixa de liquidez nao e gap real.
+# faixa de liquidez nao e gap real. O bloco de gaps ja os tira (19/10/2026);
+# o filtro fica para o relatorio salvo antes disso.
 _NAO_REAIS = frozenset({ESFORCO_EXPOR, ESFORCO_ATIVAR, ESFORCO_LIQUIDEZ})
 
 # O ritmo da semana que poe o gap na lista: capta mais por dia do que nas 12
-# semanas anteriores, ou saiu do negativo (ver retail_flow.classificar_ritmo).
-RITMOS_DA_LISTA = frozenset({"acelerando", "virou_entrada"})
+# semanas anteriores (ver retail_flow.classificar_ritmo). "Virou entrada" saiu
+# em 19/10/2026, a pedido: a visao semanal e so de quem acelera.
+RITMOS_DA_LISTA = frozenset({"acelerando"})
 
 
 def chave_da_lista(fundo: dict) -> tuple:

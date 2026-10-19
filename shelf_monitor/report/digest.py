@@ -37,7 +37,6 @@ no dashboard, na planilha e no deck.
 """
 from __future__ import annotations
 
-import re
 from datetime import date
 from pathlib import Path
 
@@ -59,6 +58,7 @@ from shelf_monitor.report.shared import (
     rotulo_da_casa,
 )
 from shelf_monitor.report.retail_flow import _TREND_BAND, nome_da_tendencia
+from shelf_monitor.report.shared.nomes import nome_de_fundo
 from shelf_monitor.report.shared.semanas import prazos_da_semana
 from shelf_monitor.texto import (
     competencia_br,
@@ -249,33 +249,10 @@ def _motivo_curto(motivo: str | None) -> str:
     return texto.strip()
 
 
-# A forma juridica por extenso, como o cadastro da CVM e o Open Finance a
-# escrevem, e a sigla dela. O nome de registro do Itau ocupava sete linhas na
-# tabela do e-mail ("JGP SELECT FUNDO DE INVESTIMENTO FINANCEIRO DA CLASSE DE
-# INVESTIMENTO EM COTAS ... RESPONSABILIDADE LIMITADA"). So a exibicao muda:
-# o nome guardado e o CNPJ continuam os da fonte.
-_FORMA_JURIDICA = tuple(
-    (re.compile(rf"\b{expressao}\b", re.IGNORECASE), sigla)
-    for expressao, sigla in (
-        (r"FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO", "FIC FI"),
-        (r"FUNDO INCENTIVADO DE INVESTIMENTO(?: FINANCEIRO)? EM INFRAESTRUTURA", "FI INFRA"),
-        (r"FUNDO DE INVESTIMENTO FINANCEIRO", "FIF"),
-        (r"FUNDO DE INVESTIMENTO", "FI"),
-        (r"(?:DA )?CLASSE DE INVESTIMENTO EM COTAS(?: DE FUNDOS DE INVESTIMENTO)?", "CIC"),
-        (r"(?:DA )?CLASSE DE INVESTIMENTO", ""),
-        (r"RESPONSABILIDADE LIMITADA", "RL"),
-        (r"RESP\.? LIMITADA", "RL"),
-    )
-)
-
-
 def _nome_do_fundo(nome: str | None) -> str:
-    """O nome para ler: a forma juridica em sigla, o resto como veio."""
-    texto = nome or ""
-    for padrao, sigla in _FORMA_JURIDICA:
-        texto = padrao.sub(sigla, texto)
-    texto = re.sub(r"\s{2,}", " ", texto).strip(" -")
-    return texto or (nome or "")
+    """O nome para ler, no padrao das vitrines (`shared.nomes`): a forma
+    juridica em sigla e, em caixa alta, caixa de titulo (19/10/2026)."""
+    return nome_de_fundo(nome)
 
 
 def _casas_do_fundo(fundo: dict, visao: VisaoDoDigest) -> str:
@@ -538,12 +515,17 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
         "CNPJ contra CNPJ - sem a carteira da CVM, espelho, equivalente e outra versão da "
         "mesma estratégia não foram verificados."
     )
-    notas = [criterio]
+    notas = [
+        criterio,
+        # A regra da gestora (19/10/2026): a lista da casa conta, nao so a vitrine.
+        "Gestora que a XP já distribui: a da estratégia tem algum fundo na vitrine da "
+        "XP ou na lista da casa; sem nenhum, o gap exige abrir gestora.",
+    ]
     if op.get("com_fluxo"):
         notas.append(
             ("Na lista: os que captaram em 3 meses e estão acelerando na semana - captação "
-             "por dia mais de 25% acima da média das 12 semanas anteriores, ou que virou "
-             "entrada -, pela captação em 3 meses."
+             "por dia mais de 25% acima da média das 12 semanas anteriores, que já era "
+             "positiva -, pela captação em 3 meses."
              if op.get("com_ritmo") else
              "Na lista: os que captaram em 3 meses, pela captação - sem semana completa no "
              "informe, o ritmo da semana não filtra.")
@@ -552,8 +534,9 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
         )
     if op.get("total_reais"):
         notas.append(
-            "Na planilha: os gaps reais na aba Gaps XP e os cobertos, com o fundo da XP "
-            "que cobre cada um, na aba Gaps cobertos."
+            "Na planilha: os gaps reais na aba Gaps XP e os cobertos - por fundo da XP, "
+            "pela lista da casa ou em outra faixa de liquidez -, com o motivo e a prova, "
+            "na aba Gaps cobertos."
             if carteira.get("available") else
             "A lista completa dos gaps está na planilha, aba Gaps XP."
         )
@@ -987,9 +970,14 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
 
 # --- ritmo de captacao ---------------------------------------------------------
 
-# Tendencias que somam "captando" na tabela por casa: o que o leitor compara
-# entre vitrines e quanto dela ainda capta, quanto acelera e quanto perde.
-_CAPTANDO = ("acelerando", "estavel", "desacelerando", "virou_entrada")
+# Os ritmos do quadro por casa, de quem capta mais a quem perde mais. Sao
+# excludentes - cada fundo esta num so -, e a linha soma 100% (pedido de
+# 19/10/2026). Ate ali o quadro trazia "Captando", que ja somava o acelerando,
+# ao lado de "Acelerando", sem o "sem serie": a linha passava de 100%.
+_RITMOS_DO_QUADRO = (
+    "acelerando", "virou_entrada", "estavel", "desacelerando", "virou_saida",
+    "saida_persistente", "sem_serie",
+)
 
 
 def _ritmo_pela_lista(flow: dict) -> str | None:
@@ -998,39 +986,61 @@ def _ritmo_pela_lista(flow: dict) -> str | None:
     return ritmo.get("platform_id") if ritmo.get("fonte") == "base_interna" else None
 
 
+def _porcentagens_inteiras(parcelas: list[float]) -> list[int]:
+    """As parcelas da linha em % inteiros que somam 100, pelos maiores restos.
+
+    Arredondada celula a celula, a linha saia com 99% ou 101% (BTG em
+    14/10/2026: 12 + 18 + 2 + 8 + 9 + 52), e o quadro tem de fechar em 100%.
+    """
+    brutos = [p * 100 for p in parcelas]
+    inteiros = [int(b) for b in brutos]
+    falta = round(sum(brutos)) - sum(inteiros)
+    for i in sorted(range(len(brutos)), key=lambda i: inteiros[i] - brutos[i])[:falta]:
+        inteiros[i] += 1
+    return inteiros
+
+
 def _bloco_do_ritmo(flow: dict) -> dict | None:
-    """A tabela de ritmo por casa: % dos fundos captando, acelerando, virando saida.
+    """A tabela de ritmo por casa: % dos fundos em cada ritmo, a linha somando 100%.
+
+    "Sem serie" so vira coluna quando alguma casa tem fundo sem serie - a
+    coluna de zeros so alargaria o mapa no telefone.
 
     A casa cujo ritmo sai da lista distribuivel leva "(lista)" no nome: a linha
     dela conta o que ela distribui, e a das outras, o que o site exibe.
     """
     por_casa = flow.get("tendencia_por_casa") or {}
     pela_lista = _ritmo_pela_lista(flow)
+    em_foco = [c for c in flow.get("casas") or [] if por_casa.get(c["platform_id"])]
+    estados = [
+        e for e in _RITMOS_DO_QUADRO
+        if e != "sem_serie"
+        or any(por_casa[c["platform_id"]].get(e) for c in em_foco)
+    ]
     linhas, parcelas, casas = [], [], []
     for casa in flow.get("casas") or []:
         por_estado = por_casa.get(casa["platform_id"]) or {}
         total = sum(por_estado.values())
         if not total:
             continue
-        numeros = [
-            sum(por_estado.get(k, 0) for k in _CAPTANDO) / total,
-            por_estado.get("acelerando", 0) / total,
-            por_estado.get("virou_saida", 0) / total,
-            por_estado.get("saida_persistente", 0) / total,
-        ]
+        numeros = [por_estado.get(e, 0) / total for e in estados]
         # O rotulo de hoje, e nao o gravado no bloco: um bloco calculado antes de
         # 15/10/2026 ainda trazia "Itaú (íon)" (pedido de 19/10/2026).
         rotulo = _platform_label(casa["platform_id"]) + (
             " (lista)" if casa["platform_id"] == pela_lista else ""
         )
-        linhas.append([rotulo, str(total), *(f"{n:.0%}" for n in numeros)])
+        linhas.append(
+            [rotulo, str(total), *(f"{n}%" for n in _porcentagens_inteiras(numeros))]
+        )
         parcelas.append(numeros)
         casas.append(casa["platform_id"])
     if not linhas:
         return None
     return {
-        "cabecalho": ["Casa", "Fundos", "Captando", "Acelerando", "Virou saída",
-                      "Saída persistente"],
+        "cabecalho": [
+            "Casa", "Fundos", *(_capitalizar(nome_da_tendencia(e)) for e in estados)
+        ],
+        "estados": estados,
         "linhas": linhas,
         "parcelas": parcelas,
         "casas": casas,
@@ -1092,8 +1102,8 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
         lines += [
             "**Tendência dos fundos, por casa** - parcela dos fundos de cada "
             f"{_prateleira_ou_vitrine(flow)} (com PL de ao menos R$ 1 mi no início) em cada "
-            "ritmo, mês contra os meses anteriores. Captando: acelerando, estável, "
-            "desacelerando ou que virou entrada no último mês.",
+            "ritmo, mês contra os meses anteriores. Cada fundo está num ritmo só: a "
+            "linha soma 100%.",
             "",
             "| " + " | ".join(ritmo["cabecalho"]) + " |",
             "|---|" + "---:|" * (len(ritmo["cabecalho"]) - 1),
@@ -1202,7 +1212,14 @@ def _figura_do_ritmo(bloco: dict, flow: dict) -> str:
     corpo = mapa_de_calor(bloco["cabecalho"][2:], linhas)
     if not corpo:
         return ""
-    persistente = {pid: numeros[3] for pid, numeros in zip(bloco["casas"], bloco["parcelas"])}
+    posicao = bloco["estados"].index("saida_persistente")
+    persistente = {
+        pid: numeros[posicao] for pid, numeros in zip(bloco["casas"], bloco["parcelas"])
+    }
+    # O titulo escreve o numero da celula, que fecha a linha em 100%.
+    escrito = {
+        pid: texto[2 + posicao] for pid, texto in zip(bloco["casas"], bloco["linhas"])
+    }
     base_id = flow.get("baseline_id")
     if base_id in persistente and len(persistente) > 1:
         outras = {pid: v for pid, v in persistente.items() if pid != base_id}
@@ -1210,25 +1227,26 @@ def _figura_do_ritmo(bloco: dict, flow: dict) -> str:
         if persistente[base_id] <= outras[melhor]:
             titulo = (
                 f"{_platform_label(base_id)} tem a menor parcela de fundos em saída "
-                f"persistente: {persistente[base_id]:.0%}"
+                f"persistente: {escrito[base_id]}"
             )
         else:
             titulo = (
-                f"{_platform_label(base_id)} tem {persistente[base_id]:.0%} dos fundos em "
-                f"saída persistente; {_platform_label(melhor)}, {outras[melhor]:.0%}"
+                f"{_platform_label(base_id)} tem {escrito[base_id]} dos fundos em "
+                f"saída persistente; {_platform_label(melhor)}, {escrito[melhor]}"
             )
     else:
         pior = max(persistente, key=persistente.get)
         titulo = (
             f"{_platform_label(pior)} tem a maior parcela de fundos em saída "
-            f"persistente: {persistente[pior]:.0%}"
+            f"persistente: {escrito[pior]}"
         )
     return figura(
         titulo,
         _linha(f"% dos fundos de cada {_prateleira_ou_vitrine(flow)} por ritmo de captação",
                _janela_da_captacao(flow.get("periodo") or {})),
         corpo,
-        "Captando inclui acelerando · fundos com PL de ao menos R$ 1 mi no início.",
+        "Cada fundo num ritmo só: a linha soma 100% · fundos com PL de ao menos R$ 1 mi "
+        "no início.",
     )
 
 

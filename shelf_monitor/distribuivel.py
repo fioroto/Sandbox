@@ -116,6 +116,10 @@ class BaseDistribuivel:
     # CNPJ de classe -> servico (SERVICO_DISTRIBUICAO ou SERVICO_FAAS), quando
     # a lista traz a coluna.
     servico: dict[str, str] = field(default_factory=dict)
+    # CNPJ de classe -> nome da gestora: o do cadastro da CVM (`carregar`) ou,
+    # sem ele, o da coluna `gestora` do CSV. A gestora com fundo na lista conta
+    # como gestora que a XP distribui (pedido de 19/10/2026).
+    gestora: dict[str, str] = field(default_factory=dict)
     arquivos: list[ArquivoLido] = field(default_factory=list)
     invalidas: list[LinhaInvalida] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
@@ -141,6 +145,10 @@ class BaseDistribuivel:
     def rotulo_do_servico(self, cnpj: str | None) -> str | None:
         """"Distribuição" ou "FaaS"; None fora da lista ou sem a coluna."""
         return ROTULOS_SERVICO.get(self.servico_de(cnpj) or "")
+
+    def gestoras(self) -> set[str]:
+        """As gestoras com fundo na lista, normalizadas como as da vitrine."""
+        return {normalize_text(g) for g in self.gestora.values() if g}
 
     def motivo_da_supressao(self) -> str | None:
         if not self.arquivos:
@@ -219,6 +227,7 @@ class BaseDistribuivel:
                         f"'{linha.get('servico')}' (use Distribuição ou FaaS) - "
                         "fundo mantido, sem serviço"
                     )
+                gestora = (linha.get("gestora") or "").strip()
                 for cnpj in classes:
                     atual = base.situacao.get(cnpj)
                     if atual != DISTRIBUI:
@@ -230,6 +239,8 @@ class BaseDistribuivel:
                                 f"{caminho.name}, linha {numero}: o fundo já veio "
                                 f"como {ROTULOS_SERVICO[anterior]} - vale o primeiro"
                             )
+                    if gestora:
+                        base.gestora.setdefault(cnpj, gestora)
                 referencia = parse_date(linha.get("data_referencia"))
                 if referencia:
                     datas.append(referencia)
@@ -331,11 +342,8 @@ def escrever_modelo(caminho: Path) -> None:
         csv.writer(handle, delimiter=";").writerow(CABECALHO_MODELO)
 
 
-def _resolvedor_do_cadastro(config) -> Resolvedor | None:
+def _resolvedor_do_cadastro(lookup) -> Resolvedor | None:
     """Sem o mapa de familias (carteira ausente), valida pelo cadastro da CVM."""
-    from shelf_monitor.enrich import MarketLookup
-
-    lookup = MarketLookup.load(config)
     if lookup is None:
         return None
 
@@ -350,6 +358,24 @@ def _resolvedor_do_cadastro(config) -> Resolvedor | None:
 
 
 def carregar(config, familias=None) -> BaseDistribuivel:
-    """A lista da pasta de entrada, resolvida pelo mapa ou, sem ele, pelo cadastro."""
-    resolver = familias.resolver if familias is not None else _resolvedor_do_cadastro(config)
-    return BaseDistribuivel.ler(config.distribuivel_dir, resolver)
+    """A lista da pasta de entrada, resolvida pelo mapa ou, sem ele, pelo cadastro.
+
+    A gestora de cada fundo vem da mesma fonte e prevalece sobre a coluna
+    `gestora` do CSV, como no enriquecimento: e o nome que a vitrine tambem
+    traz, e o que o bloco de gaps compara (pedido de 19/10/2026).
+    """
+    if familias is not None:
+        base = BaseDistribuivel.ler(config.distribuivel_dir, familias.resolver)
+        registros = {cnpj: familias.classe(cnpj) for cnpj in base.situacao}
+    else:
+        from shelf_monitor.enrich import MarketLookup
+
+        lookup = MarketLookup.load(config)
+        base = BaseDistribuivel.ler(config.distribuivel_dir, _resolvedor_do_cadastro(lookup))
+        registros = (
+            {cnpj: lookup.get(cnpj) for cnpj in base.situacao} if lookup is not None else {}
+        )
+    for cnpj, registro in registros.items():
+        if registro is not None and registro.gestor:
+            base.gestora[cnpj] = registro.gestor
+    return base

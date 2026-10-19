@@ -401,12 +401,14 @@ def attach_familias(
 
 
 def _cobertos_na_vitrine(report: RunReport) -> set[str]:
-    """CNPJs que a vitrine da XP cobre por espelho ou equivalente.
+    """CNPJs que a XP cobre: por fundo da vitrine (espelho, equivalente ou
+    correlato), pela lista da casa ou em outra faixa de liquidez.
 
-    Vazio sem o mapa, ou quando a vitrine da XP faltou (a base do bloco virou a
-    lista distribuivel, e ai "coberto" nao quer dizer "o cliente ve").
+    Vazio quando a vitrine da XP faltou (a base do bloco virou a lista
+    distribuivel, e ai "coberto" nao quer dizer "o cliente ve"). Sem o mapa
+    de familias sobra a lista da casa, CNPJ contra CNPJ (19/10/2026).
     """
-    if report.familias is None or report.suprime(BLOCO_CNPJ):
+    if report.suprime(BLOCO_CNPJ):
         return set()
     try:
         bloco = bloco_de_gaps(report)
@@ -447,7 +449,8 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
     report.retail_flow = flow
     try:
         report.grade_opportunities = build_grade_opportunities(
-            report.snapshots, flow["_fluxos"], cobertos=_cobertos_na_vitrine(report)
+            report.snapshots, flow["_fluxos"], cobertos=_cobertos_na_vitrine(report),
+            distribuivel=report.distribuivel,
         )
     except Exception as exc:  # noqa: BLE001
         console.print(f"[yellow]Oportunidades de grade não calculadas:[/] {_short(str(exc))}")
@@ -1024,6 +1027,7 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
         build_grade_opportunities(
             snapshots, resultado["_fluxos"],
             cobertos=_cobertos_dos_snapshots(config, snapshots),
+            distribuivel=distribuivel,
         )
         if resultado["available"] else {"available": False, "reason": resultado["reason"]}
     )

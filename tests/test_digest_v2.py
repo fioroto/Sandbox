@@ -75,12 +75,16 @@ A = "11000000000101"
 B = "12000000000101"
 C = "13000000000101"
 D = "14000000000101"
-# So a vitrine do Itau exibe. Perde 4 por dia ate julho, fica parado e capta 4
-# por dia na ultima semana: virou entrada, e capta nos 3 meses.
+# So a vitrine do Itau exibe. Capta meio por dia e acelera para 4 na ultima
+# semana: acelerando, e capta nos 3 meses.
 E = "16000000000101"
 # Produto proprio do BTG que acelera (de 12 para 40 por dia) e capta mais que A
 # em 3 meses, abaixo do proprio PL: so entra na vitrine com `com_proprio`.
 F = "17000000000101"
+# So a vitrine do Itau exibe, com `com_virou_entrada`. Perde 4 por dia ate julho,
+# fica parado e capta 4 por dia na ultima semana: virou entrada, e capta nos 3
+# meses - fora da lista, que desde 19/10/2026 e so de quem acelera.
+G = "18000000000101"
 _ENCHIMENTO = 32  # cada vitrine com 30 fundos ou mais (MIN_VITRINE)
 
 PRIMEIRO_DIA = date(2026, 6, 1)
@@ -108,13 +112,15 @@ def _registros() -> list[DailyFlow]:
             continue
         na_semana = dia >= INICIO_DA_SEMANA
         a = 30 * MI if na_semana else 10 * MI
-        e = 4 * MI if na_semana else -4 * MI if dia < date(2026, 8, 1) else 0.0
+        g = 4 * MI if na_semana else -4 * MI if dia < date(2026, 8, 1) else 0.0
         registros += [
             DailyFlow(cnpj=A, dia=dia, captacao=a, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=B, dia=dia, captacao=5 * MI, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=C, dia=dia, captacao=2 * MI, pl=PL, cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=D, dia=dia, pl=PL, cota=10.0, cotistas=1000),
-            DailyFlow(cnpj=E, dia=dia, captacao=max(e, 0.0), resgates=max(-e, 0.0), pl=PL,
+            DailyFlow(cnpj=E, dia=dia, captacao=(4 if na_semana else 0.5) * MI, pl=PL,
+                      cota=10.0, cotistas=1000 + n),
+            DailyFlow(cnpj=G, dia=dia, captacao=max(g, 0.0), resgates=max(-g, 0.0), pl=PL,
                       cota=10.0, cotistas=1000 + n),
             DailyFlow(cnpj=F, dia=dia, captacao=(40 if na_semana else 12) * MI, pl=PL,
                       cota=10.0, cotistas=1000 + n),
@@ -149,6 +155,7 @@ def _snapshot(platform: str, fundos: list[FundOffer], quando: datetime) -> Shelf
 def _snapshots(
     quando: datetime = datetime(2026, 10, 14, 8, 0), com_itau: bool = False,
     com_proprio: bool = False,
+    com_virou_entrada: bool = False,
 ) -> list[ShelfSnapshot]:
     def enchimento(casa: int, platform: str) -> list[FundOffer]:
         return [
@@ -170,6 +177,8 @@ def _snapshots(
         # A nas duas vitrines concorrentes; E so na do Itau.
         itau = [_oferta("itau", A, "Fundo A FIC FIM"),
                 _oferta("itau", E, "Fundo E FIC FIM", categoria=RENDA_FIXA)]
+        if com_virou_entrada:
+            itau.append(_oferta("itau", G, "Fundo G FIC FIM"))
         casas.append(_snapshot("itau", itau + enchimento(32, "itau"), quando))
     return casas + [_snapshot("nu", nu, quando)]
 
@@ -203,9 +212,12 @@ def _lista_da_casa(**servicos: str) -> BaseDistribuivel:
 
 
 def _relatorio(
-    lista: BaseDistribuivel | None = None, com_itau: bool = False, com_proprio: bool = False
+    lista: BaseDistribuivel | None = None, com_itau: bool = False, com_proprio: bool = False,
+    com_virou_entrada: bool = False,
 ) -> RunReport:
-    snapshots = _snapshots(com_itau=com_itau, com_proprio=com_proprio)
+    snapshots = _snapshots(
+        com_itau=com_itau, com_proprio=com_proprio, com_virou_entrada=com_virou_entrada
+    )
     flow, _, _ = _fluxo(snapshots)
     antes = [_snapshot(s.platform, list(s.funds), datetime(2026, 10, 7)) for s in snapshots]
     novo = _oferta("btg", "15000000000101", "BTG Novo Credito FIC FIM")
@@ -481,14 +493,27 @@ class TestListaAcelerando(unittest.TestCase):
         cls.visao = montar_visao(cls.report, None, "semanal")
         cls.op = cls.visao.oportunidade
 
-    def test_entra_quem_acelera_ou_virou_entrada(self):
-        # B capta estavel na semana e fica fora; E virou entrada e entra.
+    def test_so_entra_quem_acelera(self):
+        # B capta estavel na semana e fica fora; E acelera e entra.
         self.assertEqual(self.op["total_captando"], 4)  # A, B, E e F
         por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
         self.assertNotIn(B, [f["cnpj"] for f in por_casa["btg"]["linhas"]])
         self.assertIn(E, [f["cnpj"] for f in por_casa["itau"]["linhas"]])
         ritmos = {f["cnpj"]: f["ritmo_semanal"] for f in self.op["linhas"]}
-        self.assertEqual(ritmos, {F: "acelerando", A: "acelerando", E: "virou_entrada"})
+        self.assertEqual(ritmos, {F: "acelerando", A: "acelerando", E: "acelerando"})
+
+    def test_virou_entrada_fica_fora_da_lista(self):
+        """Pedido de 19/10/2026: a visao semanal e so de quem acelera. G capta
+        nos 3 meses e virou entrada na semana: fica fora."""
+        from shelf_monitor.report.digest_visao import montar_visao
+
+        visao = montar_visao(
+            _relatorio(com_itau=True, com_virou_entrada=True), None, "semanal"
+        )
+        fundos = {f["cnpj"]: f for f in visao.report.retail_flow["fundos"]}
+        self.assertEqual(fundos[G]["ritmo_semanal"], "virou_entrada")
+        self.assertNotIn(G, [f["cnpj"] for f in visao.oportunidade["linhas"]])
+        self.assertEqual(visao.oportunidade["total_captando"], 4)  # A, B, E e G
 
     def test_ordem_pela_captacao_em_3_meses_com_o_produto_proprio(self):
         # F (produto proprio, +728 MM) passa na frente de A (+590 MM): o
@@ -502,7 +527,7 @@ class TestListaAcelerando(unittest.TestCase):
         self.assertEqual(self.op["total_produto_do_concorrente"], 1)
         self.assertEqual(self.op["total_transferiveis"], 2)  # A e E
         self.assertAlmostEqual(self.op["captacao_semana"], 170 * MI)
-        self.assertAlmostEqual(self.op["captacao_3m"], 610 * MI)
+        self.assertAlmostEqual(self.op["captacao_3m"], (590 + 42) * MI)
         por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
         self.assertAlmostEqual(por_casa["btg"]["captacao_3m"], 590 * MI)
 
@@ -810,8 +835,8 @@ class TestPorCategoria(unittest.TestCase):
         self.assertAlmostEqual(multi["captacao_semana"], (150 + 25 + 10 + 200) * MI)
         # 29 por dia nas 12 semanas, 77 na semana: a soma acelera.
         self.assertEqual(multi["ritmo_semanal"], "acelerando")
-        self.assertEqual((rf["fundos"], rf["ritmo_semanal"]), (1, "virou_entrada"))
-        self.assertAlmostEqual(rf["captacao_3m"], 20 * MI)
+        self.assertEqual((rf["fundos"], rf["ritmo_semanal"]), (1, "acelerando"))
+        self.assertAlmostEqual(rf["captacao_3m"], 42 * MI)
         # A oportunidade nao carrega mais a soma dos gaps.
         self.assertNotIn("por_tipo", self.visao.oportunidade)
 
@@ -823,7 +848,7 @@ class TestPorCategoria(unittest.TestCase):
                       "com a captação no mercado inteiro, pela categoria ANBIMA", md)
         self.assertIn("| Categoria | Fundos | Semana | 3 meses | Ritmo na semana |", md)
         self.assertIn("| Multimercados Livre | 68 | +385,0 MM | +1.661,0 MM | acelerando |", md)
-        # Renda Fixa mexe 20 MM, abaixo dos 50 MM do e-mail: sai contada (ela segue
+        # Renda Fixa mexe 42 MM, abaixo dos 50 MM do e-mail: sai contada (ela segue
         # na coluna Categoria da lista de gaps, por causa de E).
         tabela = md[md.index("**Por categoria**"):md.index("Mais 1 categoria")]
         self.assertNotIn("Renda Fixa", tabela)
@@ -1096,6 +1121,40 @@ class TestEdicaoMensal(unittest.TestCase):
         # Primeiro do mes, os dois arquivos na mesma edicao.
         self.assertIn("edição mensal", md.read_text(encoding="utf-8"))
         self.assertIn("edição mensal", html.read_text(encoding="utf-8"))
+
+
+class TestQuadroDoRitmo(unittest.TestCase):
+    """Pedido de 19/10/2026: o quadro por casa passava de 100% - a coluna
+    "Captando" ja continha o "Acelerando", e "sem serie" nao tinha coluna."""
+
+    @staticmethod
+    def _flow(**por_casa: dict[str, int]) -> dict:
+        return {
+            "casas": [{"platform_id": casa} for casa in por_casa],
+            "tendencia_por_casa": por_casa,
+        }
+
+    def test_cada_linha_soma_100_com_todos_os_ritmos(self):
+        from shelf_monitor.report.digest import _RITMOS_DO_QUADRO, _bloco_do_ritmo
+
+        bloco = _bloco_do_ritmo(self._flow(
+            xp={"acelerando": 3, "virou_entrada": 1, "estavel": 4, "desacelerando": 2,
+                "virou_saida": 1, "saida_persistente": 2, "sem_serie": 1},
+            btg={"acelerando": 1, "estavel": 1},
+        ))
+        self.assertEqual(bloco["estados"], list(_RITMOS_DO_QUADRO))
+        self.assertEqual(len(bloco["cabecalho"]), 2 + len(_RITMOS_DO_QUADRO))
+        self.assertEqual([linha[1] for linha in bloco["linhas"]], ["14", "2"])
+        for parcelas in bloco["parcelas"]:
+            self.assertAlmostEqual(sum(parcelas), 1.0)
+
+    def test_sem_serie_so_vira_coluna_quando_alguma_casa_tem(self):
+        from shelf_monitor.report.digest import _bloco_do_ritmo
+
+        bloco = _bloco_do_ritmo(self._flow(xp={"acelerando": 1, "estavel": 3}))
+        self.assertNotIn("sem_serie", bloco["estados"])
+        self.assertIn("virou_entrada", bloco["estados"])
+        self.assertAlmostEqual(sum(bloco["parcelas"][0]), 1.0)
 
 
 if __name__ == "__main__":

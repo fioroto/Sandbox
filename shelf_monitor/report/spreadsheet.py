@@ -45,6 +45,7 @@ from shelf_monitor.report.retail_flow import (
 )
 from shelf_monitor.distribuivel import ROTULOS_SITUACAO
 from shelf_monitor.report.shared import ordem_canonica, rotulo_da_casa
+from shelf_monitor.report.shared.nomes import nome_de_fundo
 from shelf_monitor.report.shared.fontes import (
     CVM_EXTRATO,
     CVM_INFORME_DIARIO,
@@ -61,6 +62,7 @@ from shelf_monitor.report.performance import (
 )
 from shelf_monitor.report.aggregate import (
     ASSET_CLASS_LABELS,
+    COBERTURA_CARTEIRA,
     build_gap_block,
     frase_do_funil,
     notas_da_cobertura,
@@ -102,7 +104,7 @@ _INT = '0;-;-'
 # (cabecalho, largura, extrator) - a ordem aqui e a ordem das colunas.
 _COLUMNS: list[tuple[str, int, object]] = [
     ("Plataforma", 20, None),  # preenchido pelo chamador
-    ("Fundo", 52, lambda f: f.name),
+    ("Fundo", 52, lambda f: nome_de_fundo(f.name)),
     ("CNPJ", 20, lambda f: format_cnpj(f.cnpj) if f.cnpj else ""),
     ("Gestora", 34, lambda f: f.manager_name or ""),
     ("CNPJ da gestora", 20, lambda f: format_cnpj(f.manager_cnpj) if f.manager_cnpj else ""),
@@ -437,7 +439,7 @@ def _add_cvm(workbook: Workbook, cvm: CvmSnapshot) -> None:
     )
     for fund in ordered:
         values = [
-            _platform_label(fund.house), fund.name, format_cnpj(fund.cnpj),
+            _platform_label(fund.house), nome_de_fundo(fund.name), format_cnpj(fund.cnpj),
             fund.manager_name or "", fund.admin_name or "", fund.fund_type or "",
             fund.situation or "", "Sim" if fund.is_pre_operational else "Não",
             fund.registered_at or "", fund.situation_started_at or "", fund.pl,
@@ -601,7 +603,7 @@ def _add_listing_sheet(
             own = is_own_product(snapshot.platform, fund)
             values = [
                 label,
-                fund.name,
+                nome_de_fundo(fund.name),
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
                 fund.raw_category or "",
@@ -682,8 +684,9 @@ def _add_gaps_sheets(
 
     A coluna de verificacao e formula sobre a aba "Vitrine varejo" (intervalo
     limitado as linhas de dado): reage a correcoes manuais na vitrine sem
-    reexportar. Os gaps que a XP cobre por espelho ou equivalente vao para
-    "Gaps cobertos", com a evidencia - saem da contagem, nao da planilha.
+    reexportar. Os gaps que a XP cobre - por fundo dela, pela lista da casa
+    ou em outra faixa de liquidez - vao para "Gaps cobertos", com o motivo e
+    a evidencia: saem da contagem, nao da planilha.
     """
     block = build_gap_block(snapshots, familias=familias, distribuivel=distribuivel)
     if block.get("available"):
@@ -706,7 +709,6 @@ def _add_gaps_sheets(
         ).font = _NOTE_FONT
         return
 
-    com_lista = (block.get("lentes") or {}).get("distribuivel", {}).get("available")
     colunas: list[tuple[str, str, int]] = [
         ("nome", "Fundo", 52), ("cnpj", "CNPJ", 20), ("categoria", "Categoria oficial", 34),
         ("gestora", "Gestora (veículo)", 34), ("estrategia", "Gestora da estratégia", 34),
@@ -723,8 +725,6 @@ def _add_gaps_sheets(
         ("veredito", "Veredito", 26), ("familia", "Família (master)", 44),
         ("dmais", "Resgate (D+)", 12),
     ]
-    if com_lista:
-        colunas.append(("lista", "Na lista distribuível", 30))
     colunas += [
         ("minimo", "Menor mínimo (R$)", 18), ("taxa", "Menor taxa adm (%)", 17),
         ("pl", "PL CVM (R$)", 18), ("gestora_xp", "Gestora na base XP", 18),
@@ -743,14 +743,14 @@ def _add_gaps_sheets(
     for fund in block["funds"]:
         row += 1
         veredito = fund.get("veredito") or {}
-        na_lista = fund.get("veredito_distribuivel") or {}
         equivalente = (
-            veredito.get("nome_possivel_equivalente")
-            or fund.get("possible_xp_equivalent") or ""
+            nome_de_fundo(
+                veredito.get("nome_possivel_equivalente")
+                or fund.get("possible_xp_equivalent") or ""
+            )
         )
-        situacao = ROTULOS_SITUACAO.get(fund.get("situacao_distribuivel"), "-")
         valores = {
-            "nome": fund["name"],
+            "nome": nome_de_fundo(fund["name"]),
             "cnpj": fund["cnpj_display"],
             "categoria": fund["category"],
             "gestora": fund["manager"] or "",
@@ -768,11 +768,8 @@ def _add_gaps_sheets(
             "cat3": fund.get("mediana_3m"),
             "esforco": fund.get("esforco") or "",
             "veredito": veredito.get("rotulo") or "não verificado (sem carteira)",
-            "familia": (fund.get("familia") or {}).get("nome") or "",
+            "familia": nome_de_fundo((fund.get("familia") or {}).get("nome")),
             "dmais": fund.get("dmais"),
-            "lista": (
-                f"{na_lista.get('rotulo')} ({situacao})" if na_lista.get("coberto") else "não"
-            ),
             "minimo": fund["min_initial"],
             "taxa": fund["admin_fee_pct"],
             "pl": fund["pl_cvm"],
@@ -812,7 +809,8 @@ def _add_gaps_sheets(
         sheet.cell(
             row=2, column=1,
             value="Nenhum gap a fechar: toda vitrine concorrente coletada está "
-            "contida na base da XP ou coberta por espelho ou equivalente.",
+            "na base da XP ou coberta - por fundo da XP, pela lista da casa ou em "
+            "outra faixa de liquidez (aba 'Gaps cobertos').",
         ).font = _NOTE_FONT
     note_row = row + 2
     funil = frase_do_funil(block)
@@ -823,11 +821,13 @@ def _add_gaps_sheets(
         row=note_row, column=1,
         value="Gap aparente = fundo de varejo na vitrine de 1+ concorrente e fora da "
         "base da XP (por CNPJ). Comparação vitrine x vitrine: o catálogo Open "
-        "Finance não conta em nenhum dos lados. Gap real = gap aparente que nem "
-        "espelho, nem equivalente, nem correlato da mesma gestora cobre; os "
-        "cobertos estão na aba 'Gaps cobertos', "
-        "com a evidência. 'Gestora na base XP' e 'Possível equivalente' informam - "
-        "nunca removem um fundo da lista.",
+        "Finance não conta em nenhum dos lados. Gap real = gap aparente que a XP "
+        "não tem de forma nenhuma: nem espelho, nem equivalente, nem correlato da "
+        "mesma gestora, nem na lista da casa, nem em outra faixa de liquidez (desde "
+        "19/10/2026); os cobertos estão na aba 'Gaps cobertos', com o motivo e a "
+        "evidência. 'Gestora na base XP': a gestora da estratégia tem algum fundo "
+        "na vitrine da XP ou na lista da casa (19/10/2026). Ela e o 'Possível "
+        "equivalente' informam - nunca removem um fundo da lista.",
     ).font = _NOTE_FONT
     for nota in notas_da_cobertura(block):
         note_row += 1
@@ -899,8 +899,9 @@ def _add_gaps_sheets(
         row=row + 2, column=1,
         value="Contagens por vitrine (varejo) de cada casa na categoria; "
         "'Gaps reais' = quantos gaps da aba 'Gaps XP' caem na categoria; "
-        "'Cobertos' = gaps aparentes da categoria que a XP cobre por espelho, "
-        "equivalente ou correlato (aba 'Gaps cobertos'). Categorias ordenadas por gaps reais; "
+        "'Cobertos' = gaps aparentes da categoria que a XP cobre por fundo dela (espelho, "
+        "equivalente ou correlato), pela lista da casa ou em outra faixa de liquidez "
+        "(aba 'Gaps cobertos'). Categorias ordenadas por gaps reais; "
         "além das primeiras, agregadas em 'Outras'.",
     ).font = _NOTE_FONT
     cat_sheet.freeze_panes = "A2"
@@ -910,41 +911,64 @@ def _add_gaps_sheets(
 
 
 def _add_gaps_cobertos_sheet(workbook: Workbook, block: dict) -> None:
-    """Os gaps aparentes que a XP ja cobre, com a prova de cada um."""
+    """Os gaps aparentes que a XP ja cobre, com o motivo e a prova de cada um.
+
+    Desde 19/10/2026 sao tres motivos (`aggregate._cobertura`): a carteira
+    (espelho, equivalente, correlato), a lista da casa e a outra faixa de
+    liquidez. A aba Gaps XP fica so com o gap efetivo.
+    """
     sheet = workbook.create_sheet("Gaps cobertos")
     colunas = [
+        ("Coberto por", 24),
         ("Fundo concorrente", 50), ("CNPJ", 20), ("Casas", 26), ("Categoria oficial", 30),
         ("Veredito", 24), ("Confiança", 11), ("Fundo da XP que cobre", 50),
         ("CNPJ que cobre", 20), ("Ligação", 14), ("Master", 50),
         ("Resgate do gap (D+)", 12), ("Resgate da XP (D+)", 12),
         ("Distância de carteira", 12), ("Ativos em comum", 12),
         ("Carteira (competência)", 14), ("Na lista distribuível", 20),
+        ("Esforço", 22),
     ]
     for index, (name, width) in enumerate(colunas, start=1):
         sheet.cell(row=1, column=index, value=name)
         sheet.column_dimensions[get_column_letter(index)].width = width
     _style_header(sheet, 1, len(colunas))
     row = 1
+    # O esforco so vale para o que a XP ainda tem de mexer - expor, ativar ou a
+    # versao de liquidez; o coberto por fundo da XP nao tem.
+    esforcos = {
+        f["cnpj"]: f.get("esforco")
+        for f in ranquear_gaps([
+            c for c in block.get("cobertos") or [] if c.get("cobertura") != COBERTURA_CARTEIRA
+        ])
+    }
     for fund in block.get("cobertos") or []:
-        v = fund.get("veredito") or {}
+        # A prova do motivo: o veredito da carteira, ou o da lista da casa.
+        v = fund.get("prova") or fund.get("veredito") or {}
         row += 1
         valores = [
-            fund["name"], fund["cnpj_display"], fund["houses_label"], fund["category"],
+            fund.get("cobertura_rotulo") or "",
+            nome_de_fundo(fund["name"]), fund["cnpj_display"], fund["houses_label"],
+            fund["category"],
             v.get("rotulo") or "", v.get("confianca") or "",
-            v.get("nome_cobre") or "", format_cnpj(v.get("cobre")) if v.get("cobre") else "",
-            v.get("ligacao") or "", v.get("nome_master") or "",
+            # Na lista com o proprio CNPJ, quem cobre e o proprio fundo.
+            nome_de_fundo(
+                v.get("nome_cobre") or (fund["name"] if v.get("cobre") == fund["cnpj"] else "")
+            ),
+            format_cnpj(v.get("cobre")) if v.get("cobre") else "",
+            v.get("ligacao") or "", nome_de_fundo(v.get("nome_master")),
             v.get("dmais"), v.get("dmais_cobre"),
             v.get("distancia"), v.get("sobreposicao"),
             competencia_br(v.get("competencia")) if v.get("competencia") else "-",
             ROTULOS_SITUACAO.get(fund.get("situacao_distribuivel"), "-"),
+            esforcos.get(fund["cnpj"]) or "",
         ]
         for index, value in enumerate(valores, start=1):
             cell = sheet.cell(row=row, column=index, value=value)
             cell.font = _BODY_FONT
             cell.border = _BORDER
-        for index in (11, 12):
+        for index in (12, 13):
             sheet.cell(row=row, column=index).number_format = _INT
-        for index in (13, 14):
+        for index in (14, 15):
             sheet.cell(row=row, column=index).number_format = "0%"
     if row > 1:
         sheet.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{row}"
@@ -952,7 +976,8 @@ def _add_gaps_cobertos_sheet(workbook: Workbook, block: dict) -> None:
         sheet.cell(
             row=2, column=1,
             value=(
-                "Nenhum gap aparente coberto por espelho ou equivalente."
+                "Nenhum gap aparente coberto pela carteira, pela lista da casa ou em outra "
+                "faixa de liquidez."
                 if (block.get("carteira") or {}).get("available") else
                 "Sem a carteira mensal da CVM nesta execução: espelho e equivalência "
                 "não foram verificados."
@@ -960,7 +985,13 @@ def _add_gaps_cobertos_sheet(workbook: Workbook, block: dict) -> None:
         ).font = _NOTE_FONT
     sheet.cell(
         row=row + 2, column=1,
-        value="Mesma classe: o concorrente publica outro CNPJ da mesma classe. "
+        value="Coberto por: fundo da XP (mesma classe, espelho, equivalente ou correlato, "
+        "pela carteira da CVM), lista da casa (a XP já distribui ou pode distribuir) ou "
+        "outra faixa de liquidez (a XP tem a estratégia em outro D+). Nenhum deles é gap "
+        "real: a aba Gaps XP fica só com os reais (19/10/2026). Esforço: o que falta "
+        "para o cliente ver o fundo - expor na vitrine, ativar a distribuição ou a "
+        "versão de liquidez. "
+        "Mesma classe: o concorrente publica outro CNPJ da mesma classe. "
         "Espelho: o gap e o fundo da XP chegam ao mesmo master pela carteira "
         "(95% ou mais do PL em cotas de um único fundo). Equivalente: master da "
         "mesma gestora e categoria, com carteira próxima e ativos em comum. "
@@ -1006,9 +1037,9 @@ def _add_familias_sheet(
                     casas = ordem_canonica(presenca.get(membro.cnpj, set()))
                     situacao = distribuivel.situacao_de(membro.cnpj) if distribuivel else None
                     linhas.append([
-                        familia.gestora or "", familia.nome, familia.anbima or "",
+                        familia.gestora or "", nome_de_fundo(familia.nome), familia.anbima or "",
                         familia.resumo_perfil(), familia.pl or None,
-                        f"v{numero}", membro.papel, membro.nome,
+                        f"v{numero}", membro.papel, nome_de_fundo(membro.nome),
                         format_cnpj(membro.cnpj), membro.dmais,
                         membro.faixa_liquidez or "-", membro.pl,
                         ", ".join(_platform_label(c) for c in casas) or "-",
@@ -1071,7 +1102,7 @@ def _add_restricted_sheet(workbook: Workbook, snapshots: list[ShelfSnapshot]) ->
         for fund, reason in sorted(restricted, key=lambda pair: pair[0].name):
             row += 1
             values = [
-                label, fund.name,
+                label, nome_de_fundo(fund.name),
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 reason,
                 fund.extra.get(KEY_ANBIMA) or fund.extra.get(KEY_CVM) or "",
@@ -1136,14 +1167,14 @@ def _add_movements_sheet(workbook: Workbook, diffs: list[ShelfDiff]) -> None:
 
         for fund in filter(is_retail, diff.added):
             entries.append((
-                "entrada", fund.name,
+                "entrada", nome_de_fundo(fund.name),
                 format_cnpj(fund.cnpj) if fund.cnpj else "",
                 "Sim" if fund.on_listing else "Não", "",
             ))
         if not diff.suspect:
             for fund in filter(is_retail, diff.removed):
                 entries.append((
-                    "saída", fund.name,
+                    "saída", nome_de_fundo(fund.name),
                     format_cnpj(fund.cnpj) if fund.cnpj else "",
                     "Sim" if fund.on_listing else "Não", "",
                 ))
@@ -1353,13 +1384,16 @@ def _add_methodology_sheet(
             "master que um fundo da XP), coberto por equivalente (mesma gestora e "
             "categoria, carteira próxima e ativos em comum), coberto por correlato "
             "(mesma gestora e mesmo nome de estratégia, em outra versão: Advisory, "
-            "Seleção, Access, II, Plus), coberto em outra "
-            "faixa de liquidez, ou gap real (de estratégia, de gestora, ou sem "
-            "carteira que decida). Os cobertos saem da contagem e vão para a aba "
-            "'Gaps cobertos' com a evidência. XP indisponível ou sem vitrine "
+            "Seleção, Access, II, Plus), coberto pela lista da casa (a XP já "
+            "distribui ou pode distribuir), coberto em outra faixa de liquidez, ou "
+            "gap real (de estratégia, de gestora, ou sem carteira que decida). Só o "
+            "gap real fica na aba 'Gaps XP' (19/10/2026); os cobertos saem da "
+            "contagem e vão para a aba 'Gaps cobertos' com o motivo e a evidência. "
+            "XP indisponível ou sem vitrine "
             "suprime a análise (salvo com lista distribuível, que vira a base); XP "
             "parcial gera aviso; concorrente indisponível ou sem vitrine sai do "
-            "universo com motivo. 'Gestora na base XP' e 'Possível equivalente' "
+            "universo com motivo. 'Gestora na base XP' = a gestora tem algum fundo "
+            "na vitrine da XP ou na lista da casa; ela e o 'Possível equivalente' "
             "informam - nunca removem um fundo da lista.",
         )
         row = line(
@@ -1656,7 +1690,7 @@ _FLOW_POR_COTISTAS = frozenset({
 
 def _flow_row(fundo: dict) -> list:
     return [
-        fundo["nome"],
+        nome_de_fundo(fundo["nome"]),
         format_cnpj(fundo["cnpj"]),
         fundo["categoria"],
         fundo.get("gestora") or "",
@@ -2110,7 +2144,7 @@ def _add_trend_sheet(workbook: Workbook, flow: dict) -> None:
         linha += 1
         for fundo in fundos:
             por_competencia = {m["competencia"]: m for m in fundo.get("meses", [])}
-            ws.cell(row=linha, column=1, value=fundo["nome"]).font = _BODY_FONT
+            ws.cell(row=linha, column=1, value=nome_de_fundo(fundo["nome"])).font = _BODY_FONT
             ws.cell(row=linha, column=2, value=", ".join(fundo["vitrines"])).font = _BODY_FONT
             for idx, competencia in enumerate(competencias, start=3):
                 mes = por_competencia.get(competencia)
@@ -2426,7 +2460,7 @@ def _add_gente_sheet(
     for platform_id, fundos in performance["onde_esta_a_gente"].items():
         for fundo in fundos:
             valores = [
-                rotulos.get(platform_id, platform_id), fundo["nome"],
+                rotulos.get(platform_id, platform_id), nome_de_fundo(fundo["nome"]),
                 format_cnpj(fundo["cnpj"]), fundo["categoria"], fundo["cotistas"],
                 fundo["pl"], fundo["ticket_medio"], fundo["retorno"],
                 fundo["mediana_categoria"], fundo["excesso"],
@@ -2644,7 +2678,7 @@ def _add_custo_sheet(workbook: Workbook, custo: dict) -> None:
             continue
         vistos.add(fundo["cnpj"])
         valores = [
-            rotulos.get(platform_id, ""), fundo["nome"],
+            rotulos.get(platform_id, ""), nome_de_fundo(fundo["nome"]),
             format_cnpj(fundo["cnpj"]), fundo["categoria"], fundo["taxa_adm"],
             fundo["mediana_categoria"], fundo["indice"], fundo["faixa"],
             fundo["idade_meses"], fundo["tem_taxa_entrada"],
@@ -2836,7 +2870,7 @@ def _add_rentabilidade_sheet(workbook: Workbook, rent: dict) -> None:
     for fundo in rent.get("fundos") or []:
         js = fundo.get("janelas") or {}
         valores = [
-            fundo["nome"], format_cnpj(fundo["cnpj"]), fundo.get("categoria") or "",
+            nome_de_fundo(fundo["nome"]), format_cnpj(fundo["cnpj"]), fundo.get("categoria") or "",
             fundo.get("gestora") or "", ", ".join(fundo.get("vitrines") or []),
             fundo.get("pl"), fundo.get("cotistas"),
         ]

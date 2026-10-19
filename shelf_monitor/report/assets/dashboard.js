@@ -318,12 +318,13 @@ function renderGaps(gaps) {
       { id: "espelho", coluna: 1, valor: funil.espelho || 0, rotulo: "Espelho de fundo da XP", cor: cinza },
       { id: "equivalente", coluna: 1, valor: funil.equivalente || 0, rotulo: "Equivalente na XP", cor: cinza },
       { id: "correlato", coluna: 1, valor: funil.correlato || 0, rotulo: "Outra versão na XP", cor: cinza },
+      { id: "lista", coluna: 1, valor: funil.na_lista || 0, rotulo: "Na lista da casa", cor: cinza },
       { id: "liquidez", coluna: 1, valor: funil.outra_liquidez || 0, rotulo: "Só em outra liquidez", cor: cinza },
       { id: "estrategia", coluna: 2, valor: funil.estrategia || 0, rotulo: "De estratégia", cor: real },
       { id: "gestora", coluna: 2, valor: funil.gestora || 0, rotulo: "De gestora", cor: real },
       { id: "sem_dado", coluna: 2, valor: funil.sem_dado || 0, rotulo: "Sem carteira para decidir", cor: "var(--comp-2)" },
     ];
-    const ligacoes = ["reais", "mesma", "espelho", "equivalente", "correlato", "liquidez"].map(id => ({
+    const ligacoes = ["reais", "mesma", "espelho", "equivalente", "correlato", "lista", "liquidez"].map(id => ({
       de: "aparentes", para: id, valor: nos.find(n => n.id === id).valor,
       cor: id === "reais" ? faixaReal : cinza, opacidade: id === "reais" ? 0.5 : 0.32,
       rotulo: nos.find(n => n.id === id).rotulo,
@@ -453,7 +454,8 @@ function renderGaps(gaps) {
     }))
   );
 
-  // Os gaps aparentes que a XP ja cobre - fora da conta, nunca fora da vista.
+  // Os gaps aparentes que a XP ja cobre - fora da conta, nunca fora da vista -,
+  // com o motivo: fundo da XP, lista da casa ou outra faixa de liquidez.
   const cobertosMount = document.getElementById("table-gaps-cobertos");
   if (cobertosMount) {
     const cobertos = gaps.cobertos || [];
@@ -462,7 +464,8 @@ function renderGaps(gaps) {
         : Math.round(v * 100).toLocaleString("pt-BR") + "%";
       table(
         cobertosMount,
-        [{ key: "name", label: "Fundo concorrente" }, { key: "cnpj_display", label: "CNPJ" },
+        [{ key: "motivo", label: "Coberto por" },
+         { key: "name", label: "Fundo concorrente" }, { key: "cnpj_display", label: "CNPJ" },
          { key: "houses_label", label: "Casas" },
          { key: "veredito", label: "Veredito" }, { key: "cobre", label: "Fundo da XP que cobre" },
          { key: "master", label: "Master" },
@@ -470,10 +473,13 @@ function renderGaps(gaps) {
          { key: "sob", label: "Ativos em comum", num: true },
          { key: "conf", label: "Confiança" }],
         cobertos.map(f => {
-          const v = f.veredito || {};
+          // A prova do motivo: o veredito da carteira, ou o da lista da casa.
+          const v = f.prova || f.veredito || {};
           return {
+            motivo: f.cobertura_rotulo || "–",
             name: f.name, cnpj_display: f.cnpj_display, houses_label: f.houses_label,
-            veredito: v.rotulo || "–", cobre: v.nome_cobre || "–",
+            veredito: v.rotulo || "–",
+            cobre: v.nome_cobre || (v.cobre && v.cobre === f.cnpj ? f.name : "–"),
             master: v.nome_master || "–",
             liq: dmais(v.dmais) + " / " + dmais(v.dmais_cobre),
             sob: frac(v.sobreposicao), conf: v.confianca || "–",
@@ -484,7 +490,7 @@ function renderGaps(gaps) {
       const vazio = document.createElement("p");
       vazio.className = "empty";
       vazio.textContent = comCarteira
-        ? "Nenhum gap aparente coberto por espelho ou equivalente."
+        ? "Nenhum gap aparente coberto por fundo da XP, pela lista da casa ou em outra faixa de liquidez."
         : "Sem a carteira mensal da CVM nesta execução: espelho e equivalência não foram verificados.";
       cobertosMount.innerHTML = "";
       cobertosMount.appendChild(vazio);
@@ -665,6 +671,7 @@ renderGaps(DATA.gaps);
 
   // Tendencia por casa: parcela dos fundos em cada ritmo, 100% empilhada.
   const porCasa = flow.tendencia_por_casa || {};
+  // So para o titulo da figura: os ritmos de quem captou no ultimo mes.
   const captando = ["acelerando", "estavel", "desacelerando", "virou_entrada"];
   const ritmoEl = document.getElementById("flow-tendencia-casas");
   const ritmos = [
@@ -676,20 +683,31 @@ renderGaps(DATA.gaps);
     { chave: "saida_persistente", rotulo: "Saída persistente", cor: "#c6423c" },
     { chave: "sem_serie", rotulo: "Sem série", cor: "#efefef", tinta: "#0a0a0a" },
   ];
+  // Os ritmos sao excludentes: cada fundo esta num so, e a linha soma 100%
+  // (19/10/2026). A tabela trazia "Captando", que ja somava o acelerando.
+  // Os % sao inteiros pelos maiores restos: celula a celula a linha saia
+  // com 99% ou 101%.
+  const cemInteiros = valores => {
+    const soma = valores.reduce((a, b) => a + b, 0);
+    const brutos = valores.map(v => soma ? v * 100 / soma : 0);
+    const inteiros = brutos.map(Math.floor);
+    let falta = soma ? 100 - inteiros.reduce((a, b) => a + b, 0) : 0;
+    brutos.map((b, i) => [b - inteiros[i], i]).sort((a, b) => b[0] - a[0])
+      .forEach(([, i]) => { if (falta > 0) { inteiros[i] += 1; falta -= 1; } });
+    return inteiros;
+  };
   const ritmoTabela =
     '<table class="matrix"><thead><tr><th class="rowh">Casa</th><th>Fundos</th>' +
-    "<th>Captando</th><th>Acelerando</th><th>Virou saída</th><th>Saída persistente</th>" +
+    ritmos.map(r => `<th>${r.rotulo}</th>`).join("") +
     "</tr></thead><tbody>" +
     flow.casas.map(c => {
       const t = porCasa[c.platform_id] || {};
       const total = Object.values(t).reduce((a, b) => a + b, 0);
-      const soma = captando.reduce((a, k) => a + (t[k] || 0), 0);
+      const pct = cemInteiros(ritmos.map(r => t[r.chave] || 0));
       return `<tr><th class="rowh">${escapeHtml(c.label)}</th>
-        <td><span class="cell">${total}</span></td>
-        <td><span class="cell">${share(soma, total)}</span></td>
-        <td><span class="cell">${share(t.acelerando || 0, total)}</span></td>
-        <td><span class="cell">${share(t.virou_saida || 0, total)}</span></td>
-        <td><span class="cell">${share(t.saida_persistente || 0, total)}</span></td></tr>`;
+        <td><span class="cell">${total}</span></td>` +
+        pct.map(p => `<td><span class="cell">${total ? p + "%" : "-"}</span></td>`)
+          .join("") + "</tr>";
     }).join("") + "</tbody></table>";
   const temRitmo = flow.casas.some(c => Object.values(porCasa[c.platform_id] || {}).some(v => v > 0));
   if (!temRitmo) {

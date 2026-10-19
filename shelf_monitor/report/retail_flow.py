@@ -43,7 +43,7 @@ from shelf_monitor.models import (
     FundOffer,
     ShelfSnapshot,
 )
-from shelf_monitor.normalize import normalize_cnpj
+from shelf_monitor.normalize import normalize_cnpj, normalize_text
 from shelf_monitor.previdencia_fora import sem_previdencia
 from shelf_monitor.report.aggregate import (
     _offer_manager,
@@ -966,6 +966,7 @@ def build_grade_opportunities(
     fluxos: list[FundFlow],
     baseline_id: str = "xp",
     cobertos: set[str] | None = None,
+    distribuivel=None,
 ) -> dict:
     """Fundos que captam nas concorrentes e estao fora da vitrine da XP.
 
@@ -974,10 +975,13 @@ def build_grade_opportunities(
     produto que o mercado esta deixando - e a analise de consenso por presenca,
     sozinha, nao distinguia os dois.
 
-    `cobertos` sao os CNPJs que a vitrine da XP cobre por espelho ou
-    equivalente (`aggregate.cnpjs_cobertos`): a XP ja oferta a estrategia, entao
-    nao sao oportunidade - a mesma regra do bloco de gaps. Saem contados em
-    `total_cobertos`.
+    `cobertos` sao os CNPJs que a XP cobre - por fundo da vitrine, pela lista
+    da casa ou em outra liquidez (`aggregate.cnpjs_cobertos`): a XP ja tem a
+    estrategia, entao nao sao oportunidade - a mesma regra do bloco de gaps.
+    Saem contados em `total_cobertos`.
+
+    `distribuivel` (`RunReport.distribuivel`): a gestora com fundo na lista da
+    casa conta como ja distribuida, como no bloco de gaps (19/10/2026).
     """
     vitrines, _ = vitrine_snapshots(snapshots)
     cruzaveis, _ = identifiable_vitrines(vitrines)
@@ -989,7 +993,11 @@ def build_grade_opportunities(
 
     base = cruzaveis[baseline_id]
     base_cnpjs = {f.cnpj for f in base if f.cnpj}
-    base_gestoras = {g for g in (_offer_manager(f) for f in base) if g}
+    # Normalizadas: a vitrine e o cadastro grafam a mesma gestora com caixa e
+    # acento diferentes. A gestora da lista da casa tambem conta (19/10/2026).
+    base_gestoras = {normalize_text(g) for g in (_offer_manager(f) for f in base) if g}
+    if distribuivel is not None and distribuivel.motivo_da_supressao() is None:
+        base_gestoras |= distribuivel.gestoras()
 
     # `varejo_entrada` e o filtro: exige que o dinheiro tenha vindo acompanhado
     # de cotistas novos. Sem ele, o topo da lista era uma reestruturacao de
@@ -1033,7 +1041,9 @@ def build_grade_opportunities(
     oportunidades = [
         GradeOpportunity(
             fluxo=f,
-            gestora_ja_distribuida=bool(f.gestora and f.gestora in base_gestoras),
+            gestora_ja_distribuida=bool(
+                f.gestora and normalize_text(f.gestora) in base_gestoras
+            ),
             produto_do_concorrente=do_concorrente(f),
         )
         for f in candidatos
