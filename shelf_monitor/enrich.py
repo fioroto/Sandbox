@@ -377,6 +377,16 @@ def _brand_tokens(manager: str) -> list[str]:
     ]
 
 
+def assinatura_da_gestora(nome: str | None) -> str:
+    """A gestora sem forma juridica, para comparar o nome de fontes diferentes.
+
+    "TORK CAPITAL GESTÃO DE RECURSOS LTDA." (cadastro) e "Tork Capital Gestao
+    de Recursos Ltda" (vitrine) dao "TORK CAPITAL". E a chave de "a XP ja
+    distribui esta gestora" (`aggregate.gestoras_da_casa`, 19/10/2026).
+    """
+    return " ".join(_brand_tokens(nome or ""))
+
+
 def build_brand_index(managers: list[str]) -> dict[str, str]:
     """Mapa marca -> nome canonico de gestora, so onde a marca e inequivoca.
 

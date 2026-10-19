@@ -48,6 +48,7 @@ from datetime import date
 
 from shelf_monitor.cnpj_por_nome import palavras_do_nome
 from shelf_monitor.config import Config
+from shelf_monitor.enrich import assinatura_da_gestora
 from shelf_monitor.market.carteira import (
     ATIVOS_OPACOS,
     COTAS_NAO_RESOLVIDAS,
@@ -150,6 +151,13 @@ _CLASSE_DE_ATIVO_NO_NOME = frozenset(
     {"RF", "MM", "ACOES", "CP", "LP", "REFERENCIADO", "IE", "IS", "FIDC"}
 )
 _ROMANO = re.compile(r"^[IVX]+$")
+# Palavra que nomeia uma familia de estrategia, e nao uma ideia de mercado:
+# usada por ate 3 donos de estrategia (a gestora do master) no mercado inteiro.
+# So ela faz o nome contido valer como outra versao (`_correlatos`). Medido no
+# mapa de 14/10/2026: ARTAX 2, SINFONIA 2, JANEIRO 3, TARKUS 1, NIMITZ 1; AM 9,
+# ESG 16, HEDGE 100, INFRA 227 - sem a trava, "Verde AM Patrimonio" virava
+# versao do "Verde AM X60" e o "JGP ESG", do "Regia Equities ESG".
+_MAX_DONOS_DA_PALAVRA_PROPRIA = 3
 
 
 def palavras_da_estrategia(
@@ -914,6 +922,30 @@ class MapaDeFamilias:
 
     # --- cobertura ------------------------------------------------------------
 
+    def raizes_das_gestoras(self, assinaturas: Iterable[str]) -> set[str]:
+        """As raizes de CNPJ das gestoras com essas assinaturas
+        (`enrich.assinatura_da_gestora`).
+
+        E por onde entra na base a gestora que so se conhece pelo nome: o fundo
+        da lista da casa que o cadastro nao traz - o Tork Advisory 30, em
+        19/10/2026 - tem a gestora pela vitrine, e a raiz dela sai daqui.
+        """
+        alvo = set(assinaturas)
+        if not alvo:
+            return set()
+        # Montado na primeira consulta; getattr porque o mapa vem em pickle de
+        # relatorio salvo antes deste indice existir.
+        por_assinatura = getattr(self, "_raizes_por_assinatura", None)
+        if por_assinatura is None:
+            por_assinatura = {}
+            for classe in self._classes.values():
+                if classe.gestor and classe.raiz_gestor:
+                    por_assinatura.setdefault(
+                        assinatura_da_gestora(classe.gestor), set()
+                    ).add(classe.raiz_gestor)
+            self._raizes_por_assinatura = por_assinatura
+        return set().union(*(por_assinatura.get(a, set()) for a in alvo))
+
     def preparar_base(self, cnpjs: Iterable[str]) -> BaseIndexada:
         """Indexa uma base (vitrine ou lista distribuivel) para `cobertura`."""
         classes: set[str] = set()
@@ -1068,6 +1100,14 @@ class MapaDeFamilias:
         O nome e o de `palavras_da_estrategia`, sem a marca da gestora. Quando
         dos dois lados ele e so marca e forma juridica ("TB SELEÇÃO FIF CIC EM
         AÇÕES" e "TB ADVISORY FIC DE FIA"), decide a mesma categoria ANBIMA.
+
+        Sem o mesmo nome, vale o nome de um contido no do outro, com a mesma
+        categoria ANBIMA e uma palavra propria da familia na parte comum
+        (pedido de 19/10/2026): a XP tem o Itau Artax Endurance, entao o Itau
+        Artax nao e gap - {ARTAX} esta em {ARTAX, ENDURANCE}, os dois
+        Multimercados Livre, e ARTAX so tem 2 donos de estrategia no mercado.
+        Os masters sao outros, e a carteira nao os liga. O de mesmo nome vem
+        antes.
         """
         candidatos = base.por_raiz.get(referencia.raiz_gestor) or []
         if not candidatos:
@@ -1075,18 +1115,54 @@ class MapaDeFamilias:
         marca = palavras_do_nome(referencia.gestor)
         alvo = palavras_da_estrategia(self.nome(gap) or self.nome(master), marca)
         categoria = normalize_text(self._anbima(master, referencia))
-        achados = []
+        achados, contidos = [], []
         for cnpj in candidatos:
             outro_master = self.master_de(cnpj)
             palavras = palavras_da_estrategia(self.nome(cnpj) or self.nome(outro_master), marca)
+            outra = self._referencia_da_estrategia(cnpj, outro_master)
+            mesma_categoria = bool(categoria) and (
+                normalize_text(self._anbima(outro_master, outra)) == categoria
+            )
             if alvo or palavras:
                 if alvo == palavras:
                     achados.append(cnpj)
+                elif (
+                    alvo and palavras and (alvo < palavras or palavras < alvo)
+                    and mesma_categoria and self._palavra_propria(min(alvo, palavras, key=len))
+                ):
+                    contidos.append(cnpj)
                 continue
-            outra = self._referencia_da_estrategia(cnpj, outro_master)
-            if categoria and normalize_text(self._anbima(outro_master, outra)) == categoria:
+            if mesma_categoria:
                 achados.append(cnpj)
-        return achados
+        return achados or contidos
+
+    def _palavra_propria(self, palavras: frozenset[str]) -> bool:
+        """Alguma das palavras nomeia uma familia (`_MAX_DONOS_DA_PALAVRA_PROPRIA`)."""
+        return any(
+            self._donos_da_palavra(p) <= _MAX_DONOS_DA_PALAVRA_PROPRIA for p in palavras
+        )
+
+    def _donos_da_palavra(self, palavra: str) -> int:
+        """Quantos donos de estrategia (a gestora do master) usam a palavra.
+
+        Pelo dono da estrategia, e nao pela gestora registrada: o feeder de
+        cada distribuidor (Advisory, Access) leva o nome da familia com a
+        gestora do distribuidor, e TARKUS passaria de 1 para 4. O indice e
+        montado na primeira consulta (~4 s no mercado inteiro).
+        """
+        indice = getattr(self, "_donos_por_palavra", None)
+        if indice is None:
+            donos: dict[str, set[str]] = {}
+            for cnpj, classe in self._classes.items():
+                referencia = self._referencia_da_estrategia(cnpj, self.master_de(cnpj))
+                if referencia is None or not referencia.raiz_gestor:
+                    continue
+                marca = palavras_do_nome(referencia.gestor) | palavras_do_nome(classe.gestor)
+                for p in palavras_da_estrategia(classe.nome, marca):
+                    donos.setdefault(p, set()).add(referencia.raiz_gestor)
+            indice = {p: len(d) for p, d in donos.items()}
+            self._donos_por_palavra = indice
+        return indice.get(palavra, 0)
 
     def _equivalentes_declarados(
         self, master: str, referencia: Classe, base: BaseIndexada

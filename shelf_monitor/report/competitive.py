@@ -37,6 +37,7 @@ from shelf_monitor.classify import (
     so_nivel1,
 )
 from shelf_monitor.config import Config
+from shelf_monitor.enrich import assinatura_da_gestora
 from shelf_monitor.models import BLOCO_CNPJ, FundOffer, ShelfSnapshot, SnapshotStatus
 from shelf_monitor.report.aggregate import (
     _canonical_order,
@@ -46,6 +47,7 @@ from shelf_monitor.report.aggregate import (
     _platform_label,
     anbima_category,
     categoria_comparavel,
+    gestoras_da_casa,
     is_own_product,
 )
 from shelf_monitor.storage import load_shelf_snapshot, shelf_snapshot_dates
@@ -813,7 +815,7 @@ def _decisao_consenso(
     if consenso:
         ja_distribuida = [
             (c, casas) for c, casas in consenso
-            if (_offer_manager(fundo_por_cnpj[c]) or "") in base_managers
+            if assinatura_da_gestora(_offer_manager(fundo_por_cnpj[c])) in base_managers
         ]
         exemplos = sorted(consenso, key=lambda item: -len(item[1]))[:5]
         decisoes.append(Decision(
@@ -1112,6 +1114,7 @@ def build_xp_decisions(
     baseline_id: str = "xp",
     suprimidos: dict[str, str] | None = None,
     cobertos: set[str] | None = None,
+    distribuivel=None,
 ) -> dict:
     """Do diagnostico para a decisao: o que a XP faz na segunda-feira.
 
@@ -1125,7 +1128,8 @@ def build_xp_decisions(
 
     `cobertos` sao os CNPJs que a vitrine da XP cobre por espelho ou
     equivalente (`aggregate.cnpjs_cobertos`): o consenso nao os chama de
-    lacuna, pela mesma regra do bloco de gaps.
+    lacuna, pela mesma regra do bloco de gaps. `distribuivel` poe as gestoras
+    da lista da casa entre as que a XP ja distribui (`gestoras_da_casa`).
     """
     vitrines, excluded = vitrine_snapshots(snapshots)
     if baseline_id not in vitrines:
@@ -1150,7 +1154,7 @@ def build_xp_decisions(
 
     decisoes: list[Decision] = []
     base_cnpjs = {f.cnpj for f in base if f.cnpj}
-    base_managers = {m for m in (_offer_manager(f) for f in base) if m}
+    base_managers = gestoras_da_casa(base, snapshots, distribuivel)
 
     por_cnpj = (_decisao_consenso, _decisao_exclusivos)
     sem_cnpj = (suprimidos or {}).get(BLOCO_CNPJ)
@@ -1187,6 +1191,7 @@ def build_competitive_view(
     config: Config,
     snapshots: list[ShelfSnapshot],
     cobertos: set[str] | None = None,
+    distribuivel=None,
 ) -> dict:
     """As quatro visoes, numa estrutura.
 
@@ -1200,7 +1205,9 @@ def build_competitive_view(
         "posicionamento": build_positioning(snapshots),
         "gestoras": build_manager_reach(snapshots),
         "momentum": build_momentum(config, snapshots),
-        "decisoes": build_xp_decisions(snapshots, suprimidos=suprimidos, cobertos=cobertos),
+        "decisoes": build_xp_decisions(
+            snapshots, suprimidos=suprimidos, cobertos=cobertos, distribuivel=distribuivel
+        ),
     }
 
 

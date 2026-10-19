@@ -43,11 +43,13 @@ from shelf_monitor.models import (
     FundOffer,
     ShelfSnapshot,
 )
-from shelf_monitor.normalize import normalize_cnpj, normalize_text
+from shelf_monitor.enrich import assinatura_da_gestora
+from shelf_monitor.normalize import normalize_cnpj
 from shelf_monitor.previdencia_fora import sem_previdencia
 from shelf_monitor.report.aggregate import (
     _offer_manager,
     _platform_label,
+    gestoras_da_casa,
     is_own_product,
 )
 from shelf_monitor.report.competitive import (
@@ -993,11 +995,9 @@ def build_grade_opportunities(
 
     base = cruzaveis[baseline_id]
     base_cnpjs = {f.cnpj for f in base if f.cnpj}
-    # Normalizadas: a vitrine e o cadastro grafam a mesma gestora com caixa e
-    # acento diferentes. A gestora da lista da casa tambem conta (19/10/2026).
-    base_gestoras = {normalize_text(g) for g in (_offer_manager(f) for f in base) if g}
-    if distribuivel is not None and distribuivel.motivo_da_supressao() is None:
-        base_gestoras |= distribuivel.gestoras()
+    # A mesma regra do bloco de gaps: as gestoras da vitrine e as da lista da
+    # casa, como assinatura (`gestoras_da_casa`, 19/10/2026).
+    base_gestoras = gestoras_da_casa(base, snapshots, distribuivel)
 
     # `varejo_entrada` e o filtro: exige que o dinheiro tenha vindo acompanhado
     # de cotistas novos. Sem ele, o topo da lista era uma reestruturacao de
@@ -1042,7 +1042,7 @@ def build_grade_opportunities(
         GradeOpportunity(
             fluxo=f,
             gestora_ja_distribuida=bool(
-                f.gestora and normalize_text(f.gestora) in base_gestoras
+                f.gestora and assinatura_da_gestora(f.gestora) in base_gestoras
             ),
             produto_do_concorrente=do_concorrente(f),
         )

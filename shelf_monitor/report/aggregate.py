@@ -9,7 +9,13 @@ from shelf_monitor.caixa import nota_caixa, oferta_caixa
 from shelf_monitor.classify import KEY_CATEGORIA
 from shelf_monitor.config import PLATFORMS, WATCHLIST
 from shelf_monitor.distribuivel import PODE_DISTRIBUIR, BaseDistribuivel
-from shelf_monitor.enrich import KEY_ANBIMA, KEY_CVM, KEY_GESTOR_OFICIAL, KEY_PL
+from shelf_monitor.enrich import (
+    KEY_ANBIMA,
+    KEY_CVM,
+    KEY_GESTOR_OFICIAL,
+    KEY_PL,
+    assinatura_da_gestora,
+)
 from shelf_monitor.familias import (
     COBERTO_CORRELATO,
     COBERTO_EQUIVALENTE,
@@ -466,6 +472,31 @@ def _offer_manager(fund: FundOffer) -> str | None:
     return manager.strip() if manager else None
 
 
+def gestoras_da_casa(
+    vitrine: list[FundOffer],
+    snapshots: list[ShelfSnapshot],
+    distribuivel: BaseDistribuivel | None = None,
+) -> set[str]:
+    """As gestoras que a XP ja distribui, como assinatura (`assinatura_da_gestora`).
+
+    Conta a gestora de todo fundo da vitrine e, com a lista da casa, a de todo
+    fundo dela (pedidos de 19/10/2026: "temos um fundo Tork Advisory 30, entao
+    temos a gestora Tork"). A do fundo da lista vem do cadastro
+    (`BaseDistribuivel.gestora`) e tambem de qualquer vitrine que o exiba: o Tork
+    Advisory 30 nao esta na base de mercado de 07/10/2026, e o BTG o publica
+    com a gestora Tork Capital. Uma regra so para o esforco do gap (inclusao
+    operacional ou abrir gestora), a grade e o consenso.
+    """
+    nomes = [_offer_manager(f) for f in vitrine]
+    assinaturas: set[str] = set()
+    if distribuivel is not None and distribuivel.motivo_da_supressao() is None:
+        da_lista = set(distribuivel.cnpjs())
+        assinaturas |= distribuivel.gestoras()
+        nomes += [_offer_manager(o) for s in snapshots for o in s.funds if o.cnpj in da_lista]
+    assinaturas |= {assinatura_da_gestora(n) for n in nomes if n}
+    return assinaturas - {""}
+
+
 def _gap_funds(
     competitor_snaps: list[ShelfSnapshot],
     baseline_cnpjs: set[str],
@@ -480,7 +511,8 @@ def _gap_funds(
     rasa, e o universo decide quem entra na conta.
 
     As duas colunas heuristicas (`manager_on_xp`, `possible_xp_equivalent`)
-    informam e nunca removem um fundo da lista.
+    informam e nunca removem um fundo da lista. `baseline_managers` sao as
+    assinaturas de `gestoras_da_casa`.
     """
     # Exemplares por CNPJ de gap: (casa, fundo) de cada vitrine concorrente.
     offers_by_cnpj: dict[str, list[tuple[str, FundOffer]]] = {}
@@ -532,7 +564,7 @@ def _gap_funds(
                 "admin_fee_pct": min(fees) if fees else None,
                 "pl_cvm": pl,
                 "manager_on_xp": (
-                    normalize_text(manager) in baseline_managers
+                    assinatura_da_gestora(manager) in baseline_managers
                     if manager
                     else None
                 ),
@@ -1053,16 +1085,12 @@ def build_gap_block(
 
     # Indices da vitrine baseline para as colunas heuristicas (D3). Sao sinais
     # informativos - nunca removem um fundo da lista de gaps.
-    baseline_managers = {
-        normalize_text(m)
-        for m in (_offer_manager(f) for f in baseline_listing)
-        if m
-    }
-    # A gestora com fundo na lista da casa tambem e gestora que a XP distribui
-    # (pedido de 19/10/2026): a vitrine nao e tudo que a casa tem. Com o mapa
-    # de familias a regra e a mesma, pela raiz do CNPJ (`base_primaria`).
-    gestoras_da_lista = distribuivel.gestoras() if lista_ok else set()
-    baseline_managers |= gestoras_da_lista
+    # As gestoras que a XP ja distribui - as da vitrine e as da lista da casa
+    # (`gestoras_da_casa`, 19/10/2026) -, como assinatura. Com o mapa de
+    # familias a regra e a mesma, pela raiz do CNPJ (`base_primaria`).
+    baseline_managers = gestoras_da_casa(
+        baseline_listing, snapshots, distribuivel if lista_ok else None
+    )
     baseline_slugs: dict[str, str] = {}
     for fund in baseline_listing:
         slug = name_slug(fund.name)
@@ -1096,12 +1124,15 @@ def build_gap_block(
     base_lista = (
         familias.preparar_base(lista_cnpjs) if familias and lista_ok else None
     )
-    if base_primaria is not None and base_lista is not None and primaria == "vitrine":
-        # A gestora da lista entra nas da XP: decide "gap de estrategia" contra
-        # "gap de gestora" e "inclusao operacional" contra "abrir gestora".
-        base_primaria = replace(
-            base_primaria, raizes=base_primaria.raizes | base_lista.raizes
-        )
+    if base_primaria is not None:
+        # As gestoras da XP pela raiz do CNPJ: as da base, as da lista da casa e
+        # as que so se conhecem pelo nome - o fundo da lista que o cadastro nao
+        # traz (19/10/2026). Decidem "gap de estrategia" contra "gap de
+        # gestora" e "inclusao operacional" contra "abrir gestora".
+        raizes = set(base_primaria.raizes) | familias.raizes_das_gestoras(baseline_managers)
+        if base_lista is not None and primaria == "vitrine":
+            raizes |= base_lista.raizes
+        base_primaria = replace(base_primaria, raizes=frozenset(raizes))
     for fund in funds:
         veredito = _veredito_contra(fund["cnpj"], base_cnpjs, familias, base_primaria)
         fund["veredito"] = veredito
@@ -1116,9 +1147,10 @@ def build_gap_block(
                 )
         elif primaria == "distribuivel" and veredito and veredito.get("coberto"):
             fund["situacao_distribuivel"] = distribuivel.situacao_de(veredito.get("cobre"))
-        if not baseline_listing and not gestoras_da_lista and base_primaria is None:
-            # Sem vitrine, sem a gestora da lista e sem mapa nao ha de onde saber
-            # que gestoras a XP distribui: "nao" seria afirmar o que ninguem checou.
+        if not baseline_managers and base_primaria is None:
+            # Sem gestora conhecida da casa - nem na vitrine nem na lista - e sem
+            # mapa nao ha de onde saber que gestoras a XP distribui: "nao" seria
+            # afirmar o que ninguem checou.
             fund["manager_on_xp"] = None
         if veredito and veredito.get("tipo") != PRESENTE:
             # Com o mapa, "gestora" e a da ESTRATEGIA (a do master), e e ela

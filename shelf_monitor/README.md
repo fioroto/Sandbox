@@ -933,7 +933,17 @@ faixa ("Plus", "Premium", "NTNB35"), numero, letra de classe e o clone romano ("
 SELEÇÃO" e "TB ADVISORY"), decide a mesma categoria ANBIMA. Medido no digest de
 14/10/2026: 51 dos 504 gaps reais eram correlatos - o Kapitalo Tarkus FIC do BTG
 contra o Tarkus Advisory da XP, o RPS Long Bias Selection D30 contra o Advisory D30,
-o HIX Capital FIC contra o Institucional -, e a grade caiu de 67 para 54 fundos. E a
+o HIX Capital FIC contra o Institucional -, e a grade caiu de 67 para 54 fundos.
+Desde 19/10/2026 (pedido do usuario) tambem e correlato o nome de um contido no do
+outro, com a mesma categoria ANBIMA: a XP tem o Itau Artax Endurance, entao o Itau
+Artax nao e gap - os masters sao outros e a carteira nao os liga, mas {ARTAX} esta
+em {ARTAX, ENDURANCE} e os dois sao Multimercados Livre. A parte comum precisa de
+uma palavra propria da familia - usada por ate 3 donos de estrategia (a gestora do
+master) no mercado: ARTAX 2, SINFONIA 2, JANEIRO 3; AM 9, ESG 16, HEDGE 100, INFRA
+227. Sem a trava, o "Verde AM Patrimonio" virava versao do "Verde AM X60" e o "JGP
+ESG", do "Regia Equities ESG" (17 dos 19 casos de 14/10/2026); com ela, sobram o
+Itau Sinfonia e o Itau Janeiro Onze. O de mesmo nome vem antes; em outra categoria
+(o Artax Long Bias, se fosse de acoes) continua gap. E a
 unica heuristica de nome que reclassifica; o "possivel equivalente" (mesma gestora e
 categoria, sem carteira que decida e com OUTRO nome de estrategia - o MAN AHL Target
 Risk contra o Gama Pearl Diver, ambos da Gama) **informa e nunca remove** um fundo
@@ -990,11 +1000,19 @@ sai suprimida com o motivo.
 **A gestora da lista e gestora da XP** (19/10/2026, pedido do usuario). A gestora
 com algum fundo na lista conta como gestora que a XP distribui, como a da vitrine:
 decide a coluna "Gestora na base XP", o gap de estrategia contra o de gestora, o
-esforco (inclusao operacional contra abrir gestora), os numeros do digest e a
-divisao da grade. Com o mapa de familias, pela raiz do CNPJ da gestora; sem ele,
-pelo nome do cadastro da CVM (a coluna `gestora` do CSV so vale para fundo que o
-cadastro nao traz). Ate ali so a vitrine contava, e a gestora que a XP distribui
-fora da vitrine saia como "abrir gestora".
+esforco (inclusao operacional contra abrir gestora), os numeros do digest, a
+divisao da grade e o consenso - uma regra so, `aggregate.gestoras_da_casa`. A
+gestora do fundo da lista vem do cadastro da CVM (a coluna `gestora` do CSV so vale
+para fundo que o cadastro nao traz) e de qualquer vitrine que o exiba: o Tork
+Advisory 30 nao esta na base de mercado de 07/10/2026, mas o BTG o publica com a
+gestora Tork Capital - e com ele a XP tem a Tork. O nome se compara sem a forma
+juridica (`enrich.assinatura_da_gestora`: "TORK CAPITAL GESTÃO DE RECURSOS LTDA."
+e "Tork Capital Gestao de Recursos Ltda" dao "TORK CAPITAL"); com o mapa de
+familias, a gestora conhecida so pelo nome entra pela raiz do CNPJ
+(`MapaDeFamilias.raizes_das_gestoras`). A marca no inicio do nome nao decide:
+medida nos feeders da XP registrados em gestora da casa, ligava o "Fundo 24 Horas"
+ao FGC e o "First Trust" a First Who Capital. Ate ali so a vitrine contava, e a
+gestora que a XP distribui fora da vitrine saia como "abrir gestora".
 
 **Gestora quando a fonte nao publica.** A tabela do Itau nao traz CNPJ nem gestora.
 Quatro vias, na ordem de confianca: (0) o join com o registro da CVM, pelo CNPJ ou

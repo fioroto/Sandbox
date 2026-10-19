@@ -982,8 +982,12 @@ def cmd_insights(config: Config, args: argparse.Namespace) -> None:
         + ", ".join(d.isoformat() for d in datas)
     )
 
+    # O consenso diz "cuja gestora a XP ja distribui" pela mesma regra dos
+    # gaps: a vitrine e a lista da casa (19/10/2026).
+    avulso = _avulso_com_familias(config, snapshots)
     view = build_competitive_view(
-        config, snapshots, cobertos=_cobertos_dos_snapshots(config, snapshots)
+        config, snapshots, cobertos=_cobertos_na_vitrine(avulso),
+        distribuivel=avulso.distribuivel,
     )
     print_competitive_view(view)
 
@@ -1103,14 +1107,20 @@ def cmd_rentabilidade(config: Config, args: argparse.Namespace) -> None:
     _talvez_json(args, resultado)
 
 
-def _cobertos_dos_snapshots(config: Config, snapshots: list[ShelfSnapshot]) -> set[str]:
-    """`_cobertos_na_vitrine` para os subcomandos que nao montam o RunReport."""
+def _avulso_com_familias(config: Config, snapshots: list[ShelfSnapshot]) -> RunReport:
+    """O RunReport minimo, com o mapa de familias e a lista da casa, para os
+    subcomandos que nao montam o relatorio inteiro."""
     avulso = RunReport(
         generated_at=datetime.now(), snapshots=snapshots,
         suprimidos=dict(config.blocos_suprimidos),
     )
     attach_familias(config, avulso)
-    return _cobertos_na_vitrine(avulso)
+    return avulso
+
+
+def _cobertos_dos_snapshots(config: Config, snapshots: list[ShelfSnapshot]) -> set[str]:
+    """`_cobertos_na_vitrine` para os subcomandos que nao montam o RunReport."""
+    return _cobertos_na_vitrine(_avulso_com_familias(config, snapshots))
 
 
 def cmd_familias(config: Config, args: argparse.Namespace) -> None:

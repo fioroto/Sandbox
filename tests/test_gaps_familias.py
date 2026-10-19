@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from shelf_monitor.distribuivel import DISTRIBUI, PODE_DISTRIBUIR, BaseDistribuivel, carregar
+from shelf_monitor.enrich import assinatura_da_gestora
 from shelf_monitor.familias import (
     COBERTO_CORRELATO,
     COBERTO_ESPELHO,
@@ -493,7 +494,43 @@ class TestListaDistribuivel(_ComPasta):
         lista = carregar(self.config, self.mapa)
         # O cadastro prevalece sobre o que a pessoa digitou, como no enriquecimento.
         self.assertEqual(lista.gestora, {EPSILON_RF: EPSILON[0]})
-        self.assertEqual(lista.gestoras(), {"EPSILON INVESTIMENTOS"})
+        # Como assinatura: sem a forma juridica, para casar com a vitrine.
+        self.assertEqual(lista.gestoras(), {"EPSILON"})
+
+    def test_fundo_da_lista_fora_do_cadastro_traz_a_gestora_pela_vitrine(self):
+        """Pedido de 19/10/2026: "temos um fundo Tork Advisory 30, entao temos a
+        gestora Tork". O fundo nao esta no cadastro (so na carteira da CVM), e o
+        BTG o publica com a gestora: a XP tem a gestora, e o gap dela e inclusao
+        operacional - com o mapa e sem ele."""
+        advisory = "60000000000505"
+        snapshots = _snapshots()
+        snapshots[1].funds.append(
+            _fundo("btg", advisory, "EPSILON ADVISORY 30 FIC FIA", "Epsilon Investimentos Ltda.")
+        )
+        cda = _cda()
+        cda.pl(advisory, 100.0).titulo(advisory, 100.0)
+        mapa = MapaDeFamilias.montar(_cadastro(), [cda.resumo()])
+        self.escrever("lista.csv", f"cnpj;situacao\n{advisory};distribui\n")
+        lista = BaseDistribuivel.ler(self.pasta, mapa.resolver)
+        self.assertEqual(lista.situacao_de(advisory), DISTRIBUI)
+        self.assertEqual(lista.gestora, {})
+
+        antes = _por_cnpj(ranquear_gaps(build_gap_block(snapshots, familias=mapa)["funds"]))
+        self.assertEqual(antes[EPSILON_CP]["esforco"], ESFORCO_ABRIR_GESTORA)
+        bloco = build_gap_block(snapshots, familias=mapa, distribuivel=lista)
+        gap = _por_cnpj(ranquear_gaps(bloco["funds"]))[EPSILON_CP]
+        self.assertEqual(gap["veredito"]["tipo"], GAP_ESTRATEGIA)
+        self.assertTrue(gap["manager_on_xp"])
+        self.assertEqual(gap["esforco"], ESFORCO_OPERACIONAL)
+
+        # Sem o mapa, pelo nome que a vitrine publica.
+        sem_mapa = build_gap_block(snapshots, distribuivel=BaseDistribuivel.ler(self.pasta))
+        self.assertTrue(_por_cnpj(sem_mapa["funds"])[EPSILON_CP]["manager_on_xp"])
+
+    def test_a_gestora_se_compara_sem_a_forma_juridica(self):
+        self.assertEqual(assinatura_da_gestora("TORK CAPITAL GESTÃO DE RECURSOS LTDA."), "TORK CAPITAL")
+        self.assertEqual(assinatura_da_gestora("Tork Capital Gestao de Recursos Ltda"), "TORK CAPITAL")
+        self.assertEqual(assinatura_da_gestora(None), "")
 
     def test_a_grade_conta_a_gestora_da_lista_como_ja_distribuida(self):
         """A grade de oportunidades usa a mesma regra: o Epsilon Credito sai de
@@ -512,6 +549,67 @@ class TestListaDistribuivel(_ComPasta):
         self.escrever("lista.csv", f"cnpj;situacao\n{EPSILON_RF};distribui\n")
         com = build_grade_opportunities(snapshots, fluxos, distribuivel=carregar(self.config, self.mapa))
         self.assertEqual((com["total_operacionais"], com["total_comerciais"]), (1, 0))
+
+
+class TestVersaoDaMesmaEstrategia(unittest.TestCase):
+    """Pedido de 19/10/2026: a XP tem o Itau Artax Endurance, entao o Itau Artax
+    nao e gap. Os masters sao outros e a carteira nao os liga; e a mesma gestora,
+    o nome de um esta contido no do outro e a categoria ANBIMA e a mesma."""
+
+    OMEGA = ("OMEGA ASSET MANAGEMENT", "77777777000191")
+    MACRO = "Multimercados Macro"
+    MASTER = "70000000000101"
+    GAP = "70000000000202"
+    MASTER_ENDURANCE = "70000000000303"
+    XP_ENDURANCE = "70000000000404"
+
+    def _mapa(
+        self, categoria_da_xp: str, familia: str = "ARTAX", versao: str = "ENDURANCE",
+        outras: tuple[dict, ...] = (),
+    ) -> MapaDeFamilias:
+        cadastro = [
+            classe(self.MASTER, f"OMEGA {familia} MASTER FIF", *self.OMEGA, anbima=self.MACRO),
+            classe(self.GAP, f"OMEGA {familia} DISTRIBUIDORES FIF CIC", *self.OMEGA,
+                   anbima=self.MACRO),
+            classe(self.MASTER_ENDURANCE, f"OMEGA {familia} {versao} MASTER FIF", *self.OMEGA,
+                   anbima=categoria_da_xp),
+            classe(self.XP_ENDURANCE, f"OMEGA {familia} {versao} DISTRIBUIDORES FIF CIC",
+                   *self.OMEGA, anbima=categoria_da_xp),
+            *outras,
+        ]
+        cda = Cda("202608")
+        cda.pl(self.MASTER, 1000.0).titulo(self.MASTER, 1000.0)
+        cda.pl(self.MASTER_ENDURANCE, 1000.0).acao(self.MASTER_ENDURANCE, 1000.0, "PETR4")
+        cda.pl(self.GAP, 100.0).cota(self.GAP, self.MASTER, 100.0)
+        cda.pl(self.XP_ENDURANCE, 100.0).cota(self.XP_ENDURANCE, self.MASTER_ENDURANCE, 100.0)
+        return MapaDeFamilias.montar(cadastro, [cda.resumo()])
+
+    def test_o_nome_contido_na_mesma_categoria_e_outra_versao(self):
+        veredito = self._mapa(self.MACRO).cobertura(self.GAP, [self.XP_ENDURANCE])
+        self.assertEqual(veredito.tipo, COBERTO_CORRELATO)
+        self.assertEqual(veredito.cobre, self.XP_ENDURANCE)
+
+    def test_vale_nos_dois_sentidos(self):
+        veredito = self._mapa(self.MACRO).cobertura(self.XP_ENDURANCE, [self.GAP])
+        self.assertEqual(veredito.tipo, COBERTO_CORRELATO)
+
+    def test_em_outra_categoria_continua_gap(self):
+        veredito = self._mapa("Ações Livre").cobertura(self.GAP, [self.XP_ENDURANCE])
+        self.assertEqual(veredito.tipo, GAP_ESTRATEGIA)
+
+    def test_palavra_de_muitas_gestoras_nao_faz_versao(self):
+        """"Hedge" esta no nome de cinco donos de estrategia: nao nomeia uma
+        familia, e o "Omega Hedge" nao vira versao do "Omega Hedge Sigma"."""
+        outras = tuple(
+            classe(f"7100000000{n}101", f"GESTORA {n} HEDGE MASTER FIF", f"GESTORA {n} LTDA",
+                   f"7{n}000000000191", anbima=self.MACRO)
+            for n in range(1, 5)
+        )
+        mapa = self._mapa(self.MACRO, familia="HEDGE", versao="SIGMA", outras=outras)
+        self.assertEqual(mapa.cobertura(self.GAP, [self.XP_ENDURANCE]).tipo, GAP_ESTRATEGIA)
+        # Com so a Omega usando a palavra, a mesma dupla e versao.
+        sozinha = self._mapa(self.MACRO, familia="HEDGE", versao="SIGMA")
+        self.assertEqual(sozinha.cobertura(self.GAP, [self.XP_ENDURANCE]).tipo, COBERTO_CORRELATO)
 
 
 class TestOutrosBlocosUsamOMesmoVeredito(unittest.TestCase):

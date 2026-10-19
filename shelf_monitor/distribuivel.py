@@ -147,8 +147,10 @@ class BaseDistribuivel:
         return ROTULOS_SERVICO.get(self.servico_de(cnpj) or "")
 
     def gestoras(self) -> set[str]:
-        """As gestoras com fundo na lista, normalizadas como as da vitrine."""
-        return {normalize_text(g) for g in self.gestora.values() if g}
+        """As gestoras com fundo na lista, como assinatura (sem forma juridica)."""
+        from shelf_monitor.enrich import assinatura_da_gestora
+
+        return {a for a in map(assinatura_da_gestora, self.gestora.values()) if a}
 
     def motivo_da_supressao(self) -> str | None:
         if not self.arquivos:
