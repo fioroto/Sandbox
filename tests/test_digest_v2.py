@@ -174,7 +174,9 @@ def _snapshots(
     return casas + [_snapshot("nu", nu, quando)]
 
 
-def _fluxo(snapshots: list[ShelfSnapshot]) -> tuple[dict, mock.MagicMock, mock.MagicMock]:
+def _fluxo(
+    snapshots: list[ShelfSnapshot], **kwargs
+) -> tuple[dict, mock.MagicMock, mock.MagicMock]:
     registros = _registros()
 
     def ler(config, yyyymm, alvo, **_):
@@ -186,7 +188,7 @@ def _fluxo(snapshots: list[ShelfSnapshot]) -> tuple[dict, mock.MagicMock, mock.M
                        side_effect=ler) as anterior, \
             mock.patch("shelf_monitor.report.retail_flow.months_back",
                        return_value=["202608", "202609", "202610"]):
-        flow = build_retail_flow(Config(), snapshots)
+        flow = build_retail_flow(Config(), snapshots, **kwargs)
     return flow, principal, anterior
 
 
@@ -898,6 +900,91 @@ class TestNotasNoClique(unittest.TestCase):
         a_mostra = _texto(re.sub(r"<details[^>]*>.*?</details>", "", html, flags=re.S))
         self.assertIn("Fora: Itaú", a_mostra)
         self.assertNotIn("Fora: Itaú", " ".join(self._blocos(html)))
+
+
+class TestRitmoDaXpPelaLista(unittest.TestCase):
+    """O ritmo da XP no mapa por casa pelo que ela distribui (pedido de
+    18/10/2026): a lista distribuivel, com a regra da prateleira interna do custo,
+    e nao so a vitrine do site. As demais casas e o resto da captacao seguem pela
+    vitrine."""
+
+    @staticmethod
+    def _indice():
+        from shelf_monitor.report.custo import CustoClasse, IndiceCusto
+
+        # A acelera, B e estavel, F acelera e nao esta em vitrine nenhuma; E e
+        # classe exclusiva - veiculo de um cotista, fora da prateleira.
+        classes = {
+            cnpj: CustoClasse(cnpj=cnpj, categoria=CATEGORIA, nome=nome, exclusivo=exclusivo)
+            for cnpj, nome, exclusivo in (
+                (A, "Fundo A FIC FIM", False), (B, "BTG Proprio B FIC FIM", False),
+                (F, "Fundo F FIC FIM", False), (E, "Fundo E FIC FIM", True),
+            )
+        }
+
+        class Indice(IndiceCusto):
+            @classmethod
+            def load(cls, market_dir):
+                return cls(classes)
+
+        return Indice
+
+    def _fluxo(self, lista: BaseDistribuivel | None) -> dict:
+        flow, _, _ = _fluxo(_snapshots(), distribuivel=lista, indice_custo=self._indice())
+        return flow
+
+    def test_linha_da_xp_pela_lista(self):
+        pela_vitrine = self._fluxo(None)
+        pela_lista = self._fluxo(_lista_da_casa(**{A: "faas", B: "", F: "", E: ""}))
+        # A vitrine da XP tem C (estavel) e 32 fundos parados.
+        self.assertEqual(pela_vitrine["tendencia_por_casa"]["xp"],
+                         {"estavel": 1, "saida_persistente": 32})
+        self.assertIsNone(pela_vitrine["ritmo_da_base"])
+        # A lista: A e F aceleram, B e estavel; E (exclusiva) fica fora.
+        self.assertEqual(pela_lista["tendencia_por_casa"]["xp"],
+                         {"acelerando": 2, "estavel": 1})
+        ritmo = pela_lista["ritmo_da_base"]
+        self.assertEqual((ritmo["fonte"], ritmo["fundos"]), ("base_interna", 3))
+        self.assertEqual(
+            ritmo["nota"],
+            "Ritmo da XP Investimentos pela lista distribuível: 3 fundos que a casa "
+            "distribui, com informe e PL de ao menos R$ 1 mi no início; as demais casas, "
+            "pela vitrine do site",
+        )
+
+    def test_o_resto_da_captacao_segue_pela_vitrine(self):
+        pela_vitrine = self._fluxo(None)
+        pela_lista = self._fluxo(_lista_da_casa(**{A: "faas", B: "", F: ""}))
+        self.assertEqual(pela_lista["tendencia_por_casa"]["btg"],
+                         pela_vitrine["tendencia_por_casa"]["btg"])
+        self.assertEqual(pela_lista["casas"], pela_vitrine["casas"])
+        # F so esta na lista: entra no ritmo da XP, nao na lista de fundos (e por
+        # isso nao vira oportunidade de grade nem captacao de vitrine).
+        self.assertNotIn(F, [f["cnpj"] for f in pela_lista["fundos"]])
+        self.assertEqual(pela_lista["fundos"], pela_vitrine["fundos"])
+
+    def test_sem_lista_utilizavel_a_xp_fica_na_vitrine_e_a_nota_diz(self):
+        vazia = BaseDistribuivel(pasta=Path("entrada"), situacao={}, servico={}, arquivos=[])
+        flow = self._fluxo(vazia)
+        self.assertEqual(flow["tendencia_por_casa"]["xp"], {"estavel": 1, "saida_persistente": 32})
+        self.assertEqual(flow["ritmo_da_base"]["fonte"], "vitrine")
+        self.assertTrue(flow["ritmo_da_base"]["nota"].startswith(
+            "Ritmo da XP Investimentos pela vitrine do site, como as demais casas: a "
+            "lista distribuível não entrou - "
+        ))
+
+    def test_digest_marca_a_linha_da_lista(self):
+        from shelf_monitor.report.digest import render_html, render_markdown
+
+        report = _relatorio()
+        report.retail_flow = self._fluxo(_lista_da_casa(**{A: "faas", B: "", F: ""}))
+        md = render_markdown(report, None, "semanal")
+        self.assertIn("parcela dos fundos de cada prateleira", md)
+        self.assertIn("| XP Investimentos (lista) | 3 |", md)
+        self.assertIn("_Ritmo da XP Investimentos pela lista distribuível: 3 fundos", md)
+        texto = _texto(render_html(report, None, "semanal"))
+        self.assertIn("% dos fundos de cada prateleira por ritmo de captação", texto)
+        self.assertIn("XP Investimentos (lista)", texto)
 
 
 class TestServicoDaCasa(unittest.TestCase):

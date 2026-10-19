@@ -58,7 +58,7 @@ from shelf_monitor.report.competitive import (
 from shelf_monitor.report.shared.informe import ler_filtrado, ler_filtrado_sem_guardar
 from shelf_monitor.report.shared.limiares import MIN_COBERTURA_VITRINE
 from shelf_monitor.report.shared.semanas import RecorteSemanal, Semana, recorte_semanal
-from shelf_monitor.texto import periodo_br
+from shelf_monitor.texto import contagem, data_br, periodo_br
 
 
 # Abaixo disto a casa nao entra nos rankings: com um punhado de fundos casados, a
@@ -645,8 +645,18 @@ def build_retail_flow(
     meses: int = 3,
     baseline_id: str = "xp",
     force_download: bool = False,
+    distribuivel=None,
+    indice_custo=None,
 ) -> dict:
-    """Captacao dos fundos de vitrine, por casa e por fundo."""
+    """Captacao dos fundos de vitrine, por casa e por fundo.
+
+    `distribuivel` e a lista distribuivel (`RunReport.distribuivel`): com ela, o
+    ritmo da casa-base no mapa por casa sai do que ela distribui, e nao so do
+    que o site exibe (pedido de 18/10/2026) - a mesma prateleira interna do
+    custo (`custo.prateleira_interna`, com o indice `indice_custo`). O resto do
+    bloco segue pela vitrine. None (a previdencia nao le a lista) deixa tudo
+    pela vitrine, sem nota.
+    """
 
     # Onde o modulo suprime cotistas (previdencia), as listas ranqueiam so por
     # dinheiro - ver FundFlow.entrou.
@@ -682,7 +692,10 @@ def build_retail_flow(
             catalogo.setdefault(fund.cnpj, fund)
             presenca.setdefault(fund.cnpj, []).append(platform_id)
 
-    alvo = set(catalogo)
+    interna, ofertas_da_base = _prateleira_do_ritmo(
+        config, distribuivel, baseline_id, indice_custo
+    )
+    alvo = set(catalogo) | {o.cnpj for o in ofertas_da_base}
     periodos = months_back(meses)
     registros: list[DailyFlow] = []
     meses_lidos: list[str] = []
@@ -838,6 +851,10 @@ def build_retail_flow(
         resumo_tendencia[fluxo.tendencia] = resumo_tendencia.get(fluxo.tendencia, 0) + 1
     ids_casas = [c.platform_id for c in casas]
     base_cnpjs = {f.cnpj for f in cruzaveis.get(baseline_id, []) if f.cnpj}
+    por_casa = tendencia_por_casa(varejo, ids_casas)
+    ritmo_da_base = _ritmo_da_base(
+        interna, ofertas_da_base, registros, por_casa, baseline_id
+    )
 
     return {
         "available": True,
@@ -850,8 +867,10 @@ def build_retail_flow(
         ),
         "tendencia_labels": TREND_LABELS,
         # A contagem global descreve o mercado (em 24/09, 696 de ~1.000 fundos
-        # perdiam dinheiro nos dois periodos); por casa ela compara vitrines.
-        "tendencia_por_casa": tendencia_por_casa(varejo, ids_casas),
+        # perdiam dinheiro nos dois periodos); por casa ela compara prateleiras:
+        # a da casa-base pela lista distribuivel, quando ela entra.
+        "tendencia_por_casa": por_casa,
+        "ritmo_da_base": ritmo_da_base,
         "por_categoria": fluxo_por_categoria(
             [f for f in fluxos if not f.estrutural], ids_casas
         ),
@@ -1120,6 +1139,87 @@ def tendencia_por_casa(varejo: list[FundFlow], casas: list[str]) -> dict[str, di
             if pid in saida:
                 saida[pid][fluxo.tendencia] = saida[pid].get(fluxo.tendencia, 0) + 1
     return saida
+
+
+def _prateleira_do_ritmo(
+    config: Config, distribuivel, baseline_id: str, indice_custo=None
+) -> tuple[object | None, list[FundOffer]]:
+    """A prateleira interna da casa-base para o ritmo, sem caixa nem previdencia.
+
+    E a do custo: o que a casa distribui, sem "pode distribuir" e sem classe
+    exclusiva, com nome e categoria do cadastro - e passa pelas mesmas regras
+    das vitrines. (None, []) quando a execucao nao le a lista (a previdencia).
+    """
+    if distribuivel is None:
+        return None, []
+    # Import tardio, como no aggregate: o custo so entra quando ha lista.
+    from shelf_monitor.report.custo import IndiceCusto, PrateleiraInterna, prateleira_interna
+
+    indice = (indice_custo or IndiceCusto).load(config.market_dir)
+    if indice is None:
+        return PrateleiraInterna(
+            platform_id=baseline_id,
+            motivo="base de mercado não importada - sem ela a lista não tem nome nem categoria",
+        ), []
+    interna = prateleira_interna(distribuivel, indice, baseline_id)
+    if not interna.usada:
+        return interna, []
+    limpas, _ = sem_caixa({baseline_id: interna.ofertas})
+    interna.caixa = len(interna.ofertas) - len(limpas[baseline_id])
+    limpas, _ = sem_previdencia(limpas, config)
+    return interna, limpas[baseline_id]
+
+
+def _ritmo_da_base(
+    interna, ofertas: list[FundOffer], registros: list[DailyFlow],
+    por_casa: dict[str, dict[str, int]], baseline_id: str,
+) -> dict | None:
+    """Troca a linha da casa-base no mapa por casa pela da lista distribuivel.
+
+    Pedido de 18/10/2026: o ritmo da XP pelo que ela distribui, nao so pelo que o
+    site exibe. Mesmo recorte das vitrines - informe, PL de ao menos R$ 1 mi no
+    inicio, sem movimento estrutural. Devolve a proveniencia e a frase que as
+    superficies escrevem; None quando a execucao nao le a lista.
+    """
+    if interna is None:
+        return None
+    rotulo = _platform_label(baseline_id)
+    varejo: list[FundFlow] = []
+    if ofertas:
+        catalogo = {o.cnpj: o for o in ofertas}
+        varejo = [
+            f for f in consolidate(registros, catalogo, {c: [baseline_id] for c in catalogo})
+            if f.pl_inicio >= _MIN_PL_RANKING and not f.estrutural
+        ]
+    motivo = interna.motivo if not ofertas else (
+        None if varejo else "nenhum fundo da lista com informe e PL de ao menos R$ 1 mi"
+    )
+    if motivo:
+        return {
+            "platform_id": baseline_id, "fonte": "vitrine", "motivo": motivo,
+            "data_referencia": None, "fundos": None,
+            "nota": (
+                f"Ritmo da {rotulo} pela vitrine do site, como as demais casas: a lista "
+                f"distribuível não entrou - {motivo}"
+            ),
+        }
+    estados: dict[str, int] = {}
+    for fluxo in varejo:
+        estados[fluxo.tendencia] = estados.get(fluxo.tendencia, 0) + 1
+    if baseline_id in por_casa:
+        por_casa[baseline_id] = estados
+    data = interna.data_referencia
+    return {
+        "platform_id": baseline_id, "fonte": "base_interna", "motivo": None,
+        "data_referencia": data.isoformat() if data else None, "fundos": len(varejo),
+        "nota": (
+            f"Ritmo da {rotulo} pela lista distribuível"
+            + (f" de {data_br(data)}" if data else "")
+            + f": {contagem(len(varejo), 'fundo', 'fundos')} que a casa distribui, com "
+            "informe e PL de ao menos R$ 1 mi no início; as demais casas, pela vitrine "
+            "do site"
+        ),
+    }
 
 
 # --- leitura -------------------------------------------------------------------

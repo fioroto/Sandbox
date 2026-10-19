@@ -1056,7 +1056,14 @@ def _fragmentos(report: RunReport) -> dict[str, str]:
         ),
         "flow_como_ler_exclusivos": "" if sem_cnpj else _FLOW_COMO_LER_EXCLUSIVOS,
         "composicao_sub": _composicao_sub(sem_cnpj, report.suprime(BLOCO_PRODUTO_PROPRIO)),
+        "flow_ritmo_da_base": _nota_do_ritmo_da_base(report),
     }
+
+
+def _nota_do_ritmo_da_base(report: RunReport) -> str:
+    """De onde vem o ritmo da XP no mapa por casa: a lista distribuivel ou a vitrine."""
+    nota = ((report.retail_flow or {}).get("ritmo_da_base") or {}).get("nota")
+    return f"{html.escape(nota)}." if nota else ""
 
 
 # --- paineis ---------------------------------------------------------------------
@@ -1126,6 +1133,7 @@ def _painel_captacao(
         "Tendência em média por pregão: o mês corrente tem menos pregões que os cheios.",
         "Ritmo: fundos com PL de ao menos R$ 1 mi no início. Captando = acelerando, estável, "
         "desacelerando ou que virou entrada no último mês.",
+        trecho["flow_ritmo_da_base"],
     ) + """
     <div class="coverage" id="flow-coverage"></div>""")
 

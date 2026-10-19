@@ -1056,6 +1056,20 @@ R$ 88 mil a R$ 433 mil por cotista novo, e so o numero mostra que nao e varejo.
 A familia e o nivel 1 da categoria oficial. A categoria fina foi medida e descartada
 para este corte: 36 categorias ANBIMA, cada uma dominada por um ou dois fundos.
 
+**O ritmo da XP pela base interna** (18/10/2026). No mapa de ritmo por casa (captando,
+acelerando, virou saida, saida persistente), a linha da XP conta o que ela distribui,
+e nao so o que o site exibe: a mesma prateleira interna do custo - a lista
+distribuivel, situacao "distribui", sem as classes exclusivas -, com nome e categoria
+do cadastro, sem caixa/simples e sem previdencia, e o mesmo recorte das vitrines
+(informe, PL de ao menos R$ 1 mi no inicio, sem movimento estrutural). O fundo da lista
+que nenhuma vitrine exibe entra no ritmo da XP e so nele: a composicao, as listas de
+captacao e as oportunidades de grade seguem pela vitrine, onde "fora da vitrine" quer
+dizer o que o cliente nao ve. As demais casas seguem pela vitrine. No digest a linha
+sai como "XP Investimentos (lista)" e o mapa fala em "prateleira"; a nota de
+proveniencia (`ritmo_da_base`) vai no digest, no "Como ler" do painel e embaixo da
+tabela da planilha. Sem lista utilizavel - ou sem a base de mercado, de onde vem o nome
+e a categoria -, a XP fica na vitrine e a nota diz por que.
+
 ### Rentabilidade ponderada (`performance`)
 
 Tres numeros, e a diferenca entre eles e o achado:

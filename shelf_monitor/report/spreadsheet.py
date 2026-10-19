@@ -1914,6 +1914,11 @@ def _add_captacao_casas_sheet(
                  sum(contagem.values())]
             )
         tabela(cabecalho, linhas, {c: _INT for c in range(2, len(cabecalho) + 1)})
+        # De onde vem a linha da XP: a lista distribuivel ou a vitrine (18/10/2026).
+        ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
+        if ritmo_da_base:
+            ws.cell(row=linha - 1, column=1, value=f"{ritmo_da_base}.").font = _NOTE_FONT
+            linha += 1
         for estado in estados:
             ws.cell(row=linha, column=1, value=nome_da_tendencia(estado)).font = _BODY_FONT
             ws.cell(row=linha, column=2, value=TREND_LABELS[estado]).font = _NOTE_FONT
