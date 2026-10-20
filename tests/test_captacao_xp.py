@@ -541,6 +541,24 @@ class TestSuperficies(_ComCenario):
         self.assertNotIn("Captação líquida na XP (R$)", cabecalho)
 
 
+class TestDiagnosticoDoCruzamento(_ComCenario):
+    def test_diz_quantos_fundos_das_bases_a_xp_distribui(self):
+        from shelf_monitor.report.captacao_na_xp import diagnostico_do_cruzamento
+
+        # A na lista da casa; B, produto proprio do BTG, fora da XP.
+        _mensal(self.pasta, [f"ago/2026;{A};1", f"ago/2026;{B};1"])
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        linhas = diagnostico_do_cruzamento(base, self.report.snapshots, self.lista)
+        self.assertTrue(linhas[0].startswith("Cruzamento: 1 fundo das bases, de 2, na vitrine"))
+        self.assertEqual(linhas[1], "  Das bases e fora da XP, por exemplo: 12.000.000/0001-01.")
+        # Nenhum batendo: os dois lados, para a pessoa comparar.
+        _mensal(self.pasta, [f"ago/2026;{B};1"])
+        linhas = diagnostico_do_cruzamento(
+            BaseCaptacaoInterna.ler(self.pasta), self.report.snapshots, self.lista
+        )
+        self.assertTrue(linhas[-1].startswith("  Da XP, por exemplo: "))
+
+
 class TestNaExecucao(unittest.TestCase):
     def test_attach_le_a_pasta_e_anexa_o_bloco(self):
         from shelf_monitor.main import attach_captacao_na_xp

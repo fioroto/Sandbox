@@ -70,7 +70,7 @@ from shelf_monitor.report.retail_flow import (
     print_retail_flow,
 )
 from shelf_monitor.report.aggregate import bloco_de_gaps, cnpjs_cobertos
-from shelf_monitor.report.captacao_na_xp import captacao_na_xp
+from shelf_monitor.report.captacao_na_xp import captacao_na_xp, diagnostico_do_cruzamento
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.familias import print_familias, relatorio_de_familias
@@ -1197,7 +1197,15 @@ def cmd_captacao_xp(config: Config, args: argparse.Namespace) -> None:
     """
     config.ensure_dirs()
     base = carregar_captacao_interna(config)
-    for linha in base.diagnostico():
+    linhas = base.diagnostico()
+    # O cruzamento com o que a XP distribui: base lida e CNPJ nenhum batendo
+    # deixa a coluna Na XP zerada sem erro nenhum.
+    try:
+        distribuivel = carregar_distribuivel(config)
+    except Exception:  # noqa: BLE001 - a pasta e opcional
+        distribuivel = None
+    linhas += diagnostico_do_cruzamento(base, carregar_snapshots(config, ["xp"]), distribuivel)
+    for linha in linhas:
         console.print(linha, markup=False, highlight=False)
 
 

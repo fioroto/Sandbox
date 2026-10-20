@@ -27,6 +27,7 @@ from datetime import date, timedelta
 
 from shelf_monitor.distribuivel import DISTRIBUI
 from shelf_monitor.report.aggregate import listing_funds
+from shelf_monitor.normalize import format_cnpj
 from shelf_monitor.texto import competencia_br, contagem, data_br, periodo_br
 
 LIGACAO_MESMO_FUNDO = "mesmo fundo"
@@ -181,6 +182,34 @@ def distribuidos(snapshots, distribuivel, baseline_id: str = "xp") -> set[str]:
     if distribuivel is not None:
         cnpjs |= {c for c, situacao in distribuivel.situacao.items() if situacao == DISTRIBUI}
     return cnpjs
+
+
+def diagnostico_do_cruzamento(base, snapshots, distribuivel, baseline_id: str = "xp") -> list[str]:
+    """Quantos fundos das bases batem com o que a XP distribui (21/10/2026).
+
+    Base lida e nenhum CNPJ batendo deixa a coluna Na XP zerada ou vazia sem
+    erro nenhum - o CNPJ do fundo no lugar do da classe, por exemplo. A frase
+    mostra exemplos dos dois lados para a pessoa comparar.
+    """
+    da_xp = distribuidos(snapshots, distribuivel, baseline_id)
+    da_base = base.cnpjs()
+    if not da_base:
+        return []
+    if not da_xp:
+        return ["Cruzamento: sem vitrine da XP coletada nem lista da casa para conferir."]
+    batem = da_base & da_xp
+    linhas = [
+        f"Cruzamento: {contagem(len(batem), 'fundo', 'fundos')} das bases, de "
+        f"{len(da_base)}, na vitrine da XP ou na lista da casa "
+        f"({contagem(len(da_xp), 'fundo distribuído', 'fundos distribuídos')})."
+    ]
+    if len(batem) < len(da_base):
+        exemplos = ", ".join(format_cnpj(c) for c in sorted(da_base - da_xp)[:3])
+        linhas.append(f"  Das bases e fora da XP, por exemplo: {exemplos}.")
+        if not batem:
+            vitrine = ", ".join(format_cnpj(c) for c in sorted(da_xp)[:3])
+            linhas.append(f"  Da XP, por exemplo: {vitrine}.")
+    return linhas
 
 
 def _nomes(snapshots, baseline_id: str) -> dict[str, str]:
