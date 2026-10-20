@@ -530,8 +530,8 @@ def attach_captacao_na_xp(config: Config, report: RunReport) -> None:
             + " com captação nas bases da XP e fora da vitrine e da lista da casa "
             "ficam sem cruzamento.[/]"
         )
-    for aviso in base.avisos[:5]:
-        console.print(f"  [dim]{_short(aviso)}[/]")
+    for aviso in [a for a in base.avisos if "não parece trazer o CNPJ do fundo" not in a][:5]:
+        console.print(f"  [dim]{escape(_short(aviso))}[/]")
 
 
 def montar_serie_mensal(config: Config, meses: int) -> SerieMensal | None:

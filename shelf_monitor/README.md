@@ -1128,6 +1128,15 @@ motivo, arquivo a arquivo, e o arquivo recusado inteiro por CNPJ fora do cadastr
 que a coluna nao parece ser a do fundo. A planilha exportada vai como veio, com o
 cabecalho dela - os modelos so mostram os nomes de coluna aceitos.
 
+**CNPJ fora do cadastro entra** (21/10/2026). O modelo preenchido na ordem certa (`mes`
+202607, `cnpj` em numero, `captacao_liquida` com sinal) tambem tinha linhas recusadas:
+o leitor descartava todo CNPJ que o `mercado.csv` nao conhecia - fundo novo, FIDC, base
+de mercado desatualizada -, e na diaria isso esvaziou a base. A regra e da lista
+distribuivel, onde o CNPJ errado criaria cobertura falsa; na captacao ele so nao cruza
+com fundo nenhum. Agora a linha entra com o CNPJ como veio, e o aviso conta os fundos
+fora do cadastro com exemplos; o arquivo em que nenhum CNPJ esta no cadastro ainda diz
+que a coluna nao parece ser a do fundo.
+
 Os dois numeros comparam a mesma coisa (`report/captacao_na_xp.py`):
 
 - **mesma janela**: a semana e os 3 meses do bloco de captacao, com os mesmos dias.
