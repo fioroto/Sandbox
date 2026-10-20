@@ -154,8 +154,35 @@ def _pelo_conteudo(linhas: list[tuple[int, dict]], cabecalho, fora: set[str], le
     return None
 
 
+# Quantas linhas a escolha da coluna de CNPJ confere contra o cadastro.
+_AMOSTRA_DO_CNPJ = 200
+
+
+def _coluna_de_cnpj(
+    candidatas: list[tuple[str, float]], linhas: list[tuple[int, dict]],
+    resolver: Resolvedor | None,
+) -> tuple[str, float] | None:
+    """Entre as colunas com nome de CNPJ, a cujos valores mais estao no cadastro
+    (21/10/2026): a planilha pode trazer o CNPJ do cliente ou da gestora ao lado
+    do `cod_cnpj` do fundo. Sem cadastro para conferir, a primeira pelo nome."""
+    if len(candidatas) < 2 or resolver is None:
+        return candidatas[0] if candidatas else None
+
+    def no_cadastro(coluna: str) -> int:
+        achados = 0
+        for _, linha in linhas[:_AMOSTRA_DO_CNPJ]:
+            cnpj = normalize_cnpj(_texto_de_cnpj(linha.get(coluna)))
+            if cnpj and resolver(cnpj, None):
+                achados += 1
+        return achados
+
+    pontos = [no_cadastro(c[0]) for c in candidatas]
+    return candidatas[max(range(len(candidatas)), key=lambda i: (pontos[i], -i))]
+
+
 def _colunas(
-    cabecalho: list[str], tipo: str, linhas: list[tuple[int, dict]] = ()
+    cabecalho: list[str], tipo: str, linhas: list[tuple[int, dict]] = (),
+    resolver: Resolvedor | None = None,
 ) -> _Colunas | str:
     """As colunas do arquivo, ou o motivo de nao dar para le-lo."""
     por_nome: dict[str, tuple[str, float]] = {}
@@ -167,7 +194,8 @@ def _colunas(
     def achar(nomes: tuple[str, ...]) -> tuple[str, float] | None:
         return next((por_nome[n] for n in nomes if n in por_nome), None)
 
-    cnpj, codigo = achar(_CNPJ), achar(_CODIGO)
+    cnpj = _coluna_de_cnpj([por_nome[n] for n in _CNPJ if n in por_nome], linhas, resolver)
+    codigo = achar(_CODIGO)
     if cnpj is None and codigo is None:
         return "sem coluna de CNPJ nem de código CVM"
     valores: dict = {}
@@ -395,6 +423,17 @@ def _ler_arquivo(caminho: Path) -> tuple[list[str], list[tuple[int, dict]]]:
 _SO_MES = ("mes", "competencia", "mes_ano", "ano_mes", "mes_referencia", "mes_ref", "periodo")
 
 
+_FORA_DO_CADASTRO = "CNPJ não encontrado no cadastro da CVM"
+
+
+def _tipo_da_recusa(motivo: str) -> str:
+    """O motivo sem o valor da linha: "CNPJ 1790... nao encontrado no cadastro da
+    CVM" e "data ilegivel '32/10/2026'" viram um motivo so cada."""
+    sem_valor = re.sub(r"'[^']*'", "", motivo)
+    sem_valor = re.sub(r"(CNPJ|código CVM) \S+ não encontrado", r"\1 não encontrado", sem_valor)
+    return re.sub(r"\s+", " ", sem_valor).strip()
+
+
 def _tipo_pela_pasta(relativo: Path) -> str | None:
     """"diaria" ou "mensal" pelo nome de uma das pastas, com ou sem acento."""
     for parte in relativo.parts[:-1]:
@@ -597,7 +636,7 @@ class BaseCaptacaoInterna:
             ))
             return
         destino = self.dias if tipo == DIARIA else self.meses
-        colunas = _colunas(cabecalho, tipo, linhas)
+        colunas = _colunas(cabecalho, tipo, linhas, resolver)
         if isinstance(colunas, str):
             self.invalidas.append(LinhaInvalida(nome, 1, colunas))
             return
@@ -653,6 +692,15 @@ class BaseCaptacaoInterna:
             self.avisos.append(
                 f"{nome} repete {periodos} de arquivo anterior - valem os dele"
             )
+        if lido.invalidas and not lido.validas:
+            motivo, _, _ = self.recusas_por_motivo(nome)[0]
+            if motivo == _FORA_DO_CADASTRO:
+                self.avisos.append(
+                    f"{nome}: nenhum valor da coluna '{colunas.cnpj}' está no cadastro da "
+                    "CVM - ela não parece trazer o CNPJ do fundo. Use o arquivo exportado, "
+                    "com o cabeçalho dele (cod_cnpj, Captação...): dado colado no modelo, "
+                    "com as colunas em outra ordem, dá nisso"
+                )
         destino.update(do_arquivo)
         self._por_fundo = None
         if do_arquivo:
@@ -662,6 +710,18 @@ class BaseCaptacaoInterna:
                 lido.de, lido.ate = data_br(primeiro), data_br(ultimo)
             else:
                 lido.de, lido.ate = competencia_br(primeiro), competencia_br(ultimo)
+
+    def recusas_por_motivo(self, arquivo: str) -> list[tuple[str, int, LinhaInvalida]]:
+        """(motivo, quantas, a primeira) das recusas do arquivo, da mais comum para
+        a menos - o motivo sem o valor da linha ("CNPJ ... nao encontrado")."""
+        grupos: dict[str, list[LinhaInvalida]] = {}
+        for recusa in self.invalidas:
+            if recusa.arquivo == arquivo:
+                grupos.setdefault(_tipo_da_recusa(recusa.motivo), []).append(recusa)
+        return sorted(
+            ((motivo, len(lista), lista[0]) for motivo, lista in grupos.items()),
+            key=lambda grupo: -grupo[1],
+        )
 
     def diagnostico(self) -> list[str]:
         """Como cada arquivo foi lido e o que as bases trazem - o que o comando
@@ -685,12 +745,12 @@ class BaseCaptacaoInterna:
                 ))
             if arquivo.de:
                 linhas.append(f"  período: {arquivo.de} a {arquivo.ate}")
-            recusas = [i for i in self.invalidas if i.arquivo == arquivo.nome]
-            for recusa in recusas[:3]:
-                onde = f"linha {recusa.linha}: " if recusa.linha else ""
-                linhas.append(f"  recusada - {onde}{recusa.motivo}")
-            if len(recusas) > 3:
-                linhas.append(f"  e mais {milhar(len(recusas) - 3)} recusadas")
+            for motivo, quantas, primeira in self.recusas_por_motivo(arquivo.nome)[:3]:
+                onde = f"linha {primeira.linha}: " if primeira.linha else ""
+                linhas.append(
+                    f"  {contagem(quantas, 'recusada', 'recusadas')} - {motivo} "
+                    f"(a primeira, {onde}{primeira.motivo})"
+                )
         if self.dias:
             uteis = [
                 self.primeiro_dia + timedelta(days=n)
