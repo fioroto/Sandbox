@@ -7,6 +7,10 @@
   "--months",
   "--platform"
  ],
+ "captacao-xp": [
+  "--data-dir",
+  "--help"
+ ],
  "collect": [
   "--data-dir",
   "--first-source-only",

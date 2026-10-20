@@ -13,6 +13,7 @@ Uso:
     python -m shelf_monitor custo                  # taxa de cada fundo contra a categoria dele
     python -m shelf_monitor mandato                # o que o regulamento de cada classe autoriza
     python -m shelf_monitor familias "KINEA"       # familias de estrategia de uma gestora
+    python -m shelf_monitor captacao-xp            # como as bases de captacao da XP foram lidas
     python -m shelf_monitor market                 # base geral do mercado (CVM)
     python -m shelf_monitor doctor                 # testa acesso as fontes
     python -m shelf_monitor diagnose               # sonda as fontes e grava evidencias
@@ -69,7 +70,7 @@ from shelf_monitor.report.retail_flow import (
     print_retail_flow,
 )
 from shelf_monitor.report.aggregate import bloco_de_gaps, cnpjs_cobertos
-from shelf_monitor.report.captacao_na_xp import captacao_na_xp
+from shelf_monitor.report.captacao_na_xp import captacao_na_xp, diagnostico_do_cruzamento
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.familias import print_familias, relatorio_de_familias
@@ -484,8 +485,16 @@ def attach_captacao_na_xp(config: Config, report: RunReport) -> None:
         console.print(f"[yellow]Captação na XP não calculada:[/] {_short(str(exc))}")
         return
     bloco = report.captacao_xp
+    for recusa in base.invalidas[:3]:
+        onde = f", linha {recusa.linha}" if recusa.linha else ""
+        console.print(f"  [yellow]Base da XP recusada[/] ({recusa.arquivo}{onde}): {recusa.motivo}")
+    if base.invalidas:
+        console.print(
+            "  [dim]`python -m shelf_monitor captacao-xp` mostra como cada arquivo foi lido.[/]"
+        )
     if not bloco.get("available"):
-        console.print(f"  [dim]Captação na XP: {bloco.get('reason')}.[/]")
+        cor = "yellow" if base.arquivos else "dim"
+        console.print(f"  [{cor}]Captação na XP: {bloco.get('reason')}.[/]")
         return
     console.print(
         f"Captação na XP: {bloco['descricao_da_base']} - "
@@ -1179,6 +1188,27 @@ def _cobertos_dos_snapshots(config: Config, snapshots: list[ShelfSnapshot]) -> s
     return _cobertos_na_vitrine(_avulso_com_familias(config, snapshots))
 
 
+def cmd_captacao_xp(config: Config, args: argparse.Namespace) -> None:
+    """Como as bases de captacao da XP foram lidas, arquivo a arquivo.
+
+    So le a pasta (`data/captacao_xp`), sem a CVM: diz a base de cada arquivo, as
+    colunas usadas, o periodo, as linhas recusadas com o motivo e os dias uteis
+    que faltam na diaria - o que decide se o digest mostra a coluna Na XP.
+    """
+    config.ensure_dirs()
+    base = carregar_captacao_interna(config)
+    linhas = base.diagnostico()
+    # O cruzamento com o que a XP distribui: base lida e CNPJ nenhum batendo
+    # deixa a coluna Na XP zerada sem erro nenhum.
+    try:
+        distribuivel = carregar_distribuivel(config)
+    except Exception:  # noqa: BLE001 - a pasta e opcional
+        distribuivel = None
+    linhas += diagnostico_do_cruzamento(base, carregar_snapshots(config, ["xp"]), distribuivel)
+    for linha in linhas:
+        console.print(linha, markup=False, highlight=False)
+
+
 def cmd_familias(config: Config, args: argparse.Namespace) -> None:
     """Familias de estrategia de uma gestora, ou a familia de um fundo.
 
@@ -1620,6 +1650,13 @@ def main() -> None:
     )
     add_carteira_arg(export_parser)
     export_parser.set_defaults(func=cmd_export)
+
+    captacao_xp_parser = subparsers.add_parser(
+        "captacao-xp",
+        help="Mostrar como as bases de captação da XP (data/captacao_xp) foram lidas",
+        parents=[common],
+    )
+    captacao_xp_parser.set_defaults(func=cmd_captacao_xp)
 
     familias_parser = subparsers.add_parser(
         "familias",

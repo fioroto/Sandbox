@@ -154,7 +154,9 @@ class TestLeitura(unittest.TestCase):
             ("diaria/a.csv", 2, "CNPJ inválido '123'"),
             ("diaria/a.csv", 3, "data ilegível '32/13/2026'"),
             ("diaria/a.csv", 4, "sem valor de captação"),
-            ("mensal/sem_cnpj.csv", 1, "sem coluna de CNPJ nem de código CVM"),
+            ("mensal/sem_cnpj.csv", 0,
+             "sem cabeçalho com coluna de CNPJ (cnpj, cod_cnpj, codigo_cnpj ou codigo_cvm) "
+             "nas 20 primeiras linhas"),
         ])
         self.assertEqual(base.dias, {date(2026, 10, 6): {C: 100.0}})
 
@@ -247,6 +249,112 @@ class TestLeitura(unittest.TestCase):
         base = BaseCaptacaoInterna.ler(self.pasta / "captacao_xp")
         self.assertIn("captacao_xp/diaria", base.motivo_da_supressao())
         self.assertIn("modelos em", base.motivo_da_supressao())
+
+
+def _planilha_da_xp(caminho: Path, coluna_de_tempo: str, linhas: list[tuple],
+                    dimensao_a1: bool = False) -> None:
+    """O layout das bases da XP (21/10/2026): o tempo na coluna A, `cod_cnpj` em
+    numero na N, `Captação` liquida com sinal na S. `dimensao_a1` grava a aba como
+    a exportacao do BI, com a dimensao "A1"."""
+    import re
+    import zipfile
+
+    pasta = Workbook()
+    aba = pasta.active
+    cabecalho = [f"campo {letra}" for letra in "ABCDEFGHIJKLMNOPQRS"]
+    cabecalho[0], cabecalho[13], cabecalho[18] = coluna_de_tempo, "cod_cnpj", "Captação"
+    aba.append(cabecalho)
+    for quando, valor in linhas:
+        linha = ["x"] * 19
+        linha[0], linha[13], linha[18] = quando, int(C), valor
+        aba.append(linha)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    pasta.save(caminho)
+    if dimensao_a1:
+        copia = caminho.with_suffix(".tmp")
+        with zipfile.ZipFile(caminho) as origem, zipfile.ZipFile(copia, "w") as destino:
+            for item in origem.infolist():
+                dados = origem.read(item.filename)
+                if item.filename == "xl/worksheets/sheet1.xml":
+                    dados = re.sub(rb'<dimension ref="[^"]+"/>', b'<dimension ref="A1"/>', dados)
+                destino.writestr(item, dados)
+        copia.replace(caminho)
+
+
+class TestFormatosDaXp(unittest.TestCase):
+    """As bases da XP nao foram lidas na primeira execucao (21/10/2026): diaria
+    com a data, `cod_cnpj` em numero e a captacao liquida com sinal; mensal com o
+    mes 202607. Cada caso abaixo era recusado - quase sempre em silencio."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.pasta = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _dias(self) -> dict:
+        return {d: v for d, v in BaseCaptacaoInterna.ler(self.pasta).dias.items()}
+
+    def test_data_em_numero(self):
+        """O numero serial do Excel (46311, a celula sem formato de data) e o
+        aaaammdd (20261016) sao 16/10/2026."""
+        _planilha_da_xp(self.pasta / "diaria" / "a.xlsx", "Data", [(46311, 1500.5)])
+        _planilha_da_xp(self.pasta / "diaria" / "b.xlsx", "Data", [(20261015, -200.0)])
+        self.assertEqual(self._dias(), {
+            date(2026, 10, 16): {C: 1500.5}, date(2026, 10, 15): {C: -200.0},
+        })
+
+    def test_exportacao_do_bi_com_a_dimensao_a1(self):
+        """O openpyxl no modo de leitura confiava na dimensao gravada e lia so A1:
+        "sem linhas de dados"."""
+        _planilha_da_xp(self.pasta / "diaria" / "bi.xlsx", "Data",
+                        [(datetime(2026, 10, 16), 1500.5)], dimensao_a1=True)
+        self.assertEqual(self._dias(), {date(2026, 10, 16): {C: 1500.5}})
+
+    def test_qualquer_pasta_dentro_de_captacao_xp(self):
+        """A pasta com acento ("Diária") e o arquivo solto na raiz eram ignorados."""
+        _planilha_da_xp(self.pasta / "Diária" / "a.xlsx", "Data",
+                        [(datetime(2026, 10, 16), 1500.5)])
+        _planilha_da_xp(self.pasta / "mensal_xp.xlsx", "Mês", [(202607, -3000.0)])
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        self.assertEqual(base.dias, {date(2026, 10, 16): {C: 1500.5}})
+        self.assertEqual(base.meses, {"202607": {C: -3000.0}})
+        self.assertEqual({a.nome: a.tipo for a in base.arquivos},
+                         {"Diária/a.xlsx": "diaria", "mensal_xp.xlsx": "mensal"})
+
+    def test_csv_com_titulo_e_negativo_contabil(self):
+        _escrever(self.pasta, "diaria", "a.csv", [
+            "Captação diária - fundos;;",
+            ";;",
+            "Data;cod_cnpj;Captação",
+            f"16/10/2026;{C};(1.234,56)",
+            f"15/10/2026;{C};2.000,00-",
+        ])
+        self.assertEqual(self._dias(), {
+            date(2026, 10, 16): {C: -1234.56}, date(2026, 10, 15): {C: -2000.0},
+        })
+
+    def test_formato_que_nao_e_lido_diz_o_que_fazer(self):
+        (self.pasta / "diaria").mkdir()
+        (self.pasta / "diaria" / "antiga.xls").write_bytes(b"\xd0\xcf")
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        self.assertEqual(base.invalidas[0].motivo,
+                         "formato .xls não é lido - salve como .xlsx ou .csv")
+
+    def test_diagnostico_mostra_como_cada_arquivo_foi_lido(self):
+        _planilha_da_xp(self.pasta / "diaria" / "a.xlsx", "Data", [
+            (datetime(2026, 10, 13), 10.0), (datetime(2026, 10, 16), 20.0),
+            ("32/10/2026", 5.0),
+        ])
+        texto = "\n".join(BaseCaptacaoInterna.ler(self.pasta).diagnostico())
+        self.assertIn("- diaria/a.xlsx: base diária, 3 linhas, 2 válidas, 1 recusada", texto)
+        self.assertIn("colunas: CNPJ 'cod_cnpj', data ou mês 'data', captação 'captacao'", texto)
+        self.assertIn("recusada - linha 4: data ilegível '32/10/2026'", texto)
+        # 14 e 15/10 nao vieram: o diagnostico diz, porque sem eles a semana fica
+        # sem numero.
+        self.assertIn("sem 2 dias úteis no meio (feriado também aparece aqui): "
+                      "14/10/2026, 15/10/2026", texto)
 
 
 # --- janelas e cruzamento -------------------------------------------------------
@@ -431,6 +539,24 @@ class TestSuperficies(_ComCenario):
                                    retail_flow=self.report.retail_flow)
         cabecalho = [c.value for c in load_workbook(grade)["Captação por fundo"][7]]
         self.assertNotIn("Captação líquida na XP (R$)", cabecalho)
+
+
+class TestDiagnosticoDoCruzamento(_ComCenario):
+    def test_diz_quantos_fundos_das_bases_a_xp_distribui(self):
+        from shelf_monitor.report.captacao_na_xp import diagnostico_do_cruzamento
+
+        # A na lista da casa; B, produto proprio do BTG, fora da XP.
+        _mensal(self.pasta, [f"ago/2026;{A};1", f"ago/2026;{B};1"])
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        linhas = diagnostico_do_cruzamento(base, self.report.snapshots, self.lista)
+        self.assertTrue(linhas[0].startswith("Cruzamento: 1 fundo das bases, de 2, na vitrine"))
+        self.assertEqual(linhas[1], "  Das bases e fora da XP, por exemplo: 12.000.000/0001-01.")
+        # Nenhum batendo: os dois lados, para a pessoa comparar.
+        _mensal(self.pasta, [f"ago/2026;{B};1"])
+        linhas = diagnostico_do_cruzamento(
+            BaseCaptacaoInterna.ler(self.pasta), self.report.snapshots, self.lista
+        )
+        self.assertTrue(linhas[-1].startswith("  Da XP, por exemplo: "))
 
 
 class TestNaExecucao(unittest.TestCase):

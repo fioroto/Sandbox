@@ -12,8 +12,11 @@ Os modelos com o cabecalho moram em `data/captacao_xp/modelo_diaria.csv` e
 `modelo_mensal.csv`. Regras de leitura:
 
 - CSV (`;` ou `,`, UTF-8 com ou sem BOM, ou Latin-1) ou Excel `.xlsx` (a
-  primeira aba; o cabecalho e a primeira linha, das 20 primeiras, com a coluna
-  de CNPJ ou de codigo CVM);
+  primeira aba com cabecalho; o cabecalho e a primeira linha, das 20 primeiras,
+  com a coluna de CNPJ ou de codigo CVM). `.xls` e `.xlsb` sao recusados com o
+  motivo. Vale qualquer pasta dentro de `data/captacao_xp`: a que tem "diaria"
+  ou "mensal" no nome, com ou sem acento, decide a base; fora delas, decide o
+  cabecalho (`_tipo_do_arquivo`, 21/10/2026);
 - colunas por nome, sem diferenciar maiuscula, acento nem pontuacao: `cnpj`
   (ou `cod_cnpj`, ou `codigo_cvm`) e obrigatorio, como texto ou como numero; a
   data (`data`, `dia`, `data_movimento`) na diaria e o mes (`mes`,
@@ -21,9 +24,13 @@ Os modelos com o cabecalho moram em `data/captacao_xp/modelo_diaria.csv` e
   esses nomes, a primeira cujos valores sao todos datas (ou meses), com aviso;
   o valor e `captacao_liquida`, ou `captacao` sozinha (a coluna das bases da
   XP, 20/10/2026), ou `captacao_bruta` (ou `aplicacao`) menos `resgate`;
-- valores em reais. A unidade escrita no cabecalho vale: "(R$ mil)" multiplica
-  por mil, "(R$ MM)" ou "(R$ milhões)" por um milhao - o numero sai na mesma
-  ordem de grandeza do da CVM;
+- valores em reais, com sinal: negativo e resgate liquido, inclusive no formato
+  contabil ("(1.234,56)" ou "1.234,56-"). A unidade escrita no cabecalho vale:
+  "(R$ mil)" multiplica por mil, "(R$ MM)" ou "(R$ milhões)" por um milhao - o
+  numero sai na mesma ordem de grandeza do da CVM;
+- a data como data, texto (16/10/2026), numero aaaammdd (20261016) ou o numero
+  serial do Excel (46311, a celula sem formato de data); o mes como 202607,
+  07/2026, jul/2026 ou uma data do mes;
 - o fundo e resolvido como na lista distribuivel: CNPJ da classe, CNPJ do
   fundo ou codigo CVM. CNPJ de fundo com mais de uma classe fica como veio, com
   aviso: a captacao nao se divide entre as classes;
@@ -40,10 +47,11 @@ zero na XP naquele dia. O mesmo vale para o mes da base mensal.
 from __future__ import annotations
 
 import csv
+import io
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from shelf_monitor.distribuivel import (
@@ -51,7 +59,6 @@ from shelf_monitor.distribuivel import (
     LinhaInvalida,
     Resolvedor,
     _chave_de_coluna,
-    _ler_csv,
     _resolvedor_do_cadastro,
 )
 from shelf_monitor.market.parse import parse_date
@@ -61,7 +68,7 @@ from shelf_monitor.normalize import (
     parse_money,
     strip_accents,
 )
-from shelf_monitor.texto import competencia_br, contagem, data_br
+from shelf_monitor.texto import competencia_br, contagem, data_br, milhar
 
 DIARIA = "diaria"
 MENSAL = "mensal"
@@ -187,10 +194,18 @@ def _colunas(
 
 
 def _numero(bruto: object, coluna: tuple[str, float] | None) -> float | None:
-    if coluna is None:
+    if coluna is None or bruto in (None, ""):
         return None
-    valor = parse_money(bruto) if bruto not in (None, "") else None
-    return None if valor is None else valor * coluna[1]
+    negativo = False
+    if isinstance(bruto, str):
+        # O formato contabil: "(1.234,56)" ou "1.234,56-" e negativo.
+        texto = bruto.strip()
+        negativo = (texto.startswith("(") and texto.endswith(")")) or texto.endswith("-")
+        bruto = texto.strip("()").rstrip("-").strip()
+    valor = parse_money(bruto)
+    if valor is None:
+        return None
+    return (-abs(valor) if negativo else valor) * coluna[1]
 
 
 def _liquida(linha: dict, colunas: _Colunas) -> float | None:
@@ -205,18 +220,42 @@ def _liquida(linha: dict, colunas: _Colunas) -> float | None:
     return (bruta or 0.0) - abs(resgate or 0.0)
 
 
-def _dia(bruto: object) -> date | None:
+# O numero serial do Excel: dias desde 30/12/1899. A faixa vai de 1954 a 2119 -
+# fora dela o numero nao e data.
+_EPOCA_DO_EXCEL = date(1899, 12, 30)
+_SERIAIS = range(20_000, 80_000)
+
+
+def _aaaammdd(texto: str) -> date | None:
+    if not re.fullmatch(r"(19|20)\d{6}", texto):
+        return None
+    try:
+        return date(int(texto[:4]), int(texto[4:6]), int(texto[6:]))
+    except ValueError:
+        return None
+
+
+def _dia(bruto: object, serial: bool = False) -> date | None:
+    """A data da celula. `serial` aceita o numero serial do Excel - so na coluna
+    com nome de data: pelo conteudo, um codigo de assessor passaria por data."""
     if isinstance(bruto, datetime):
         return bruto.date()
     if isinstance(bruto, date):
         return bruto
+    if isinstance(bruto, float) and bruto.is_integer():
+        bruto = int(bruto)
+    if isinstance(bruto, int) and not isinstance(bruto, bool):
+        if serial and bruto in _SERIAIS:
+            return _EPOCA_DO_EXCEL + timedelta(days=bruto)
+        return _aaaammdd(str(bruto))
     texto = str(bruto or "").strip()
-    achado = parse_date(texto)
+    achado = parse_date(texto) or _aaaammdd(texto)
     if achado is None and texto:
-        try:
-            achado = datetime.strptime(texto.split(" ")[0], "%d/%m/%y").date()
-        except ValueError:
-            return None
+        for formato in ("%d/%m/%y", "%d.%m.%Y"):
+            try:
+                return datetime.strptime(texto.split(" ")[0], formato).date()
+            except ValueError:
+                continue
     return achado
 
 
@@ -284,41 +323,121 @@ def _classe(
     return cnpj, None, len(classes)
 
 
-def _ler_xlsx(caminho: Path) -> list[tuple[int, dict]]:
-    """Linhas da primeira aba, com o numero da linha na planilha."""
+def _eh_cabecalho(chaves: list[str]) -> bool:
+    return any(_sem_unidade(c)[0] in _CNPJ + _CODIGO for c in chaves if c)
+
+
+def _linhas_da_tabela(fileiras) -> tuple[list[str], list[tuple[int, dict]]]:
+    """(cabecalho, linhas) de fileiras cruas: o cabecalho e a primeira das 20
+    primeiras com a coluna de CNPJ - a exportacao do BI abre com titulo."""
+    cabecalho: list[str] = []
+    linhas = []
+    for numero, valores in enumerate(fileiras, start=1):
+        if not cabecalho:
+            chaves = [_chave_de_coluna(str(v)) if v is not None else "" for v in valores]
+            if _eh_cabecalho(chaves):
+                cabecalho = chaves
+            elif numero >= _LINHAS_ATE_O_CABECALHO:
+                break
+            continue
+        if not any(v not in (None, "") and str(v).strip() for v in valores):
+            continue
+        linhas.append((numero, {
+            coluna: (valores[i] if i < len(valores) else None)
+            for i, coluna in enumerate(cabecalho) if coluna
+        }))
+    return [c for c in cabecalho if c], linhas
+
+
+def _ler_xlsx(caminho: Path) -> tuple[list[str], list[tuple[int, dict]]]:
+    """A primeira aba com cabecalho, com o numero da linha na planilha."""
     from openpyxl import load_workbook
 
     pasta = load_workbook(caminho, read_only=True, data_only=True)
     try:
-        aba = pasta.worksheets[0]
-        cabecalho: list[str] | None = None
-        linhas = []
-        for numero, valores in enumerate(aba.iter_rows(values_only=True), start=1):
-            if cabecalho is None:
-                chaves = [_chave_de_coluna(str(v)) if v is not None else "" for v in valores]
-                if any(_sem_unidade(c)[0] in _CNPJ + _CODIGO for c in chaves):
-                    cabecalho = chaves
-                elif numero >= _LINHAS_ATE_O_CABECALHO:
-                    return []
-                continue
-            if not any(v not in (None, "") for v in valores):
-                continue
-            linhas.append((numero, {
-                coluna: valores[i] if i < len(valores) else None
-                for i, coluna in enumerate(cabecalho) if coluna
-            }))
-        return linhas
+        for aba in pasta.worksheets:
+            # A exportacao do BI grava a dimensao da aba como "A1", e no modo de
+            # leitura o openpyxl so le essa celula: a dimensao sai da propria aba.
+            aba.reset_dimensions()
+            cabecalho, linhas = _linhas_da_tabela(aba.iter_rows(values_only=True))
+            if cabecalho:
+                return cabecalho, linhas
+        return [], []
     finally:
         pasta.close()
+
+
+def _ler_csv_da_base(caminho: Path) -> tuple[list[str], list[tuple[int, dict]]]:
+    """O CSV, com o cabecalho onde estiver (ver `_linhas_da_tabela`)."""
+    bruto = caminho.read_bytes()
+    try:
+        texto = bruto.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texto = bruto.decode("latin-1")
+    amostra = texto.split("\n", _LINHAS_ATE_O_CABECALHO)
+    separador = ";" if sum(l.count(";") for l in amostra) >= sum(l.count(",") for l in amostra) else ","
+    fileiras = [[v.strip() for v in valores] for valores in csv.reader(io.StringIO(texto), delimiter=separador)]
+    return _linhas_da_tabela(fileiras)
+
+
+# Formatos de planilha que o leitor nao abre: o motivo diz o que fazer.
+_SEM_LEITOR = {".xls", ".xlsb", ".ods"}
 
 
 def _ler_arquivo(caminho: Path) -> tuple[list[str], list[tuple[int, dict]]]:
     """(cabecalho, linhas) de um CSV ou de uma planilha."""
     if caminho.suffix.lower() == ".xlsx":
-        linhas = _ler_xlsx(caminho)
-    else:
-        linhas = _ler_csv(caminho)
-    return (list(linhas[0][1]) if linhas else []), linhas
+        return _ler_xlsx(caminho)
+    return _ler_csv_da_base(caminho)
+
+
+# O mes pelo nome da coluna, sem ambiguidade com a data da base diaria.
+_SO_MES = ("mes", "competencia", "mes_ano", "ano_mes", "mes_referencia", "mes_ref", "periodo")
+
+
+def _tipo_pela_pasta(relativo: Path) -> str | None:
+    """"diaria" ou "mensal" pelo nome de uma das pastas, com ou sem acento."""
+    for parte in relativo.parts[:-1]:
+        nome = _chave_de_coluna(parte)
+        if nome.startswith("diari"):
+            return DIARIA
+        if nome.startswith("mensa"):
+            return MENSAL
+    return None
+
+
+def _tipo_pelo_cabecalho(cabecalho: list[str], linhas: list[tuple[int, dict]]) -> str | None:
+    """Fora das pastas: o mes pelo nome decide; a coluna de data cujos valores
+    sao todos meses (202607) tambem; a data, pelo nome ou pelo conteudo, e diaria."""
+    nomes = {_sem_unidade(c)[0]: c for c in cabecalho}
+    if set(nomes) & set(_SO_MES):
+        return MENSAL
+    data = next((nomes[n] for n in _DIA if n in nomes), None)
+    if data is not None:
+        amostra = [l.get(data) for _, l in linhas[:_AMOSTRA] if l.get(data) not in (None, "")]
+        if amostra and all(_dia(v) is None and _mes(v) for v in amostra):
+            return MENSAL
+        return DIARIA
+    if _pelo_conteudo(linhas, cabecalho, set(), _dia):
+        return DIARIA
+    return None
+
+
+@dataclass
+class ArquivoDaBase(ArquivoLido):
+    """Um arquivo lido: a base, as colunas usadas e o periodo que ele traz - o que
+    o diagnostico (`python -m shelf_monitor captacao-xp`) mostra."""
+
+    tipo: str | None = None
+    colunas: dict[str, str] = field(default_factory=dict)
+    de: str | None = None
+    ate: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            **super().to_dict(), "tipo": self.tipo, "colunas": dict(self.colunas),
+            "de": self.de, "ate": self.ate,
+        }
 
 
 @dataclass
@@ -330,7 +449,7 @@ class BaseCaptacaoInterna:
     dias: dict[date, dict[str, float]] = field(default_factory=dict)
     # competencia (AAAAMM) -> CNPJ de classe -> captacao liquida na XP (R$)
     meses: dict[str, dict[str, float]] = field(default_factory=dict)
-    arquivos: list[ArquivoLido] = field(default_factory=list)
+    arquivos: list[ArquivoDaBase] = field(default_factory=list)
     invalidas: list[LinhaInvalida] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
     # CNPJ -> [(dia, captacao)], montado na primeira soma: o cruzamento soma a
@@ -421,18 +540,22 @@ class BaseCaptacaoInterna:
 
     @classmethod
     def ler(cls, pasta: Path, resolver: Resolvedor | None = None) -> "BaseCaptacaoInterna":
+        """Todos os arquivos dentro da pasta, em qualquer subpasta, pela ordem do
+        caminho - os modelos, so com o cabecalho, ficam de fora."""
         base = cls(pasta=pasta)
-        for tipo, destino in ((DIARIA, base.dias), (MENSAL, base.meses)):
-            subpasta = pasta / tipo
-            if not subpasta.is_dir():
-                continue
-            caminhos = sorted(
-                (p for p in subpasta.iterdir()
-                 if p.suffix.lower() in (".csv", ".xlsx") and not p.name.startswith("~$")),
-                key=lambda p: p.name.lower(),
-            )
-            for caminho in caminhos:
-                base._ler_um(caminho, tipo, destino, resolver)
+        if not pasta.is_dir():
+            return base
+        caminhos = sorted(
+            (
+                c for c in pasta.rglob("*")
+                if c.is_file() and not c.name.startswith("~$")
+                and c.suffix.lower() in {".csv", ".xlsx", *_SEM_LEITOR}
+                and not (c.parent == pasta and c.name.lower().startswith("modelo_"))
+            ),
+            key=lambda c: str(c.relative_to(pasta)).lower(),
+        )
+        for caminho in caminhos:
+            base._ler_um(caminho, resolver)
         if resolver is None and base.arquivos:
             base.avisos.append(
                 "base de mercado ausente: os CNPJs das bases da XP não foram conferidos "
@@ -440,24 +563,52 @@ class BaseCaptacaoInterna:
             )
         return base
 
-    def _ler_um(
-        self, caminho: Path, tipo: str, destino: dict, resolver: Resolvedor | None
-    ) -> None:
-        nome = f"{tipo}/{caminho.name}"
-        lido = ArquivoLido(nome=nome)
+    def _ler_um(self, caminho: Path, resolver: Resolvedor | None) -> None:
+        relativo = caminho.relative_to(self.pasta)
+        nome = relativo.as_posix()
+        lido = ArquivoDaBase(nome=nome)
         self.arquivos.append(lido)
+        if caminho.suffix.lower() in _SEM_LEITOR:
+            self.invalidas.append(LinhaInvalida(
+                nome, 0, f"formato {caminho.suffix.lower()} não é lido - salve como .xlsx ou .csv"
+            ))
+            return
         try:
             cabecalho, linhas = _ler_arquivo(caminho)
         except Exception as exc:  # noqa: BLE001 - arquivo de fora: ilegivel nao derruba a leitura
             self.invalidas.append(LinhaInvalida(nome, 0, f"arquivo ilegível ({exc})"))
             return
+        if not cabecalho:
+            self.invalidas.append(LinhaInvalida(
+                nome, 0,
+                f"sem cabeçalho com coluna de CNPJ ({', '.join(_CNPJ[:3])} ou "
+                f"{_CODIGO[0]}) nas {_LINHAS_ATE_O_CABECALHO} primeiras linhas",
+            ))
+            return
         if not linhas:
             self.avisos.append(f"{nome}: sem linhas de dados")
             return
+        tipo = _tipo_pela_pasta(relativo) or _tipo_pelo_cabecalho(cabecalho, linhas)
+        lido.tipo = tipo
+        if tipo is None:
+            self.invalidas.append(LinhaInvalida(
+                nome, 1, f"sem coluna de data nem de mês - ponha o arquivo em {DIARIA}/ "
+                f"ou {MENSAL}/",
+            ))
+            return
+        destino = self.dias if tipo == DIARIA else self.meses
         colunas = _colunas(cabecalho, tipo, linhas)
         if isinstance(colunas, str):
             self.invalidas.append(LinhaInvalida(nome, 1, colunas))
             return
+        lido.colunas = {
+            "cnpj": colunas.cnpj or colunas.codigo or "",
+            "quando": colunas.quando,
+            "captacao": (
+                colunas.liquida[0] if colunas.liquida
+                else f"{colunas.bruta[0]} - {colunas.resgate[0]}"
+            ),
+        }
         if colunas.quando_pelo_conteudo:
             self.avisos.append(
                 f"{nome}: sem coluna com nome de {'data' if tipo == DIARIA else 'mês'} - "
@@ -467,7 +618,11 @@ class BaseCaptacaoInterna:
         do_arquivo: dict = {}
         for numero, linha in linhas:
             lido.linhas += 1
-            quando = (_dia if tipo == DIARIA else _mes)(linha.get(colunas.quando))
+            bruto = linha.get(colunas.quando)
+            quando = (
+                _dia(bruto, serial=not colunas.quando_pelo_conteudo) if tipo == DIARIA
+                else _mes(bruto)
+            )
             if quando is None:
                 motivo = (
                     f"{'data' if tipo == DIARIA else 'mês'} ilegível "
@@ -501,8 +656,63 @@ class BaseCaptacaoInterna:
         destino.update(do_arquivo)
         self._por_fundo = None
         if do_arquivo:
-            ultimo = max(do_arquivo)
-            lido.data_referencia = ultimo if isinstance(ultimo, date) else None
+            primeiro, ultimo = min(do_arquivo), max(do_arquivo)
+            if tipo == DIARIA:
+                lido.data_referencia = ultimo
+                lido.de, lido.ate = data_br(primeiro), data_br(ultimo)
+            else:
+                lido.de, lido.ate = competencia_br(primeiro), competencia_br(ultimo)
+
+    def diagnostico(self) -> list[str]:
+        """Como cada arquivo foi lido e o que as bases trazem - o que o comando
+        `captacao-xp` escreve."""
+        pasta = f"{self.pasta.parent.name}/{self.pasta.name}"
+        if not self.arquivos:
+            return [f"Nenhum arquivo em {pasta}."]
+        nomes = {DIARIA: "base diária", MENSAL: "base mensal", None: "base não identificada"}
+        rotulos = {"cnpj": "CNPJ", "quando": "data ou mês", "captacao": "captação"}
+        linhas = [f"Bases de captação da XP em {pasta}:"]
+        for arquivo in self.arquivos:
+            linhas.append(
+                f"- {arquivo.nome}: {nomes[arquivo.tipo]}, "
+                f"{contagem(arquivo.linhas, 'linha', 'linhas')}, "
+                f"{contagem(arquivo.validas, 'válida', 'válidas')}, "
+                f"{contagem(arquivo.invalidas, 'recusada', 'recusadas')}"
+            )
+            if arquivo.colunas:
+                linhas.append("  colunas: " + ", ".join(
+                    f"{rotulos[chave]} '{valor}'" for chave, valor in arquivo.colunas.items()
+                ))
+            if arquivo.de:
+                linhas.append(f"  período: {arquivo.de} a {arquivo.ate}")
+            recusas = [i for i in self.invalidas if i.arquivo == arquivo.nome]
+            for recusa in recusas[:3]:
+                onde = f"linha {recusa.linha}: " if recusa.linha else ""
+                linhas.append(f"  recusada - {onde}{recusa.motivo}")
+            if len(recusas) > 3:
+                linhas.append(f"  e mais {milhar(len(recusas) - 3)} recusadas")
+        if self.dias:
+            uteis = [
+                self.primeiro_dia + timedelta(days=n)
+                for n in range((self.ultimo_dia - self.primeiro_dia).days + 1)
+            ]
+            faltam = [d for d in uteis if d.weekday() < 5 and d not in self.dias]
+            linhas.append(
+                f"Base diária: {contagem(len(self.dias), 'dia', 'dias')}, de "
+                f"{data_br(self.primeiro_dia)} a {data_br(self.ultimo_dia)}"
+                + (
+                    f"; sem {contagem(len(faltam), 'dia útil', 'dias úteis')} no meio "
+                    f"(feriado também aparece aqui): "
+                    + ", ".join(data_br(d) for d in faltam[:8])
+                    + ("..." if len(faltam) > 8 else "")
+                    if faltam else ""
+                )
+            )
+        if self.meses:
+            linhas.append("Base mensal: " + ", ".join(competencia_br(m) for m in sorted(self.meses)))
+        linhas.append(f"Fundos com captação: {milhar(len(self.cnpjs()))}")
+        linhas += [f"Aviso: {aviso}" for aviso in self.avisos]
+        return linhas
 
 
 def escrever_modelos(pasta: Path) -> None:
