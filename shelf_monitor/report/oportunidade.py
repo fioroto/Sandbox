@@ -27,7 +27,15 @@ O recorte, sobre o bloco de gaps ja ranqueado das casas do digest:
 - **mais de R$ 10 MM na semana** (pedido de 19/10/2026): a captacao liquida
   da semana de referencia passa de `CAPTACAO_MINIMA_NA_SEMANA`. O fundo
   pequeno que acelera de +0,1 MM para +1 MM por dia acelera, mas nao muda a
-  grade. Os numeros de cima e o resumo por concorrente contam a mesma lista.
+  grade. Os numeros de cima e as contagens do resumo por concorrente ("Na
+  lista", "Para trazer") contam a mesma lista.
+
+A captacao do resumo por concorrente (colunas Semana e 3 meses) e outra conta
+(pedido de 20/10/2026): soma todos os gaps reais da vitrine da casa - na lista
+ou nao, para trazer ou produto proprio, captando ou resgatando -, com o recorte
+da tabela por categoria (`por_categoria`): informe, PL de ao menos R$ 1 mi no
+inicio e sem movimento estrutural. Ate ali somava so o que dava para trazer da
+lista, e repetia os numeros de cima casa a casa.
 
 A semana filtra e os 3 meses ordenam (`chave_da_lista`). A semana de um fundo e
 ruidosa demais para decidir o topo sozinha, mas basta para separar quem ganha
@@ -106,13 +114,20 @@ def oportunidade_de_grade(
     if flow is None:
         return _sem_informe(gaps, reais, com_cotistas)
     captando = []
+    # Os gaps reais que a captacao do resumo por concorrente soma, entrando ou
+    # saindo (20/10/2026).
+    medidos = []
     sem_informe = 0
     for fundo in reais:
         fluxo = fluxos.get(fundo.get("cnpj"))
         if fluxo is None:
             sem_informe += 1
             continue
-        if fluxo.entrou(com_cotistas) and fluxo.pl_inicio >= _MIN_PL_RANKING:
+        if fluxo.pl_inicio < _MIN_PL_RANKING:
+            continue
+        if not fluxo.estrutural:
+            medidos.append((fundo, fluxo))
+        if fluxo.entrou(com_cotistas):
             captando.append((fundo, fluxo))
 
     # Sem recorte semanal (informe sem semana completa) nao ha captacao da
@@ -135,7 +150,7 @@ def oportunidade_de_grade(
     return {
         **_cabecalho(gaps, com_cotistas),
         "por_casa": [
-            _da_casa(concorrente, reais, na_lista, com_semana)
+            _da_casa(concorrente, reais, medidos, na_lista, com_semana)
             for concorrente in gaps.get("competitors") or []
         ],
         "com_fluxo": True,
@@ -162,18 +177,21 @@ def oportunidade_de_grade(
 
 
 def _da_casa(
-    concorrente: dict, reais: list[dict], na_lista: list[tuple], com_semana: bool
+    concorrente: dict, reais: list[dict], medidos: list[tuple], na_lista: list[tuple],
+    com_semana: bool,
 ) -> dict:
     """A lista de um concorrente: os gaps da vitrine dele que entram na lista.
 
     O Itau tem de aparecer em toda analise (pedido de 14/10/2026), e na lista
     unica o BTG - vitrine maior, mais fundos captando - ocupava o topo inteiro.
-    Fundo exibido pelas duas casas conta nas duas. A captacao somada e a do que
-    da para trazer, como nos numeros de cima.
+    Fundo exibido pelas duas casas conta nas duas. A captacao somada e a de
+    todos os gaps reais da casa com informe (`medidos`, 20/10/2026), e nao so a
+    da lista.
     """
     pid = concorrente["platform_id"]
     da_casa = [(f, fluxo) for f, fluxo in na_lista if pid in (f.get("houses") or [])]
     trazer = [(f, fluxo) for f, fluxo in da_casa if da_para_trazer(f)]
+    medidos_da_casa = [fluxo for f, fluxo in medidos if pid in (f.get("houses") or [])]
     return {
         "platform_id": pid,
         "label": concorrente["label"],
@@ -181,10 +199,10 @@ def _da_casa(
         "total_na_lista": len(da_casa),
         "total_transferiveis": len(trazer),
         "captacao_semana": (
-            round(sum(fluxo.captacao_semana or 0.0 for _, fluxo in trazer), 2)
+            round(sum(fluxo.captacao_semana or 0.0 for fluxo in medidos_da_casa), 2)
             if com_semana else None
         ),
-        "captacao_3m": round(sum(fluxo.captacao_liquida for _, fluxo in trazer), 2),
+        "captacao_3m": round(sum(fluxo.captacao_liquida for fluxo in medidos_da_casa), 2),
         "linhas": [f for f, _ in da_casa],
     }
 

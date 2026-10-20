@@ -591,6 +591,10 @@ class RunReport:
     # falta - o bloco volta a comparar CNPJ contra CNPJ e diz por que.
     familias: object | None = None
     distribuivel: object | None = None
+    # A captacao na XP dos fundos de vitrine, pelas bases internas
+    # (report.captacao_na_xp), nas janelas do bloco de captacao. None sem o
+    # informe diario ou onde o cruzamento por CNPJ nao se aplica.
+    captacao_xp: dict | None = None
 
     def suprime(self, bloco: str) -> str | None:
         """O motivo, quando o bloco esta suprimido; None quando ele vale."""

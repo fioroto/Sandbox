@@ -25,3 +25,8 @@ data/reports/*-[0-9].xlsx
 # distribuir) - dado comercial interno. O modelo com o cabecalho
 # (data/distribuivel/modelo.csv) segue versionado.
 data/distribuivel/entrada/
+
+# shelf_monitor: bases de captacao diaria e mensal dos fundos na XP - dado
+# comercial interno. Os modelos (data/captacao_xp/modelo_*.csv) seguem versionados.
+data/captacao_xp/diaria/
+data/captacao_xp/mensal/
