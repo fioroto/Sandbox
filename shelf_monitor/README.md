@@ -1180,19 +1180,16 @@ R$ 88 mil a R$ 433 mil por cotista novo, e so o numero mostra que nao e varejo.
 A familia e o nivel 1 da categoria oficial. A categoria fina foi medida e descartada
 para este corte: 36 categorias ANBIMA, cada uma dominada por um ou dois fundos.
 
-**O ritmo da XP pela base interna** (18/10/2026). No mapa de ritmo por casa (captando,
-acelerando, virou saida, saida persistente), a linha da XP conta o que ela distribui,
-e nao so o que o site exibe: a mesma prateleira interna do custo - a lista
-distribuivel, situacao "distribui", sem as classes exclusivas -, com nome e categoria
-do cadastro, sem caixa/simples e sem previdencia, e o mesmo recorte das vitrines
-(informe, PL de ao menos R$ 1 mi no inicio, sem movimento estrutural). O fundo da lista
-que nenhuma vitrine exibe entra no ritmo da XP e so nele: a composicao, as listas de
-captacao e as oportunidades de grade seguem pela vitrine, onde "fora da vitrine" quer
-dizer o que o cliente nao ve. As demais casas seguem pela vitrine. No digest a linha
-sai como "XP Investimentos (lista)" e o mapa fala em "prateleira"; a nota de
-proveniencia (`ritmo_da_base`) vai no digest, no "Como ler" do painel e embaixo da
-tabela da planilha. Sem lista utilizavel - ou sem a base de mercado, de onde vem o nome
-e a categoria -, a XP fica na vitrine e a nota diz por que.
+**O ritmo da XP pela prateleira aberta** (20/10/2026). No mapa de ritmo por casa
+(acelerando, virou entrada, estavel, desacelerando, virou saida, saida persistente), a
+linha da XP conta a vitrine do site, como a das demais casas: o que qualquer cliente ve
+e compra, com o mesmo recorte (informe, PL de ao menos R$ 1 mi no inicio, sem
+movimento estrutural). Vale no digest, no painel e na aba Captacao por casa da
+planilha, que leem o mesmo quadro. De 18 a 20/10/2026 a linha saia da lista
+distribuivel ("XP Investimentos (lista)"), que soma fundos fora da vitrine - assessoria,
+private, FaaS - e por isso nao comparava a mesma coisa que as linhas do BTG e do Itau.
+A lista segue onde ela responde outra pergunta: cobertura dos gaps, gestora da casa,
+servico ao lado do fundo, custo da XP e o cruzamento da captacao na XP.
 
 ### Rentabilidade ponderada (`performance`)
 
