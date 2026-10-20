@@ -539,6 +539,16 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
             + " O produto próprio do concorrente entra marcado e fica fora dos números de "
             "cima."
         )
+        # A captacao da tabela por concorrente e de todos os gaps reais, e nao da
+        # lista (20/10/2026): sem a nota, o leitor a le como a do "Para trazer".
+        gaps = _rotulo_dos_gaps(op).lower()
+        notas.append(
+            f"Por concorrente: Semana e 3 meses somam todos os {gaps} da vitrine - na "
+            "lista ou não, para trazer ou produto próprio, captando ou resgatando -, com "
+            "informe, PL de ao menos R$ 1 mi no início e sem movimento estrutural. A "
+            "captação é a do fundo no mercado inteiro (informe da CVM), não a que cada "
+            "casa fez."
+        )
     if op.get("total_reais"):
         notas.append(
             "Na planilha: os gaps reais na aba Gaps XP e os cobertos - por fundo da XP, "
@@ -696,7 +706,7 @@ def _esforco_na_tabela(fundo: dict) -> str:
 
 
 def _resumo_da_casa(op: dict, casa: dict) -> list[str]:
-    """Gaps, quantos entram na lista, quantos dá para trazer e a captação deles."""
+    """Gaps, quantos entram na lista, quantos dá para trazer e a captação de todos os gaps."""
     com_fluxo = op.get("com_fluxo")
     return [
         milhar(casa["total_reais"]),
@@ -707,7 +717,7 @@ def _resumo_da_casa(op: dict, casa: dict) -> list[str]:
 
 
 def _md_resumo_por_casa(op: dict) -> list[str]:
-    """Concorrente a concorrente: gaps, quantos entram na lista e a captacao do que da para trazer."""
+    """Concorrente a concorrente: gaps, quantos entram na lista e a captacao de todos os gaps."""
     casas = op.get("por_casa") or []
     if not casas:
         return []

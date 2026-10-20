@@ -176,9 +176,9 @@ acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da med
 12 semanas anteriores, que ja era positiva). Estavel, desacelerando, virou saida e,
 desde 19/10/2026, virou entrada ficam fora; e, desde a mesma data, o gap tem de
 captar mais de R$ 10 MM liquidos na semana (`CAPTACAO_MINIMA_NA_SEMANA`) - o fundo
-pequeno que acelera nao muda a grade. Os numeros de cima e o resumo por concorrente
-(coluna "Na lista") contam a mesma lista. A ordem e a captacao em 3 meses, 10 por
-concorrente, sem repetir fundo. O produto proprio do concorrente entra, marcado
+pequeno que acelera nao muda a grade. Os numeros de cima e as contagens do resumo por
+concorrente ("Na lista", "Para trazer") contam a mesma lista. A ordem e a captacao em 3
+meses, 10 por concorrente, sem repetir fundo. O produto proprio do concorrente entra, marcado
 "produto proprio" na coluna Esforco, e fica fora dos numeros de cima e do assunto, que
 contam so o que da para trazer (`report/oportunidade.py`). Ate ali a ordem era esforco e
 depois captacao, 5 por casa e sem o produto proprio - e no digest de 14/10/2026, 3 dos
@@ -186,6 +186,13 @@ depois captacao, 5 por casa e sem o produto proprio - e no digest de 14/10/2026,
 relatorio: no BTG 25 gaps aceleram na semana (14 para trazer, 11 produto proprio), no
 Itau 24 (8 e 16). Sem semana completa no informe, a lista nao filtra pelo ritmo e a nota
 diz isso. A planilha segue com a lista inteira, na ordem de esforco.
+
+**A captacao do resumo por concorrente** (pedido de 20/10/2026). As colunas Semana e 3
+meses somam todos os gaps reais da vitrine da casa - na lista ou nao, para trazer ou
+produto proprio, captando ou resgatando -, com o recorte da tabela por categoria:
+informe, PL de ao menos R$ 1 mi no inicio e sem movimento estrutural. A captacao e a do
+fundo no mercado inteiro, e a nota do digest diz isso. Ate ali somavam so o que dava
+para trazer da lista, e repetiam casa a casa os numeros de cima.
 
 **O Itau em todas as analises** (pedido de 14/10/2026). A oportunidade sai por
 concorrente: o resumo de cada um (gaps reais, quantos aceleram, quantos da para

@@ -464,7 +464,9 @@ class TestOportunidadePorConcorrente(unittest.TestCase):
         # A conta nas duas casas; E so no Itau. B e produto proprio do BTG.
         self.assertEqual([f["cnpj"] for f in por_casa["btg"]["linhas"]], [A])
         self.assertEqual({f["cnpj"] for f in por_casa["itau"]["linhas"]}, {A, E})
-        self.assertAlmostEqual(por_casa["btg"]["captacao_semana"], 150 * MI)
+        # A captacao da casa soma todos os gaps reais (20/10/2026): no BTG, A
+        # (+150) e B (+25), produto proprio estavel e fora da lista.
+        self.assertAlmostEqual(por_casa["btg"]["captacao_semana"], (150 + 25) * MI)
         self.assertAlmostEqual(por_casa["itau"]["captacao_semana"], 170 * MI)
         self.assertEqual(self.op["total_transferiveis"], 2)
 
@@ -542,6 +544,26 @@ class TestListaAcelerando(unittest.TestCase):
         self.assertEqual(itau["total_na_lista"], 2)
         self.assertEqual(op["total_na_lista"], 2)  # A e E
 
+    def test_captacao_da_casa_soma_todos_os_gaps_reais(self):
+        """Pedido de 20/10/2026: Semana e 3 meses do resumo por concorrente
+        somam todos os gaps reais da casa, e nao so os da lista. No Itau, G
+        (virou entrada) e H (acelera com pouco) ficam fora da lista e somam."""
+        from shelf_monitor.report.digest import render_html, render_markdown
+        from shelf_monitor.report.digest_visao import montar_visao
+
+        report = _relatorio(com_itau=True, com_virou_entrada=True, com_pequeno=True)
+        op = montar_visao(report, None, "semanal").oportunidade
+        itau = {c["platform_id"]: c for c in op["por_casa"]}["itau"]
+        self.assertEqual([f["cnpj"] for f in itau["linhas"]], [A, E])
+        self.assertAlmostEqual(itau["captacao_semana"], (150 + 20 + 20 + 5) * MI)
+        self.assertAlmostEqual(itau["captacao_3m"], (590 + 42 + 20 + 9.4) * MI)
+        # Os numeros de cima seguem so com a lista que da para trazer.
+        self.assertAlmostEqual(op["captacao_semana"], 170 * MI)
+        self.assertIn("| Itaú | 36 | 2 | 2 | +195,0 MM | +661,4 MM |",
+                      render_markdown(report, None, "semanal"))
+        texto = _texto(render_html(report, None, "semanal"))
+        self.assertIn("Por concorrente: Semana e 3 meses somam todos os gaps da vitrine", texto)
+
     def test_ordem_pela_captacao_em_3_meses_com_o_produto_proprio(self):
         # F (produto proprio, +728 MM) passa na frente de A (+590 MM): o
         # esforco nao ordena mais.
@@ -555,8 +577,10 @@ class TestListaAcelerando(unittest.TestCase):
         self.assertEqual(self.op["total_transferiveis"], 2)  # A e E
         self.assertAlmostEqual(self.op["captacao_semana"], 170 * MI)
         self.assertAlmostEqual(self.op["captacao_3m"], (590 + 42) * MI)
+        # A da casa nao: soma todos os gaps reais (20/10/2026) - A, B e o
+        # produto proprio F.
         por_casa = {c["platform_id"]: c for c in self.op["por_casa"]}
-        self.assertAlmostEqual(por_casa["btg"]["captacao_3m"], 590 * MI)
+        self.assertAlmostEqual(por_casa["btg"]["captacao_3m"], (590 + 245 + 728) * MI)
 
     def test_digest_marca_o_produto_proprio(self):
         from shelf_monitor.report.digest import render_html, render_markdown
