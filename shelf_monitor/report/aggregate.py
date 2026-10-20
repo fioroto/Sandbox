@@ -554,6 +554,9 @@ def _gap_funds(
         )
         minimums = [m for _, f in offers if (m := f.minimo_vitrine) is not None]
         fees = [f.admin_fee_pct for _, f in offers if f.admin_fee_pct is not None]
+        # A taxa global, como o site de cada casa a mostra (20/10/2026): a menor
+        # entre as casas que exibem o fundo.
+        globais = [t for _, f in offers if (t := f.taxa_da_vitrine) is not None]
         pl = next(
             (
                 f.extra.get(KEY_PL)
@@ -575,6 +578,7 @@ def _gap_funds(
                 "houses_count": len(houses),
                 "min_initial": min(minimums) if minimums else None,
                 "admin_fee_pct": min(fees) if fees else None,
+                "taxa_global": min(globais) if globais else None,
                 "pl_cvm": pl,
                 "manager_on_xp": (
                     assinatura_da_gestora(mapeada) in baseline_managers

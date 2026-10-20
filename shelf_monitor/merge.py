@@ -18,6 +18,7 @@ from __future__ import annotations
 from shelf_monitor.cnpj_por_nome import KEY_CNPJ_PENDENTE
 from shelf_monitor.models import (
     KEY_MINIMO_VITRINE,
+    KEY_TAXA_VITRINE,
     LISTING_SOURCES,
     AssetClass,
     CollectorStrategy,
@@ -86,6 +87,9 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
             # para o fundo unido, porque o Open Finance nunca a escreve.
             if source in LISTING_SOURCES and offer.min_initial is not None:
                 offer.extra.setdefault(KEY_MINIMO_VITRINE, offer.min_initial)
+            # A taxa da vitrine, pelo mesmo motivo (`FundOffer.taxa_da_vitrine`).
+            if source in LISTING_SOURCES and offer.admin_fee_pct is not None:
+                offer.extra.setdefault(KEY_TAXA_VITRINE, offer.admin_fee_pct)
             existing = merged.get(offer.identity)
             if existing is None:
                 merged[offer.identity] = offer

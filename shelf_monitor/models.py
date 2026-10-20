@@ -71,6 +71,10 @@ class PerformanceFee:
 # (ver `FundOffer.minimo_vitrine`).
 KEY_MINIMO_VITRINE = "minimo_vitrine"
 
+# A taxa como a VITRINE a publicou, gravada pelo merge pelo mesmo motivo (ver
+# `FundOffer.taxa_da_vitrine`): a do Open Finance e outra conta.
+KEY_TAXA_VITRINE = "taxa_vitrine"
+
 # Fontes que representam a vitrine comercial da casa (o que o varejo ve),
 # em oposicao ao catalogo regulatorio do Open Finance.
 LISTING_SOURCES = frozenset(
@@ -149,6 +153,33 @@ class FundOffer:
             return valor
         if CollectorStrategy.OPEN_FINANCE.value not in self.sources:
             return self.min_initial
+        return None
+
+    @property
+    def taxa_da_vitrine(self) -> float | None:
+        """A taxa que o cliente ve no site da casa, em % ao ano: a taxa global
+        (administracao, gestao e distribuicao), que o digest mostra nos gaps
+        (pedido de 20/10/2026).
+
+        O merge da precedencia ao Open Finance, cujo `maxAdminFee` e outra conta:
+        vem em fracao (0,02 para 2%) e, em parte dos fundos, so com a taxa de
+        administracao. Medido nas vitrines de 28/09 e 14/10/2026: o JGP Hedge
+        com 0,02 no Open Finance e 2,0% no site do Itau; o Itau Small Cap
+        Valuation com 0,0005 e 2,0%.
+
+        Tres vias, nesta ordem: o valor que o merge guardou da fonte de vitrine;
+        num snapshot gravado antes dessa chave, o valor da vitrine que o merge
+        registrou como divergencia; num fundo que nao passou pelo Open Finance, o
+        proprio `admin_fee_pct`. Sem nenhuma, None.
+        """
+        valor = self.extra.get(KEY_TAXA_VITRINE)
+        if valor is not None:
+            return valor
+        divergencia = (self.extra.get("divergencias") or {}).get("admin_fee_pct") or {}
+        if divergencia.get("fonte_alternativa") in LISTING_SOURCES:
+            return divergencia.get("valor_alternativo")
+        if CollectorStrategy.OPEN_FINANCE.value not in self.sources:
+            return self.admin_fee_pct
         return None
 
     @property

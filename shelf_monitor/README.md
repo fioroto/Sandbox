@@ -171,6 +171,19 @@ Oportunidades de grade (12 meses e mediana), e a nota de cada aba da a janela de
 coluna (`performance.prazo_das_colunas_de_rentabilidade`). Retorno negativo e captacao
 liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava por "-".
 
+**Taxa global nos gaps** (20/10/2026). As tabelas de gaps por concorrente do digest e a
+aba Gaps XP ("Taxa global na vitrine (%)") trazem a taxa global de cada fundo -
+administracao, gestao e distribuicao, em % ao ano - como o site da casa a mostra, ao
+lado da rentabilidade; com o fundo em duas casas, a menor. Vem da vitrine e nao do Open
+Finance: o merge da precedencia ao catalogo, cujo `maxAdminFee` vem em fracao (0,02
+para 2%) e, em parte dos fundos, so com a taxa de administracao (o Itau Small Cap
+Valuation com 0,0005 no Open Finance e 2,0% no site). Como o minimo da vitrine, o merge
+guarda a taxa do site antes da precedencia (`FundOffer.taxa_da_vitrine`); snapshot
+gravado antes disso a le da divergencia registrada. Medido nas vitrines salvas (XP e
+BTG de 28/09, Itau de 14/10/2026, CNPJ contra CNPJ): 354 dos 391 gaps do BTG e os 311
+do Itau com taxa global, medianas de 0,90% e 1,70%. A coluna "Menor taxa adm (%)" segue
+o campo mesclado.
+
 **A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
 acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
 12 semanas anteriores, que ja era positiva). Estavel, desacelerando, virou saida e,

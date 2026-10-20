@@ -678,7 +678,7 @@ class TestRentabilidadeDeReferencia(unittest.TestCase):
 
         report = self._relatorio()
         md = render_markdown(report, None, "semanal")
-        self.assertIn("| Cotistas | Rent. 12m | Ritmo na semana | Esforço |", md)
+        self.assertIn("| Cotistas | Rent. 12m | Taxa global | Ritmo na semana | Esforço |", md)
         self.assertIn("| 13,45% (+0,31pp) |", md)
         # Sem 12 meses de cota, 3 meses - com o prazo escrito.
         self.assertIn("| 4,12% em 3 meses (+0,10pp) |", md)
