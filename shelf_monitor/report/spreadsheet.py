@@ -51,6 +51,7 @@ from shelf_monitor.report.shared.fontes import (
     Fonte,
     fontes_do_relatorio,
 )
+from shelf_monitor.report import captacao_na_xp as na_xp
 from shelf_monitor.report.custo import nota_das_classes
 from shelf_monitor.report.performance import (
     blocos_de_rentabilidade,
@@ -1510,6 +1511,7 @@ def render_spreadsheet(
     suprimidos: dict[str, str] | None = None,
     familias=None,
     distribuivel=None,
+    captacao_xp: dict | None = None,
 ) -> Path:
     """Gera a planilha das prateleiras. Devolve o caminho do arquivo.
 
@@ -1517,6 +1519,8 @@ def render_spreadsheet(
     cotistas ou cruzam vitrines por CNPJ saem, e o motivo vai na Metodologia.
     `familias` e `distribuivel` sao os do RunReport: o mapa de familias e a
     lista distribuivel, que viram veredito de cobertura nas abas de gaps.
+    `captacao_xp` e o `RunReport.captacao_xp`: a captacao de cada fundo na XP,
+    na aba Captacao por fundo.
     """
     generated_at = generated_at or datetime.now()
     usable = [s for s in snapshots if s.funds]
@@ -1562,6 +1566,7 @@ def render_spreadsheet(
         _add_flow_sheet(
             workbook, retail_flow, omitir=frozenset(omitir),
             retornos=retornos, prazo_dos_retornos=prazo_dos_12m,
+            captacao_xp=captacao_xp,
         )
         _add_trend_sheet(workbook, retail_flow)
     # A grade e "fundo que capta fora da vitrine da XP", por CNPJ.
@@ -1657,6 +1662,8 @@ _FLOW_HEADERS = [
     "Fundo", "CNPJ", "Classe", "Gestora", "Vitrines", "Produto próprio de", "Exclusivo",
     "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
     "Captação na semana (R$)",
+    "Captação líquida na XP (R$)", "Captação na semana na XP (R$)",
+    "Cruzamento com a XP", "Fundo da XP no cruzamento",
     "PL início (R$)", "PL fim (R$)", "Captação líquida / PL início (%)",
     "Cotistas início", "Cotistas fim", "Variação cotistas",
     "Entrada por cotista ganho (R$)",
@@ -1671,6 +1678,7 @@ _FLOW_HEADERS = [
 _FLOW_MONEY = {
     "Captação bruta (R$)", "Resgates (R$)", "Captação líquida (R$)",
     "Captação na semana (R$)",
+    "Captação líquida na XP (R$)", "Captação na semana na XP (R$)",
     "PL início (R$)", "PL fim (R$)", "Entrada por cotista ganho (R$)",
 }
 _FLOW_PCT = {
@@ -1687,6 +1695,30 @@ _FLOW_POR_COTISTAS = frozenset({
     "Cotistas início", "Cotistas fim", "Variação cotistas",
     "Entrada por cotista ganho (R$)",
 })
+# A captacao na XP (20/10/2026, `report.captacao_na_xp`): sai sem as bases da
+# XP e nas abas cujas linhas nao passam pelo cruzamento.
+_FLOW_NA_XP = frozenset({
+    "Captação líquida na XP (R$)", "Captação na semana na XP (R$)",
+    "Cruzamento com a XP", "Fundo da XP no cruzamento",
+})
+
+
+def _cruzamento_com_a_xp(fundo: dict) -> str:
+    """"mesmo fundo", "pelo espelho", "pelo master", "por 2 fundos do mesmo
+    master" ou "a XP não distribui"."""
+    if not fundo.get("xp_ligacao"):
+        return "a XP não distribui"
+    return na_xp.via(fundo) or na_xp.LIGACAO_MESMO_FUNDO
+
+
+def _fundos_da_xp(fundo: dict) -> str:
+    """Os fundos da XP que medem a linha, quando nao e o proprio fundo."""
+    if fundo.get("xp_ligacao") != na_xp.LIGACAO_MESMO_MASTER:
+        return ""
+    return "; ".join(
+        f"{nome_de_fundo(v.get('nome') or '') or '-'} ({format_cnpj(v['cnpj'])})"
+        for v in fundo.get("xp_fundos") or []
+    )
 
 
 def _flow_row(fundo: dict) -> list:
@@ -1703,6 +1735,11 @@ def _flow_row(fundo: dict) -> list:
         fundo["captacao_liquida"],
         # A semana de referencia do digest (`recorte_semanal` do bloco).
         fundo.get("captacao_semana"),
+        # A captacao na XP nas mesmas janelas (`com_captacao_na_xp`).
+        fundo.get("captacao_xp_3m"),
+        fundo.get("captacao_xp_semana"),
+        _cruzamento_com_a_xp(fundo),
+        _fundos_da_xp(fundo),
         fundo["pl_inicio"],
         fundo["pl_fim"],
         # _PCT concatena o "%" ao valor: a planilha guarda pontos percentuais
@@ -1726,16 +1763,18 @@ def _flow_row(fundo: dict) -> list:
 
 def _write_flow_rows(
     ws, fundos: list[dict], header_row: int, omitir: frozenset[str] = frozenset(),
-    retornos: dict | None = None,
+    retornos: dict | None = None, captacao_xp: dict | None = None,
 ) -> int:
     """Escreve a tabela de fundos; devolve a linha seguinte a ultima.
 
     `omitir` sao cabecalhos de `_FLOW_HEADERS` que saem da tabela inteira;
     `retornos` (`performance.rentabilidade_por_cnpj`) preenche as colunas de
-    rentabilidade de 12 meses.
+    rentabilidade de 12 meses; `captacao_xp` (`RunReport.captacao_xp`), as da
+    captacao na XP.
     """
     if retornos:
         fundos = com_rentabilidade(fundos, retornos)
+    fundos = na_xp.com_captacao_na_xp(fundos, captacao_xp)
     colunas = [
         (i, header) for i, header in enumerate(_FLOW_HEADERS) if header not in omitir
     ]
@@ -1745,7 +1784,8 @@ def _write_flow_rows(
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(col_idx)].width = (
-            46 if header == "Fundo" else 20 if header in ("CNPJ", "Gestora") else 16
+            46 if header in ("Fundo", "Fundo da XP no cruzamento")
+            else 20 if header in ("CNPJ", "Gestora", "Cruzamento com a XP") else 16
         )
     ws.row_dimensions[header_row].height = 30
 
@@ -1987,6 +2027,7 @@ def _add_captacao_casas_sheet(
 def _add_flow_sheet(
     workbook: Workbook, flow: dict, omitir: frozenset[str] = frozenset(),
     retornos: dict | None = None, prazo_dos_retornos: str = "",
+    captacao_xp: dict | None = None,
 ) -> None:
     """Aba "Captacao por fundo": o fluxo de CADA fundo de vitrine no periodo.
 
@@ -2000,7 +2041,12 @@ def _add_flow_sheet(
     Movimento estrutural entra marcado na ultima coluna em vez de ser omitido,
     pelo mesmo motivo: some-lo esconderia justamente o fundo cujo numero
     estranho levou alguem a abrir a planilha.
+
+    `captacao_xp` (`RunReport.captacao_xp`) poe ao lado a captacao de cada fundo
+    na XP, nas mesmas janelas (20/10/2026); sem as bases da XP, as colunas saem.
     """
+    if not na_xp.com_numero(captacao_xp):
+        omitir = omitir | _FLOW_NA_XP
     ws = workbook.create_sheet("Captação por fundo")
     periodo = flow["periodo"]
     competencias = periodo.get("meses_lidos") or []
@@ -2027,6 +2073,7 @@ def _add_flow_sheet(
             "que é a convenção de lâmina, e por isso o mesmo fundo aparece com "
             "número ligeiramente diferente nelas."
             + (f" {prazo_dos_retornos}" if prazo_dos_retornos else "")
+            + "".join(f" {nota}" for nota in na_xp.notas(captacao_xp))
         ),
     )
 
@@ -2045,7 +2092,7 @@ def _add_flow_sheet(
                 fundos.append(fundo)
 
     cabecalho = 7
-    ultima = _write_flow_rows(ws, fundos, cabecalho, omitir, retornos)
+    ultima = _write_flow_rows(ws, fundos, cabecalho, omitir, retornos, captacao_xp)
     ws.freeze_panes = f"A{cabecalho + 1}"
     if ultima > cabecalho + 1:
         ultima_coluna = get_column_letter(
@@ -2196,7 +2243,9 @@ def _add_grade_sheet(
         if not fundos:
             continue
         ws.cell(row=linha, column=1, value=titulo).font = _HEADER_FONT
-        linha = _write_flow_rows(ws, fundos, linha + 1, retornos=retornos) + 1
+        linha = _write_flow_rows(
+            ws, fundos, linha + 1, omitir=_FLOW_NA_XP, retornos=retornos
+        ) + 1
 
 
 # --- rentabilidade ponderada --------------------------------------------------

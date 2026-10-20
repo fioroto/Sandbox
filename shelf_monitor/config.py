@@ -341,6 +341,13 @@ class Config:
         return self.data_dir / "distribuivel" / "entrada"
 
     @property
+    def captacao_xp_dir(self) -> Path:
+        """Onde a pessoa solta as bases de captacao diaria e mensal dos fundos na
+        XP, nas subpastas `diaria/` e `mensal/` - gitignored: dado comercial
+        interno (`captacao_interna`)."""
+        return self.data_dir / "captacao_xp"
+
+    @property
     def distribuivel_modelo_path(self) -> Path:
         """O CSV so com o cabecalho da lista distribuivel - versionado."""
         return self.data_dir / "distribuivel" / "modelo.csv"

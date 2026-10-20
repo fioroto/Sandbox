@@ -6,7 +6,8 @@ Este modulo monta, uma vez, o que o digest desenha:
 
 - o relatorio RECORTADO as casas do digest: as vitrines e os diffs delas; a
   captacao com o mapa de ritmo das casas em foco e as listas de maiores
-  captacoes e resgates refeitas so com fundos delas; rentabilidade e custo so
+  captacoes e resgates refeitas so com fundos delas, com a captacao de cada
+  fundo na XP ao lado (20/10/2026); rentabilidade e custo so
   com as linhas delas. Sem o radar da CVM: saiu do digest em 17/10/2026, a
   pedido da area, e segue no dashboard, na planilha e no deck - tirado aqui, o
   assunto e as fontes do e-mail tambem deixam de cita-lo;
@@ -28,6 +29,7 @@ from datetime import date
 from shelf_monitor.config import PLATFORMS, Config
 from shelf_monitor.models import BLOCO_COTISTAS, RunReport
 from shelf_monitor.report.aggregate import bloco_de_gaps, ranquear_gaps
+from shelf_monitor.report.captacao_na_xp import com_captacao_na_xp
 from shelf_monitor.report.oportunidade import oportunidade_de_grade
 from shelf_monitor.report.por_categoria import captacao_por_categoria
 from shelf_monitor.report.performance import com_rentabilidade, rentabilidade_por_cnpj
@@ -112,12 +114,15 @@ def montar_visao(
     recortado = recortar(report, casas)
     # A rentabilidade de cada fundo vai junto, como referencia, nos gaps e nas
     # listas de captacao (pedido de 16/10/2026): 12 meses e 3 meses, com a
-    # mediana da categoria.
+    # mediana da categoria. Nas listas de captacao, tambem a captacao do fundo
+    # na XP (20/10/2026, `report.captacao_na_xp`).
     rentabilidade = rentabilidade_por_cnpj(report.performance_12m, report.performance)
     fluxo = recortado.retail_flow
     if fluxo and fluxo.get("available") and fluxo is not report.retail_flow:
         for chave in ("top_captacao", "top_resgate"):
-            fluxo[chave] = com_rentabilidade(fluxo.get(chave) or [], rentabilidade)
+            fluxo[chave] = com_captacao_na_xp(
+                com_rentabilidade(fluxo.get(chave) or [], rentabilidade), report.captacao_xp
+            )
     gaps = bloco_de_gaps(recortado)
     if gaps.get("available"):
         gaps = {**gaps, "funds": com_rentabilidade(

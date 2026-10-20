@@ -104,7 +104,7 @@ nesta ordem:
 | Secao | O que traz |
 |---|---|
 | Oportunidade de grade e gaps | a mensagem principal: os gaps reais (o que a XP nao tem de forma nenhuma - fora da vitrine e da lista da casa, sem espelho, equivalente nem correlato da mesma gestora, nem so em outra faixa de liquidez) que captam varejo em 3 meses, aceleram na semana e captam mais de R$ 10 MM nela; numeros em destaque, o resumo por concorrente e os 10 primeiros de cada um pela captacao em 3 meses, com o produto proprio do concorrente marcado; e a legenda do ritmo, que abre no clique, logo depois dos numeros |
-| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela; abaixo delas, a captacao de todos os fundos das vitrines por categoria ANBIMA - a visao de mercado -, na semana e em 3 meses, com o ritmo de cada uma |
+| Ritmo de captacao | o mapa de ritmo por casa e as maiores captacoes e resgates, com a captacao da semana e o ritmo dela e, ao lado, a captacao do fundo na XP pelas bases internas (coluna "Na XP"); abaixo delas, a captacao de todos os fundos das vitrines por categoria ANBIMA - a visao de mercado -, na semana e em 3 meses, com o ritmo de cada uma |
 | Vitrines: entradas e saidas | so o que entrou e o que saiu de cada vitrine |
 | Rentabilidade e custo | so na edicao mensal: o primeiro digest de cada mes |
 
@@ -1046,6 +1046,44 @@ marcado `gestor_inferido`, nunca como oficial. O XHR do gateway do Itau nao e vi
 vem cifrado. Desde 2026-10-14 o coletor do Itau resolve o CNPJ pelo nome
 (`shelf_monitor/cnpj_por_nome.py`) antes do merge, e o fundo resolvido entra pela
 via (0) como qualquer outro.
+
+### Captacao na XP
+
+Pedido de 20/10/2026: ao lado das maiores captacoes e resgates do digest e de todo
+fundo da aba "Captacao por fundo" da planilha, quanto o fundo captou **na XP**. O
+informe da CVM e por fundo, nunca por distribuidor; a captacao na XP vem de duas
+bases internas, soltas em pastas fora do git (dado comercial; modelos em
+`data/captacao_xp/modelo_diaria.csv` e `modelo_mensal.csv`):
+
+- `data/captacao_xp/diaria/`: uma linha por fundo e dia; `data/captacao_xp/mensal/`:
+  uma linha por fundo e mes;
+- CSV (`;` ou `,`) ou Excel `.xlsx` (primeira aba; o cabecalho pode vir depois de
+  linhas de titulo); colunas por nome: `cnpj` (ou `codigo_cvm`), a data (`data`,
+  `dia`, `data_movimento`) ou o mes (`mes`, `competencia`, `ago/2026`, `2026-08`,
+  uma data do mes) e `captacao_liquida` - ou `captacao_bruta`/`aplicacao` e
+  `resgate`. Valores em reais; "(R$ mil)" ou "(R$ MM)" no cabecalho multiplicam;
+- linhas do mesmo fundo e dia somam no arquivo; o mesmo dia em dois arquivos vale
+  o do ultimo pela ordem do nome (reexportar nao conta duas vezes); linha ruim sai
+  listada com o motivo (`captacao_interna.py`).
+
+Os dois numeros comparam a mesma coisa (`report/captacao_na_xp.py`):
+
+- **mesma janela**: a semana e os 3 meses do bloco de captacao, com os mesmos dias.
+  O mes fechado sai da base mensal; o mes corrente e a semana, da diaria, ate o
+  ultimo dia completo do informe. A janela que as bases nao cobrem inteira fica sem
+  numero, com o motivo na nota ("a base diaria da XP vai ate 07/10/2026") - nunca a
+  soma parcial ao lado dos 3 meses da CVM;
+- **mesmo fundo**: so o fundo que a XP distribui (vitrine ou "distribui" na lista da
+  casa; "pode distribuir" nao conta). Sem ele, os fundos que a XP distribui com o
+  mesmo master pela carteira da CVM, somados ("pelo espelho", "pelo master", "por 2
+  fundos do mesmo master"). Classe paralela e correlato ficam de fora: outra
+  carteira, outro fluxo. O fundo que a XP nao distribui fica sem numero, e nao com
+  zero; o distribuido sem linha num dia (ou mes) que a base traz captou zero.
+
+Onde o mapa acaba: a data da base interna pode seguir o pedido do cliente, e a do
+informe da CVM, a cotizacao - em fundo de cotizacao longa, a captacao da semana na XP
+e a da CVM podem cair em semanas diferentes. Sem arquivo nas pastas, o digest e a
+planilha saem como antes, sem a coluna.
 
 ### Fundos caixa/simples fora das analises
 

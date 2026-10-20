@@ -38,6 +38,7 @@ from shelf_monitor.collectors.cvm import (
     discover_managers,
     load_registro_rows,
 )
+from shelf_monitor.captacao_interna import carregar as carregar_captacao_interna
 from shelf_monitor.config import (
     CVM_REGISTRO_ZIP_URL,
     PLATFORMS,
@@ -68,6 +69,7 @@ from shelf_monitor.report.retail_flow import (
     print_retail_flow,
 )
 from shelf_monitor.report.aggregate import bloco_de_gaps, cnpjs_cobertos
+from shelf_monitor.report.captacao_na_xp import captacao_na_xp
 from shelf_monitor.report.dashboard import render_dashboard
 from shelf_monitor.report.digest import render_digest
 from shelf_monitor.report.familias import print_familias, relatorio_de_familias
@@ -326,6 +328,7 @@ def build_report(
         )
 
     attach_retail_flow(config, report)
+    attach_captacao_na_xp(config, report)
     # A serie mensal montada para os 12 meses serve a rentabilidade por fundo
     # quando ela e pedida - por isso ja sai com 24 competencias nesse caso.
     serie = attach_performance(
@@ -459,6 +462,53 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         console.print(f"[yellow]Oportunidades de grade não calculadas:[/] {_short(str(exc))}")
+
+
+def attach_captacao_na_xp(config: Config, report: RunReport) -> None:
+    """Anexa a captacao na XP dos fundos de vitrine, pelas bases internas.
+
+    Nunca derruba a execucao: sem as bases (pasta vazia) o bloco sai
+    indisponivel com o motivo, e as superficies omitem a coluna. Modulo que
+    suprime o cruzamento por CNPJ (a previdencia) nao monta o bloco.
+    """
+    if report.suprime(BLOCO_CNPJ):
+        return
+    flow = report.retail_flow
+    if not (flow and flow.get("available")):
+        return
+    try:
+        base = carregar_captacao_interna(config, report.familias)
+        report.captacao_xp = captacao_na_xp(
+            flow, report.snapshots, report.distribuivel, report.familias, base
+        )
+    except Exception as exc:  # noqa: BLE001 - a pasta e opcional
+        console.print(f"[yellow]Captação na XP não calculada:[/] {_short(str(exc))}")
+        return
+    bloco = report.captacao_xp
+    if not bloco.get("available"):
+        console.print(f"  [dim]Captação na XP: {bloco.get('reason')}.[/]")
+        return
+    console.print(
+        f"Captação na XP: {bloco['descricao_da_base']} - "
+        f"{contagem(bloco['cruzados'], 'fundo de vitrine cruzado', 'fundos de vitrine cruzados')}"
+        + (
+            f" - [yellow]{contagem(len(base.invalidas), 'linha recusada', 'linhas recusadas')}[/]"
+            if base.invalidas else ""
+        )
+    )
+    for chave, rotulo in (("tres_meses", "3 meses"), ("semana", "semana")):
+        janela = bloco.get(chave) or {}
+        if janela and not janela.get("medida"):
+            console.print(f"  [yellow]Captação na XP, {rotulo} sem número:[/] {janela['motivo']}")
+    if bloco.get("fora_do_que_distribui"):
+        console.print(
+            "  [dim]"
+            + contagem(bloco["fora_do_que_distribui"], "fundo", "fundos")
+            + " com captação nas bases da XP e fora da vitrine e da lista da casa "
+            "ficam sem cruzamento.[/]"
+        )
+    for aviso in base.avisos[:5]:
+        console.print(f"  [dim]{_short(aviso)}[/]")
 
 
 def montar_serie_mensal(config: Config, meses: int) -> SerieMensal | None:
@@ -656,6 +706,7 @@ def render_outputs(
             suprimidos=report.suprimidos,
             familias=report.familias,
             distribuivel=report.distribuivel,
+            captacao_xp=report.captacao_xp,
         )
     except ImportError:
         spreadsheet_note = "instale openpyxl para gerar a planilha"
@@ -929,6 +980,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
     )
     attach_familias(config, avulso, com_carteira=not getattr(args, "no_carteira", False))
     attach_retail_flow(config, avulso)
+    attach_captacao_na_xp(config, avulso)
     com_rentabilidade = getattr(args, "with_rentabilidade", False)
     serie = attach_performance(
         config, avulso, meses_da_serie=24 if com_rentabilidade else 13
@@ -955,6 +1007,7 @@ def cmd_export(config: Config, args: argparse.Namespace) -> None:
         suprimidos=dict(config.blocos_suprimidos),
         familias=avulso.familias,
         distribuivel=avulso.distribuivel,
+        captacao_xp=avulso.captacao_xp,
     )
     total = sum(len(s.funds) for s in snapshots)
     console.print()

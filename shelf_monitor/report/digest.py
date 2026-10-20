@@ -15,8 +15,9 @@ grade e os gaps reais. Na ordem:
    captacao em 3 meses, com o produto proprio do concorrente marcado
    (16/10/2026), a captacao da semana, o ritmo e o esforco de trazer;
 2. **Ritmo de captacao**: o mapa de ritmo por casa, as maiores captacoes e
-   resgates, com a semana, e abaixo deles a captacao das vitrines por
-   categoria ANBIMA, a visao de mercado (19/10/2026);
+   resgates, com a semana e, ao lado, a captacao do fundo na XP pelas bases
+   internas (20/10/2026, `report.captacao_na_xp`), e abaixo deles a captacao
+   das vitrines por categoria ANBIMA, a visao de mercado (19/10/2026);
 3. **Vitrines**: so o que entrou e o que saiu;
 4. **Rentabilidade e custo**, so na edicao mensal (o primeiro digest do mes).
 
@@ -137,6 +138,7 @@ from shelf_monitor.report.performance import (
     prazo_da_rentabilidade,
 )
 from shelf_monitor.report.aggregate import _offer_manager, listing_funds, retail_funds
+from shelf_monitor.report import captacao_na_xp as na_xp
 from shelf_monitor.report.custo import classes_com_indice, nota_das_classes
 from shelf_monitor.report.digest_visao import (
     VisaoDoDigest,
@@ -1099,7 +1101,44 @@ def _item_de_fundo(fundo: dict, com_cotistas: bool, visao: VisaoDoDigest) -> str
     rentabilidade = _frase_de_rentabilidade(fundo)
     if rentabilidade:
         detalhe += f", {rentabilidade}"
-    return f"{_nome_do_fundo(fundo['nome'])} - {detalhe} - {_casas_do_fundo(fundo, visao)}"
+    item = f"{_nome_do_fundo(fundo['nome'])} - {detalhe} - {_casas_do_fundo(fundo, visao)}"
+    return item + (f" - {_frase_na_xp(fundo)}" if _com_na_xp(visao) else "")
+
+
+# A captacao do fundo na XP ao lado da do mercado (pedido de 20/10/2026), nas
+# mesmas janelas e na mesma unidade (`report.captacao_na_xp`): so o fundo que a
+# XP distribui, ou os dela com o mesmo master.
+
+
+def _com_na_xp(visao: VisaoDoDigest) -> bool:
+    return na_xp.com_numero(visao.report.captacao_xp)
+
+
+def _frase_na_xp(fundo: dict) -> str:
+    """"na XP +12,0 MM em 3 meses, +1,0 MM na semana, pelo espelho"; "na XP: -"
+    quando a XP nao distribui o fundo."""
+    if not fundo.get("xp_ligacao"):
+        return "na XP: -"
+    # A janela sem numero sai da frase; a nota diz por que.
+    partes = [
+        f"{_mm(valor)} {prazo}" for valor, prazo in (
+            (fundo.get("captacao_xp_3m"), "em 3 meses"),
+            (fundo.get("captacao_xp_semana"), "na semana"),
+        ) if valor is not None
+    ]
+    via = na_xp.via(fundo)
+    return "na XP " + ", ".join(partes + ([via] if via else []))
+
+
+def _celula_na_xp(fundo: dict) -> str:
+    """HTML: a captacao na XP em 3 meses, com a da semana (e o caminho) miudos."""
+    if not fundo.get("xp_ligacao"):
+        return "-"
+    semana = fundo.get("captacao_xp_semana")
+    miudo = _linha(
+        "" if semana is None else f"{_mm(semana)} na semana", na_xp.via(fundo)
+    )
+    return _mm_ou_traco(fundo.get("captacao_xp_3m")) + (_miudo(_esc(miudo)) if miudo else "")
 
 
 def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
@@ -1152,6 +1191,8 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     categoria = _nota_por_categoria(visao)
     if categoria:
         lines += [f"_{categoria}_", ""]
+    for nota in na_xp.notas(visao.report.captacao_xp):
+        lines += [f"_{nota}_", ""]
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
@@ -1273,10 +1314,12 @@ def _tabela_de_fundos_da_captacao(
     fundos: list[dict], com_cotistas: bool, visao: VisaoDoDigest
 ) -> str:
     """Uma lista de fundos da captacao como tabela: Fundo | Semana | 3 meses |
-    Cotistas | Rent. 12m | Casas. O ritmo da semana vai miudo sob ela, o ticket
-    por cotista novo sob os cotistas, a comparacao com a categoria sob a
-    rentabilidade."""
-    cabecalho = ["Fundo", "Semana", "3 meses"]
+    Na XP | Cotistas | Rent. 12m | Casas. O ritmo da semana vai miudo sob ela, a
+    semana na XP sob a captacao na XP, o ticket por cotista novo sob os
+    cotistas, a comparacao com a categoria sob a rentabilidade. Sem as bases da
+    XP, sem a coluna Na XP."""
+    com_xp = _com_na_xp(visao)
+    cabecalho = ["Fundo", "Semana", "3 meses"] + (["Na XP"] if com_xp else [])
     if com_cotistas:
         cabecalho.append("Cotistas")
     cabecalho += ["Rent. 12m", "Casas"]
@@ -1288,17 +1331,20 @@ def _tabela_de_fundos_da_captacao(
             _esc(_nome_do_fundo(fundo["nome"])), _celula_da_semana(fundo),
             _mm(fundo["captacao_liquida"]),
         ]
+        if com_xp:
+            linha.append(_celula_na_xp(fundo))
         if com_cotistas:
             linha.append(_celula_de_cotistas(fundo))
         linha += [_celula_de_rentabilidade(fundo), _esc(_casas_do_fundo(fundo, visao))]
         linhas.append(linha)
     # A semana com folga para o ritmo miudo ("saída persistente") caber numa linha.
-    larguras = {0: 30, 1: 17, 2: 14}
+    larguras = {0: 26, 1: 16, 2: 13, 3: 15} if com_xp else {0: 30, 1: 17, 2: 14}
     if com_cotistas:
-        larguras[3] = 12
+        larguras[cabecalho.index("Cotistas")] = 12
+    # Os numeros a direita, da Semana a Rent. 12m.
     return _tabela(
-        cabecalho, linhas, direita={1, 2, 3, 4} if com_cotistas else {1, 2, 3},
-        sinal={1, 2}, larguras=larguras,
+        cabecalho, linhas, direita=set(range(1, cabecalho.index("Rent. 12m") + 1)),
+        sinal={1, 2, 3} if com_xp else {1, 2}, larguras=larguras,
     )
 
 
@@ -1345,6 +1391,7 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
     categoria = _nota_por_categoria(visao)
     if categoria:
         notas.append(categoria)
+    notas += na_xp.notas(visao.report.captacao_xp)
     prazo = _prazo_da_rentabilidade(visao.report)
     if prazo and any(fundos for _, fundos in listas):
         notas.append(prazo)
