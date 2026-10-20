@@ -1058,10 +1058,15 @@ bases internas, soltas em pastas fora do git (dado comercial; modelos em
 - `data/captacao_xp/diaria/`: uma linha por fundo e dia; `data/captacao_xp/mensal/`:
   uma linha por fundo e mes;
 - CSV (`;` ou `,`) ou Excel `.xlsx` (primeira aba; o cabecalho pode vir depois de
-  linhas de titulo); colunas por nome: `cnpj` (ou `codigo_cvm`), a data (`data`,
-  `dia`, `data_movimento`) ou o mes (`mes`, `competencia`, `ago/2026`, `2026-08`,
-  uma data do mes) e `captacao_liquida` - ou `captacao_bruta`/`aplicacao` e
-  `resgate`. Valores em reais; "(R$ mil)" ou "(R$ MM)" no cabecalho multiplicam;
+  linhas de titulo); colunas por nome, em qualquer posicao: `cnpj` ou `cod_cnpj`
+  (ou `codigo_cvm`), como texto ou numero; a data (`data`, `dia`, `data_movimento`)
+  ou o mes (`mes`, `competencia`, `ago/2026`, `2026-08`, uma data do mes) - sem
+  nome conhecido, a primeira coluna so com datas, com aviso dizendo qual; e
+  `captacao_liquida` ou `captacao` sozinha - ou `captacao_bruta`/`aplicacao` e
+  `resgate`. As bases da XP trazem `cod_cnpj` em numero na coluna N e `captação` na
+  S (20/10/2026). CNPJ em notacao cientifica ("1,3E+13", o CSV salvo pelo Excel)
+  perdeu digitos e e recusado com esse motivo. Valores em reais; "(R$ mil)" ou
+  "(R$ MM)" no cabecalho multiplicam;
 - linhas do mesmo fundo e dia somam no arquivo; o mesmo dia em dois arquivos vale
   o do ultimo pela ordem do nome (reexportar nao conta duas vezes); linha ruim sai
   listada com o motivo (`captacao_interna.py`).

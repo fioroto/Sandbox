@@ -186,6 +186,63 @@ class TestLeitura(unittest.TestCase):
             base.dias, {date(2026, 10, 5): {"01300000000101": 250.0, C: 10.0}}
         )
 
+    def test_layout_das_bases_da_xp(self):
+        """As bases da XP (20/10/2026): `cod_cnpj` em numero na coluna N e
+        `captação` na coluna S. A data, sem nome conhecido, sai da primeira
+        coluna com datas - e o aviso diz qual."""
+        pasta = Workbook()
+        aba = pasta.active
+        cabecalho = [f"campo {letra}" for letra in "ABCDEFGHIJKLMNOPQRS"]
+        cabecalho[1] = "Dt Posição"
+        cabecalho[2] = "Assessor"
+        cabecalho[13] = "cod_cnpj"
+        cabecalho[18] = "Captação"
+        aba.append(cabecalho)
+        for dia, cnpj, valor in (
+            (datetime(2026, 10, 5), int(C), 1500.25),
+            (datetime(2026, 10, 5), int(C), -500.25),
+            (datetime(2026, 10, 6), 1300000000101, 2000.0),
+        ):
+            linha = ["x"] * 19
+            linha[1], linha[13], linha[18] = dia, cnpj, valor
+            aba.append(linha)
+        (self.pasta / "diaria").mkdir()
+        pasta.save(self.pasta / "diaria" / "captacao.xlsx")
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        self.assertEqual(aba["N1"].value, "cod_cnpj")
+        self.assertEqual(aba["S1"].value, "Captação")
+        self.assertEqual(base.dias, {
+            date(2026, 10, 5): {C: 1000.0},
+            date(2026, 10, 6): {"01300000000101": 2000.0},
+        })
+        self.assertIn(
+            "diaria/captacao.xlsx: sem coluna com nome de data - usada a coluna "
+            "'dt_posicao', a primeira com datas",
+            base.avisos,
+        )
+
+    def test_captacao_sozinha_e_a_liquida_mesmo_com_resgate_ao_lado(self):
+        _escrever(self.pasta, "mensal", "a.csv", [
+            "mes;cod_cnpj;resgate;captacao", f"ago/2026;{C};300;1000",
+        ])
+        self.assertEqual(BaseCaptacaoInterna.ler(self.pasta).no_mes([C], "202608"), 1000.0)
+
+    def test_cnpj_em_numero_no_csv(self):
+        """O CSV salvo do Excel: "11000000000101,0" vale; "1,1E+13" perdeu os
+        digitos e e recusado dizendo por que."""
+        _escrever(self.pasta, "diaria", "a.csv", [
+            "data;cod_cnpj;captacao",
+            "05/10/2026;13000000000101,0;10",
+            "05/10/2026;1,3E+13;10",
+        ])
+        base = BaseCaptacaoInterna.ler(self.pasta)
+        self.assertEqual(base.dias[date(2026, 10, 5)], {C: 10.0})
+        self.assertEqual(
+            base.invalidas[0].motivo,
+            "CNPJ em notação científica '1,3E+13' - os dígitos se perderam; use o .xlsx "
+            "ou a coluna como texto",
+        )
+
     def test_sem_arquivo_diz_onde_por(self):
         base = BaseCaptacaoInterna.ler(self.pasta / "captacao_xp")
         self.assertIn("captacao_xp/diaria", base.motivo_da_supressao())

@@ -14,11 +14,13 @@ Os modelos com o cabecalho moram em `data/captacao_xp/modelo_diaria.csv` e
 - CSV (`;` ou `,`, UTF-8 com ou sem BOM, ou Latin-1) ou Excel `.xlsx` (a
   primeira aba; o cabecalho e a primeira linha, das 20 primeiras, com a coluna
   de CNPJ ou de codigo CVM);
-- colunas por nome, sem diferenciar maiuscula, acento nem pontuacao: `cnpj` (ou
-  `codigo_cvm`) e obrigatorio; a data (`data`, `dia`, `data_movimento`) na
-  diaria e o mes (`mes`, `competencia`, `mes_ano`, ou uma data do mes) na
-  mensal; o valor e `captacao_liquida` ou, sem ela, `captacao_bruta` (ou
-  `aplicacao`) menos `resgate`;
+- colunas por nome, sem diferenciar maiuscula, acento nem pontuacao: `cnpj`
+  (ou `cod_cnpj`, ou `codigo_cvm`) e obrigatorio, como texto ou como numero; a
+  data (`data`, `dia`, `data_movimento`) na diaria e o mes (`mes`,
+  `competencia`, `mes_ano`, ou uma data do mes) na mensal - sem coluna com
+  esses nomes, a primeira cujos valores sao todos datas (ou meses), com aviso;
+  o valor e `captacao_liquida`, ou `captacao` sozinha (a coluna das bases da
+  XP, 20/10/2026), ou `captacao_bruta` (ou `aplicacao`) menos `resgate`;
 - valores em reais. A unidade escrita no cabecalho vale: "(R$ mil)" multiplica
   por mil, "(R$ MM)" ou "(R$ milhões)" por um milhao - o numero sai na mesma
   ordem de grandeza do da CVM;
@@ -69,7 +71,10 @@ CABECALHO_MENSAL = ("mes", "cnpj", "nome", "captacao_bruta", "resgate", "captaca
 
 # Os nomes de coluna aceitos, ja como `_chave_de_coluna` os deixa e sem a
 # unidade (ver `_sem_unidade`).
-_CNPJ = ("cnpj", "cnpj_fundo", "cnpj_classe", "cnpj_do_fundo", "cnpj_da_classe")
+_CNPJ = (
+    "cnpj", "cod_cnpj", "codigo_cnpj", "cnpj_fundo", "cnpj_classe", "cnpj_do_fundo",
+    "cnpj_da_classe",
+)
 _CODIGO = ("codigo_cvm", "cod_cvm")
 _DIA = (
     "data", "dia", "dt", "data_movimento", "data_mov", "dt_movimento", "dt_mov",
@@ -83,13 +88,18 @@ _LIQUIDA = (
     "captacao_liquida", "capt_liquida", "captacao_liq", "capt_liq", "liquida",
     "liquido", "valor_liquido", "fluxo_liquido", "net",
 )
+# "captacao" sozinha e a liquida: e a coluna das bases da XP (coluna S, ao lado
+# do cod_cnpj na coluna N - informado em 20/10/2026).
+_CAPTACAO = ("captacao", "capt")
 _BRUTA = (
     "captacao_bruta", "capt_bruta", "aplicacao", "aplicacoes", "aplicacao_bruta",
-    "entradas", "captacao",
+    "entradas",
 )
 _RESGATE = ("resgate", "resgates", "resgate_bruto", "resgates_brutos", "saidas")
 # Coluna unica de valor, sem resgate ao lado: e a liquida.
-_UNICA = ("captacao", "valor", "fluxo")
+_UNICA = ("valor", "fluxo")
+# Quantas linhas a deteccao da coluna de data pelo conteudo olha.
+_AMOSTRA = 50
 # A unidade no fim do nome da coluna, da mais longa para a mais curta.
 _UNIDADES = (
     ("_r_milhoes", 1e6), ("_milhoes", 1e6), ("_r_mm", 1e6), ("_mm", 1e6),
@@ -121,9 +131,25 @@ class _Colunas:
     liquida: tuple[str, float] | None = None
     bruta: tuple[str, float] | None = None
     resgate: tuple[str, float] | None = None
+    # A data (ou o mes) saiu do conteudo, nao do nome da coluna.
+    quando_pelo_conteudo: bool = False
 
 
-def _colunas(cabecalho: Iterable[str], tipo: str) -> _Colunas | str:
+def _pelo_conteudo(linhas: list[tuple[int, dict]], cabecalho, fora: set[str], ler) -> str | None:
+    """A primeira coluna, fora as ja usadas, cujos valores da amostra `ler` le todos."""
+    amostra = [linha for _, linha in linhas[:_AMOSTRA]]
+    for chave in cabecalho:
+        if not chave or chave in fora:
+            continue
+        valores = [linha.get(chave) for linha in amostra if linha.get(chave) not in (None, "")]
+        if valores and all(ler(v) is not None for v in valores):
+            return chave
+    return None
+
+
+def _colunas(
+    cabecalho: list[str], tipo: str, linhas: list[tuple[int, dict]] = ()
+) -> _Colunas | str:
     """As colunas do arquivo, ou o motivo de nao dar para le-lo."""
     por_nome: dict[str, tuple[str, float]] = {}
     for chave in cabecalho:
@@ -137,24 +163,27 @@ def _colunas(cabecalho: Iterable[str], tipo: str) -> _Colunas | str:
     cnpj, codigo = achar(_CNPJ), achar(_CODIGO)
     if cnpj is None and codigo is None:
         return "sem coluna de CNPJ nem de código CVM"
+    valores: dict = {}
+    if liquida := achar(_LIQUIDA) or achar(_CAPTACAO):
+        valores["liquida"] = liquida
+    elif (bruta := achar(_BRUTA)) and (resgate := achar(_RESGATE)):
+        valores.update(bruta=bruta, resgate=resgate)
+    elif (unica := achar(_UNICA)) and not achar(_RESGATE):
+        valores["liquida"] = unica
+    else:
+        return "sem coluna de captação líquida (nem de captação bruta e resgate)"
     quando = achar(_DIA if tipo == DIARIA else _MES)
-    if quando is None:
-        return "sem coluna de data" if tipo == DIARIA else "sem coluna de mês"
-    comum = {
-        "cnpj": cnpj[0] if cnpj else None,
-        "codigo": codigo[0] if codigo else None,
-        "quando": quando[0],
-    }
-    liquida = achar(_LIQUIDA)
-    if liquida:
-        return _Colunas(**comum, liquida=liquida)
-    bruta, resgate = achar(_BRUTA), achar(_RESGATE)
-    if bruta and resgate:
-        return _Colunas(**comum, bruta=bruta, resgate=resgate)
-    unica = achar(_UNICA)
-    if unica and not resgate:
-        return _Colunas(**comum, liquida=unica)
-    return "sem coluna de captação líquida (nem de captação bruta e resgate)"
+    pelo_conteudo = quando is None
+    if pelo_conteudo:
+        usadas = {c[0] for c in (cnpj, codigo, *valores.values()) if c}
+        achada = _pelo_conteudo(linhas, cabecalho, usadas, _dia if tipo == DIARIA else _mes)
+        if achada is None:
+            return "sem coluna de data" if tipo == DIARIA else "sem coluna de mês"
+        quando = (achada, 1.0)
+    return _Colunas(
+        cnpj=cnpj[0] if cnpj else None, codigo=codigo[0] if codigo else None,
+        quando=quando[0], quando_pelo_conteudo=pelo_conteudo, **valores,
+    )
 
 
 def _numero(bruto: object, coluna: tuple[str, float] | None) -> float | None:
@@ -215,7 +244,9 @@ def _texto_de_cnpj(bruto: object) -> str:
     """O CNPJ como texto: o Excel o guarda como numero, as vezes com ".0"."""
     if isinstance(bruto, float) and bruto.is_integer():
         bruto = int(bruto)
-    return str(bruto if bruto is not None else "").strip()
+    texto = str(bruto if bruto is not None else "").strip()
+    # O mesmo numero salvo em CSV: "11000000000101,0".
+    return re.sub(r"^(\d+)[.,]0+$", r"\1", texto)
 
 
 def _classe(
@@ -223,6 +254,12 @@ def _classe(
 ) -> tuple[str | None, str | None, int]:
     """(CNPJ de classe, motivo da recusa, classes do CNPJ quando sao varias)."""
     bruto = _texto_de_cnpj(linha.get(colunas.cnpj)) if colunas.cnpj else ""
+    if re.fullmatch(r"[\d.,]+[eE][+-]?\d+", bruto):
+        # "1,1E+13": o CSV salvo pelo Excel com o CNPJ em numero perdeu digitos.
+        return None, (
+            f"CNPJ em notação científica '{bruto}' - os dígitos se perderam; use o "
+            ".xlsx ou a coluna como texto"
+        ), 0
     caracteres = "".join(c for c in bruto if c.isalnum())
     cnpj = normalize_cnpj(bruto) if bruto else None
     # Mesma regra da lista distribuivel: menos de 8 caracteres e lixo, nao CNPJ
@@ -417,10 +454,16 @@ class BaseCaptacaoInterna:
         if not linhas:
             self.avisos.append(f"{nome}: sem linhas de dados")
             return
-        colunas = _colunas(cabecalho, tipo)
+        colunas = _colunas(cabecalho, tipo, linhas)
         if isinstance(colunas, str):
             self.invalidas.append(LinhaInvalida(nome, 1, colunas))
             return
+        if colunas.quando_pelo_conteudo:
+            self.avisos.append(
+                f"{nome}: sem coluna com nome de {'data' if tipo == DIARIA else 'mês'} - "
+                f"usada a coluna '{colunas.quando}', a primeira com "
+                f"{'datas' if tipo == DIARIA else 'meses'}"
+            )
         do_arquivo: dict = {}
         for numero, linha in linhas:
             lido.linhas += 1
