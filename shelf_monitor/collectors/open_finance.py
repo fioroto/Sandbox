@@ -32,6 +32,7 @@ from shelf_monitor.normalize import (
     parse_int,
     parse_number,
 )
+from shelf_monitor.taxas import catalogo_em_percentual
 
 _PAGE_SIZE = 500
 # Trava contra paginacao mal comportada (servidor que nunca decrementa). O teto
@@ -223,6 +224,10 @@ class OpenFinanceFunds:
                 "fundos coletados"
             )
 
+        # A taxa em pontos percentuais: parte das instituicoes publica o
+        # maxAdminFee em fracao (`shelf_monitor.taxas`). Nao e aviso de coleta -
+        # aviso marcaria o snapshot como parcial.
+        catalogo_em_percentual(offers)
         return offers
 
     def _to_offer(self, item: dict) -> FundOffer | None:

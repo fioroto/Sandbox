@@ -24,6 +24,7 @@ from shelf_monitor.models import (
     CollectorStrategy,
     FundOffer,
 )
+from shelf_monitor.taxas import plausivel
 
 # Da mais confiavel para a menos, para efeito de resolucao de conflito.
 # A area logada ve a oferta real do cliente, mas o Open Finance e padronizado e
@@ -87,8 +88,9 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
             # para o fundo unido, porque o Open Finance nunca a escreve.
             if source in LISTING_SOURCES and offer.min_initial is not None:
                 offer.extra.setdefault(KEY_MINIMO_VITRINE, offer.min_initial)
-            # A taxa da vitrine, pelo mesmo motivo (`FundOffer.taxa_da_vitrine`).
-            if source in LISTING_SOURCES and offer.admin_fee_pct is not None:
+            # A taxa da vitrine, pelo mesmo motivo (`FundOffer.taxa_da_vitrine`),
+            # ate o teto (`taxas.TETO_PCT`).
+            if source in LISTING_SOURCES and plausivel(offer.admin_fee_pct):
                 offer.extra.setdefault(KEY_TAXA_VITRINE, offer.admin_fee_pct)
             existing = merged.get(offer.identity)
             if existing is None:
@@ -100,7 +102,33 @@ def merge_offers(groups: dict[str, list[FundOffer]]) -> list[FundOffer]:
 
     for offer in merged.values():
         offer.sources.sort(key=source_rank)
+        taxa_da_vitrine_vence(offer)
     return list(merged.values())
+
+
+def taxa_da_vitrine_vence(offer: FundOffer) -> None:
+    """A taxa que o site publica vence a do catalogo (20/10/2026).
+
+    O `maxAdminFee` do Open Finance e, em parte dos fundos, so a taxa de
+    administracao (`shelf_monitor.taxas`); a da vitrine e a que o cliente ve. A
+    do catalogo fica na divergencia, e o fundo sem taxa na vitrine segue com ela.
+    """
+    vitrine = offer.extra.get(KEY_TAXA_VITRINE)
+    if vitrine is None or vitrine == offer.admin_fee_pct:
+        return
+    if offer.admin_fee_pct is not None:
+        anterior = (offer.extra.get("divergencias") or {}).get("admin_fee_pct") or {}
+        offer.extra.setdefault("divergencias", {})["admin_fee_pct"] = {
+            "valor_usado": vitrine,
+            "fonte_usada": next(
+                (s for s in offer.sources if s in LISTING_SOURCES), "vitrine"
+            ),
+            "valor_alternativo": offer.admin_fee_pct,
+            "fonte_alternativa": anterior.get("fonte_usada") or (
+                offer.sources[0] if offer.sources else "?"
+            ),
+        }
+    offer.admin_fee_pct = vitrine
 
 
 # Fuzzy so acima disto, com candidato unico por margem. Abaixo, dois nomes

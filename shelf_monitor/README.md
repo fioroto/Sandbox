@@ -181,8 +181,9 @@ Valuation com 0,0005 no Open Finance e 2,0% no site). Como o minimo da vitrine, 
 guarda a taxa do site antes da precedencia (`FundOffer.taxa_da_vitrine`); snapshot
 gravado antes disso a le da divergencia registrada. Medido nas vitrines salvas (XP e
 BTG de 28/09, Itau de 14/10/2026, CNPJ contra CNPJ): 354 dos 391 gaps do BTG e os 311
-do Itau com taxa global, medianas de 0,90% e 1,70%. A coluna "Menor taxa adm (%)" segue
-o campo mesclado.
+do Itau com taxa global, medianas de 0,90% e 1,70%. A coluna "Menor taxa adm (%)" e o
+campo mesclado: a da vitrine e, sem ela, a do Open Finance em % ("Taxa em pontos
+percentuais").
 
 **A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
 acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
@@ -852,6 +853,24 @@ o institucional (ex.: R$ 50 mil contra R$ 500 na tela). Sem ao menos 30 fundos c
 (`MIN_AMOSTRA_TICKET`), a leitura diz "sem base para comparar", nunca "a casa nao tem
 fundo barato": foi assim que o digest de 21/09 publicou que a XP nao tinha nenhum fundo
 abaixo de R$ 5 mil - a coleta de 23/09 achou 501 deles na lista dela.
+
+**Taxa em pontos percentuais** (20/10/2026). `admin_fee_pct` guarda a taxa em % ao ano
+(2,0 para 2%), como a vitrine e o extrato da CVM. O `maxAdminFee` do Open Finance vem
+em fracao na XP, no BTG e no Itau (0,02 para 2%) e em percentual na Nu; misturadas, as
+escalas faziam a taxa da maioria dos fundos sair 100 vezes menor na "Taxa adm (%)" da
+planilha, na mediana de taxa por casa do painel e na menor taxa dos gaps. O coletor do
+Open Finance decide a escala por catalogo, pela mediana das taxas positivas (ate 0,1 e
+fracao, e cada taxa ate 0,1 vira percentual - `shelf_monitor/taxas.py`), sem aviso de
+coleta. No merge, a taxa que a vitrine publica vence a do catalogo, que fica na
+divergencia: o `maxAdminFee` e, em parte dos fundos, so a de administracao (Itau Small
+Cap Valuation: 0,05% no catalogo, 2,0% no site). A do site so vale ate 20% ao ano, o
+teto do extrato: o site do BTG publicava 100,0 no Brasil Plural Debentures Incentivadas.
+O snapshot de prateleira passou a versao 2; o da versao 1 e corrigido na leitura, e o
+diff contra ele nao acusa mudanca de taxa (BTG de 25/09 para 28/09/2026: as mesmas 21
+mudancas reais, agora em %). Medianas das vitrines salvas: XP 1,00%, BTG 0,91%, Itau
+1,50% - antes 0,01 a 0,02. O fundo cuja taxa so a vitrine trazia, sem o Open Finance
+divergir, e indistinguivel no snapshot antigo: ate 0,1, num catalogo em fracao, e
+convertido junto.
 
 **Perfil de varejo.** Fundos exclusivos/restritos - exclusivo no registro CVM,
 publico-alvo profissional, marcados pela propria casa (flags da API do BTG) ou
