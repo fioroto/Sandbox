@@ -434,8 +434,7 @@ def attach_retail_flow(config: Config, report: RunReport) -> None:
     estava fora do ar. Sem ele, as superficies simplesmente omitem o bloco.
     """
     try:
-        # O ritmo da XP pela lista distribuivel (`attach_familias` ja a leu).
-        flow = build_retail_flow(config, report.snapshots, distribuivel=report.distribuivel)
+        flow = build_retail_flow(config, report.snapshots)
     except Exception as exc:  # noqa: BLE001 - fonte externa, bloco opcional
         console.print(
             f"[yellow]Captação não calculada:[/] {_short(str(exc))} "
@@ -1075,7 +1074,7 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
         f"[bold]Lendo o informe diário da CVM[/] para os fundos de vitrine "
         f"({args.months} meses)..."
     )
-    # O ritmo da XP pela lista distribuivel, como no relatorio.
+    # A lista da casa entra nas oportunidades de grade, como no relatorio.
     try:
         distribuivel = carregar_distribuivel(config)
     except Exception as exc:  # noqa: BLE001 - a pasta e opcional
@@ -1083,7 +1082,6 @@ def cmd_captacao(config: Config, args: argparse.Namespace) -> None:
         distribuivel = None
     resultado = build_retail_flow(
         config, snapshots, meses=args.months, force_download=args.force,
-        distribuivel=distribuivel,
     )
     oportunidades = (
         build_grade_opportunities(

@@ -71,6 +71,10 @@ class PerformanceFee:
 # (ver `FundOffer.minimo_vitrine`).
 KEY_MINIMO_VITRINE = "minimo_vitrine"
 
+# A taxa como a VITRINE a publicou, gravada pelo merge pelo mesmo motivo (ver
+# `FundOffer.taxa_da_vitrine`): a do Open Finance e outra conta.
+KEY_TAXA_VITRINE = "taxa_vitrine"
+
 # Fontes que representam a vitrine comercial da casa (o que o varejo ve),
 # em oposicao ao catalogo regulatorio do Open Finance.
 LISTING_SOURCES = frozenset(
@@ -152,6 +156,31 @@ class FundOffer:
         return None
 
     @property
+    def taxa_da_vitrine(self) -> float | None:
+        """A taxa que o cliente ve no site da casa, em % ao ano: a taxa global
+        (administracao, gestao e distribuicao), que o digest mostra nos gaps
+        (pedido de 20/10/2026).
+
+        So a vitrine: `admin_fee_pct` cai na do Open Finance quando o site nao a
+        publica, e o `maxAdminFee` e, em parte dos fundos, so a taxa de
+        administracao (`shelf_monitor.taxas`). Duas vias, nesta ordem: o valor que
+        o merge guardou da fonte de vitrine (ou que a leitura de um snapshot da
+        versao 1 recuperou, `taxas.migrar_snapshot_v1`); num fundo que nao passou
+        pelo Open Finance, o proprio `admin_fee_pct`, ate o teto
+        (`taxas.TETO_PCT`). Sem nenhuma, None.
+        """
+        from shelf_monitor.taxas import plausivel
+
+        valor = self.extra.get(KEY_TAXA_VITRINE)
+        if valor is not None:
+            return valor
+        if CollectorStrategy.OPEN_FINANCE.value not in self.sources and plausivel(
+            self.admin_fee_pct
+        ):
+            return self.admin_fee_pct
+        return None
+
+    @property
     def identity(self) -> str:
         """Chave de comparacao entre snapshots: CNPJ quando existe, senao slug do nome."""
         from shelf_monitor.normalize import name_slug
@@ -223,6 +252,10 @@ class FundOffer:
 
 
 SNAPSHOT_SCHEMA_VERSION = 1
+# A versao do snapshot de prateleira. A 2 (20/10/2026) grava a taxa em pontos
+# percentuais, com a da vitrine na frente da do catalogo (`shelf_monitor.taxas`);
+# a 1 e corrigida na leitura.
+SHELF_SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -242,7 +275,7 @@ class ShelfSnapshot:
     # Quantos fundos cada estrategia trouxe, antes da uniao - mede a cobertura
     # real de cada fonte para aquela casa.
     source_counts: dict[str, int] = field(default_factory=dict)
-    schema_version: int = SNAPSHOT_SCHEMA_VERSION
+    schema_version: int = SHELF_SCHEMA_VERSION
     # So no relatorio, nunca gravado: a coleta do dia nao trouxe vitrine
     # utilizavel e as analises usam esta, a ultima valida. O texto diz de que
     # dia e por que (`shelf_monitor.reserva`).
@@ -274,17 +307,25 @@ class ShelfSnapshot:
 
     @classmethod
     def from_dict(cls, data: dict) -> ShelfSnapshot:
+        funds = [FundOffer.from_dict(f) for f in data.get("funds", [])]
+        if data.get("schema_version", 1) < 2:
+            # A taxa da versao 1 em pontos percentuais e com a vitrine na frente:
+            # sem isso, o diff contra a primeira coleta nova acusaria mudanca de
+            # taxa em quase todo fundo.
+            from shelf_monitor.taxas import migrar_snapshot_v1
+
+            migrar_snapshot_v1(funds)
         return cls(
             platform=data["platform"],
             collected_at=datetime.fromisoformat(data["collected_at"]),
             strategy=CollectorStrategy(data["strategy"]),
             status=SnapshotStatus(data["status"]),
-            funds=[FundOffer.from_dict(f) for f in data.get("funds", [])],
+            funds=funds,
             source_urls=data.get("source_urls", []),
             error=data.get("error"),
             strategies=data.get("strategies", []),
             source_counts=data.get("source_counts", {}),
-            schema_version=data.get("schema_version", SNAPSHOT_SCHEMA_VERSION),
+            schema_version=SHELF_SCHEMA_VERSION,
         )
 
 

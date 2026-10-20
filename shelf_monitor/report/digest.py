@@ -525,6 +525,10 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     )
     notas = [
         criterio,
+        # A taxa global (20/10/2026): a do site, e nao a do Open Finance.
+        "Taxa global: a que o site da casa mostra para o fundo, em % ao ano - "
+        "administração, gestão e distribuição -; com o fundo em duas casas, a menor. "
+        "\"-\": o site não a publica.",
         # A regra da gestora (19/10/2026): a lista da casa conta, nao so a vitrine.
         "Gestora que a XP já distribui: a da estratégia tem algum fundo na vitrine da "
         "XP ou na lista da casa; sem nenhum, o gap exige abrir gestora.",
@@ -825,10 +829,10 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
     cabecalho = ["Fundo", "Categoria", "Casas", "Semana", "3 meses"]
     if com_cotistas:
         cabecalho.append("Cotistas")
-    cabecalho += ["Rent. 12m", "Ritmo na semana", "Esforço"]
+    cabecalho += ["Rent. 12m", "Taxa global", "Ritmo na semana", "Esforço"]
     lines = [
         "| " + " | ".join(cabecalho) + " |",
-        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---:|---|---|",
+        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---:|---:|---|---|",
     ]
     for f in linhas:
         celulas = [
@@ -840,8 +844,8 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
             variacao = f.get("variacao_cotistas")
             celulas.append("-" if variacao is None else _inteiro(variacao))
         celulas += [
-            _texto_de_rentabilidade(f), nome_da_tendencia(f.get("ritmo_semanal")) or "-",
-            _esforco_na_tabela(f),
+            _texto_de_rentabilidade(f), _pct(f.get("taxa_global")),
+            nome_da_tendencia(f.get("ritmo_semanal")) or "-", _esforco_na_tabela(f),
         ]
         lines.append("| " + " | ".join(celulas) + " |")
     return lines
@@ -950,7 +954,8 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         cabecalho = ["Fundo", "Casas", "Semana", "3 meses"]
         if com_cotistas:
             cabecalho.append("Cotistas")
-        cabecalho += ["Rent. 12m", "Esforço"]
+        # A taxa global ao lado da rentabilidade (20/10/2026): o retorno e o custo.
+        cabecalho += ["Rent. 12m", "Taxa global", "Esforço"]
         tabela: list = []
         mostrados = 0
         for casa, linhas in grupos:
@@ -969,9 +974,13 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
                 ]
                 if com_cotistas:
                     linha.append(_celula_de_cotistas(f))
-                linha += [_celula_de_rentabilidade(f), _esc(_esforco_na_tabela(f))]
+                linha += [
+                    _celula_de_rentabilidade(f), _pct(f.get("taxa_global")),
+                    _esc(_esforco_na_tabela(f)),
+                ]
                 tabela.append(linha)
-        numericas = {2, 3, 4, 5} if com_cotistas else {2, 3, 4}
+        # Os numeros a direita, da Semana a Taxa global.
+        numericas = set(range(2, cabecalho.index("Taxa global") + 1))
         parts.append(_tabela(
             cabecalho, tabela, direita=numericas, sinal={2, 3}, compacta=True,
             larguras={0: 28, 1: 8, 2: 15, 3: 13},
@@ -1001,12 +1010,6 @@ _RITMOS_DO_QUADRO = (
 )
 
 
-def _ritmo_pela_lista(flow: dict) -> str | None:
-    """A casa cujo ritmo saiu da lista distribuivel (18/10/2026), ou None."""
-    ritmo = flow.get("ritmo_da_base") or {}
-    return ritmo.get("platform_id") if ritmo.get("fonte") == "base_interna" else None
-
-
 def _porcentagens_inteiras(parcelas: list[float]) -> list[int]:
     """As parcelas da linha em % inteiros que somam 100, pelos maiores restos.
 
@@ -1027,11 +1030,11 @@ def _bloco_do_ritmo(flow: dict) -> dict | None:
     "Sem serie" so vira coluna quando alguma casa tem fundo sem serie - a
     coluna de zeros so alargaria o mapa no telefone.
 
-    A casa cujo ritmo sai da lista distribuivel leva "(lista)" no nome: a linha
-    dela conta o que ela distribui, e a das outras, o que o site exibe.
+    Toda linha conta a vitrine do site, a prateleira aberta - tambem a da XP
+    (20/10/2026). De 18 a 20/10/2026 a da XP saia da lista distribuivel, como
+    "XP Investimentos (lista)".
     """
     por_casa = flow.get("tendencia_por_casa") or {}
-    pela_lista = _ritmo_pela_lista(flow)
     em_foco = [c for c in flow.get("casas") or [] if por_casa.get(c["platform_id"])]
     estados = [
         e for e in _RITMOS_DO_QUADRO
@@ -1047,12 +1050,10 @@ def _bloco_do_ritmo(flow: dict) -> dict | None:
         numeros = [por_estado.get(e, 0) / total for e in estados]
         # O rotulo de hoje, e nao o gravado no bloco: um bloco calculado antes de
         # 15/10/2026 ainda trazia "Itaú (íon)" (pedido de 19/10/2026).
-        rotulo = _platform_label(casa["platform_id"]) + (
-            " (lista)" if casa["platform_id"] == pela_lista else ""
-        )
-        linhas.append(
-            [rotulo, str(total), *(f"{n}%" for n in _porcentagens_inteiras(numeros))]
-        )
+        linhas.append([
+            _platform_label(casa["platform_id"]), str(total),
+            *(f"{n}%" for n in _porcentagens_inteiras(numeros)),
+        ])
         parcelas.append(numeros)
         casas.append(casa["platform_id"])
     if not linhas:
@@ -1158,10 +1159,9 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     ritmo = _bloco_do_ritmo(flow)
     if ritmo:
         lines += [
-            "**Tendência dos fundos, por casa** - parcela dos fundos de cada "
-            f"{_prateleira_ou_vitrine(flow)} (com PL de ao menos R$ 1 mi no início) em cada "
-            "ritmo, mês contra os meses anteriores. Cada fundo está num ritmo só: a "
-            "linha soma 100%.",
+            "**Tendência dos fundos, por casa** - parcela dos fundos de cada vitrine "
+            "(com PL de ao menos R$ 1 mi no início) em cada ritmo, mês contra os meses "
+            "anteriores. Cada fundo está num ritmo só: a linha soma 100%.",
             "",
             "| " + " | ".join(ritmo["cabecalho"]) + " |",
             "|---|" + "---:|" * (len(ritmo["cabecalho"]) - 1),
@@ -1185,9 +1185,6 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
         ]
     for nota in _notas_de_fora(flow):
         lines += [f"_{nota}._", ""]
-    ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
-    if ritmo_da_base:
-        lines += [f"_{ritmo_da_base}._", ""]
     categoria = _nota_por_categoria(visao)
     if categoria:
         lines += [f"_{categoria}_", ""]
@@ -1197,11 +1194,6 @@ def _md_ritmo(visao: VisaoDoDigest) -> list[str]:
     if prazo and any(fundos for _, fundos in listas):
         lines += [f"_{prazo}_", ""]
     return lines
-
-
-def _prateleira_ou_vitrine(flow: dict) -> str:
-    """"prateleira" quando o ritmo de uma casa saiu da lista, "vitrine" senao."""
-    return "prateleira" if _ritmo_pela_lista(flow) else "vitrine"
 
 
 # A legenda do ritmo (pedidos de 17/10/2026): logo depois dos numeros em
@@ -1302,7 +1294,7 @@ def _figura_do_ritmo(bloco: dict, flow: dict) -> str:
         )
     return figura(
         titulo,
-        _linha(f"% dos fundos de cada {_prateleira_ou_vitrine(flow)} por ritmo de captação",
+        _linha("% dos fundos de cada vitrine por ritmo de captação",
                _janela_da_captacao(flow.get("periodo") or {})),
         corpo,
         "Cada fundo num ritmo só: a linha soma 100% · fundos com PL de ao menos R$ 1 mi "
@@ -1385,9 +1377,6 @@ def _html_ritmo(visao: VisaoDoDigest, omitir: frozenset = frozenset()) -> str:
             "de veículo, não demanda."
         )
     notas += [f"{nota}." for nota in _notas_de_fora(flow)]
-    ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
-    if ritmo_da_base:
-        notas.append(f"{ritmo_da_base}.")
     categoria = _nota_por_categoria(visao)
     if categoria:
         notas.append(categoria)

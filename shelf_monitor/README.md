@@ -171,6 +171,20 @@ Oportunidades de grade (12 meses e mediana), e a nota de cada aba da a janela de
 coluna (`performance.prazo_das_colunas_de_rentabilidade`). Retorno negativo e captacao
 liquida sobre o PL negativa aparecem com o sinal - o formato de taxa os trocava por "-".
 
+**Taxa global nos gaps** (20/10/2026). As tabelas de gaps por concorrente do digest e a
+aba Gaps XP ("Taxa global na vitrine (%)") trazem a taxa global de cada fundo -
+administracao, gestao e distribuicao, em % ao ano - como o site da casa a mostra, ao
+lado da rentabilidade; com o fundo em duas casas, a menor. Vem da vitrine e nao do Open
+Finance: o merge da precedencia ao catalogo, cujo `maxAdminFee` vem em fracao (0,02
+para 2%) e, em parte dos fundos, so com a taxa de administracao (o Itau Small Cap
+Valuation com 0,0005 no Open Finance e 2,0% no site). Como o minimo da vitrine, o merge
+guarda a taxa do site antes da precedencia (`FundOffer.taxa_da_vitrine`); snapshot
+gravado antes disso a le da divergencia registrada. Medido nas vitrines salvas (XP e
+BTG de 28/09, Itau de 14/10/2026, CNPJ contra CNPJ): 354 dos 391 gaps do BTG e os 311
+do Itau com taxa global, medianas de 0,90% e 1,70%. A coluna "Menor taxa adm (%)" e o
+campo mesclado: a da vitrine e, sem ela, a do Open Finance em % ("Taxa em pontos
+percentuais").
+
 **A lista de gaps do digest** (16/10/2026). Entra o gap real que capta em 3 meses e
 acelera na semana: ritmo "acelerando" (captacao por dia mais de 25% acima da media das
 12 semanas anteriores, que ja era positiva). Estavel, desacelerando, virou saida e,
@@ -840,6 +854,24 @@ o institucional (ex.: R$ 50 mil contra R$ 500 na tela). Sem ao menos 30 fundos c
 fundo barato": foi assim que o digest de 21/09 publicou que a XP nao tinha nenhum fundo
 abaixo de R$ 5 mil - a coleta de 23/09 achou 501 deles na lista dela.
 
+**Taxa em pontos percentuais** (20/10/2026). `admin_fee_pct` guarda a taxa em % ao ano
+(2,0 para 2%), como a vitrine e o extrato da CVM. O `maxAdminFee` do Open Finance vem
+em fracao na XP, no BTG e no Itau (0,02 para 2%) e em percentual na Nu; misturadas, as
+escalas faziam a taxa da maioria dos fundos sair 100 vezes menor na "Taxa adm (%)" da
+planilha, na mediana de taxa por casa do painel e na menor taxa dos gaps. O coletor do
+Open Finance decide a escala por catalogo, pela mediana das taxas positivas (ate 0,1 e
+fracao, e cada taxa ate 0,1 vira percentual - `shelf_monitor/taxas.py`), sem aviso de
+coleta. No merge, a taxa que a vitrine publica vence a do catalogo, que fica na
+divergencia: o `maxAdminFee` e, em parte dos fundos, so a de administracao (Itau Small
+Cap Valuation: 0,05% no catalogo, 2,0% no site). A do site so vale ate 20% ao ano, o
+teto do extrato: o site do BTG publicava 100,0 no Brasil Plural Debentures Incentivadas.
+O snapshot de prateleira passou a versao 2; o da versao 1 e corrigido na leitura, e o
+diff contra ele nao acusa mudanca de taxa (BTG de 25/09 para 28/09/2026: as mesmas 21
+mudancas reais, agora em %). Medianas das vitrines salvas: XP 1,00%, BTG 0,91%, Itau
+1,50% - antes 0,01 a 0,02. O fundo cuja taxa so a vitrine trazia, sem o Open Finance
+divergir, e indistinguivel no snapshot antigo: ate 0,1, num catalogo em fracao, e
+convertido junto.
+
 **Perfil de varejo.** Fundos exclusivos/restritos - exclusivo no registro CVM,
 publico-alvo profissional, marcados pela propria casa (flags da API do BTG) ou
 denunciados pelo nome (EXCLUSIVO/RESERVADO/RESTRITO/FAMILY OFFICE) - ficam **fora de
@@ -1180,19 +1212,16 @@ R$ 88 mil a R$ 433 mil por cotista novo, e so o numero mostra que nao e varejo.
 A familia e o nivel 1 da categoria oficial. A categoria fina foi medida e descartada
 para este corte: 36 categorias ANBIMA, cada uma dominada por um ou dois fundos.
 
-**O ritmo da XP pela base interna** (18/10/2026). No mapa de ritmo por casa (captando,
-acelerando, virou saida, saida persistente), a linha da XP conta o que ela distribui,
-e nao so o que o site exibe: a mesma prateleira interna do custo - a lista
-distribuivel, situacao "distribui", sem as classes exclusivas -, com nome e categoria
-do cadastro, sem caixa/simples e sem previdencia, e o mesmo recorte das vitrines
-(informe, PL de ao menos R$ 1 mi no inicio, sem movimento estrutural). O fundo da lista
-que nenhuma vitrine exibe entra no ritmo da XP e so nele: a composicao, as listas de
-captacao e as oportunidades de grade seguem pela vitrine, onde "fora da vitrine" quer
-dizer o que o cliente nao ve. As demais casas seguem pela vitrine. No digest a linha
-sai como "XP Investimentos (lista)" e o mapa fala em "prateleira"; a nota de
-proveniencia (`ritmo_da_base`) vai no digest, no "Como ler" do painel e embaixo da
-tabela da planilha. Sem lista utilizavel - ou sem a base de mercado, de onde vem o nome
-e a categoria -, a XP fica na vitrine e a nota diz por que.
+**O ritmo da XP pela prateleira aberta** (20/10/2026). No mapa de ritmo por casa
+(acelerando, virou entrada, estavel, desacelerando, virou saida, saida persistente), a
+linha da XP conta a vitrine do site, como a das demais casas: o que qualquer cliente ve
+e compra, com o mesmo recorte (informe, PL de ao menos R$ 1 mi no inicio, sem
+movimento estrutural). Vale no digest, no painel e na aba Captacao por casa da
+planilha, que leem o mesmo quadro. De 18 a 20/10/2026 a linha saia da lista
+distribuivel ("XP Investimentos (lista)"), que soma fundos fora da vitrine - assessoria,
+private, FaaS - e por isso nao comparava a mesma coisa que as linhas do BTG e do Itau.
+A lista segue onde ela responde outra pergunta: cobertura dos gaps, gestora da casa,
+servico ao lado do fundo, custo da XP e o cruzamento da captacao na XP.
 
 ### Rentabilidade ponderada (`performance`)
 

@@ -729,6 +729,7 @@ def _add_gaps_sheets(
     ]
     colunas += [
         ("minimo", "Menor mínimo (R$)", 18), ("taxa", "Menor taxa adm (%)", 17),
+        ("taxa_global", "Taxa global na vitrine (%)", 17),
         ("pl", "PL CVM (R$)", 18), ("gestora_xp", "Gestora na base XP", 18),
         ("equivalente", "Possível equivalente XP (baixa confiança)", 44),
         ("verificacao", "Verificação vs. Vitrine varejo", 26),
@@ -774,6 +775,8 @@ def _add_gaps_sheets(
             "dmais": fund.get("dmais"),
             "minimo": fund["min_initial"],
             "taxa": fund["admin_fee_pct"],
+            # A que o site da casa mostra (`FundOffer.taxa_da_vitrine`).
+            "taxa_global": fund.get("taxa_global"),
             "pl": fund["pl_cvm"],
             "gestora_xp": _yes_no(fund["manager_on_xp"]),
             "equivalente": equivalente,
@@ -787,7 +790,8 @@ def _add_gaps_sheets(
             ("n_casas", _INT), ("captacao", _MONEY), ("semana", _MONEY), ("cotistas", _INT),
             ("rent12", _PCT_RETORNO), ("cat12", _PCT_RETORNO), ("rent3", _PCT_RETORNO),
             ("cat3", _PCT_RETORNO),
-            ("dmais", _INT), ("minimo", _MONEY), ("taxa", _PCT), ("pl", _MONEY),
+            ("dmais", _INT), ("minimo", _MONEY), ("taxa", _PCT), ("taxa_global", _PCT),
+            ("pl", _MONEY),
         ):
             sheet.cell(row=row, column=coluna[chave]).number_format = formato
         if listing_last_row > 1:
@@ -2009,11 +2013,6 @@ def _add_captacao_casas_sheet(
                  sum(contagem.values())]
             )
         tabela(cabecalho, linhas, {c: _INT for c in range(2, len(cabecalho) + 1)})
-        # De onde vem a linha da XP: a lista distribuivel ou a vitrine (18/10/2026).
-        ritmo_da_base = (flow.get("ritmo_da_base") or {}).get("nota")
-        if ritmo_da_base:
-            ws.cell(row=linha - 1, column=1, value=f"{ritmo_da_base}.").font = _NOTE_FONT
-            linha += 1
         for estado in estados:
             ws.cell(row=linha, column=1, value=nome_da_tendencia(estado)).font = _BODY_FONT
             ws.cell(row=linha, column=2, value=TREND_LABELS[estado]).font = _NOTE_FONT
