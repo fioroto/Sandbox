@@ -1103,6 +1103,21 @@ bases internas, soltas em pastas fora do git (dado comercial; modelos em
   o do ultimo pela ordem do nome (reexportar nao conta duas vezes); linha ruim sai
   listada com o motivo (`captacao_interna.py`).
 
+**O que a primeira execucao com as bases da XP nao leu** (21/10/2026). Formato
+informado: diaria com a data (16/10/2026), `cod_cnpj` em numero e a captacao liquida
+com sinal; mensal com o mes 202607. Cinco formatos de exportacao eram recusados,
+quatro deles em silencio, e passam a ser lidos: a planilha do BI que grava a dimensao
+da aba como "A1" (no modo de leitura o openpyxl lia so essa celula); a data como numero
+serial do Excel (46311) ou aaaammdd (20261016); a pasta com acento (`Diária/`) e o
+arquivo solto em `data/captacao_xp/` - vale qualquer pasta, e fora de `diaria/` e
+`mensal/` decide o cabecalho. Tambem: todas as abas (a primeira com cabecalho), o
+titulo antes do cabecalho no CSV, o negativo contabil ("(1.234,56)", "1.234,56-") e o
+`.xls`/`.xlsb` recusado dizendo para salvar como `.xlsx`. O console do `run` e do
+`report` mostra as tres primeiras recusas, e `python -m shelf_monitor captacao-xp` le so
+a pasta, sem a CVM, e diz arquivo a arquivo a base, as colunas usadas, o periodo, as
+recusas com o motivo e os dias uteis que faltam na diaria - sem eles, a semana fica sem
+numero e o digest sem a coluna Na XP.
+
 Os dois numeros comparam a mesma coisa (`report/captacao_na_xp.py`):
 
 - **mesma janela**: a semana e os 3 meses do bloco de captacao, com os mesmos dias.
