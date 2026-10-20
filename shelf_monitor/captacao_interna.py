@@ -33,7 +33,8 @@ Os modelos com o cabecalho moram em `data/captacao_xp/modelo_diaria.csv` e
   07/2026, jul/2026 ou uma data do mes;
 - o fundo e resolvido como na lista distribuivel: CNPJ da classe, CNPJ do
   fundo ou codigo CVM. CNPJ de fundo com mais de uma classe fica como veio, com
-  aviso: a captacao nao se divide entre as classes;
+  aviso: a captacao nao se divide entre as classes. CNPJ fora do cadastro da CVM
+  tambem entra como veio, com aviso - so nao cruza com fundo nenhum (21/10/2026);
 - no mesmo arquivo, linhas do mesmo fundo e dia (ou mes) somam - a base pode
   trazer uma linha por canal ou por subclasse. O mesmo dia (ou mes) em dois
   arquivos vale o do ultimo pela ordem do nome, com aviso: reexportar um
@@ -63,6 +64,7 @@ from shelf_monitor.distribuivel import (
 )
 from shelf_monitor.market.parse import parse_date
 from shelf_monitor.normalize import (
+    format_cnpj,
     normalize_cnpj,
     normalize_cvm_code,
     parse_money,
@@ -318,37 +320,46 @@ def _texto_de_cnpj(bruto: object) -> str:
 
 def _classe(
     linha: dict, colunas: _Colunas, resolver: Resolvedor | None
-) -> tuple[str | None, str | None, int]:
-    """(CNPJ de classe, motivo da recusa, classes do CNPJ quando sao varias)."""
+) -> tuple[str | None, str | None, int, bool]:
+    """(CNPJ de classe, motivo da recusa, classes do CNPJ quando sao varias, fora
+    do cadastro).
+
+    O CNPJ que o cadastro nao conhece entra como veio (21/10/2026): o report de
+    20/10/2026 recusou a base diaria inteira, 297.354 linhas, por "CNPJ nao
+    encontrado no cadastro da CVM", e o cruzamento ficou sem nenhum dia. Na lista
+    distribuivel o CNPJ errado criaria cobertura falsa; aqui ele so nao cruza com
+    fundo nenhum, e o dia da base continua medido.
+    """
     bruto = _texto_de_cnpj(linha.get(colunas.cnpj)) if colunas.cnpj else ""
     if re.fullmatch(r"[\d.,]+[eE][+-]?\d+", bruto):
         # "1,1E+13": o CSV salvo pelo Excel com o CNPJ em numero perdeu digitos.
         return None, (
             f"CNPJ em notação científica '{bruto}' - os dígitos se perderam; use o "
             ".xlsx ou a coluna como texto"
-        ), 0
+        ), 0, False
     caracteres = "".join(c for c in bruto if c.isalnum())
     cnpj = normalize_cnpj(bruto) if bruto else None
     # Mesma regra da lista distribuivel: menos de 8 caracteres e lixo, nao CNPJ
     # sem os zeros a esquerda.
     if bruto and (not cnpj or not 8 <= len(caracteres) <= 14):
-        return None, f"CNPJ inválido '{bruto}'", 0
+        return None, f"CNPJ inválido '{bruto}'", 0, False
     codigo = normalize_cvm_code(linha.get(colunas.codigo)) if colunas.codigo else None
     if not cnpj and not codigo:
-        return None, "sem CNPJ nem código CVM", 0
+        return None, "sem CNPJ nem código CVM", 0, False
     classes = resolver(cnpj, codigo) if resolver is not None else None
     if classes is None:
         if not cnpj:
-            return None, "código CVM sem base de mercado para resolver", 0
-        return cnpj, None, 0
+            return None, "código CVM sem base de mercado para resolver", 0, False
+        return cnpj, None, 0, False
     if not classes:
-        alvo = f"CNPJ {bruto}" if cnpj else f"código CVM {linha.get(colunas.codigo)}"
-        return None, f"{alvo} não encontrado no cadastro da CVM", 0
+        if cnpj:
+            return cnpj, None, 0, True
+        return None, f"código CVM {linha.get(colunas.codigo)} não encontrado no cadastro da CVM", 0, False
     if len(classes) == 1:
-        return classes[0], None, 0
+        return classes[0], None, 0, False
     if not cnpj:
-        return None, f"código CVM de fundo com {len(classes)} classes", len(classes)
-    return cnpj, None, len(classes)
+        return None, f"código CVM de fundo com {len(classes)} classes", len(classes), False
+    return cnpj, None, len(classes), False
 
 
 def _eh_cabecalho(chaves: list[str]) -> bool:
@@ -423,9 +434,6 @@ def _ler_arquivo(caminho: Path) -> tuple[list[str], list[tuple[int, dict]]]:
 _SO_MES = ("mes", "competencia", "mes_ano", "ano_mes", "mes_referencia", "mes_ref", "periodo")
 
 
-_FORA_DO_CADASTRO = "CNPJ não encontrado no cadastro da CVM"
-
-
 def _tipo_da_recusa(motivo: str) -> str:
     """O motivo sem o valor da linha: "CNPJ 1790... nao encontrado no cadastro da
     CVM" e "data ilegivel '32/10/2026'" viram um motivo so cada."""
@@ -491,6 +499,8 @@ class BaseCaptacaoInterna:
     arquivos: list[ArquivoDaBase] = field(default_factory=list)
     invalidas: list[LinhaInvalida] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
+    # Os CNPJs que entraram sem estar no cadastro da CVM (`_classe`).
+    fora_do_cadastro: set[str] = field(default_factory=set)
     # CNPJ -> [(dia, captacao)], montado na primeira soma: o cruzamento soma a
     # janela de cada fundo de vitrine, e varrer a base inteira a cada um custava
     # dias x fundos por fundo.
@@ -600,6 +610,13 @@ class BaseCaptacaoInterna:
                 "base de mercado ausente: os CNPJs das bases da XP não foram conferidos "
                 "contra o cadastro da CVM"
             )
+        if base.fora_do_cadastro:
+            exemplos = ", ".join(format_cnpj(c) for c in sorted(base.fora_do_cadastro)[:3])
+            base.avisos.append(
+                f"{contagem(len(base.fora_do_cadastro), 'fundo', 'fundos')} das bases fora "
+                f"do cadastro da CVM (por exemplo {exemplos}) - entram com o CNPJ como "
+                "veio, e cruzam só se a vitrine ou a lista da casa trouxer o mesmo"
+            )
         return base
 
     def _ler_um(self, caminho: Path, resolver: Resolvedor | None) -> None:
@@ -655,6 +672,7 @@ class BaseCaptacaoInterna:
                 f"{'datas' if tipo == DIARIA else 'meses'}"
             )
         do_arquivo: dict = {}
+        fora_do_cadastro: set[str] = set()
         for numero, linha in linhas:
             lido.linhas += 1
             bruto = linha.get(colunas.quando)
@@ -668,7 +686,7 @@ class BaseCaptacaoInterna:
                     f"'{linha.get(colunas.quando)}'"
                 )
             else:
-                cnpj, motivo, classes = _classe(linha, colunas, resolver)
+                cnpj, motivo, classes, fora = _classe(linha, colunas, resolver)
                 valor = _liquida(linha, colunas) if motivo is None else None
                 if motivo is None and valor is None:
                     motivo = "sem valor de captação"
@@ -677,6 +695,8 @@ class BaseCaptacaoInterna:
                 self.invalidas.append(LinhaInvalida(nome, numero, motivo))
                 continue
             lido.validas += 1
+            if fora:
+                fora_do_cadastro.add(cnpj)
             if classes > 1:
                 self.avisos.append(
                     f"{nome}, linha {numero}: CNPJ de fundo com {classes} classes - "
@@ -692,15 +712,15 @@ class BaseCaptacaoInterna:
             self.avisos.append(
                 f"{nome} repete {periodos} de arquivo anterior - valem os dele"
             )
-        if lido.invalidas and not lido.validas:
-            motivo, _, _ = self.recusas_por_motivo(nome)[0]
-            if motivo == _FORA_DO_CADASTRO:
-                self.avisos.append(
-                    f"{nome}: nenhum valor da coluna '{colunas.cnpj}' está no cadastro da "
-                    "CVM - ela não parece trazer o CNPJ do fundo. Use o arquivo exportado, "
-                    "com o cabeçalho dele (cod_cnpj, Captação...): dado colado no modelo, "
-                    "com as colunas em outra ordem, dá nisso"
-                )
+        self.fora_do_cadastro |= fora_do_cadastro
+        cnpjs_do_arquivo = {c for fundos in do_arquivo.values() for c in fundos}
+        if cnpjs_do_arquivo and cnpjs_do_arquivo <= fora_do_cadastro:
+            self.avisos.append(
+                f"{nome}: nenhum valor da coluna '{colunas.cnpj}' está no cadastro da "
+                "CVM - ela não parece trazer o CNPJ do fundo. Use o arquivo exportado, "
+                "com o cabeçalho dele (cod_cnpj, Captação...): dado colado no modelo, "
+                "com as colunas em outra ordem, dá nisso"
+            )
         destino.update(do_arquivo)
         self._por_fundo = None
         if do_arquivo:
