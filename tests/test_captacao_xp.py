@@ -350,11 +350,92 @@ class TestFormatosDaXp(unittest.TestCase):
         texto = "\n".join(BaseCaptacaoInterna.ler(self.pasta).diagnostico())
         self.assertIn("- diaria/a.xlsx: base diária, 3 linhas, 2 válidas, 1 recusada", texto)
         self.assertIn("colunas: CNPJ 'cod_cnpj', data ou mês 'data', captação 'captacao'", texto)
-        self.assertIn("recusada - linha 4: data ilegível '32/10/2026'", texto)
+        self.assertIn("1 recusada - data ilegível (a primeira, linha 4: data ilegível "
+                      "'32/10/2026')", texto)
         # 14 e 15/10 nao vieram: o diagnostico diz, porque sem eles a semana fica
         # sem numero.
         self.assertIn("sem 2 dias úteis no meio (feriado também aparece aqui): "
                       "14/10/2026, 15/10/2026", texto)
+
+
+class TestColunaDoCnpj(unittest.TestCase):
+    """O report de 20/10/2026 recusou a base diaria inteira - 297.354 linhas, "CNPJ
+    nao encontrado no cadastro da CVM" -, com os dados colados no modelo: a
+    coluna "cnpj" do modelo recebeu outro campo da exportacao."""
+
+    CLIENTE = "17905206000163"  # o CNPJ do print, fora do cadastro
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.pasta = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _resolver(cnpj, codigo):
+        """O cadastro so conhece o fundo C."""
+        return [cnpj] if cnpj == C else []
+
+    def test_entre_duas_colunas_de_cnpj_vale_a_do_cadastro(self):
+        """"CNPJ" do cliente antes do `cod_cnpj` do fundo: o nome sozinho
+        escolhia a do cliente, e a base inteira caia."""
+        _escrever(self.pasta, "diaria", "a.csv", [
+            "Data;CNPJ;cod_cnpj;Captação",
+            f"16/10/2026;{self.CLIENTE};{C};1000",
+            f"15/10/2026;{self.CLIENTE};{C};-200",
+        ])
+        base = BaseCaptacaoInterna.ler(self.pasta, self._resolver)
+        self.assertEqual(base.dias, {
+            date(2026, 10, 16): {C: 1000.0}, date(2026, 10, 15): {C: -200.0},
+        })
+        self.assertEqual(base.arquivos[0].colunas["cnpj"], "cod_cnpj")
+
+    def test_base_recusada_inteira_diz_que_a_coluna_nao_e_a_do_fundo(self):
+        _escrever(self.pasta, "diaria", "modelo_diaria.csv", [
+            "data;cnpj;nome;captacao_bruta;resgate;captacao_liquida",
+            f"16/10/2026;{self.CLIENTE};Cliente A;x;y;1000",
+            f"16/10/2026;{int(self.CLIENTE) + 1};Cliente B;x;y;2000",
+        ])
+        base = BaseCaptacaoInterna.ler(self.pasta, self._resolver)
+        self.assertEqual(base.dias, {})
+        self.assertEqual(
+            base.recusas_por_motivo("diaria/modelo_diaria.csv")[0][:2],
+            ("CNPJ não encontrado no cadastro da CVM", 2),
+        )
+        self.assertIn(
+            "diaria/modelo_diaria.csv: nenhum valor da coluna 'cnpj' está no cadastro da "
+            "CVM - ela não parece trazer o CNPJ do fundo", " ".join(base.avisos),
+        )
+        texto = "\n".join(base.diagnostico())
+        self.assertIn("  2 recusadas - CNPJ não encontrado no cadastro da CVM (a primeira, "
+                      f"linha 2: CNPJ {self.CLIENTE} não encontrado no cadastro da CVM)", texto)
+
+    def test_console_do_report_resume_as_recusas_por_motivo(self):
+        import io
+        from unittest import mock
+
+        from rich.console import Console
+
+        from shelf_monitor import main
+
+        _escrever(self.pasta, "diaria", "modelo_diaria.csv", [
+            "data;cnpj;captacao_liquida",
+            *(f"16/10/2026;{int(self.CLIENTE) + i};1000" for i in range(5)),
+        ])
+        base = BaseCaptacaoInterna.ler(self.pasta, self._resolver)
+        saida = io.StringIO()
+        report = _relatorio()
+        with mock.patch.object(main, "console", Console(file=saida, width=300)), \
+                mock.patch.object(main, "carregar_captacao_interna", return_value=base):
+            main.attach_captacao_na_xp(None, report)
+        texto = saida.getvalue()
+        self.assertIn(
+            "Base da XP diaria/modelo_diaria.csv: 5 linhas recusadas de 5 - 5 CNPJ não "
+            "encontrado no cadastro da CVM (a primeira, linha 2: CNPJ 17905206000163 não "
+            "encontrado no cadastro da CVM)", texto,
+        )
+        self.assertIn("ela não parece trazer o CNPJ do fundo", texto)
 
 
 # --- janelas e cruzamento -------------------------------------------------------

@@ -30,6 +30,7 @@ from functools import partial
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from shelf_monitor.classify import ClassificationIndex
@@ -102,7 +103,7 @@ from shelf_monitor.storage import (
     save_cvm_snapshot,
     save_shelf_snapshot,
 )
-from shelf_monitor.texto import contagem, data_br
+from shelf_monitor.texto import contagem, data_br, milhar
 
 console = Console()
 
@@ -485,9 +486,23 @@ def attach_captacao_na_xp(config: Config, report: RunReport) -> None:
         console.print(f"[yellow]Captação na XP não calculada:[/] {_short(str(exc))}")
         return
     bloco = report.captacao_xp
-    for recusa in base.invalidas[:3]:
-        onde = f", linha {recusa.linha}" if recusa.linha else ""
-        console.print(f"  [yellow]Base da XP recusada[/] ({recusa.arquivo}{onde}): {recusa.motivo}")
+    # As recusas por arquivo e por motivo: 297 mil linhas recusadas viravam a
+    # primeira delas e um total, sem dizer que eram todas pelo mesmo motivo.
+    for arquivo in base.arquivos:
+        grupos = base.recusas_por_motivo(arquivo.nome)
+        if not grupos:
+            continue
+        motivo, _, primeira = grupos[0]
+        console.print("  [yellow]Base da XP[/] " + escape(
+            f"{arquivo.nome}: "
+            f"{contagem(arquivo.invalidas, 'linha recusada', 'linhas recusadas')} de "
+            f"{milhar(arquivo.linhas)} - "
+            + "; ".join(f"{milhar(q)} {m}" for m, q, _ in grupos[:3])
+            + f" (a primeira, linha {primeira.linha}: {primeira.motivo})"
+        ))
+    for aviso in base.avisos:
+        if "não parece trazer o CNPJ do fundo" in aviso:
+            console.print(f"  [yellow]{escape(aviso)}.[/]")
     if base.invalidas:
         console.print(
             "  [dim]`python -m shelf_monitor captacao-xp` mostra como cada arquivo foi lido.[/]"

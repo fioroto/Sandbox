@@ -1118,6 +1118,16 @@ a pasta, sem a CVM, e diz arquivo a arquivo a base, as colunas usadas, o periodo
 recusas com o motivo e os dias uteis que faltam na diaria - sem eles, a semana fica sem
 numero e o digest sem a coluna Na XP.
 
+**A coluna do CNPJ pelo cadastro** (21/10/2026). O `report` de 20/10/2026 recusou a base
+diaria inteira, 297.354 linhas por "CNPJ nao encontrado no cadastro da CVM", com os
+dados colados em `diaria/modelo_diaria.csv`: com as colunas da exportacao em outra
+ordem, a coluna "cnpj" do modelo recebeu outro campo. Com duas colunas de nome de CNPJ
+(o do cliente ao lado do `cod_cnpj` do fundo), vale a cujos valores estao no cadastro,
+conferida nas primeiras 200 linhas. O console e o diagnostico agrupam as recusas por
+motivo, arquivo a arquivo, e o arquivo recusado inteiro por CNPJ fora do cadastro diz
+que a coluna nao parece ser a do fundo. A planilha exportada vai como veio, com o
+cabecalho dela - os modelos so mostram os nomes de coluna aceitos.
+
 Os dois numeros comparam a mesma coisa (`report/captacao_na_xp.py`):
 
 - **mesma janela**: a semana e os 3 meses do bloco de captacao, com os mesmos dias.
