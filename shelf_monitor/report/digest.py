@@ -525,10 +525,6 @@ def _notas_da_oportunidade(visao: VisaoDoDigest) -> list[str]:
     )
     notas = [
         criterio,
-        # A taxa global (20/10/2026): a do site, e nao a do Open Finance.
-        "Taxa global: a que o site da casa mostra para o fundo, em % ao ano - "
-        "administração, gestão e distribuição -; com o fundo em duas casas, a menor. "
-        "\"-\": o site não a publica.",
         # A regra da gestora (19/10/2026): a lista da casa conta, nao so a vitrine.
         "Gestora que a XP já distribui: a da estratégia tem algum fundo na vitrine da "
         "XP ou na lista da casa; sem nenhum, o gap exige abrir gestora.",
@@ -829,10 +825,11 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
     cabecalho = ["Fundo", "Categoria", "Casas", "Semana", "3 meses"]
     if com_cotistas:
         cabecalho.append("Cotistas")
-    cabecalho += ["Rent. 12m", "Taxa global", "Ritmo na semana", "Esforço"]
+    # A taxa global saiu das tabelas em 21/10/2026, a pedido: segue na aba Gaps XP.
+    cabecalho += ["Rent. 12m", "Ritmo na semana", "Esforço"]
     lines = [
         "| " + " | ".join(cabecalho) + " |",
-        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---:|---:|---|---|",
+        "|---|---|---|---:|---:|" + ("---:|" if com_cotistas else "") + "---:|---|---|",
     ]
     for f in linhas:
         celulas = [
@@ -844,8 +841,8 @@ def _md_tabela_de_gaps(linhas: list[dict], com_cotistas: bool) -> list[str]:
             variacao = f.get("variacao_cotistas")
             celulas.append("-" if variacao is None else _inteiro(variacao))
         celulas += [
-            _texto_de_rentabilidade(f), _pct(f.get("taxa_global")),
-            nome_da_tendencia(f.get("ritmo_semanal")) or "-", _esforco_na_tabela(f),
+            _texto_de_rentabilidade(f), nome_da_tendencia(f.get("ritmo_semanal")) or "-",
+            _esforco_na_tabela(f),
         ]
         lines.append("| " + " | ".join(celulas) + " |")
     return lines
@@ -954,8 +951,7 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
         cabecalho = ["Fundo", "Casas", "Semana", "3 meses"]
         if com_cotistas:
             cabecalho.append("Cotistas")
-        # A taxa global ao lado da rentabilidade (20/10/2026): o retorno e o custo.
-        cabecalho += ["Rent. 12m", "Taxa global", "Esforço"]
+        cabecalho += ["Rent. 12m", "Esforço"]
         tabela: list = []
         mostrados = 0
         for casa, linhas in grupos:
@@ -974,13 +970,10 @@ def _html_oportunidade(visao: VisaoDoDigest, omitir: frozenset = frozenset()) ->
                 ]
                 if com_cotistas:
                     linha.append(_celula_de_cotistas(f))
-                linha += [
-                    _celula_de_rentabilidade(f), _pct(f.get("taxa_global")),
-                    _esc(_esforco_na_tabela(f)),
-                ]
+                linha += [_celula_de_rentabilidade(f), _esc(_esforco_na_tabela(f))]
                 tabela.append(linha)
-        # Os numeros a direita, da Semana a Taxa global.
-        numericas = set(range(2, cabecalho.index("Taxa global") + 1))
+        # Os numeros a direita, da Semana a Rent. 12m.
+        numericas = set(range(2, cabecalho.index("Rent. 12m") + 1))
         parts.append(_tabela(
             cabecalho, tabela, direita=numericas, sinal={2, 3}, compacta=True,
             larguras={0: 28, 1: 8, 2: 15, 3: 13},
