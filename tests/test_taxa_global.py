@@ -10,7 +10,8 @@ Finance e 2,0% no site do Itau (`shelf_monitor.taxas`). Os testes travam:
   quando o site nao publica;
 - o snapshot da versao 1 corrigido na leitura, sem o diff acusar mudanca de taxa;
 - a linha do gap com a menor taxa global entre as casas que o exibem;
-- a coluna Taxa global nas tabelas de gaps do digest e na aba Gaps XP.
+- a coluna Taxa global na aba Gaps XP - e fora das tabelas de gaps do digest,
+  de onde saiu em 21/10/2026, a pedido.
 
 Rode com: python -m unittest discover -s tests -v
 """
@@ -195,17 +196,20 @@ class TestTaxaGlobalNosGaps(unittest.TestCase):
         self.assertEqual(linhas[A]["taxa_global"], 1.9)
         self.assertIsNone(linhas[E]["taxa_global"])
 
-    def test_digest_traz_a_coluna_e_a_nota(self):
+    def test_digest_sem_a_taxa_nas_tabelas_de_gaps(self):
+        """Pedido de 21/10/2026: a taxa saiu das tabelas de captacao por casa do
+        digest, coluna e nota; segue na planilha."""
         from shelf_monitor.report.digest import render_html, render_markdown
 
         md = render_markdown(self.report, None, "semanal")
-        # Rent. 12m e Taxa global lado a lado; sem serie de cota, a rentabilidade e "-".
-        self.assertRegex(md, r"\| Fundo A FIC FIM .*\| \+49 \| - \| 1,90% \| acelerando \|")
-        self.assertRegex(md, r"\| Fundo E FIC FIM .*\| \+49 \| - \| - \| acelerando \|")
-        self.assertIn("_Taxa global: a que o site da casa mostra para o fundo, em % ao ano", md)
+        # Sem serie de cota, a rentabilidade e "-"; o ritmo vem logo depois.
+        self.assertRegex(md, r"\| Fundo A FIC FIM .*\| \+49 \| - \| acelerando \|")
+        for fora in ("Taxa global", "1,90%"):
+            self.assertNotIn(fora, md)
         texto = _texto(render_html(self.report, None, "semanal"))
-        self.assertIn("Rent. 12m Taxa global Esforço", texto)
-        self.assertIn("1,90%", texto)
+        self.assertIn("Rent. 12m Esforço", texto)
+        for fora in ("Taxa global", "1,90%"):
+            self.assertNotIn(fora, texto)
 
     def test_planilha_traz_a_taxa_global_nos_gaps(self):
         from openpyxl import load_workbook
